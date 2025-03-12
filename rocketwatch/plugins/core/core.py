@@ -17,6 +17,8 @@ from web3.datastructures import MutableAttributeDict as aDict
 
 from plugins.deposit_pool import deposit_pool
 from plugins.support_utils.support_utils import generate_template_embed
+from rocketwatch import RocketWatch
+from solidity import BEACON_SLOT_LENGTH
 from utils.cfg import cfg
 from utils.embeds import assemble, Embed
 from utils.event import EventPlugin
@@ -33,7 +35,7 @@ class Core(commands.Cog):
         def __str__(self) -> str:
             return self.name
 
-    def __init__(self, bot):
+    def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.state = self.State.OK
         self.channels = cfg["discord.channels"]
@@ -41,13 +43,13 @@ class Core(commands.Cog):
         self.head_block: BlockIdentifier = cfg["events.genesis"]
         self.block_batch_size = cfg["events.block_batch_size"]
         self.monitor = cronitor.Monitor('gather-new-events', api_key=cfg["cronitor_secret"])
-        self.run_loop.start()
+        self.loop.start()
 
     def cog_unload(self) -> None:
-        self.run_loop.cancel()
+        self.loop.cancel()
 
-    @tasks.loop(seconds=12.0)
-    async def run_loop(self) -> None:
+    @tasks.loop(seconds=BEACON_SLOT_LENGTH)
+    async def loop(self) -> None:
         p_id = time.time()
         self.monitor.ping(state="run", series=p_id)
 
@@ -61,20 +63,20 @@ class Core(commands.Cog):
             await self.on_error(error)
             self.monitor.ping(state="fail", series=p_id)
 
-    @run_loop.before_loop
+    @loop.before_loop
     async def before_loop(self) -> None:
         await self.bot.wait_until_ready()
 
     async def on_success(self) -> None:
         if self.state == self.State.ERROR:
             self.state = self.State.OK
-            self.run_loop.change_interval(seconds=12)
+            self.loop.change_interval(seconds=BEACON_SLOT_LENGTH)
 
     async def on_error(self, error: Exception) -> None:
         await self.bot.report_error(error)
         if self.state == self.State.OK:
             self.state = self.State.ERROR
-            self.run_loop.change_interval(seconds=30)
+            self.loop.change_interval(seconds=30)
 
         try:
             await self.show_service_interrupt()

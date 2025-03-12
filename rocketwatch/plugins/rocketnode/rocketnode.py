@@ -4,10 +4,12 @@ import time
 
 import cronitor
 import pymongo
-import schedule
 from multicall import Call
 from pymongo import UpdateOne, UpdateMany
+from discord.ext import commands, tasks
 
+from rocketwatch import RocketWatch
+from time_debug import timerun_async
 from utils import solidity
 from utils.cfg import cfg
 from utils.get_nearest_block import get_block_by_timestamp
@@ -40,12 +42,24 @@ def is_true(_, b):
     return b is True
 
 
-class Task:
-    def __init__(self):
+class RocketNode(commands.Cog):
+    def __init__(self, bot: RocketWatch):
+        self.bot = bot
         self.event_loop = None
         self.db = pymongo.MongoClient(cfg["mongodb_uri"]).rocketwatch
         self.monitor = cronitor.Monitor('rocketnode-task', api_key=cfg["cronitor_secret"])
         self.batch_size = 10_000
+
+    @tasks.loop(seconds=solidity.BEACON_EPOCH_LENGTH)
+    async def loop(self):
+        p_id = time.time()
+        self.monitor.ping(state='run', series=p_id)
+        try:
+            self._run()
+            self.monitor.ping(state='complete', series=p_id)
+        except Exception as err:
+            log.exception(err)
+            self.monitor.ping(state='fail', series=p_id)
 
     @timerun
     def add_untracked_minipools(self):
@@ -467,21 +481,10 @@ class Task:
         return
 
     def ensure_event_loop(self):
-        # the bellow prevents multicall from breaking
+        # the below prevents multicall from breaking
         if not self.event_loop:
             self.event_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.event_loop)
-
-    @timerun
-    def task(self):
-        p_id = time.time()
-        self.monitor.ping(state='run', series=p_id)
-        try:
-            self._run()
-            self.monitor.ping(state='complete', series=p_id)
-        except Exception as err:
-            log.exception(err)
-            self.monitor.ping(state='fail', series=p_id)
 
     @timerun
     def _run(self):
@@ -500,17 +503,5 @@ class Task:
         log.debug("rocketnode task finished")
 
 
-logging.basicConfig(format="%(levelname)5s %(asctime)s [%(name)s] %(filename)s:%(lineno)d|%(funcName)s(): %(message)s")
-log = logging.getLogger("rocketnode")
-log.setLevel(cfg["log_level"])
-logging.getLogger().setLevel("INFO")
-
-t = Task()
-
-schedule.every(6.4).minutes.do(t.task)
-# run once on startup
-t.task()
-
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+async def setup(bot):
+    await bot.add_cog(RocketNode(bot))
