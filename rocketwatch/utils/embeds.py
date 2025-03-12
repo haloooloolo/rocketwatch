@@ -2,14 +2,17 @@ import contextlib
 import datetime
 import logging
 import math
+from typing import Optional
 
 import discord
 import humanize
 import requests
+from Crypto.SelfTest.Hash.test_cSHAKE import custom
 from cachetools.func import ttl_cache
 from discord import Color
 from ens import InvalidName
-from etherscan_labels import Addresses
+from eth_typing import ChecksumAddress
+from etherscan_labels import Addresses as etherscan_addresses
 
 from strings import _
 from utils import solidity
@@ -88,97 +91,134 @@ def get_pdao_delegates() -> dict[str, str]:
         return {}
 
 
-def el_explorer_url(target, name="", prefix="", make_code=False, block="latest"):
-    url = f"https://{cfg['rocketpool.execution_layer.explorer']}/search?q={target}"
-    if w3.isAddress(target):
-        # sanitize address
-        target = w3.toChecksumAddress(target)
+def _get_contract_name(address: str) -> Optional[str]:
+    if not (code := w3.eth.get_code(address)):
+        return None
 
-        # rocketscan url stuff
-        rocketscan_chains = {
-            "mainnet": "https://rocketscan.io",
-            "holesky": "https://holesky.rocketscan.io",
-        }
+    if w3.keccak(text=code.hex()).hex() in cfg["mev.hashes"]:
+        return "MEV Bot Contract"
 
-        if cfg["rocketpool.chain"] in rocketscan_chains:
-            rocketscan_url = rocketscan_chains[cfg["rocketpool.chain"]]
+    name = s_hex(address)
+    contract = w3.eth.contract(address=address, abi=[{
+        "inputs": [],
+        "name": "name",
+        "outputs": [{
+            "internalType": "string",
+            "name": "",
+            "type": "string"
+        }],
+        "stateMutability": "view",
+        "type": "function"
+    }])
 
-            if rp.call("rocketMinipoolManager.getMinipoolExists", target, block=block):
-                url = f"{rocketscan_url}/minipool/{target}"
-            elif rp.call("rocketNodeManager.getNodeExists", target, block=block):
-                if rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block) and prefix != -1:
-                    prefix += ":cup_with_straw:"
-                url = f"{rocketscan_url}/node/{target}"
+    try:
+        fn_name = contract.functions.name().call()
+    except Exception:
+        return name
 
-        n_key = f"addresses.{target}"
-        if not name and (n := _(n_key)) != n_key:
-            name = n
+    # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
+    # '[RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)',
+    # in an attempt to get people to click on it
+    if any(keyword in fn_name.lower() for keyword in [
+        "http", "discord", "airdrop", "telegram", "twitter", "youtube"
+    ]):
+        log.warning(f"Contract {address} has a suspicious name: {fn_name}")
+        return name
 
-        if not name and (member_id := rp.call("rocketDAONodeTrusted.getMemberID", target, block=block)):
-            if prefix != -1:
-                prefix += "🔮"
-            name = member_id
+    return f"{discord.utils.remove_markdown(fn_name, ignore_links=False)}*"
 
-        if not name and (member_id := rp.call("rocketDAOSecurity.getMemberID", target, block=block)):
-            if prefix != -1:
-                prefix += "🔒"
-            name = member_id
+def _get_rp_format(address: str, block) -> Optional[tuple[str, str, str]]:
+    chain: str = cfg["rocketpool.chain"]
+    rocketscan_chains = {
+        "mainnet": "https://rocketscan.io",
+        "holesky": "https://holesky.rocketscan.io",
+    }
+    if not (rocketscan_url := rocketscan_chains.get(chain)):
+        return None
 
-        if not name and (delegate_name := get_pdao_delegates().get(target)):
-            if prefix != -1:
-                prefix += "🏛️"
-            name = delegate_name
+    name = s_hex(address)
 
-        if not name and cfg["rocketpool.chain"] != "mainnet":
-            name = s_hex(target)
+    if rp.call("rocketMinipoolManager.getMinipoolExists", address, block=block):
+        return "📄", name, f"{rocketscan_url}/minipool/{address}"
 
-        if not name:
-            a = Addresses.get(target)
-            # don't apply name if it has  label is one with the id "take-action", as these don't show up on the explorer
-            if (not a.labels or len(a.labels) != 1 or a.labels[0].id != "take-action") and a.name and "alert" not in a.name.lower():
-                name = a.name
-        if not name:
-            # not an odao member, try to get their ens
-            name = ens.get_name(target)
+    if not rp.call("rocketNodeManager.getNodeExists", address, block=block):
+        return None
 
-        if code := w3.eth.get_code(target):
-            if prefix != -1:
-                prefix += "📄"
-            if (
-                    not name
-                    and w3.keccak(text=code.hex()).hex()
-                    in cfg["mev.hashes"]
-            ):
-                name = "MEV Bot Contract"
-            if not name:
-                with contextlib.suppress(Exception):
-                    c = w3.eth.contract(address=target, abi=[{"inputs"         : [],
-                                                              "name"           : "name",
-                                                              "outputs"        : [{"internalType": "string",
-                                                                                   "name"        : "",
-                                                                                   "type"        : "string"}],
-                                                              "stateMutability": "view",
-                                                              "type"           : "function"}])
-                    n = c.functions.name().call()
-                    # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
-                    # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
-                    # in an attempt to get people to click on his contract
+    prefix = ""
+    if rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", address, block=block):
+        prefix += ":cup_with_straw:"
+    if member_id := rp.call("rocketDAONodeTrusted.getMemberID", address, block=block):
+        name = member_id
+    if member_id := rp.call("rocketDAOSecurity.getMemberID", address, block=block):
+        prefix += "🔒"
+        name = member_id
+    if delegate_name := get_pdao_delegates().get(address):
+        prefix += "🏛️"
+        name = delegate_name
 
-                    # first, if the name has a link in it, we ignore it
-                    if any(keyword in n.lower() for keyword in
-                           ["http", "discord", "airdrop", "telegram", "twitter", "youtube"]):
-                        log.warning(f"Contract {target} has a suspicious name: {n}")
-                    else:
-                        name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
+    return prefix, name, f"{rocketscan_url}/node/{address}"
 
-    if not name:
-        # fall back to shortened address
-        name = s_hex(target)
+
+def _get_address_name(address: ChecksumAddress) -> Optional[str]:
+    if ens_name := ens.get_name(address):
+        return ens_name
+
+    es_entry = etherscan_addresses.get(address)
+    # don't apply name if id is "take-action" as these don't show up on the explorer
+    if (
+            (not es_entry.labels) or (len(es_entry.labels) != 1) or (es_entry.labels[0].id != "take-action")
+    ) and (
+            es_entry.name and ("alert" not in es_entry.name.lower())
+    ):
+        return es_entry.name
+
+    return s_hex(address)
+
+
+def _get_address_format(address: str, block) -> tuple[str, str, str]:
+    if not w3.isAddress(address):
+        return "", s_hex(address), ""
+
+    address = w3.toChecksumAddress(address)
+    name = ""
+
+    # manual name override
+    n_key = f"addresses.{address}"
+    if (custom_name := _(n_key)) != n_key:
+        name = custom_name
+
+    if rp_format := _get_rp_format(address, block):
+        prefix, _name, url = rp_format
+        return prefix, name or _name, url
+
+    url = f"https://{cfg['rocketpool.execution_layer.explorer']}/address/{address}"
+
+    if _name := _get_contract_name(address):
+        return "📄", name or _name, url
+
+    return "", _get_address_name(address), url
+
+
+def el_explorer_url(
+        address: str,
+        name: Optional[str] = None,
+        *,
+        prefix: Optional[str] = None,
+        make_code: bool = False,
+        block="latest"
+) -> str:
+    _prefix, _name, url = _get_address_format(address, block)
+
+    if prefix is None:
+        prefix = _prefix
+
+    if name is None:
+        name = _name
+
     if make_code:
         name = f"`{name}`"
-    if prefix == -1:
-        prefix = ""
-    return f"{prefix}[{name}]({url})"
+
+    return f"{prefix}[{name}]({url})" if url else name
 
 
 def prepare_args(args):
