@@ -195,18 +195,27 @@ class Wall(commands.Cog):
                 return prefix + f"{base_value:{base_fmt}}".rstrip(".") + modifier + suffix
             return ticker.FuncFormatter(formatter)
 
-        range_size = x[-1] - x[0]
+        range_size = np.log10(x[-1] / x[0])
+        loc_base = np.power(10, range_size / 25)
+        minor_subs = (0.2, 0.4, 0.6, 0.8)
 
+        ax.set_xscale("log", base=10)
+        ax.xaxis.set_major_locator(ticker.LogLocator(base=loc_base))
         x_ticks = ax.get_xticks()
-        ax.set_xticks([t for t in x_ticks if abs(t - rpl_usd) >= range_size / 20] + [rpl_usd])
+        ax.set_xticks([t for t in x_ticks if abs(math.log10(t / rpl_usd)) >= range_size / 20] + [rpl_usd])
+        ax.xaxis.set_minor_locator(ticker.LogLocator(base=loc_base, subs=minor_subs))
         ax.set_xlim((x[0], x[-1]))
-        ax.xaxis.set_major_formatter(get_formatter(".2f" if (range_size >= 0.1) else ".3f", prefix="$"))
+        ax.xaxis.set_minor_formatter(ticker.NullFormatter())
+        ax.xaxis.set_major_formatter(get_formatter(".2f" if (x[-1] - x[0] >= 0.25) else ".3f", prefix="$"))
         ax.yaxis.set_major_formatter(get_formatter("#.3g", prefix="$"))
 
         ax_top = ax.twiny()
+        ax_top.set_xscale("log", base=10)
         ax_top.minorticks_on()
-        ax_top.set_xticks([t for t in x_ticks if abs(t - rpl_usd) >= range_size / 10] + [rpl_usd])
+        ax_top.set_xticks([t for t in x_ticks if abs(np.log10(t / rpl_usd)) >= range_size / 10] + [rpl_usd])
+        ax_top.xaxis.set_minor_locator(ticker.LogLocator(base=loc_base, subs=minor_subs))
         ax_top.set_xlim(ax.get_xlim())
+        ax_top.xaxis.set_minor_formatter(ticker.NullFormatter())
         ax_top.xaxis.set_major_formatter(get_formatter(".5f", prefix="Ξ ", scale=(rpl_eth / rpl_usd)))
 
         ax_right = ax.twinx()
@@ -224,7 +233,7 @@ class Wall(commands.Cog):
     async def wall(
             self,
             ctx: Context,
-            min_price: float = 0.0,
+            min_price: float = None,
             max_price: float = None,
             sources: Literal["All", "CEX", "DEX"] = "All"
     ) -> None:
@@ -247,17 +256,19 @@ class Wall(commands.Cog):
             await self.bot.report_error(e, ctx)
             return await on_fail()
 
-        if min_price < 0:
+        if min_price is None:
+            min_price = rpl_usd / 4
+        elif min_price < 0:
             min_price = rpl_usd + min_price
 
         if max_price is None:
-            max_price = 5 * rpl_usd
+            max_price = rpl_usd * 4
         elif max_price < 0:
             max_price = rpl_usd - max_price
 
         step_size = 0.001
-        min_price = max(0.0, min(min_price, rpl_usd - 5 * step_size))
-        max_price = min(100 * rpl_usd, max(max_price, rpl_usd + 5 * step_size))
+        min_price = max(rpl_usd / 100, min(min_price, rpl_usd / 1.01))
+        max_price = min(rpl_usd * 100, max(max_price, rpl_usd * 1.01))
         x = np.arange(min_price, max_price + step_size, step_size)
 
         source_desc = []
