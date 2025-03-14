@@ -46,6 +46,7 @@ class Wall(commands.Cog):
             BitMart("RPL", ["USDT"]),
             Bitrue("RPL", ["USDT"]),
             CoinTR("RPL", ["USDT"]),
+            TokenizeXchange("RPL", ["USD", "SGD"]),
         }
         self.dex: set[DEX] = {
             BalancerV2([

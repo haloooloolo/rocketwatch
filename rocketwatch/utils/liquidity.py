@@ -582,6 +582,33 @@ class DigiFinex(CEX):
         return {price: size for price, size in api_response["bids"]}
 
 
+class TokenizeXchange(CEX):
+    def __str__(self) -> str:
+        return "Tokenize"
+
+    @property
+    def color(self) -> str:
+        return "#D67E34"
+
+    @property
+    def _api_base_url(self) -> str:
+        return "https://api2.tokenize.exchange/public/v1"
+
+    @staticmethod
+    def _get_request_path(market: Market) -> str:
+        return "/market/orderbook"
+
+    @staticmethod
+    def _get_request_params(market: Market) -> dict[str, str | int]:
+        return {"market": f"{market.minor}-{market.major}"}
+
+    def _get_bids(self, api_response: dict) -> dict[float, float]:
+        return {float(entry["rate"]): float(entry["quantity"]) for entry in api_response["data"]["buy"]}
+
+    def _get_asks(self, api_response: dict) -> dict[float, float]:
+        return {float(entry["rate"]): float(entry["quantity"]) for entry in api_response["data"]["sell"]}
+
+
 class ERC20Token:
     def __init__(self, address: ChecksumAddress):
         self.address = address
