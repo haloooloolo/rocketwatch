@@ -279,7 +279,7 @@ def assemble(args) -> Embed:
 
     match args.event_name:
         case "pdao_set_delegate":
-            use_large = (args.votingPower >= 250)
+            use_large = (args.votingPower >= 200)
         case "eth_deposit_event":
             use_large = (amount >= 32)
         case "rpl_stake_event":

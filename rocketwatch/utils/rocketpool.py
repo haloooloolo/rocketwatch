@@ -1,7 +1,6 @@
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from bidict import bidict
 from cachetools import cached, FIFOCache
@@ -222,7 +221,7 @@ class RocketPool:
         return 1 / UniswapV3.Pool(pool_address).get_normalized_price()
 
     @ttl_cache(ttl=60)
-    def get_reth_eth_price(self) -> Optional[float]:
+    def get_reth_eth_price(self) -> float:
         from utils.liquidity import UniswapV3
         pool_address = self.get_address_by_name("UniV3_rETH_ETH")
         return UniswapV3.Pool(pool_address).get_normalized_price()
