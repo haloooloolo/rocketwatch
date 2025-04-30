@@ -17,8 +17,7 @@ log.setLevel(cfg["log_level"])
 
 
 async def generate_template_embed(db, template_name: str):
-    # get the boiler message from the database
-    template = await db.support_bot.find_one({'_id': template_name})
+    template = await db.support_bot.find_one({"_id": template_name})
     if not template: 
         return None
     # get the last log entry from the db
@@ -27,8 +26,7 @@ async def generate_template_embed(db, template_name: str):
         {"template": template_name},
         sort=[("ts", -1)]
     )
-
-    e = Embed(title=template['title'], description=template['description'])
+    e = Embed(title=template["title"], description=template["description"])
     if last_edit and template_name != "announcement":
         e.description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
     return e
@@ -57,7 +55,7 @@ class DeletableView(ui.View):
     async def delete(self, interaction: Interaction, button: ui.Button):
         if (interaction.user == self.user) or has_perms(interaction):        
             await interaction.message.delete()
-            log.warning(f"Support template deleted by {interaction.user} in {interaction.channel}")
+            log.warning(f"Support template message deleted by {interaction.user} in {interaction.channel}")
 
 
 class AdminModal(ui.Modal, title="Change Template Message"):
@@ -125,8 +123,8 @@ class AdminModal(ui.Modal, title="Change Template Message"):
             {"$set": {"title": self.title_field.value, "description": self.description_field.value}}
         )
         content = (
-            f"This is a preview of the '{self.template_name}' template.\n"
-            f"You can change it using the 'Edit' button."
+            f"This is a preview of the `{self.template_name}` template.\n"
+            f"You can change it using the `Edit` button."
         )
         embed = await generate_template_embed(self.db, self.template_name)
         await interaction.response.edit_message(content=content, embed=embed, view=AdminView(self.db, self.template_name))
@@ -152,15 +150,7 @@ async def _use(db, interaction: Interaction, name: str, mention: User | None):
             ephemeral=True
         )
         return
-    if name == "boiler":
-        await interaction.response.send_message(
-            embed=Embed(
-                title="Error",
-                description=f"The template '{name}' cannot be used."
-            ),
-            ephemeral=True
-        )
-        return
+    
     # respond with the template embed
     if e := (await generate_template_embed(db, name)):
         await interaction.response.send_message(
@@ -184,28 +174,16 @@ class SupportGlobal(Cog):
         self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
 
     @app_commands.command(name="use")
-    async def _use_1(self, interaction: Interaction, name: str, mention: User | None):
+    async def _use(self, interaction: Interaction, name: str, mention: User | None):
         await _use(self.db, interaction, name, mention)
 
-    @app_commands.command(name="template")
-    async def _use_2(self, interaction: Interaction, name: str, mention: User | None):
-        await _use(self.db, interaction, name, mention)
-
-    @_use_1.autocomplete("name")
-    @_use_2.autocomplete("name")
+    @_use.autocomplete("name")
     async def match_template(self, interaction: Interaction, current: str):
         return [
             Choice(
-                name=c["_id"],
-                value=c["_id"]
+                name=c["_id"], value=c["_id"]
             ) for c in await self.db.support_bot.find(
-                {
-                    "_id": {
-                        "$regex": current,
-                        "$options": "i",
-                        "$ne"   : "boiler" if interaction.command.name != "edit" else None
-                    }
-                }
+                {"_id": {"$regex": current, "$options": "i"}}
             ).to_list(25)
         ]
 
@@ -220,18 +198,6 @@ class SupportUtils(GroupCog, name="support"):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
-
-    @Cog.listener()
-    async def on_ready(self):
-        # insert the boiler message into the database, if it doesn't already exist
-        await self.db.support_bot.update_one(
-            {'_id': 'boiler'},
-            {'$setOnInsert': {
-                'title'      : 'Support Message',
-                'description': 'This is a support message.'
-            }},
-            upsert=True
-        )
 
     @subgroup.command()
     async def add(self, interaction: Interaction, name: str):
@@ -254,8 +220,8 @@ class SupportUtils(GroupCog, name="support"):
             {"_id": name, "title": "Insert Title here", "description": "Insert Description here"}
         )
         content = (
-            f"This is a preview of the '{name}' template.\n"
-            f"You can change it using the 'Edit' button."
+            f"This is a preview of the `{name}` template.\n"
+            f"You can change it using the `Edit` button."
         )
         embed = await generate_template_embed(self.db, name)
         await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.db, name))
@@ -280,8 +246,8 @@ class SupportUtils(GroupCog, name="support"):
             return
         
         content = (
-            f"This is a preview of the '{name}' template.\n"
-            f"You can change it using the 'Edit' button."
+            f"This is a preview of the `{name}` template.\n"
+            f"You can change it using the `Edit` button."
         )
         embed = await generate_template_embed(self.db, name)
         await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.db, name))
@@ -291,14 +257,6 @@ class SupportUtils(GroupCog, name="support"):
         if not has_perms(interaction):
             await interaction.response.send_message(
                 embed=Embed(title="Error", description="You do not have permission to use this command."), ephemeral=True)
-            return
-        if name == "boiler":
-            await interaction.edit_original_response(
-                embed=Embed(
-                    title="Error",
-                    description=f"The template '{name}' cannot be removed."
-                ),
-            )
             return
         await interaction.response.defer(ephemeral=True)
         # check if the template exists in the db
@@ -379,8 +337,7 @@ class SupportUtils(GroupCog, name="support"):
                 {
                     "_id": {
                         "$regex": current,
-                        "$options": "i",
-                        "$ne"   : "boiler" if interaction.command.name != "edit" else None
+                        "$options": "i"
                     }
                 }
             ).to_list(25)
