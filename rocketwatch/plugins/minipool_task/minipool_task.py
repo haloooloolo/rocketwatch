@@ -57,12 +57,11 @@ class MinipoolTask(commands.Cog):
     def get_untracked_minipools(self) -> set[ChecksumAddress]:
         minipool_count = rp.call("rocketMinipoolManager.getMinipoolCount")
         minipool_addresses = []
-        for i in range(0, minipool_count, self.batch_size):
-            log.debug(f"getting minipool addresses for {i}/{minipool_count}")
-            i_end = min(i + self.batch_size, minipool_count)
+        for index_batch in as_chunks(range(minipool_count), self.batch_size):
             minipool_addresses += [
                 w3.toChecksumAddress(r.results[0]) for r in rp.multicall.aggregate(
-                    self.minipool_manager.functions.getMinipoolAt(i) for i in range(i, i_end)).results]
+                    self.minipool_manager.functions.getMinipoolAt(i) for i in index_batch).results
+            ]
         # remove address that are already in the minipool collection
         tracked_addresses = self.db.minipools.distinct("address")
         return set(minipool_addresses) - set(tracked_addresses)
@@ -72,12 +71,10 @@ class MinipoolTask(commands.Cog):
         # optimizing this doesn't seem to help much, so keep it simple for readability
         # batch the same way as get_untracked_minipools
         minipool_pubkeys = []
-        for i in range(0, len(addresses), self.batch_size):
-            log.debug(f"getting minipool pubkeys for {i}/{len(addresses)}")
-            i_end = min(i + self.batch_size, len(addresses))
+        for address_batch in as_chunks(addresses, self.batch_size):
             minipool_pubkeys += [
                 f"0x{r.results[0].hex()}" for r in rp.multicall.aggregate(
-                    self.minipool_manager.functions.getMinipoolPubkey(a) for a in addresses[i:i_end]).results]
+                    self.minipool_manager.functions.getMinipoolPubkey(a) for a in address_batch).results]
         return minipool_pubkeys
 
     @timerun

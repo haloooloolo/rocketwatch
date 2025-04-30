@@ -7,6 +7,7 @@ from cronitor import Monitor
 from pymongo import UpdateOne, UpdateMany
 
 from discord.ext import tasks, commands
+from discord.utils import as_chunks
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -100,12 +101,10 @@ class NodeTask(commands.Cog):
             return
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
         # batch into self.batch_size minipools at a time, between latest_id and minipool_count
-        for i in range(latest_db + 1, latest_rp + 1, self.batch_size):
-            i_end = min(i + self.batch_size, latest_rp + 1)
-            log.debug(f"Getting untracked minipools ({i} to {i_end})")
+        for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             data |= await rp.multicall2([
                 Call(mm.address, [rp.seth_sig(mm.abi, "getMinipoolAt"), i], [(i, None)])
-                for i in range(i, i_end)
+                for i in index_batch
             ])
         log.debug(f"Inserting {len(data)} new minipools into db")
         self.db.minipools_new.insert_many([
@@ -130,15 +129,11 @@ class NodeTask(commands.Cog):
             log.debug("No minipools need to be updated with static data")
             return
         data = {}
-        batch_size = self.batch_size // len(lambs)
-        for i in range(0, len(minipool_addresses), batch_size):
-            i_end = min(i + batch_size, len(minipool_addresses))
-            log.debug(f"Getting minipool static data ({i} to {i_end})")
-            res = await rp.multicall2([
-                Call(*lamb(a))
-                for a in minipool_addresses[i:i_end]
-                for lamb in lambs
-            ], require_success=False)
+        for minipool_batch in as_chunks(minipool_addresses),self.batch_size // len(lambs):
+            res = await rp.multicall2(
+                [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
+                require_success=False
+            )
             # update data dict with results
             for (address, variable_name), value in res.items():
                 if address not in data:
@@ -175,15 +170,11 @@ class NodeTask(commands.Cog):
         minipool_addresses = self.db.minipools_new.distinct("address")
         data = {}
         att_count = 0
-        batch_size = self.batch_size // len(lambs)
-        for i in range(0, len(minipool_addresses), batch_size):
-            i_end = min(i + batch_size, len(minipool_addresses))
-            log.debug(f"Getting minipool metadata ({i} to {i_end})")
-            res = await rp.multicall2([
-                Call(*lamb(a))
-                for a in minipool_addresses[i:i_end]
-                for lamb in lambs
-            ], require_success=False)
+        for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
+            res = await rp.multicall2(
+                [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
+                require_success=False
+            )
             # update data dict with results
             for (address, variable_name), value in res.items():
                 if address not in data:
@@ -219,13 +210,12 @@ class NodeTask(commands.Cog):
         nd = rp.get_contract_by_name("rocketNodeDeposit")
         mm = rp.get_contract_by_name("rocketMinipoolManager")
         data = {}
-        for i in range(0, len(minipools), self.batch_size):
-            i_end = min(i + self.batch_size, len(minipools))
+        
+        for minipool_batch in as_chunks(minipools, self.batch_size):
             # turn status time of first and last minipool into blocks
-            block_start = ts_to_block(minipools[i]["status_time"]) - 1
-            block_end = ts_to_block(minipools[i_end - 1]["status_time"]) + 1
-            a = [m["address"] for m in minipools[i:i_end]]
-            log.debug(f"Getting minipool deposit data ({i} to {i_end})")
+            block_start = ts_to_block(minipool_batch[0]["status_time"]) - 1
+            block_end = ts_to_block(minipool_batch[-1]["status_time"]) + 1
+            a = [m["address"] for m in minipool_batch]
             
             f_deposits = get_logs(nd.events.DepositReceived, block_start, block_end)
             f_creations = get_logs(mm.events.MinipoolCreated, block_start, block_end)
@@ -283,11 +273,9 @@ class NodeTask(commands.Cog):
         # we need to do smaller bulks as the pubkey is qutie long and we dont want to make the query url too long
         data = {}
         # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
-        for i in range(0, len(public_keys), self.batch_size):
-            i_end = min(i + self.batch_size, len(public_keys))
-            log.debug(f"Getting beacon data for minipools ({i} to {i_end})")
+        for pubkey_batch in as_chunks(public_keys, self.batch_size):
             # get beacon data for public keys
-            beacon_data = bacon.get_validators("head", ids=public_keys[i:i_end])["data"]
+            beacon_data = bacon.get_validators("head", ids=pubkey_batch)["data"]
             # update data dict with results
             for d in beacon_data:
                 data[d["validator"]["pubkey"]] = int(d["index"])
@@ -314,11 +302,9 @@ class NodeTask(commands.Cog):
         validator_indexes = [i for i in validator_indexes if i is not None]
         data = {}
         # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
-        for i in range(0, len(validator_indexes), self.batch_size):
-            i_end = min(i + self.batch_size, len(validator_indexes))
-            log.debug(f"Getting beacon data for minipools ({i} to {i_end})")
+        for index_batch in as_chunks(validator_indexes, self.batch_size):
             # get beacon data for public keys
-            beacon_data = bacon.get_validators("head", ids=validator_indexes[i:i_end])["data"]
+            beacon_data = bacon.get_validators("head", ids=index_batch)["data"]
             # update data dict with results
             for d in beacon_data:
                 data[int(d["index"])] = {
@@ -373,13 +359,11 @@ class NodeTask(commands.Cog):
         if latest_db == latest_rp:
             log.debug("No new nodes")
             return
-        # batch into 10k nodes at a time, between latest_id and latest_rp
-        for i in range(latest_db + 1, latest_rp + 1, self.batch_size):
-            i_end = min(i + self.batch_size, latest_rp + 1)
-            log.debug(f"Getting untracked node ({i} to {i_end})")
+        # batch into self.batch_size nodes at a time, between latest_id and latest_rp
+        for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             data |= await rp.multicall2([
                 Call(nm.address, [rp.seth_sig(nm.abi, "getNodeAt"), i], [(i, None)])
-                for i in range(i, i_end)
+                for i in index_batch
             ])
         log.debug(f"Inserting {len(data)} new nodes into db")
         self.db.node_operators_new.insert_many([
@@ -402,15 +386,11 @@ class NodeTask(commands.Cog):
             log.debug("No node operators need to be updated with static data")
             return
         data = {}
-        batch_size = self.batch_size // len(lambs)
-        for i in range(0, len(node_addresses), batch_size):
-            i_end = min(i + batch_size, len(node_addresses))
-            log.debug(f"Getting node operators static data ({i} to {i_end})")
-            res = await rp.multicall2([
-                Call(*lamb(a))
-                for a in node_addresses[i:i_end]
-                for lamb in lambs
-            ], require_success=False)
+        for node_batch in as_chunks(node_addresses, self.batch_size // len(lambs)):
+            res = await rp.multicall2(
+                [Call(*lamb(a)) for a in node_batch for lamb in lambs], 
+                require_success=False
+            )
             # update data dict with results
             for (address, variable_name), value in res.items():
                 if address not in data:
@@ -468,15 +448,11 @@ class NodeTask(commands.Cog):
         nodes = list(self.db.node_operators_new.find({}, {"address": 1, "fee_distributor_address": 1}))
         data = {}
         att_count = 0
-        batch_size = self.batch_size // len(lambs)
-        for i in range(0, len(nodes), batch_size):
-            i_end = min(i + batch_size, len(nodes))
-            log.debug(f"Getting node operator metadata ({i} to {i_end})")
-            res = await rp.multicall2([
-                Call(*lamb(n))
-                for n in nodes[i:i_end]
-                for lamb in lambs
-            ], require_success=False)
+        for node_batch in as_chunks(nodes, self.batch_size // len(lambs)):
+            res = await rp.multicall2(
+                [Call(*lamb(n)) for n in node_batch for lamb in lambs], 
+                require_success=False
+            )
             # update data dict with results
             for (address, variable_name), value in res.items():
                 if address not in data:
