@@ -4,9 +4,10 @@ from datetime import datetime, timedelta
 import pymongo
 import requests
 from datetime import timezone
-
-from discord.ext.commands import Context, hybrid_command
 from web3.datastructures import MutableAttributeDict as aDict
+
+from discord import Interaction
+from discord.app_commands import command
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -23,7 +24,7 @@ log.setLevel(cfg["log_level"])
 
 class CowOrders(EventPlugin):
     def __init__(self, bot: RocketWatch):
-        super().__init__(bot, timedelta(seconds=60))
+        super().__init__(bot, timedelta(minutes=5))
         self.state = "OK"
         self.db = pymongo.MongoClient(cfg["mongodb.uri"]).rocketwatch
         # create the cow_orders collection if it doesn't exist
@@ -39,16 +40,17 @@ class CowOrders(EventPlugin):
             str(rp.get_address_by_name("rocketTokenRETH")).lower()
         ]
 
-    @hybrid_command()
-    async def cow(self, ctx: Context, tnx: str):
+    @command()
+    async def cow(self, interaction: Interaction, tnx: str):
         # https://etherscan.io/tx/0x47d96c6310f08b473f2c9948d6fbeef1084f0b393c2263d2fc8d5dc624f97fe3
         if "etherscan.io/tx/" not in tnx:
-            await ctx.send("nop", ephemeral=True)
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
-        e = Embed()
+            await interaction.response.send_message("nop", ephemeral=True)
+            return
+            
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         url = tnx.replace("etherscan.io", "explorer.cow.fi")
-        e.description = f"[cow explorer]({url})"
-        await ctx.send(embed=e)
+        embed = Embed(description = f"[cow explorer]({url})")
+        await interaction.followup.send(embed=embed)
 
     def _get_new_events(self) -> list[Event]:
         if self.state == "RUNNING":
@@ -71,7 +73,7 @@ class CowOrders(EventPlugin):
 
         # get all pending orders from the cow api (https://api.cow.fi/mainnet/api/v1/auction)
 
-        response = requests.get("https://cow-proxy.invis.workers.dev/mainnet/api/v1/auction")
+        response = requests.get("https://api.cow.fi/mainnet/api/v1/auction")
         if response.status_code != 200:
             log.error("Cow API returned non-200 status code: %s", response.text)
             raise Exception("Cow API returned non-200 status code")

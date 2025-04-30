@@ -3,11 +3,11 @@ import requests
 from typing import Optional, Any
 
 from bs4 import BeautifulSoup
-from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
-from discord.app_commands import Choice, describe
 from cachetools.func import ttl_cache
+
+from discord import Interaction
+from discord.ext.commands import Cog
+from discord.app_commands import Choice, command, describe
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -18,15 +18,15 @@ log = logging.getLogger("rpips")
 log.setLevel(cfg["log_level"])
 
 
-class RPIPs(commands.Cog):
+class RPIPs(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    @hybrid_command()
+    @command()
     @describe(name="RPIP name")
-    async def rpip(self, ctx: Context, name: str):
+    async def rpip(self, interaction: Interaction, name: str):
         """Show information about a specific RPIP."""
-        await ctx.defer()
+        await interaction.response.defer()
         embed = Embed()
         embed.set_author(name="🔗 Data from rpips.rocketpool.net", url="https://rpips.rocketpool.net")
 
@@ -47,7 +47,7 @@ class RPIPs(commands.Cog):
         else:
             embed.description = "No matching RPIPs."
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     class RPIP:
         __slots__ = (
@@ -107,7 +107,7 @@ class RPIPs(commands.Cog):
                 raise AttributeError(f"RPIP has no attribute '{key}'")
 
     @rpip.autocomplete("name")
-    async def _get_rpip_names(self, ctx: Context, current: str) -> list[Choice[str]]:
+    async def _get_rpip_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
         choices = []
         for rpip in self.get_all_rpips():
             if current.lower() in (name := rpip.full_title).lower():

@@ -58,7 +58,8 @@ class Governance(StatusPlugin):
 
     async def _get_draft_rpips(self) -> list[RPIPs.RPIP]:
         try:
-            return [rpip for rpip in RPIPs.get_all_rpips() if (rpip.status == "Draft")][::-1]
+            statuses = {"Draft", "Review"}
+            return [rpip for rpip in RPIPs.get_all_rpips() if (rpip.status in statuses)][::-1]
         except Exception as e:
             await self.bot.report_error(e)
             return []
@@ -100,7 +101,7 @@ class Governance(StatusPlugin):
         dao = SecurityCouncil()
         if proposals := self._get_active_dao_proposals(dao):
             embed.description += "### Security Council\n"
-            embed.description += "- **Active proposals**\n"
+            embed.description += "- **Active on-chain proposals**\n"
             embed.description += print_proposals(dao, proposals)
             
         # --------- ORACLE DAO --------- #
@@ -108,7 +109,7 @@ class Governance(StatusPlugin):
         dao = OracleDAO()
         if proposals := self._get_active_dao_proposals(dao):
             embed.description += "### Oracle DAO\n"
-            embed.description += "- **Active proposals**\n"
+            embed.description += "- **Active on-chain proposals**\n"
             embed.description += print_proposals(dao, proposals)
 
         # --------- PROTOCOL DAO --------- #
@@ -127,7 +128,7 @@ class Governance(StatusPlugin):
                 section_content += f"  {i}. [{title}]({proposal.url})\n"
 
         if draft_rpips := await self._get_draft_rpips():
-            section_content += "- **RPIPs in draft status**\n"
+            section_content += "- **RPIPs in review or draft status**\n"
             for i, rpip in enumerate(draft_rpips, start=1):
                 title = sanitize(rpip.title, 40)
                 section_content += f"  {i}. [{title}]({rpip.url}) (RPIP-{rpip.number})\n"

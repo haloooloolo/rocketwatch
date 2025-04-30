@@ -7,7 +7,7 @@ import time
 import humanize
 import requests
 from colorama import Fore, Style
-from discord import File, Object, Interaction
+from discord import File, Interaction
 from discord.app_commands import Choice, command, guilds, describe
 from discord.ext.commands import Cog, is_owner
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -51,7 +51,7 @@ class Debug(Cog):
     # --------- PRIVATE OWNER COMMANDS --------- #
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def raise_exception(self, interaction: Interaction):
         """
@@ -61,7 +61,7 @@ class Debug(Cog):
             raise Exception("this should never happen wtf is your filesystem")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def get_members_of_role(self, interaction: Interaction, guild_id: str, role_id: str):
         """Get members of a role"""
@@ -82,7 +82,7 @@ class Debug(Cog):
 
     # list all roles of a guild with name and id
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def get_roles(self, interaction: Interaction, guild_id: str):
         """Get roles of a guild"""
@@ -100,7 +100,7 @@ class Debug(Cog):
             await interaction.followup.send(content=f"```{repr(err)}```")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def delete_msg(self, interaction: Interaction, message_url: str):
         """
@@ -114,7 +114,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str = None):
         """
@@ -130,7 +130,7 @@ class Debug(Cog):
         await interaction.followup.send(content=f"```Input:\n{data}```")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def debug_transaction(self, interaction: Interaction, tnx_hash: str):
         """
@@ -144,7 +144,7 @@ class Debug(Cog):
             await interaction.followup.send(content="```No revert reason Available```")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def purge_minipools(self, interaction: Interaction, confirm: bool = False):
         """
@@ -158,7 +158,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def purge_minipools_new(self, interaction: Interaction, confirm: bool = False):
         """
@@ -172,7 +172,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def sync_commands(self, interaction: Interaction):
         """
@@ -183,7 +183,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def talk(self, interaction: Interaction, channel: str, message: str):
         """
@@ -195,7 +195,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def announce(self, interaction: Interaction, channel: str, message: str):
         """
@@ -209,7 +209,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def restore_support_template(self, interaction: Interaction, template_name: str, message_url: str):
         await interaction.response.defer(ephemeral=True)
@@ -253,7 +253,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def restore_missed_events(self, interaction: Interaction, tx_hash: str):
         import pickle

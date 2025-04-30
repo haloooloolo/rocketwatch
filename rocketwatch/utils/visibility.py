@@ -14,4 +14,4 @@ def is_hidden_weak(interaction: Context | Interaction):
 
 def is_hidden_role_controlled(interaction: Interaction):
     # reuses the has_perms function from support_utils, but overrides it when is_hidden would return false
-    return not has_perms(interaction, "") if is_hidden(interaction) else False
+    return not has_perms(interaction) if is_hidden(interaction) else False

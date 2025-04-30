@@ -2,10 +2,11 @@ import logging
 
 import humanize
 from colorama import Style
-from discord.app_commands import describe
-from discord.ext import commands
-from discord.ext.commands import Context, hybrid_command
 from motor.motor_asyncio import AsyncIOMotorClient
+
+from discord import Interaction
+from discord.ext.commands import Cog
+from discord.app_commands import command, describe
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -48,20 +49,18 @@ def split_rewards_logic(balance, node_share, commission, force_base=False):
     return d
 
 
-class TVL(commands.Cog):
+class TVL(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
-    @hybrid_command()
+    @command()
     @describe(show_all="Also show entries with 0 value")
-    async def tvl(self,
-                  ctx: Context,
-                  show_all: bool = False):
+    async def tvl(self, interaction: Interaction, show_all: bool = False):
         """
         Show the total value locked in the Protocol.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         data = {
             "Total RPL Locked": {
                 "Staked RPL"       : {
@@ -241,7 +240,6 @@ class TVL(commands.Cog):
                             data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"][
                                 "_val"] += beacon_balance
                             beacon_balance = 0
-            beacon_rewards = max(0, beacon_balance - 32)
             if beacon_balance > 0:
                 d = split_rewards_logic(beacon_balance, node_share, commission, force_base=True)
                 data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"]["_val"] += d["base"]["node"]
@@ -454,7 +452,7 @@ class TVL(commands.Cog):
         closer = f"or about {Style.BRIGHT}{humanize.intword(usdc_total_tvl, format='%.3f')} USDC{Style.RESET_ALL}".rjust(max([len(line) for line in test.split("\n")])-1)
         e.description = f"```ansi\n{test}\n{closer}```"
         e.set_footer(text="\"that looks good to me\" - invis 2023")
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 async def setup(bot):

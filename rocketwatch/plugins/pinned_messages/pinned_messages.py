@@ -2,7 +2,6 @@ import logging
 from datetime import datetime, timedelta
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from discord import Object
 from discord.app_commands import guilds
 from discord.ext import commands, tasks
 from discord.ext.commands import hybrid_command, is_owner
@@ -70,7 +69,7 @@ class PinnedMessages(commands.Cog):
                 await self.bot.report_error(err)
 
     @hybrid_command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def pin(self, ctx, channel_id, title, description):
         await ctx.defer()
@@ -97,7 +96,7 @@ class PinnedMessages(commands.Cog):
         await ctx.send("Created pinned message")
 
     @hybrid_command()
-    @guilds(Object(id=cfg["discord.owner.server_id"]))
+    @guilds(cfg["discord.owner.server_id"])
     @is_owner()
     async def unpin(self, ctx, channel_id):
         await ctx.defer()
