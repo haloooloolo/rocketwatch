@@ -1,12 +1,14 @@
-import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 
 import pymongo
-from discord.ext import commands, tasks
-from discord.ext.commands import hybrid_command
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from multicall import Call
+
+from discord import Interaction
+from discord.ext import commands, tasks
+from discord.app_commands import command
+from discord.utils import as_chunks
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,6 +31,7 @@ class MinipoolsUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.batch_size = 1000
         self.loop.start()
         
     def cog_unload(self):
@@ -61,16 +64,8 @@ class MinipoolsUpkeepTask(commands.Cog):
             lambda x: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), x], [((x, "EthBalance"), solidity.to_float)])
         ]
         minipool_stats = {}
-        batch_size = 10_000 // len(lambs)
-        for i in range(0, len(minipools), batch_size):
-            i_end = min(i + batch_size, len(minipools))
-            log.debug(f"getting minipool stats for {i}-{i_end}")
-            addresses = minipools[i:i_end]
-            calls = [
-                Call(*lamb(a))
-                for a in addresses
-                for lamb in lambs
-            ]
+        for minipool_batch in as_chunks(minipools, self.batch_size // len(lambs)):
+            calls = [Call(*lamb(a)) for a in minipool_batch for lamb in lambs]
             res = await rp.multicall2(calls)
             # add data to mini pool stats dict (address => {func_name: value})
             # strip get from function name
@@ -97,9 +92,9 @@ class MinipoolsUpkeepTask(commands.Cog):
         await self.db.minipools.bulk_write(bulk, ordered=False)
         logging.info("Updated minipool states")
 
-    @hybrid_command()
-    async def delegate_stats(self, ctx):
-        await ctx.defer(ephemeral=is_hidden(ctx))
+    @command()
+    async def delegate_stats(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         # get stats about delegates
         # we want to show the distribution of minipools that are using each delegate
         distribution_stats = await self.db.minipools_new.aggregate([
@@ -135,7 +130,7 @@ class MinipoolsUpkeepTask(commands.Cog):
             d['_id'] = "Yes" if d['_id'] else "No"
             desc += f"{s}**{d['_id']}**: {d['count']} ({d['count'] / c_sum * 100:.2f}%)\n"
         e.description = desc
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 async def setup(self):
