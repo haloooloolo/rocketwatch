@@ -129,7 +129,7 @@ class NodeTask(commands.Cog):
             log.debug("No minipools need to be updated with static data")
             return
         data = {}
-        for minipool_batch in as_chunks(minipool_addresses),self.batch_size // len(lambs):
+        for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
             res = await rp.multicall2(
                 [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
                 require_success=False
