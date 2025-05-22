@@ -120,8 +120,8 @@ class DetectScam(Cog):
         
         self._message_react_cache = TTLCache(maxsize=1000, ttl=300)
         self.markdown_link_pattern = re.compile(r"(?<=\[)([^/\] ]*).+?(?<=\(https?:\/\/)([^/\)]*)")
-        self.basic_url_pattern = re.compile(r"https?:\/\/([/\\@\-_0-9a-zA-Z]+\.)+[\\@\-_0-9a-zA-Z]+")
-        self.invite_pattern = re.compile(r"((discord(app)?\.com\/invite)|((dsc|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
+        self.basic_url_pattern = re.compile(r"https?:\/\/?([/\\@\-_0-9a-zA-Z]+\.)+[\\@\-_0-9a-zA-Z]+")
+        self.invite_pattern = re.compile(r"((discord(app)?\.com\/invite)|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
 
         self.message_report_menu = ContextMenu(
             name="Report Message",
@@ -313,6 +313,7 @@ class DetectScam(Cog):
     def _ticket_system(self, message: Message) -> Optional[str]:
         # message contains one of the relevant keyword combinations and a link
         txt = self._get_message_content(message)
+        log.debug(f"message content: {txt}")
         if not self.basic_url_pattern.search(txt):
             return None
 
@@ -327,7 +328,7 @@ class DetectScam(Cog):
             ],
             ("support team", "supp0rt", "🎫", "🎟️", "m0d"),
             [
-                ("ask", "seek", "request", "contact"),
+                ("get", "ask", "seek", "request", "contact"),
                 ("help", "assistance", "service", "support")
             ],
             [
@@ -515,12 +516,18 @@ class DetectScam(Cog):
             log.warning(f"Ignoring thread creation in {thread.guild.id}")
             return
 
-        keywords = ("support", "ticket", "assistance", "🎫", "🎟️")
-        if not any(kw in thread.name.lower() for kw in keywords):
-            log.debug(f"Ignoring thread creation (id: {thread.id}, name: {thread.name})")
+        keywords = ("support", "tick", "assistance", "error", "🎫", "🎟️")
+        if any(kw in thread.name.lower() for kw in keywords):
+            await self.report_thread(thread, "Illegitimate support thread")
+            return
+        names = (".", "!", "///")
+        if thread.name.strip().lower() in names:
+            await self.report_thread(thread, "Illegitimate support thread")
             return
         
-        await self.report_thread(thread, "Illegitimate support thread")
+        log.debug(f"Ignoring thread creation (id: {thread.id}, name: {thread.name})")
+
+        
         
     @Cog.listener()
     async def on_raw_thread_update(self, event: RawThreadUpdateEvent) -> None:
