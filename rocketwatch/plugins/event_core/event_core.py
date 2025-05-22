@@ -49,7 +49,7 @@ class EventCore(commands.Cog):
     def cog_unload(self) -> None:
         self.loop.cancel()
 
-    @tasks.loop(seconds=12)
+    @tasks.loop(seconds=30)
     async def loop(self) -> None:
         p_id = time.time()
         self.monitor.ping(state="run", series=p_id)

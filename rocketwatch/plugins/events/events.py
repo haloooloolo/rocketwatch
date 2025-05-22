@@ -7,7 +7,7 @@ from typing import Optional, Callable, Literal
 from discord import Interaction
 from discord.ext.commands import is_owner
 from discord.app_commands import command, guilds
-from eth_typing import ChecksumAddress, BlockNumber
+from eth_typing.evm import ChecksumAddress, BlockNumber
 from hexbytes import HexBytes
 from web3._utils.filters import Filter
 from web3.datastructures import MutableAttributeDict as aDict
@@ -38,7 +38,6 @@ class Events(EventPlugin):
         self._partial_filters = partial_filters
         self.event_map = event_map
         self.topic_map = topic_map
-        self.active_filters: list[Filter] = []
 
     def _parse_event_config(self) -> tuple[list[PartialFilter], dict, dict]:
         with open("./plugins/events/events.json") as f:
@@ -65,7 +64,7 @@ class Events(EventPlugin):
                 try:
                     topic = contract.events[event_name].build_filter().topics[0]
                 except ABIEventFunctionNotFound as e:
-                    self.bot.report_error(e)
+                    log.exception(e)
                     log.warning(f"Couldn't find event {event_name} ({event['name']}) in the contract")
                     continue
 
@@ -169,13 +168,16 @@ class Events(EventPlugin):
             await interaction.followup.send(content="No events found.")
 
     def _get_new_events(self) -> list[Event]:
-        if not self.active_filters:
-            from_block = self.last_served_block + 1 - self.lookback_distance
-            self.active_filters = [pf(from_block, "latest") for pf in self._partial_filters]
+        from_block = self.last_served_block + 1 - self.lookback_distance
+        return self.get_past_events(from_block, self._pending_block)
 
+    def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
+        log.debug(f"Fetching events in [{from_block}, {to_block}]")
+        log.debug(f"Using {len(self._partial_filters)} filters")
+        
         events = []
-        for event_filter in self.active_filters:
-            events.extend(event_filter.get_new_entries())
+        for pf in self._partial_filters:
+            events.extend(pf(from_block, to_block).get_all_entries())
 
         messages, contract_upgrade_block = self.process_events(events)
         if not contract_upgrade_block:
@@ -187,26 +189,11 @@ class Events(EventPlugin):
         try:
             rp.flush()
             self.__init__(self.bot)
-            self.start_tracking(BlockNumber(contract_upgrade_block + 1))
-            messages.extend(self._get_new_events())
-            return messages
+            return messages + self.get_past_events(contract_upgrade_block + 1, to_block)
         except Exception as err:
             # rollback to pre upgrade config if this goes wrong
             self._partial_filters, self.event_map, self.topic_map = old_config
-            self.active_filters.clear()
             raise err
-
-    def start_tracking(self, block: BlockNumber) -> None:
-        super().start_tracking(block)
-        self.active_filters.clear()
-
-    def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
-        events = []
-        for pf in self._partial_filters:
-            events.extend(pf(from_block, to_block).get_all_entries())
-
-        messages, _ = self.process_events(events)
-        return messages
 
     def process_events(self, events: list[LogReceipt | EventData]) -> tuple[list[Event], Optional[BlockNumber]]:
         events.sort(key=lambda e: (e.blockNumber, e.logIndex))
@@ -253,7 +240,6 @@ class Events(EventPlugin):
                     event_name = event.args.get("event_name", event_name)
                 else:
                     log.warning(f"Skipping unknown event {n}.{event.event}")
-
             elif event.get("event") in self.event_map:
                 event_name = self.event_map[event.event]
                 if event_name in ["contract_upgraded", "contract_added"]:
@@ -267,6 +253,7 @@ class Events(EventPlugin):
                     event_name = event.args.get("event_name", event_name)
 
             if (event_name is None) or (embed is None):
+                log.debug(f"Skipping event {event}")
                 continue
 
             # get the event offset based on the lowest event log index of events with the same txn hashes and block hashes

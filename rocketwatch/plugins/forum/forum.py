@@ -7,7 +7,7 @@ import aiohttp
 from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
-from discord.app_commands import Choice, choices
+from discord.app_commands import Choice
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -82,7 +82,7 @@ class Forum(commands.Cog):
         return topics
 
     @staticmethod
-    @retry_async(tries=3, delay=1)
+    @retry_async(tries=3, delay=2, backoff=2)
     async def get_popular_topics(period: Period) -> list[Topic]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"{Forum.DOMAIN}/top.json?period={period}")
@@ -91,7 +91,7 @@ class Forum(commands.Cog):
         return Forum._parse_topics(data["topic_list"]["topics"])
 
     @staticmethod
-    @retry_async(tries=3, delay=1)
+    @retry_async(tries=3, delay=2, backoff=2)
     async def get_recent_topics() -> list[Topic]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"{Forum.DOMAIN}/latest.json")
@@ -100,7 +100,7 @@ class Forum(commands.Cog):
         return Forum._parse_topics(data["topic_list"]["topics"])
 
     @staticmethod
-    @retry_async(tries=3, delay=1)
+    @retry_async(tries=3, delay=2, backoff=2)
     async def get_top_users(period: Period, order_by: UserMetric) -> list[User]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"{Forum.DOMAIN}/directory_items.json?period={period}&order={order_by}")
