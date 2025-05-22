@@ -97,7 +97,7 @@ class Constellation(Cog):
 
         min_rpl_stake_ratio: float = solidity.to_float(info_calls["minimumStakeRatio"])
         rpl_ratio: float = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-        rpl_stake_perc: float = rpl_staked * rpl_ratio / eth_matched
+        rpl_stake_perc: float = (rpl_staked * rpl_ratio / eth_matched) if (eth_matched > 0) else 0.0
 
         balance_eth: float = solidity.to_float(w3.eth.getBalance(distributor_contract.address))
         balance_rpl: float = solidity.to_float(rp.call("rocketTokenRPL.balanceOf", distributor_contract.address))
