@@ -319,7 +319,7 @@ class DetectScam(Cog):
 
         keywords = (
             [
-                ("open", "create", "raise", "raisse"),
+                ("support", "open", "create", "raise", "raisse"),
                 "ticket"
             ],
             [
@@ -330,6 +330,10 @@ class DetectScam(Cog):
             [
                 ("get", "ask", "seek", "request", "contact"),
                 ("help", "assistance", "service", "support")
+            ],
+            [
+                ("relay"),
+                ("query", "question", "inquiry")
             ],
             [
                 ("instant", "live"),
