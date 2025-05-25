@@ -303,7 +303,7 @@ class Debug(Cog):
                 continue
             payload += f"\n{fg}Hello World"
         payload += f"{Style.RESET_ALL}```"
-        await interaction.followup.reply(content=payload)
+        await interaction.followup.send(content=payload)
 
     @command()
     async def asian_restaurant_name(self, interaction: Interaction):
@@ -312,7 +312,7 @@ class Debug(Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         a = requests.get("https://www.dotomator.com/api/random_name.json?type=asian").json()["name"]
-        await interaction.followup.reply(a)
+        await interaction.followup.send(a)
 
     @command()
     async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
