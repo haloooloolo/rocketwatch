@@ -38,7 +38,7 @@ class Forum(commands.Cog):
 
         @property
         def url(self) -> str:
-            return f"{Forum.DOMAIN}/t/{self.slug}"
+            return f"{Forum.DOMAIN}/t/{self.slug}/{self.id}"
 
         def __str__(self) -> str:
             return self.title
