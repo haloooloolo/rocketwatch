@@ -613,9 +613,9 @@ class Snapshot(EventPlugin):
         # make sure proportions don't become too skewed
         if total_width < total_height:
             proposal_width = (total_height - h_spacing * (num_cols - 1)) // num_cols
-            total_width = (proposal_width * num_cols) + h_spacing * (num_cols - 1) + pad_left + pad_right
+            total_width = (proposal_width * num_cols) + h_spacing * (num_cols - 1)
 
-        canvas = ImageCanvas(total_width + pad_top + pad_bottom, total_height + pad_left + pad_right)
+        canvas = ImageCanvas(total_width + pad_left + pad_right, total_height + pad_top + pad_bottom)
 
         # draw proposals in num_rows x num_cols grid
         y_offset = pad_top
