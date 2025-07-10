@@ -175,6 +175,11 @@
         "title": ":chart_with_upwards_trend: RPL Inflation Occurred",
         "description": "%{value} new RPL minted! The new total supply is %{total_supply} RPL."
     },
+    "rpl_migration_event": {
+        "title": ":arrows_counterclockwise: RPL Migration",
+        "description": "%{from} migrated **%{amount} RPL V1** to the new token contract!",
+        "description_small": ":arrows_counterclockwise: %{from} migrated **%{amount} RPL**!"
+    },
     "milestone_rpl_stake": {
         "title": ":tada: Milestone Reached",
         "description": "%{result_value} RPL has been staked by node operators!"
@@ -334,7 +339,7 @@
     },
     "minipool_dissolve_event": {
         "title": ":rotating_light: Minipool Dissolved",
-        "description": "Minipool %{minipool} failed to stake its assigned ETH and has been dissolved!"
+        "description": "Minipool %{minipool} owned by operator %{operator} failed to stake its assigned ETH and has been dissolved!"
     },
     "vacant_minipool_scrub_event": {
         "title": ":rotating_light: Vacant Minipool Scrubbed",

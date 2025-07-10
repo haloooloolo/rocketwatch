@@ -771,6 +771,8 @@ class Events(EventPlugin):
                     event_name = "minipool_dissolve_event"
                 case _:
                     return None
+            
+            args.operator = rp.call("rocketMinipoolDelegate.getNodeAddress", address=args.minipool)
 
         if event_name in ["minipool_bond_reduce_event", "minipool_vacancy_prepared_event",
                           "minipool_withdrawal_processed_event", "minipool_bond_reduction_started_event",
