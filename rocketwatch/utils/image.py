@@ -33,7 +33,7 @@ class FontVariant(str, Enum):
 
 class ImageCanvas(ImageDraw):
     # default color matches Discord mobile dark mode Embed
-    def __init__(self, width: int, height: int, bg_color: Color = (37, 39, 26)):
+    def __init__(self, width: int, height: int, bg_color: Color = (57, 58, 64)):
         p_img = PillowImage.new('RGB', (width, height), color=bg_color)
         super().__init__(p_img)
         self.image = Image(p_img)
