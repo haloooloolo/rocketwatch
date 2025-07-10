@@ -46,7 +46,7 @@ class APR(commands.Cog):
         self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
         self.loop.start()
     
-    def cog_unload(self):
+    async def cog_unload(self):
         self.loop.cancel()
 
     @tasks.loop(seconds=60)

@@ -46,7 +46,7 @@ class EventCore(commands.Cog):
         self.monitor = Monitor("gather-new-events", api_key=cfg["other.secrets.cronitor"])
         self.loop.start()
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         self.loop.cancel()
 
     @tasks.loop(seconds=30)

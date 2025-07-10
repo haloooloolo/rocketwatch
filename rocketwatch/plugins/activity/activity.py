@@ -18,7 +18,7 @@ class RichActivity(commands.Cog):
         self.monitor = Monitor("update-activity", api_key=cfg["other.secrets.cronitor"])
         self.loop.start()
 
-    def cog_unload(self):
+    async def cog_unload(self):
         self.loop.cancel()
 
     @tasks.loop(seconds=60)

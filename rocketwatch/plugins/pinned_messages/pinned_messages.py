@@ -119,7 +119,7 @@ class PinnedMessages(commands.Cog):
         # rest is done by the run_loop
         await ctx.send("Disabled pinned message")
 
-    def cog_unload(self):
+    async def cog_unload(self):
         self.run_loop.cancel()
 
 

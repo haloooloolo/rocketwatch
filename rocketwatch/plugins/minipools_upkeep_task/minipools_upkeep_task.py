@@ -34,11 +34,10 @@ class MinipoolsUpkeepTask(commands.Cog):
         self.batch_size = 1000
         self.loop.start()
         
-    def cog_unload(self):
+    async def cog_unload(self):
         self.loop.cancel()
 
-    # every 6.4 minutes
-    @tasks.loop(seconds=solidity.BEACON_EPOCH_LENGTH)
+    @tasks.loop(minutes=15)
     async def loop(self):
         try:
             await self.upkeep_minipools()

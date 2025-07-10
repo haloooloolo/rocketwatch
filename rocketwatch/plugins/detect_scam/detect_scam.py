@@ -137,7 +137,7 @@ class DetectScam(Cog):
         )
         self.bot.tree.add_command(self.user_report_menu)
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         self.bot.tree.remove_command(self.message_report_menu.name, type=self.message_report_menu.type)
         self.bot.tree.remove_command(self.user_report_menu.name, type=self.user_report_menu.type)
 
@@ -221,10 +221,11 @@ class DetectScam(Cog):
                 "There is no ticket system for support on this server.\n"
                 "Ignore this thread and any invites or DMs you may receive."
             ))
+            thread_owner = await self.bot.get_or_fetch_user(thread.owner_id)
             report.description += (
                 "\n"
                 f"Thread Name: `{thread.name}`\n"
-                f"User ID:     `{thread.owner}` ({thread.owner.mention})\n"
+                f"User ID:     `{thread_owner.id}` ({thread_owner.mention})\n"
                 f"Thread ID:   `{thread.id}` ({thread.jump_url})\n"
                 "\n"
                 "Please review and take appropriate action."
@@ -356,9 +357,16 @@ class DetectScam(Cog):
     def _paperhands(self, message: Message) -> Optional[str]:
         # message contains the word "paperhand" and a link
         txt = self._get_message_content(message)
-        # if has http and contains the word paperhand or paperhold
-        if (any(x in txt for x in ["paperhand", "paper hand", "paperhold", "pages.dev", "web.app"]) and "http" in txt) or "pages.dev" in txt:
-            return "The linked website is most likely a wallet drainer"
+        if "http" not in txt:
+            return None
+        
+        reason = "The linked website is most likely a wallet drainer"
+        if any(x in txt for x in ["paperhand", "paper hand", "paperhold", "pages.dev", "web.app"]):
+            return reason
+        
+        if any(x in txt for x in ["mint", "opensea"]) and any(x in txt for x in ["vercel.app"]):
+            return reason
+        
         return None
 
     # contains @here or @everyone but doesn't actually have the permission to do so
@@ -465,7 +473,7 @@ class DetectScam(Cog):
             return
 
         channel = await self.bot.get_or_fetch_channel(report["channel_id"])
-        with contextlib.suppress(errors.NotFound, errors.Forbidden):
+        with contextlib.suppress(errors.NotFound, errors.Forbidden, errors.HTTPException):
             message = await channel.fetch_message(report["warning_id"])
             await message.delete()
 

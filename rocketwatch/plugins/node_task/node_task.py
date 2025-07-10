@@ -56,10 +56,10 @@ class NodeTask(commands.Cog):
         self.batch_size = 1000
         self.loop.start()
             
-    def cog_unload(self):
+    async def cog_unload(self):
         self.loop.cancel()
         
-    @tasks.loop(seconds=solidity.BEACON_EPOCH_LENGTH)
+    @tasks.loop(minutes=15)
     async def loop(self):
         p_id = time.time() 
         self.monitor.ping(state="run", series=p_id)
