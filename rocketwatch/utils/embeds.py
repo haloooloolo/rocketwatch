@@ -103,21 +103,8 @@ def el_explorer_url(
         url = f"{cfg['execution_layer.explorer']}/address/{target}"
         target = w3.toChecksumAddress(target)
 
-        # rocketscan url stuff
-        rocketscan_chains = {
-            "mainnet": "https://rocketscan.io",
-            "holesky": "https://holesky.rocketscan.io",
-        }
-
-        if cfg["rocketpool.chain"] in rocketscan_chains:
-            rocketscan_url = rocketscan_chains[cfg["rocketpool.chain"]]
-
-            if rp.call("rocketMinipoolManager.getMinipoolExists", target, block=block):
-                url = f"{rocketscan_url}/minipool/{target}"
-            elif rp.call("rocketNodeManager.getNodeExists", target, block=block):
-                if rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block) and prefix != -1:
-                    prefix += ":cup_with_straw:"
-                url = f"{rocketscan_url}/node/{target}"
+        if prefix != -1 and rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
+            prefix += ":cup_with_straw:"
 
         n_key = f"addresses.{target}"
         if not name and (n := _(n_key)) != n_key:
@@ -284,6 +271,8 @@ def assemble(args) -> Embed:
             use_large = (amount >= 32)
         case "rpl_stake_event":
             use_large = (amount >= ((3 * 2.4) / solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))))
+        case "rpl_stake_event":
+            use_large = (amount >= 10_000)
         case "cs_deposit_eth_event" | "cs_withdraw_eth_event":
             use_large = (args["assets"] >= 32)
         case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
