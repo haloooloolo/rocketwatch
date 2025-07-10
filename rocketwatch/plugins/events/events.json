@@ -158,6 +158,10 @@
                 {
                     "event_name": "Transfer",
                     "name": "rpl_transfer_event"
+                },
+                {
+                    "event_name": "RPLFixedSupplyBurn",
+                    "name": "rpl_migration_event"
                 }
             ]
         },
