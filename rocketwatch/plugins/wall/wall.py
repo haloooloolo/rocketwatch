@@ -40,7 +40,7 @@ class Wall(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.cex: set[CEX] = {
-            Binance("RPL", ["USDT"]),
+            Binance("RPL", ["USDT", "USDC"]),
             Coinbase("RPL", ["USDC"]),
             GateIO("RPL", ["USDT"]),
             OKX("RPL", ["USDT"]),
@@ -295,6 +295,7 @@ class Wall(commands.Cog):
         buffer = BytesIO()
         fig = self._plot_data(x, rpl_usd, rpl_eth, cex_data, dex_data)
         fig.savefig(buffer, format="png")
+        fig.clf()
         buffer.seek(0)
 
         embed.set_author(name="🔗 Data from CEX APIs and Mainnet")
