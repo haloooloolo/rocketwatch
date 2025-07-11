@@ -271,8 +271,8 @@ def assemble(args) -> Embed:
             use_large = (amount >= 32)
         case "rpl_stake_event":
             use_large = (amount >= ((3 * 2.4) / solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))))
-        case "rpl_stake_event":
-            use_large = (amount >= 10_000)
+        case "rpl_migration_event":
+            use_large = (amount >= 1000)
         case "cs_deposit_eth_event" | "cs_withdraw_eth_event":
             use_large = (args["assets"] >= 32)
         case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
