@@ -18,7 +18,7 @@ from utils import solidity
 from utils.cfg import cfg
 from utils.embeds import Embed, resolve_ens
 from utils.rocketpool import rp
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("collateral")
 log.setLevel(cfg["log_level"])
@@ -113,7 +113,7 @@ class Collateral(commands.Cog):
         """
         Show a scatter plot of collateral ratios for given node TVLs
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
         display_name = None
         address = None
@@ -227,7 +227,7 @@ class Collateral(commands.Cog):
         """
         Show the distribution of collateral across nodes.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
         data = get_average_collateral_percentage_per_node(collateral_cap, bonded)
 
