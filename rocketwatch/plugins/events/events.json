@@ -500,6 +500,19 @@
                     "name": "contract_added"
                 }
             ]
+        },
+        {
+            "contract_name": "RockSolidVault",
+            "events": [
+                {
+                    "event_name": "DepositSync",
+                    "name": "rocksolid_deposit_event"
+                },
+                {
+                    "event_name": "RedeemRequest",
+                    "name": "rocksolid_withdrawal_event"
+                }
+            ]
         }
     ]
 }

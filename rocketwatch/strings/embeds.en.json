@@ -577,5 +577,15 @@
         "title": ":money_mouth: Large Exit Arbitrage",
         "description": "%{caller} earned **%{profit} ETH** with a %{amount} ETH flash loan!",
         "description_small": ":money_mouth: %{caller} earned **%{profit} ETH** from an exit arbitrage!"
+    },
+    "rocksolid_deposit_event": {
+        "title": "<:rocksolid:1425091714267480158> RockSolid rETH Deposit",
+        "description": "**%{assets} rETH** deposited for **%{shares} rock.rETH**!",
+        "description_small": "<:rocksolid:1425091714267480158> %{sender} deposited **%{assets} rETH** for **%{shares} rock.rETH**!"
+    },
+    "rocksolid_withdrawal_event": {
+        "title": "<:rocksolid:1425091714267480158> RockSolid rETH Withdrawal",
+        "description": "New redemption request for **%{shares} rock.rETH**!",
+        "description_small": "<:rocksolid:1425091714267480158> %{sender} requested redemption of **%{shares} rock.rETH**!"
     }
 }

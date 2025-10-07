@@ -500,8 +500,10 @@ class Events(EventPlugin):
             "sdao_member_request_leave_event"
         ]:
             args.nodeAddress = el_explorer_url(args.nodeAddress, block=(event.blockNumber - 1))
-        elif event_name.startswith("cs_deposit") or event_name.startswith("cs_withdraw"):
+        elif event_name.startswith("cs_deposit") or event_name.startswith("cs_withdraw") or event_name.startswith("rocksolid_deposit"):
             args.assets = solidity.to_float(args.assets)
+            args.shares = solidity.to_float(args.shares)
+        elif event_name.startswith("rocksolid_withdraw"):
             args.shares = solidity.to_float(args.shares)
         elif event_name == "cs_max_validator_change_event":
             args.oldLimit, args.newLimit = args.oldValue, args.newValue
