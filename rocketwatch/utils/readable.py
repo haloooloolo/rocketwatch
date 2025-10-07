@@ -38,7 +38,7 @@ def uptime(time, highres= False):
         parts.append('%d minute%s' % (minutes, 's' if minutes != 1 else ''))
 
     if time or not parts:
-        parts.append('%.2f seconds' % time)
+        parts.append('%.0f seconds' % time)
 
     return " ".join(parts[:2] if not highres else parts)
 

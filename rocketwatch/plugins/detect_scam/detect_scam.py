@@ -307,8 +307,16 @@ class DetectScam(Cog):
 
     def _discord_invite(self, message: Message) -> Optional[str]:
         txt = self._get_message_content(message)
-        if self.invite_pattern.search(txt):
-            return "Invite to external server"
+        if match := self.invite_pattern.search(txt):
+            link = match.group(0)
+            if not any(domain in link for domain in cfg["youtu.be", "youtube.com"]):
+                return "Invite to external server"
+        return None
+    
+    def _tap_on_this(self, message: Message) -> Optional[str]:
+        txt = self._get_message_content(message)
+        if txt.startswith("tap on") and "bio" in txt:
+            return "Tap on deez nuts nerd"
         return None
 
     def _ticket_system(self, message: Message) -> Optional[str]:
@@ -432,6 +440,7 @@ class DetectScam(Cog):
             self._markdown_link_trick,
             self._paperhands,
             self._discord_invite,
+            self._tap_on_this,
             self._mention_everyone,
         ]
         for check in checks:
@@ -529,7 +538,7 @@ class DetectScam(Cog):
             return
 
         keywords = ("support", "tick", "assistance", "error", "🎫", "🎟️")
-        if any(kw in thread.name.lower() for kw in keywords):
+        if any(kw in thread.name.lower() for kw in keywords) or re.search(r"(-|–|—)\d{3,}", thread.name):
             await self.report_thread(thread, "Illegitimate support thread")
             return
         names = (".", "!", "///")
@@ -538,8 +547,6 @@ class DetectScam(Cog):
             return
         
         log.debug(f"Ignoring thread creation (id: {thread.id}, name: {thread.name})")
-
-        
         
     @Cog.listener()
     async def on_raw_thread_update(self, event: RawThreadUpdateEvent) -> None:
