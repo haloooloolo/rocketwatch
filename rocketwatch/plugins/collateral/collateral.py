@@ -90,7 +90,7 @@ def get_average_collateral_percentage_per_node(collateral_cap, bonded):
         # calculate percentage
         percentage = rpl_stake_value / minipool_value * 100
         # round percentage to 5% steps
-        percentage = (percentage // 5) * 5
+        percentage = (percentage * 10 // 5) / 2
         # add to result
         if percentage not in result:
             result[percentage] = []
@@ -218,27 +218,25 @@ class Collateral(commands.Cog):
 
     @hybrid_command()
     @describe(raw="Show Raw Distribution Data",
-              cap_collateral="Cap Collateral to 150%",
               bonded="Calculate collateral as percent of bonded eth instead of borrowed")
     async def collateral_distribution(self,
                                       ctx: Context,
                                       raw: bool = False,
-                                      cap_collateral: bool = True,
-                                      collateral_cap: int = 150,
+                                      collateral_cap: int = 15,
                                       bonded: bool = False):
         """
         Show the distribution of collateral across nodes.
         """
         await ctx.defer(ephemeral=is_hidden(ctx))
 
-        data = get_average_collateral_percentage_per_node(collateral_cap or 150 if cap_collateral else None, bonded)
+        data = get_average_collateral_percentage_per_node(collateral_cap, bonded)
 
         counts = []
         for collateral, nodes in data.items():
             counts.extend([collateral] * len(nodes))
-        counts = list(sorted(counts))
-        bins = np.bincount(counts)
-        distribution = [(i, bins[i]) for i in range(len(bins)) if i % 5 == 0]
+        counts = np.array(list(sorted(counts)))
+        bins = np.bincount((counts * 2).astype(int))
+        distribution = [(i / 2, bins[i]) for i in range(len(bins))]
 
         # If the raw data were requested, print them and exit early
         if raw:
@@ -264,7 +262,7 @@ class Collateral(commands.Cog):
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
         ax.yaxis.set_visible(False)
         ax.get_xaxis().set_major_formatter(FuncFormatter(
-            lambda n, _: f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys)-1 and cap_collateral else ''}%")
+            lambda n, _: f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys)-1 else ''}%")
         )
 
         staked_distribution = [
@@ -272,7 +270,7 @@ class Collateral(commands.Cog):
         ]
 
         bars = dict(staked_distribution)
-        line = ax2.plot(x_keys, [bars.get(int(x), 0) for x in x_keys])
+        line = ax2.plot(x_keys, [bars.get(float(x), 0) for x in x_keys])
         ax2.set_ylim(top=(ax2.get_ylim()[1] * 1.1))
         ax2.tick_params(axis='y', colors=line[0].get_color())
         ax2.get_yaxis().set_major_formatter(FuncFormatter(lambda y, _: f"{int(y / 10 ** 3)}k"))
