@@ -439,8 +439,7 @@ class Events(EventPlugin):
             d = args.currRETHRate - args.prevRETHRate
             if d > 0 or abs(d) < 0.00001:
                 return None
-
-        if "price_update_event" in event_name:
+        elif "price_update_event" in event_name:
             args.value = args.rplPrice
             next_period = rp.call("rocketRewardsPool.getClaimIntervalTimeStart", block=event.blockNumber) + rp.call("rocketRewardsPool.getClaimIntervalTime", block=event.blockNumber)
             args.rewardPeriodEnd = next_period
@@ -452,8 +451,7 @@ class Events(EventPlugin):
             # if it will update before the next period, skip
             if not (ts < next_period < earliest_next_update):
                 return None
-
-        if event_name == "bootstrap_pdao_setting_multi_event":
+        elif event_name == "bootstrap_pdao_setting_multi_event":
             description_parts = []
             for i in range(len(args.settingContractNames)):
                 value_raw = args.values[i]
@@ -639,29 +637,26 @@ class Events(EventPlugin):
                 include_payload=("add" in event_name),
                 include_votes=("add" not in event_name),
             )
-
         # add inflation and new supply if inflation occurred
-        if "rpl_inflation" in event_name:
+        elif "rpl_inflation" in event_name:
             args.total_supply = int(solidity.to_float(rp.call("rocketTokenRPL.totalSupply")))
             args.inflation = round(rp.get_annual_rpl_inflation() * 100, 4)
-
-        if "auction_bid_event" in event_name:
+        elif "auction_bid_event" in event_name:
             eth = solidity.to_float(args.bidAmount)
             price = solidity.to_float(
                 rp.call("rocketAuctionManager.getLotPriceAtBlock", args.lotIndex, args.blockNumber))
             args.rplAmount = eth / price
-
         if event_name in ["rpl_stake_event", "rpl_withdraw_event"]:
             # get eth price by multiplying the amount by the current RPL ratio
             rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
             args.amount = solidity.to_float(args.amount)
             args.ethAmount = args.amount * rpl_ratio
-        if event_name in ["node_merkle_rewards_claimed"]:
+        elif event_name in ["node_merkle_rewards_claimed"]:
             rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
             args.amountRPL = sum(solidity.to_float(r) for r in args.amountRPL)
             args.amountETH = sum(solidity.to_float(e) for e in args.amountETH)
             args.ethAmount = args.amountRPL * rpl_ratio
-        if "transfer_event" in event_name:
+        elif "transfer_event" in event_name:
             token_prefix = event_name.split("_", 1)[0]
             args.amount = args.value / 10**18
             if args["from"] in cfg["rocketpool.dao_multsigs"]:
@@ -669,6 +664,10 @@ class Events(EventPlugin):
                 token_contract = rp.assemble_contract(name="ERC20", address=event["address"])
                 args.symbol = token_contract.functions.symbol().call()
             elif token_prefix != "reth":
+                return None
+        elif event_name == "reth_burn_event":
+            # filter small burns < 1 rETH
+            if solidity.to_float(args.amount) < 1:
                 return None
 
         # reject if the amount is not major
