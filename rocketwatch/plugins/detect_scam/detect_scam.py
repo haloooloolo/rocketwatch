@@ -145,12 +145,19 @@ class DetectScam(Cog):
     def _get_message_content(message: Message, *, preserve_formatting: bool = False) -> str:
         text = ""
         if message.content:
-            content = message.content if preserve_formatting else message.content.replace("\n", "")
+            content = message.content
+            if not preserve_formatting:
+                content = content.replace("\n> ", "")
+                content = content.replace("\n", " ")
             text += content + "\n"
         if message.embeds:
             for embed in message.embeds:
                 text += f"---\n Embed: {embed.title}\n{embed.description}\n---\n"
-        return text if preserve_formatting else parse.unquote(text).lower()
+                
+        if not preserve_formatting:
+            text = parse.unquote(text).lower()
+
+        return text 
 
     async def _generate_message_report(self, message: Message, reason: str) -> Optional[tuple[Embed, Embed, File]]:
         try:
@@ -309,7 +316,7 @@ class DetectScam(Cog):
         txt = self._get_message_content(message)
         if match := self.invite_pattern.search(txt):
             link = match.group(0)
-            if not any(domain in link for domain in cfg["youtu.be", "youtube.com"]):
+            if not any(domain in link for domain in ["youtu.be", "youtube.com"]):
                 return "Invite to external server"
         return None
     
