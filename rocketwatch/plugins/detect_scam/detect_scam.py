@@ -5,6 +5,7 @@ import contextlib
 import regex as re
 
 from urllib import parse
+from anyascii import anyascii
 from typing import Optional
 from datetime import datetime, timezone, timedelta
 
@@ -121,7 +122,7 @@ class DetectScam(Cog):
         self._message_react_cache = TTLCache(maxsize=1000, ttl=300)
         self.markdown_link_pattern = re.compile(r"(?<=\[)([^/\] ]*).+?(?<=\(https?:\/\/)([^/\)]*)")
         self.basic_url_pattern = re.compile(r"https?:\/\/?([/\\@\-_0-9a-zA-Z]+\.)+[\\@\-_0-9a-zA-Z]+")
-        self.invite_pattern = re.compile(r"((discord(app)?\.com\/invite)|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
+        self.invite_pattern = re.compile(r"((discord(app)?\.com\/(invite|oauth2))|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
 
         self.message_report_menu = ContextMenu(
             name="Report Message",
@@ -148,14 +149,16 @@ class DetectScam(Cog):
             content = message.content
             if not preserve_formatting:
                 content = content.replace("\n> ", "")
-                content = content.replace("\n", " ")
+                content = content.replace("\n", "")
             text += content + "\n"
         if message.embeds:
             for embed in message.embeds:
                 text += f"---\n Embed: {embed.title}\n{embed.description}\n---\n"
                 
         if not preserve_formatting:
-            text = parse.unquote(text).lower()
+            text = parse.unquote(text)
+            text = anyascii(text)
+            text = text.lower()
 
         return text 
 
@@ -316,15 +319,17 @@ class DetectScam(Cog):
         txt = self._get_message_content(message)
         if match := self.invite_pattern.search(txt):
             link = match.group(0)
-            if not any(domain in link for domain in ["youtu.be", "youtube.com"]):
+            trusted_domains = ["youtu.be", "youtube.com", "tenor.com", "giphy.com", "imgur.com"]
+            if not any(domain in link for domain in trusted_domains):
                 return "Invite to external server"
         return None
     
     def _tap_on_this(self, message: Message) -> Optional[str]:
         txt = self._get_message_content(message)
-        if txt.startswith("tap on") and "bio" in txt:
-            return "Tap on deez nuts nerd"
-        return None
+        keywords = (
+            [("tap on", "click on"), "proper"]
+        )
+        return "Tap on deez nuts nerd" if self.__txt_contains(txt, keywords) else None
 
     def _ticket_system(self, message: Message) -> Optional[str]:
         # message contains one of the relevant keyword combinations and a link
@@ -342,7 +347,7 @@ class DetectScam(Cog):
                 ("contact", "reach out", "report", [("talk", "speak"), ("to", "with")], "ask"),
                 ("admin", "mod", "administrator", "moderator")
             ],
-            ("support team", "supp0rt", "🎫", "🎟️", "m0d"),
+            ("support team", "supp0rt", "🎫", "🎟️", "m0d", "tlcket"),
             [
                 ("get", "ask", "seek", "request", "contact"),
                 ("help", "assistance", "service", "support")
@@ -357,17 +362,18 @@ class DetectScam(Cog):
             ]
         )
 
-        def txt_contains(_x: list | tuple | str) -> bool:
-            match _x:
-                case str():
-                    return (re.search(rf"\b{_x}\b", txt) is not None)
-                case tuple():
-                    return any(map(txt_contains, _x))
-                case list():
-                    return all(map(txt_contains, _x))
-            return False
-
-        return "There is no ticket system in this server." if txt_contains(keywords) else None
+        return "There is no ticket system in this server." if self.__txt_contains(txt, keywords) else None
+    
+    @staticmethod
+    def __txt_contains(txt: str, kw: list | tuple | str) -> bool:
+        match kw:
+            case str():
+                return kw in txt
+            case tuple():
+                return any(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
+            case list():
+                return all(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
+        return False
 
     def _paperhands(self, message: Message) -> Optional[str]:
         # message contains the word "paperhand" and a link
