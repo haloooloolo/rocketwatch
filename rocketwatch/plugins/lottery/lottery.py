@@ -2,8 +2,7 @@ import logging
 
 from discord.ext import commands
 from discord.ext.commands import hybrid_command, Context
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import InsertOne
+from pymongo import AsyncMongoClient, InsertOne
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -21,7 +20,7 @@ log.setLevel(cfg["log_level"])
 class LotteryBase:
     def __init__(self):
         # connect to local mongodb
-        self.client = AsyncIOMotorClient(cfg["mongodb.uri"])
+        self.client = AsyncMongoClient(cfg["mongodb.uri"])
         self.db = self.client.get_database("rocketwatch")
         self.did_check = False
 

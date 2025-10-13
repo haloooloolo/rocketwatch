@@ -2,7 +2,7 @@ import logging
 
 import pymongo
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from multicall import Call
 
 from discord import Interaction
@@ -30,7 +30,7 @@ def div_32(i: int):
 class MinipoolsUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.batch_size = 1000
         self.loop.start()
         

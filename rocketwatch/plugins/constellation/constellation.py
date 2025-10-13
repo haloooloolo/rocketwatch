@@ -4,7 +4,7 @@ import math
 from discord import Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -24,7 +24,7 @@ log.setLevel(cfg["log_level"])
 class Constellation(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     async def _fetch_num_operators(self) -> int:
         whitelist_contract = rp.get_contract_by_name("Constellation.Whitelist")

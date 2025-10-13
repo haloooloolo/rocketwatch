@@ -2,7 +2,7 @@ import logging
 
 import humanize
 from colorama import Style
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from discord import Interaction
 from discord.ext.commands import Cog
@@ -52,7 +52,7 @@ def split_rewards_logic(balance, node_share, commission, force_base=False):
 class TVL(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @command()
     @describe(show_all="Also show entries with 0 value")

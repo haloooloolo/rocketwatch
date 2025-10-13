@@ -2,7 +2,7 @@ import logging
 
 from discord.ext import commands
 from discord.ext.commands import hybrid_command, Context
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -18,7 +18,7 @@ log.setLevel(cfg["log_level"])
 class BeaconStates(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @hybrid_command()
     async def beacon_states(self, ctx: Context):

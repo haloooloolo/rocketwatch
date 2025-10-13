@@ -8,7 +8,7 @@ from discord import File
 from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -26,7 +26,7 @@ log.setLevel(cfg["log_level"])
 class RPL(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @hybrid_command()
     async def rpl_apr(self, ctx: Context):

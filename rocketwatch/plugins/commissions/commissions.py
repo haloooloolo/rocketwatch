@@ -8,7 +8,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib import pyplot as plt
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -23,7 +23,7 @@ class Commissions(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         # connect to local mongodb
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @hybrid_command()
     async def commission_history(self, ctx: Context):

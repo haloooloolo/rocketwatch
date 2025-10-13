@@ -3,7 +3,7 @@ from datetime import timedelta, datetime
 
 from discord import errors
 from discord.ext import commands
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -17,7 +17,7 @@ log.setLevel(cfg["log_level"])
 class ScamWarning(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         self.channel_ids = set(cfg["rocketpool.dm_warning.channels"])
         self.inactivity_cooldown = timedelta(days=90)
         self.failure_cooldown = timedelta(days=1)

@@ -32,7 +32,7 @@ from discord import (
 )
 from discord.ext.commands import Cog
 from discord.app_commands import command, guilds, ContextMenu
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -114,7 +114,7 @@ class DetectScam(Cog):
 
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         
         self._report_lock = asyncio.Lock()
         self._update_lock = asyncio.Lock()

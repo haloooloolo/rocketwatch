@@ -13,7 +13,7 @@ import pymongo
 from cronitor import Monitor
 from discord.ext import commands, tasks
 from eth_typing import BlockIdentifier, BlockNumber
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from web3.datastructures import MutableAttributeDict
 
 from rocketwatch import RocketWatch
@@ -40,7 +40,7 @@ class EventCore(commands.Cog):
         self.bot = bot
         self.state = self.State.OK
         self.channels = cfg["discord.channels"]
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.head_block: BlockIdentifier = cfg["events.genesis"]
         self.block_batch_size = cfg["events.block_batch_size"]
         self.monitor = Monitor("gather-new-events", api_key=cfg["other.secrets.cronitor"])

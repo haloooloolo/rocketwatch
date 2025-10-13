@@ -6,7 +6,7 @@ from bson import CodecOptions
 from discord import app_commands, ui, Interaction, TextStyle, ButtonStyle, File, User
 from discord.app_commands import Group, Choice, choices
 from discord.ext.commands import Cog, GroupCog
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -34,7 +34,7 @@ async def generate_template_embed(db, template_name: str):
 
 # Define a simple View that gives us a counter button
 class AdminView(ui.View):
-    def __init__(self, db: AsyncIOMotorClient, template_name: str):
+    def __init__(self, db: AsyncMongoClient, template_name: str):
         super().__init__()
         self.db = db
         self.template_name = template_name
@@ -171,7 +171,7 @@ async def _use(db, interaction: Interaction, name: str, mention: User | None):
 class SupportGlobal(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @app_commands.command(name="use")
     async def _use(self, interaction: Interaction, name: str, mention: User | None):
@@ -197,7 +197,7 @@ class SupportUtils(GroupCog, name="support"):
 
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @subgroup.command()
     async def add(self, interaction: Interaction, name: str):

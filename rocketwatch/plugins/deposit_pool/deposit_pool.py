@@ -2,7 +2,7 @@ import logging
 
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from plugins.queue.queue import Queue
@@ -20,7 +20,7 @@ log.setLevel(cfg["log_level"])
 class DepositPool(StatusPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @staticmethod
     def get_deposit_pool_stats() -> Embed:

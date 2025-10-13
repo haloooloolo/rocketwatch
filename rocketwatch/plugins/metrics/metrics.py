@@ -3,7 +3,7 @@ import math
 from datetime import datetime, timedelta
 from io import BytesIO
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from bson import SON
 from cachetools import TTLCache
 from discord import File
@@ -25,7 +25,7 @@ class Metrics(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.notice_ttl_cache = TTLCache(math.inf, ttl=60 * 15)
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.collection = self.db.command_metrics
 
     @hybrid_command()

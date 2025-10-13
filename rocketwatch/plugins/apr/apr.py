@@ -9,7 +9,7 @@ from discord.ext import commands, tasks
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib.dates import DateFormatter
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -43,7 +43,7 @@ def get_duration(d1, d2):
 class APR(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.loop.start()
     
     async def cog_unload(self):

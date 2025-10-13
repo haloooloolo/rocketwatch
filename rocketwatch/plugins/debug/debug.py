@@ -10,7 +10,7 @@ from colorama import Fore, Style
 from discord import File, Interaction
 from discord.app_commands import Choice, command, guilds, describe
 from discord.ext.commands import Cog, is_owner
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,7 +29,7 @@ log.setLevel(cfg["log_level"])
 class Debug(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.contract_names = []
         self.function_names = []
 

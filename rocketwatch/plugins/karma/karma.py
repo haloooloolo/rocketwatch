@@ -3,8 +3,7 @@ import logging
 from discord import app_commands, Interaction, User, AppCommandType
 from discord.app_commands.checks import cooldown
 from discord.ext.commands import Cog, GroupCog
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import IndexModel
+from pymongo import AsyncMongoClient, IndexModel
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -18,7 +17,7 @@ log.setLevel(cfg["log_level"])
 class KarmaUtils(GroupCog, name="karma"):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         self.menus = []
         for c in [5,10]:
             self.menus.append(app_commands.ContextMenu(

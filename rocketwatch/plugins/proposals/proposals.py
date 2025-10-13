@@ -13,8 +13,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib import pyplot as plt
-from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo import ReplaceOne
+from pymongo import AsyncMongoClient, ReplaceOne
 from wordcloud import WordCloud
 
 from rocketwatch import RocketWatch
@@ -120,7 +119,7 @@ class Proposals(commands.Cog):
         self.rocketscan_proposals_url = "https://rocketscan.io/api/mainnet/beacon/blocks/all"
         self.last_chore_run = 0
         # connect to local mongodb
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         self.created_view = False
 
     async def create_minipool_proposal_view(self):

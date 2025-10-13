@@ -11,7 +11,7 @@ from discord.channel import TextChannel
 from discord.ext import commands
 from discord.ext.commands import Context, is_owner
 from discord.ext.commands import hybrid_command
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -27,7 +27,7 @@ class ChatSummary(commands.Cog):
         self.client = anthropic.AsyncAnthropic(api_key=cfg["other.secrets.anthropic"])
         # log all possible engines
         self.tokenizer = tiktoken.encoding_for_model("gpt-4-turbo")
-        self.db = AsyncIOMotorClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @classmethod
     def message_to_text(cls, message, index):
