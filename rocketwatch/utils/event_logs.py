@@ -19,7 +19,7 @@ def get_logs(
     start_block = from_block
     end_block = to_block
     
-    log.debug(f"Fetching vote receipts in [{start_block}, {end_block}]")
+    log.debug(f"Fetching event logs in [{start_block}, {end_block}]")
 
     chunk_size = 50_000
     from_block = start_block

@@ -4,7 +4,7 @@ import time
 import pymongo
 from multicall import Call
 from cronitor import Monitor
-from pymongo import UpdateOne, UpdateMany
+from pymongo import AsyncMongoClient, UpdateOne, UpdateMany
 
 from discord.ext import tasks, commands
 from discord.utils import as_chunks
@@ -51,7 +51,7 @@ def is_true(_, b):
 class NodeTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = pymongo.MongoClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("node-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 1000
         self.loop.start()
@@ -65,13 +65,13 @@ class NodeTask(commands.Cog):
         self.monitor.ping(state="run", series=p_id)
         try:
             log.debug("starting node task")
-            self.check_indexes()
+            await self.check_indexes()
             await self.add_untracked_minipools()
             await self.add_static_data_to_minipools()
             await self.update_dynamic_minipool_metadata()
-            self.add_static_deposit_data_to_minipools()
-            self.add_static_beacon_data_to_minipools()
-            self.update_dynamic_minipool_beacon_metadata()
+            await self.add_static_deposit_data_to_minipools()
+            await self.add_static_beacon_data_to_minipools()
+            await self.update_dynamic_minipool_beacon_metadata()
             await self.add_untracked_node_operators()
             await self.add_static_data_to_node_operators()
             await self.update_dynamic_node_operator_metadata()
@@ -92,7 +92,7 @@ class NodeTask(commands.Cog):
         latest_rp = rp.call("rocketMinipoolManager.getMinipoolCount") - 1
         # get latest _id in minipools_new collection
         latest_db = 0
-        if res := self.db.minipools_new.find_one(sort=[("_id", pymongo.DESCENDING)]):
+        if res := await self.db.minipools_new.find_one(sort=[("_id", pymongo.DESCENDING)]):
             latest_db = res["_id"]
         data = {}
         # return early if we're up to date
@@ -107,7 +107,7 @@ class NodeTask(commands.Cog):
                 for i in index_batch
             ])
         log.debug(f"Inserting {len(data)} new minipools into db")
-        self.db.minipools_new.insert_many([
+        await self.db.minipools_new.insert_many([
             {"_id": i, "address": a}
             for i, a in data.items()
         ])
@@ -122,7 +122,7 @@ class NodeTask(commands.Cog):
             lambda a: (mm.address, [rp.seth_sig(mm.abi, "getMinipoolPubkey"), a], [((a, "pubkey"), safe_to_hex)]),
         ]
         # get all minipool addresses from db that do not have a node operator assigned
-        minipool_addresses = self.db.minipools_new.distinct("address", {"node_operator": {"$exists": False}})
+        minipool_addresses = await self.db.minipools_new.distinct("address", {"node_operator": {"$exists": False}})
         # get node operator addresses from rp
         # return early if no minipools need to be updated
         if not minipool_addresses:
@@ -147,7 +147,7 @@ class NodeTask(commands.Cog):
                 {"$set": d},
             ) for a, d in data.items()
         ]
-        self.db.minipools_new.bulk_write(bulk, ordered=False)
+        await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with static data")
 
     @timerun_async
@@ -167,7 +167,7 @@ class NodeTask(commands.Cog):
             lambda a: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), a], [((a, "execution_balance"), safe_to_float)])
         ]
         # get all minipool addresses from db
-        minipool_addresses = self.db.minipools_new.distinct("address")
+        minipool_addresses = await self.db.minipools_new.distinct("address")
         data = {}
         att_count = 0
         for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
@@ -189,20 +189,20 @@ class NodeTask(commands.Cog):
                 {"$set": d}
             ) for a, d in data.items()
         ]
-        self.db.minipools_new.bulk_write(bulk, ordered=False)
+        await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with metadata")
         return
 
     @timerun
-    def add_static_deposit_data_to_minipools(self):
+    async def add_static_deposit_data_to_minipools(self):
         # get all minipool addresses and their status time from db that :
         # - do not have a deposit_amount
         # - are in the initialised state
         # sort by status time
-        minipools = list(self.db.minipools_new.find(
+        minipools = await self.db.minipools_new.find(
             {"deposit_amount": {"$exists": False}, "status": "initialised"},
             {"address": 1, "_id": 0, "status_time": 1}
-        ).sort("status_time", pymongo.ASCENDING))
+        ).sort("status_time", pymongo.ASCENDING).to_list()
         # return early if no minipools need to be updated
         if not minipools:
             log.debug("No minipools need to be updated with static deposit data")
@@ -258,14 +258,14 @@ class NodeTask(commands.Cog):
                 {"$set": d},
             ) for a, d in data.items()
         ]
-        self.db.minipools_new.bulk_write(bulk, ordered=False)
+        await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with static deposit data")
 
 
     @timerun
-    def add_static_beacon_data_to_minipools(self):
+    async def add_static_beacon_data_to_minipools(self):
         # get all public keys from db where no validator_index is set
-        public_keys = self.db.minipools_new.distinct("pubkey", {"validator_index": {"$exists": False}})
+        public_keys = await self.db.minipools_new.distinct("pubkey", {"validator_index": {"$exists": False}})
         # return early if no minipools need to be updated
         if not public_keys:
             log.debug("No minipools need to be updated with static beacon data")
@@ -290,14 +290,14 @@ class NodeTask(commands.Cog):
                 {"$set": {"validator_index": d}}
             ) for a, d in data.items()
         ]
-        self.db.minipools_new.bulk_write(bulk, ordered=False)
+        await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with static beacon data")
 
     @timerun
-    def update_dynamic_minipool_beacon_metadata(self):
+    async def update_dynamic_minipool_beacon_metadata(self):
         # basically same ordeal as above, but we use the validator index to get the data to improve performance
         # get all validator indexes from db
-        validator_indexes = self.db.minipools_new.distinct("validator_index")
+        validator_indexes = await self.db.minipools_new.distinct("validator_index")
         # remove None values
         validator_indexes = [i for i in validator_indexes if i is not None]
         data = {}
@@ -330,19 +330,19 @@ class NodeTask(commands.Cog):
                 {"$set": d}
             ) for a, d in data.items()
         ]
-        self.db.minipools_new.bulk_write(bulk, ordered=False)
+        await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with dynamic beacon data")
 
-    def check_indexes(self):
+    async def check_indexes(self):
         log.debug("checking indexes")
-        self.db.minipools_new.create_index("address")
-        self.db.minipools_new.create_index("pubkey")
-        self.db.minipools_new.create_index("validator_index")
-        self.db.node_operators_new.create_index("address")
+        await self.db.minipools_new.create_index("address")
+        await self.db.minipools_new.create_index("pubkey")
+        await self.db.minipools_new.create_index("validator_index")
+        await self.db.node_operators_new.create_index("address")
         # proposal index creation that is for some reason here
-        self.db.proposals.create_index("validator")
-        self.db.proposals.create_index("validator")
-        self.db.proposals.create_index("slot", unique=True)
+        await self.db.proposals.create_index("validator")
+        await self.db.proposals.create_index("validator")
+        await self.db.proposals.create_index("slot", unique=True)
         log.debug("indexes checked")
 
     @timerun_async
@@ -352,7 +352,7 @@ class NodeTask(commands.Cog):
         latest_rp = rp.call("rocketNodeManager.getNodeCount") - 1
         # get latest _id in node_operators_new collection
         latest_db = 0
-        if res := self.db.node_operators_new.find_one(sort=[("_id", pymongo.DESCENDING)]):
+        if res := await self.db.node_operators_new.find_one(sort=[("_id", pymongo.DESCENDING)]):
             latest_db = res["_id"]
         data = {}
         # return early if we're up to date
@@ -366,7 +366,7 @@ class NodeTask(commands.Cog):
                 for i in index_batch
             ])
         log.debug(f"Inserting {len(data)} new nodes into db")
-        self.db.node_operators_new.insert_many([
+        await self.db.node_operators_new.insert_many([
             {"_id": i, "address": a}
             for i, a in data.items()
         ])
@@ -379,7 +379,7 @@ class NodeTask(commands.Cog):
             lambda a: (ndf.address, [rp.seth_sig(ndf.abi, "getProxyAddress"), a], [((a, "fee_distributor_address"), None)]),
         ]
         # get all minipool addresses from db that do not have a node operator assigned
-        node_addresses = self.db.node_operators_new.distinct("address", {"fee_distributor_address": {"$exists": False}})
+        node_addresses = await self.db.node_operators_new.distinct("address", {"fee_distributor_address": {"$exists": False}})
         # get node operator addresses from rp
         # return early if no minipools need to be updated
         if not node_addresses:
@@ -404,7 +404,7 @@ class NodeTask(commands.Cog):
                 {"$set": d},
             ) for a, d in data.items()
         ]
-        self.db.node_operators_new.bulk_write(bulk, ordered=False)
+        await self.db.node_operators_new.bulk_write(bulk, ordered=False)
         log.debug("Node operators updated with static data")
 
     @timerun_async
@@ -445,7 +445,7 @@ class NodeTask(commands.Cog):
                           [((n["address"], "deposit_credit"), safe_to_float)])
         ]
         # get all node operators from db, but we only care about the address and the fee_distributor_address
-        nodes = list(self.db.node_operators_new.find({}, {"address": 1, "fee_distributor_address": 1}))
+        nodes = await self.db.node_operators_new.find({}, {"address": 1, "fee_distributor_address": 1}).to_list()
         data = {}
         att_count = 0
         for node_batch in as_chunks(nodes, self.batch_size // len(lambs)):
@@ -467,7 +467,7 @@ class NodeTask(commands.Cog):
                 {"$set": d}
             ) for a, d in data.items()
         ]
-        self.db.node_operators_new.bulk_write(bulk, ordered=False)
+        await self.db.node_operators_new.bulk_write(bulk, ordered=False)
         log.debug("Node operators updated with metadata")
 
 async def setup(self):

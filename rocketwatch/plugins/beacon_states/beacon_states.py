@@ -9,7 +9,7 @@ from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.readable import render_tree_legacy
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("beacon_states")
 log.setLevel(cfg["log_level"])
@@ -22,7 +22,7 @@ class BeaconStates(commands.Cog):
 
     @hybrid_command()
     async def beacon_states(self, ctx: Context):
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         # fetch from db
         res = await self.db.minipools_new.find({
             "beacon.status": {"$exists": True}
