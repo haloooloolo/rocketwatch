@@ -49,38 +49,38 @@ class Metrics(commands.Cog):
             desc += f"Total Commands Handled:\n\t{total_commands_handled}\n\n"
 
             # get the average command response time in the last 7 days
-            avg_response_time = await self.collection.aggregate([
+            avg_response_time = await (await self.collection.aggregate([
                 {'$match': {'timestamp': {'$gte': start}}},
                 {'$group': {'_id': None, 'avg': {'$avg': '$took'}}}
-            ]).to_list(length=1)
+            ])).to_list(length=1)
             if avg_response_time[0]['avg'] is not None:
                 desc += f"Average Command Response Time:\n\t{avg_response_time[0]['avg']:.03} seconds\n\n"
 
             # get completed rate in the last 7 days
-            completed_rate = await self.collection.aggregate([
+            completed_rate = await (await self.collection.aggregate([
                 {'$match': {'timestamp': {'$gte': start}, 'status': 'completed'}},
                 {'$group': {'_id': None, 'count': {'$sum': 1}}}
-            ]).to_list(length=1)
+            ])).to_list(length=1)
             if completed_rate:
                 percent = completed_rate[0]['count'] / (total_commands_handled - 1)
                 desc += f"Command Success Rate:\n\t{percent:.03%}\n\n"
 
             # get the 5 most used commands of the last 7 days
-            most_used_commands = await self.collection.aggregate([
+            most_used_commands = await (await self.collection.aggregate([
                 {'$match': {'timestamp': {'$gte': start}}},
                 {'$group': {'_id': '$command', 'count': {'$sum': 1}}},
                 {'$sort': {'count': -1}}
-            ]).to_list(length=5)
+            ])).to_list(length=5)
             desc += "Top 5 Commands based on usage:\n"
             for command in most_used_commands:
                 desc += f" - {command['_id']}: {command['count']}\n"
 
             # get the top 5 channels of the last 7 days
-            top_channels = await self.collection.aggregate([
+            top_channels = await (await self.collection.aggregate([
                 {'$match': {'timestamp': {'$gte': start}}},
                 {'$group': {'_id': '$channel', 'count': {'$sum': 1}}},
                 {'$sort': {'count': -1}}
-            ]).to_list(length=5)
+            ])).to_list(length=5)
             desc += "\nTop 5 Channels based on commands handled:\n"
             for channel in top_channels:
                 desc += f" - {channel['_id']['name']}: {channel['count']}\n"
@@ -95,7 +95,7 @@ class Metrics(commands.Cog):
         await ctx.defer(ephemeral=is_hidden(ctx))
         # generate mathplotlib chart that shows monthly command usage and monthly event emission, in separate subplots
 
-        command_usage = await self.collection.aggregate([
+        command_usage = await (await self.collection.aggregate([
             {
                 '$group': {
                     '_id'  : {
@@ -108,8 +108,8 @@ class Metrics(commands.Cog):
             {
                 '$sort': SON([('_id.year', 1), ('_id.month', 1)])
             }
-        ]).to_list(None)
-        event_emission = await self.db.event_queue.aggregate([
+        ])).to_list(None)
+        event_emission = await (await self.db.event_queue.aggregate([
             {
                 '$group': {
                     '_id'  : {
@@ -122,7 +122,7 @@ class Metrics(commands.Cog):
             {
                 '$sort': SON([('_id.year', 1), ('_id.month', 1)])
             }
-        ]).to_list(None)
+        ])).to_list(None)
 
         # create a new figure
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))

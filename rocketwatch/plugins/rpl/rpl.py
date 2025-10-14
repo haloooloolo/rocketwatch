@@ -37,7 +37,7 @@ class RPL(commands.Cog):
         e = Embed()
 
         reward_duration = rp.call("rocketRewardsPool.getClaimIntervalTime")
-        total_rpl_staked = await self.db.node_operators_new.aggregate([
+        total_rpl_staked = await (await self.db.node_operators_new.aggregate([
             {
                 '$group': {
                     '_id'                      : 'out',
@@ -46,7 +46,7 @@ class RPL(commands.Cog):
                     }
                 }
             }
-        ]).next()
+        ])).next()
         total_rpl_staked = total_rpl_staked["total_effective_rpl_stake"]
 
         # track down the rewards for node operators from the last reward period
@@ -112,7 +112,7 @@ class RPL(commands.Cog):
         total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalRPLStake"))
         e.add_field(name="Total RPL Staked:", value=f"{humanize.intcomma(total_rpl_staked, 2)} RPL", inline=False)
         # get effective RPL staked
-        effective_rpl_stake = await self.db.node_operators_new.aggregate([
+        effective_rpl_stake = await (await self.db.node_operators_new.aggregate([
             {
                 '$group': {
                     '_id'                      : 'out',
@@ -121,7 +121,7 @@ class RPL(commands.Cog):
                     }
                 }
             }
-        ]).next()
+        ])).next()
         effective_rpl_stake = effective_rpl_stake["total_effective_rpl_stake"]        # calculate percentage staked
         percentage_staked = effective_rpl_stake / total_rpl_staked
         e.add_field(name="Effective RPL Staked:", value=f"{humanize.intcomma(effective_rpl_stake, 2)} RPL "
@@ -143,7 +143,7 @@ class RPL(commands.Cog):
         e = Embed()
         img = BytesIO()
 
-        data = await self.db.node_operators_new.aggregate([
+        data = await (await self.db.node_operators_new.aggregate([
             {
                 '$match': {
                     'staking_minipool_count': {
@@ -164,7 +164,7 @@ class RPL(commands.Cog):
                     'rpl_stake': 1
                 }
             }
-        ]).to_list(length=None)
+        ])).to_list()
         rpl_eth_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
 
         # calculate withdrawable RPL at various RPL ETH prices

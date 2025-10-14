@@ -96,17 +96,17 @@ class MinipoolsUpkeepTask(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         # get stats about delegates
         # we want to show the distribution of minipools that are using each delegate
-        distribution_stats = await self.db.minipools_new.aggregate([
+        distribution_stats = await (await self.db.minipools_new.aggregate([
             {"$match": {"effective_delegate": {"$exists": True}}},
             {"$group": {"_id": "$effective_delegate", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
-        ]).to_list(None)
+        ])).to_list()
         # and the percentage of minipools that are using the useLatestDelegate flag
-        use_latest_delegate_stats = await self.db.minipools_new .aggregate([
+        use_latest_delegate_stats = await (await self.db.minipools_new.aggregate([
             {"$match": {"use_latest_delegate": {"$exists": True}}},
             {"$group": {"_id": "$use_latest_delegate", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
-        ]).to_list(None)
+        ])).to_list()
         e = Embed()
         e.title = "Delegate Stats"
         desc = "**Effective Delegate Distribution of Minipools:**\n"

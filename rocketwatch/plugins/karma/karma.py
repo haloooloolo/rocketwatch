@@ -102,7 +102,7 @@ class KarmaUtils(GroupCog, name="karma"):
     async def top(self, interaction: Interaction):
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         # find the top karma users
-        top = await self.db.karma.aggregate([
+        top = await (await self.db.karma.aggregate([
             {"$group": {"_id": "$user", "points": {"$sum": "$points"}}},
             {"$sort": {"points": -1}},
             {"$limit": 10},
@@ -118,7 +118,7 @@ class KarmaUtils(GroupCog, name="karma"):
                 "as"      : "top_issuer"
             }},
             {"$project": {"_id": 1, "points": 1, "issuer": {"$arrayElemAt": ["$top_issuer._id", 0]}}}
-        ]).to_list(length=10)
+        ])).to_list(length=10)
         e = Embed(title="Top 10 Karma Users")
         des = ""
         for i, u in enumerate(top):
@@ -146,10 +146,10 @@ class KarmaUtils(GroupCog, name="karma"):
             await interaction.edit_original_response(content=f"`{user.global_name or user.name}` has no points!")
             return
         # fetch total score for user
-        total = await self.db.karma.aggregate([
+        total = await (await self.db.karma.aggregate([
             {"$match": {"user": user.id}},
             {"$group": {"_id": "$user", "points": {"$sum": "$points"}}}
-        ]).to_list(length=1)
+        ])).to_list(length=1)
         e = Embed(title=f"Points held by {user.global_name or user.name}")
         des = ""
         if total:

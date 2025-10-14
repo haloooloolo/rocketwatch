@@ -61,8 +61,8 @@ class LotteryBase:
             InsertOne({"index": i, "validator": int(validator)})
             for i, validator in enumerate(validators)
         ]
-        async with await self.client.start_session() as s:
-            async with s.start_transaction():
+        async with self.client.start_session() as session:
+            async with await session.start_transaction():
                 await col.delete_many({})
                 await col.bulk_write(payload)
 
@@ -100,9 +100,8 @@ class LotteryBase:
                         '$ne': None
                     }
                 }
-            }]).to_list(length=None)
-
-        return data
+            }])
+        return await data.to_list()
 
     async def generate_sync_committee_description(self, period):
         await self.load_sync_committee(period)

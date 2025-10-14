@@ -288,7 +288,7 @@ class SupportUtils(GroupCog, name="support"):
     async def list(self, interaction: Interaction, order_by: Choice[str] = "_id"):
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
-        templates = await self.db.support_bot.aggregate([
+        templates = await (await self.db.support_bot.aggregate([
             {
                 "$lookup": {
                     "from": "support_bot_dumps",
@@ -303,7 +303,7 @@ class SupportUtils(GroupCog, name="support"):
                     "last_edited_date": {"$arrayElemAt": ["$dump.ts", 0]}
                 }
             }
-        ]).to_list(None)
+        ])).to_list()
         # sort the templates by the specified order
         if isinstance(order_by, Choice):
             order_by = order_by.value

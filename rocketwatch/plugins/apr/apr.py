@@ -99,7 +99,7 @@ class APR(commands.Cog):
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools_new.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',
@@ -170,7 +170,7 @@ class APR(commands.Cog):
                     }
                 }
             }
-        ]).to_list(length=1)
+        ])).to_list(length=1)
 
         node_fee = tmp[0]["average"] if len(tmp) > 0 else 20
         peth_share = tmp[0]["used_pETH_share"] if len(tmp) > 0 else 0.75
@@ -270,7 +270,7 @@ class APR(commands.Cog):
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools_new.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',
@@ -341,7 +341,7 @@ class APR(commands.Cog):
                     }
                 }
             }
-        ]).to_list(length=1)
+        ])).to_list(length=1)
 
         node_fee = tmp[0]["average"] if len(tmp) > 0 else 0.2
         peth_share = tmp[0]["used_pETH_share"] if len(tmp) > 0 else 0.75

@@ -236,7 +236,7 @@ class Proposals(commands.Cog):
 
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
-        distribution = await self.db.minipool_proposals.aggregate([
+        distribution = await (await self.db.minipool_proposals.aggregate([
             {
                 '$project': {
                     'attribute'      : f'$latest_proposal.{attribute}',
@@ -258,7 +258,7 @@ class Proposals(commands.Cog):
                     'count': 1
                 }
             }
-        ]).to_list(length=None)
+        ])).to_list()
         if remove_allnodes:
             d = {'remove_from_total': {'count': 0, 'validator_count': 0}}
             for entry in distribution:
@@ -309,7 +309,7 @@ class Proposals(commands.Cog):
         # get version used after max_slot - look_back
         # and have at least 10 occurrences
         start_slot = max_slot - look_back
-        recent_versions = await self.db.proposals.aggregate([
+        recent_versions = await (await self.db.proposals.aggregate([
             {
                 '$match': {
                     'slot'   : {
@@ -328,7 +328,7 @@ class Proposals(commands.Cog):
                     '_id': -1
                 }
             }
-        ]).to_list(None)
+        ])).to_list()
         recent_versions = [v['_id'] for v in recent_versions]
         data = {}
         versions = []
@@ -550,11 +550,11 @@ class Proposals(commands.Cog):
                        color_func=lambda *args, **kwargs: "rgb(235, 142, 85)")
 
         # aggregate comments with their count
-        comments = await self.db.proposals.aggregate([
+        comments = await (await self.db.proposals.aggregate([
             {"$match": {"comment": {"$exists": 1}}},
             {"$group": {"_id": "$comment", "count": {"$sum": 1}}},
             {"$sort": {"count": -1, "slot": -1}}
-        ]).to_list(None)
+        ])).to_list()
         comment_words = {x['_id']: x["count"] for x in comments}
 
         # generate word cloud
@@ -580,7 +580,7 @@ class Proposals(commands.Cog):
         await msg.edit(content="generating client combo ranking...")
 
         # aggregate [consensus, execution] pair counts
-        client_pairs = await self.db.minipool_proposals.aggregate([
+        client_pairs = await (await self.db.minipool_proposals.aggregate([
             {
                 "$match": {
                     "latest_proposal.consensus_client": {"$ne": "Unknown"},
@@ -603,7 +603,7 @@ class Proposals(commands.Cog):
                     "count": -1
                 }
             }
-        ]).to_list(None)
+        ])).to_list()
 
         e = Embed(title=f"Client Combo Ranking{' without Allnodes' if remove_allnodes else ''}")
 
