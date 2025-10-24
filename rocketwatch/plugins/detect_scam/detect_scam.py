@@ -319,7 +319,10 @@ class DetectScam(Cog):
         txt = self._get_message_content(message)
         if match := self.invite_pattern.search(txt):
             link = match.group(0)
-            trusted_domains = ["youtu.be", "youtube.com", "tenor.com", "giphy.com", "imgur.com"]
+            trusted_domains = [
+                "youtu.be", "youtube.com", "tenor.com", "giphy.com", 
+                "imgur.com", "bluesky.app"
+            ]
             if not any(domain in link for domain in trusted_domains):
                 return "Invite to external server"
         return None

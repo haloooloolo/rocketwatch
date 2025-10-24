@@ -120,3 +120,6 @@ dmypy.json
 state.db
 */main.cfg
 mongodb/
+
+# helper scripts
+*.sh
