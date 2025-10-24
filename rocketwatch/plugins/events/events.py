@@ -386,7 +386,7 @@ class Events(EventPlugin):
         if not any([
             rp.call("rocketMinipoolManager.getMinipoolExists", receipt.to),
             rp.call("rocketMinipoolManager.getMinipoolExists", event.address),
-            rp.get_name_by_address(receipt.to),
+            rp.get_name_by_address(receipt.to) not in [None, "multicall3"],
             rp.get_name_by_address(event.address)
         ]):
             # some random contract we don't care about
@@ -429,8 +429,7 @@ class Events(EventPlugin):
 
         return self.handle_event(event_name, event)
 
-    @staticmethod
-    def handle_event(event_name: str, event: aDict) -> Optional[Embed]:
+    def handle_event(self, event_name: str, event: aDict) -> Optional[Embed]:
         args = aDict(event.args)
 
         if "negative_rETH_ratio_update_event" in event_name:
@@ -502,6 +501,8 @@ class Events(EventPlugin):
             args.assets = solidity.to_float(args.assets)
             args.shares = solidity.to_float(args.shares)
         elif event_name.startswith("rocksolid_withdraw"):
+            assets = rp.call("RockSolidVault.convertToAssets", args.shares, args.requestId, block=event.blockNumber)
+            args.assets = solidity.to_float(assets)
             args.shares = solidity.to_float(args.shares)
         elif event_name == "cs_max_validator_change_event":
             args.oldLimit, args.newLimit = args.oldValue, args.newValue
