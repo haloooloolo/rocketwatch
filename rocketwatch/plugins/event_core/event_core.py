@@ -172,7 +172,7 @@ class EventCore(commands.Cog):
             await self.db.event_queue.insert_many(events)
 
         self.head_block = target_block
-        self.db.last_checked_block.replace_one(
+        await self.db.last_checked_block.replace_one(
             {"_id": "events"},
             {"_id": "events", "block": to_block},
             upsert=True
