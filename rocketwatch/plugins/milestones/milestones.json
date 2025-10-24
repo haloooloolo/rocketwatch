@@ -56,5 +56,15 @@
         "formatter": "",
         "min": 50,
         "step_size": 100
+    },
+    {
+        "id": "milestone_rocksolid_tvl",
+        "function": "call",
+        "args": [
+            "RockSolidVault.totalAssets"
+        ],
+        "formatter": "to_float",
+        "min": 1000,
+        "step_size": 1000
     }
 ]

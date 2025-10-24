@@ -62,6 +62,7 @@ rocketpool: {
         BalancerVault:          "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
         UniV3_USDC_ETH:         "0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"
         UniV3_rETH_ETH:         "0x553e9C493678d8606d6a5ba284643dB2110Df823"
+        RockSolidVault:         "0x936faCdf10c8c36294e7b9d28345255539d81bc7"
     }
 }
 modules: {

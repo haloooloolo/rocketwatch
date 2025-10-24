@@ -198,11 +198,15 @@
     },
     "milestone_registered_nodes": {
         "title": ":tada: Milestone Reached",
-        "description": "%{result_value} Nodes have been registered!"
+        "description": "%{result_value} nodes have been registered!"
     },
     "milestone_rpl_swapped": {
         "title": ":tada: Milestone Reached",
         "description": "%{result_value}% of all RPL has been exchanged for the new version!"
+    },
+    "milestone_rocksolid_tvl": {
+        "title": ":tada: Milestone Reached",
+        "description": "%{result_value} rETH deposited into the RockSolid vault!"
     },
     "bootstrap_odao_member": {
         "title": ":satellite_orbital: oDAO Bootstrap Mode: Member Added",
@@ -580,12 +584,12 @@
     },
     "rocksolid_deposit_event": {
         "title": "<:rocksolid:1425091714267480158> RockSolid rETH Deposit",
-        "description": "**%{assets} rETH** deposited for **%{shares} rock.rETH**!",
-        "description_small": "<:rocksolid:1425091714267480158> %{sender} deposited **%{assets} rETH** for **%{shares} rock.rETH**!"
+        "description": "**%{assets} rETH** deposited into the RockSolid vault!",
+        "description_small": "<:rocksolid:1425091714267480158> %{sender} deposited **%{assets} rETH** into the RockSolid vault!"
     },
     "rocksolid_withdrawal_event": {
         "title": "<:rocksolid:1425091714267480158> RockSolid rETH Withdrawal",
-        "description": "New redemption request for **%{shares} rock.rETH**!",
-        "description_small": "<:rocksolid:1425091714267480158> %{sender} requested redemption of **%{shares} rock.rETH**!"
+        "description": "New withdrawal request for **%{assets} rETH** from the RockSolid vault!",
+        "description_small": "<:rocksolid:1425091714267480158> %{sender} withdrawing **%{assets} rETH** from the RockSolid vault!"
     }
 }

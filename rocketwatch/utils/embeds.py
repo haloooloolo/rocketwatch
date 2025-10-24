@@ -278,9 +278,9 @@ def assemble(args) -> Embed:
         case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
             use_large = (args["assets"] >= 16 / solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice")))
         case "rocksolid_deposit_event":
-            use_large = args["assets"] >= 100
+            use_large = args["assets"] >= 50
         case "rocksolid_withdrawal_event":
-            use_large = args["shares"] >= 100
+            use_large = args["shares"] >= 50
         case _:
             use_large = (amount >= 100)
 
@@ -440,8 +440,7 @@ def assemble(args) -> Embed:
     # show transaction hash if possible
     if "transactionHash" in args:
         content = f"{args.transactionHash}{advanced_tnx_url(args.transactionHash_raw)}"
-        e.add_field(name="Transaction Hash",
-                    value=content)
+        e.add_field(name="Transaction Hash", value=content)
 
     # show sender address
     if senders := [value for key, value in args.items() if key.lower() in ["sender", "from"]]:
