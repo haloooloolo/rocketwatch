@@ -4,7 +4,7 @@ import time
 import pymongo
 from multicall import Call
 from cronitor import Monitor
-from pymongo import AsyncMongoClient UpdateOne, UpdateMany
+from pymongo import AsyncMongoClient, UpdateOne, UpdateMany
 
 from discord.ext import tasks, commands
 from discord.utils import as_chunks
