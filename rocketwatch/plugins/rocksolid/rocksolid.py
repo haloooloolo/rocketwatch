@@ -115,7 +115,7 @@ class RockSolid(Cog):
 
         ax.plot(x, y, color="#50b1f7")
         ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
-        ax.set_ylabel("rETH deposited")
+        ax.set_ylabel("AUM (rETH)")
         ax.set_xlim((x[0], x[-1]))
         ax.set_ylim((y[0], y[-1] * 1.01))
         
