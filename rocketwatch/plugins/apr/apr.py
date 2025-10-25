@@ -245,11 +245,11 @@ class APR(commands.Cog):
 
         e.set_image(url="attachment://reth_apr.png")
 
-        e.add_field(name="Current Average Effective Commission:",
+        e.add_field(name="Current Average Effective Commission",
                     value=f"{node_fee:.2%} (Observed pETH Share: {peth_share:.2%})",
                     inline=False)
 
-        e.add_field(name="Effectiveness:",
+        e.add_field(name="Effectiveness",
                     value=f"{y_effectiveness[-1]:.2%}",
                     inline=False)
         await ctx.send(embed=e, file=File(img, "reth_apr.png"))

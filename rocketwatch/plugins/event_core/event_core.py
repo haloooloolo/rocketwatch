@@ -233,7 +233,7 @@ class EventCore(commands.Cog):
 
     async def update_status_messages(self) -> None:
         configs = cfg.get("events.status_message", {})
-        for state_message in (await self.db.state_messages.find().to_list(None)):
+        for state_message in (await self.db.state_messages.find().to_list()):
             if state_message["_id"] not in configs:
                 log.debug(f"No config for state message ID {state_message['_id']}, removing message")
                 await self._replace_or_add_status("", None, state_message)

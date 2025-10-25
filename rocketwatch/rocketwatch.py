@@ -135,7 +135,7 @@ class RocketWatch(Bot):
             err_description += (
                 f"\n```"
                 f"{ctx.command.name = }\n"
-                f"ctx.command.params = {getattr(ctx.command, 'params')}\n"
+                f"ctx.command.params = {getattr(ctx.command, 'params', '')}\n"
                 f"{ctx.channel = }\n"
                 f"{ctx.author = }"
                 f"```"

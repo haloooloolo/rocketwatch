@@ -31,7 +31,7 @@ class PinnedMessages(commands.Cog):
     @tasks.loop(seconds=60.0)
     async def run_loop(self):
         # get all pinned messages in db
-        messages = await self.db.pinned_messages.find().to_list(length=None)
+        messages = await self.db.pinned_messages.find().to_list()
         for message in messages:
             # if it's older than 6 hours and not disabled, mark as disabled
             if message["created_at"] + timedelta(hours=6) < datetime.utcnow() and not message["disabled"]:

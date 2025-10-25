@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 
 from bidict import bidict
+from eth_typing import BlockIdentifier
 from cachetools import cached, FIFOCache
 from cachetools.func import ttl_cache
 from multicall import Call, Multicall
@@ -195,9 +196,11 @@ class RocketPool:
         if not address:
             address = self.get_address_by_name(name)
         contract = self.assemble_contract(name, address, historical, mainnet)
+        if "(" in path and ")" in path:
+            return contract.get_function_by_signature(function)(*args)
         return contract.functions[function](*args)
 
-    def call(self, path, *args, block="latest", address=None, mainnet=False):
+    def call(self, path, *args, block: BlockIdentifier = "latest", address=None, mainnet=False):
         log.debug(f"Calling {path} (block={block})")
         return self.get_function(path, *args, historical=block != "latest", address=address, mainnet=mainnet).call(block_identifier=block)
 

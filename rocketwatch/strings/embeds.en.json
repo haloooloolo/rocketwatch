@@ -590,6 +590,6 @@
     "rocksolid_withdrawal_event": {
         "title": "<:rocksolid:1425091714267480158> RockSolid rETH Withdrawal",
         "description": "New withdrawal request for **%{assets} rETH** from the RockSolid vault!",
-        "description_small": "<:rocksolid:1425091714267480158> %{sender} withdrawing **%{assets} rETH** from the RockSolid vault!"
+        "description_small": "<:rocksolid:1425091714267480158> %{sender} requested a withdrawal for **%{assets} rETH** from the RockSolid vault!"
     }
 }
