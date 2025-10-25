@@ -38,7 +38,7 @@ class RockSolid(Cog):
         if db_entry := (await self.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_block = db_entry["block"]
         else:
-            last_checked_block = 23237366 # contract deployment
+            last_checked_block = self.deployment_block
 
         b_from = last_checked_block + 1
         b_to = w3.eth.get_block_number()
