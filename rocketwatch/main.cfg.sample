@@ -34,6 +34,7 @@ mongodb: {
 rocketpool: {
     chain: "mainnet"
     support: {
+        user_ids: []
         role_ids: []
         server_id: -1
         channel_id: -1

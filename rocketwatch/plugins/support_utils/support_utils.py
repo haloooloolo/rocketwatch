@@ -132,6 +132,7 @@ class AdminModal(ui.Modal, title="Change Template Message"):
 
 def has_perms(interaction: Interaction):
     return any([
+        interaction.user.id in cfg["rocketpool.support.user_ids"],
         any(r.id in cfg["rocketpool.support.role_ids"] for r in interaction.user.roles),
         cfg["discord.owner.user_id"] == interaction.user.id,
         interaction.user.guild_permissions.moderate_members and interaction.guild.id == cfg["rocketpool.support.server_id"]
