@@ -408,7 +408,7 @@ class Events(EventPlugin):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 deposit_contract = rp.get_contract_by_name("casperDeposit")
-                processed_logs = deposit_contract.events.DepositEvent().processReceipt(receipt)
+                processed_logs = deposit_contract.events.DepositEvent().process_receipt(receipt)
 
             # attempt to retrieve the pubkey
             if processed_logs:
@@ -463,7 +463,7 @@ class Events(EventPlugin):
                         value = bool(value_raw)
                     case 2:
                         # SettingType.ADDRESS
-                        value = w3.toChecksumAddress(value_raw)
+                        value = w3.to_checksum_address(value_raw)
                     case _:
                         value = "???"
                 description_parts.append(
@@ -538,8 +538,8 @@ class Events(EventPlugin):
             rpl = rp.get_address_by_name("rocketTokenRPL")
             if args.signerToken != rpl and args.senderToken != rpl:
                 return None
-            args.seller = w3.toChecksumAddress(f"0x{event.topics[2][-40:]}")
-            args.buyer = w3.toChecksumAddress(f"0x{event.topics[3][-40:]}")
+            args.seller = w3.to_checksum_address(f"0x{event.topics[2][-40:]}")
+            args.buyer = w3.to_checksum_address(f"0x{event.topics[3][-40:]}")
             # token names
             s = rp.assemble_contract(name="ERC20", address=args.signerToken)
             args.sellToken = s.functions.symbol().call()
@@ -738,7 +738,7 @@ class Events(EventPlugin):
             ee = rp.get_contract_by_name("rocketNodeDeposit").events.DepositReceived()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                processed_logs = ee.processReceipt(receipt)
+                processed_logs = ee.process_receipt(receipt)
             for deposit_event in processed_logs:
                 # needs to be within 5 before the event
                 if event.logIndex - 6 < deposit_event.logIndex < event.logIndex:
@@ -749,9 +749,9 @@ class Events(EventPlugin):
                 e = rp.get_contract_by_name("rocketVault").events.EtherWithdrawn()
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
-                    processed_logs = e.processReceipt(receipt)
+                    processed_logs = e.process_receipt(receipt)
 
-                deposit_contract = bytes(w3.soliditySha3(["string"], ["rocketNodeDeposit"]))
+                deposit_contract = bytes(w3.solidity_keccak(["string"], ["rocketNodeDeposit"]))
                 for withdraw_event in processed_logs:
                     # event.logindex 44, withdraw_event.logindex 50, rough distance like that
                     # reminder order is different than the previous example

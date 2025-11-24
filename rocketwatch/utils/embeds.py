@@ -63,7 +63,7 @@ async def resolve_ens(ctx, node_address):
 
     # if it's just an address, look for a reverse record
     try:
-        address = w3.toChecksumAddress(node_address)
+        address = w3.to_checksum_address(node_address)
     except Exception:
         await ctx.send("Invalid address")
         return None, None
@@ -101,7 +101,7 @@ def el_explorer_url(
     if w3.isAddress(target):
         # sanitize address
         url = f"{cfg['execution_layer.explorer']}/address/{target}"
-        target = w3.toChecksumAddress(target)
+        target = w3.to_checksum_address(target)
 
         if prefix != -1 and rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
             prefix += ":cup_with_straw:"
@@ -205,7 +205,7 @@ def prepare_args(args):
 
             if w3.isAddress(arg_value):
                 # get rocketpool related holdings value for this address
-                address = w3.toChecksumAddress(arg_value)
+                address = w3.to_checksum_address(arg_value)
                 prefix = get_sea_creature_for_address(address)
 
             # handle validators

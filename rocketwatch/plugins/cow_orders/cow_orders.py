@@ -149,7 +149,7 @@ class CowOrders(EventPlugin):
             data = aDict({})
 
             data["cow_uid"] = order["uid"]
-            data["cow_owner"] = w3.toChecksumAddress(order["owner"])
+            data["cow_owner"] = w3.to_checksum_address(order["owner"])
             decimals = 18
             # base the event_name depending on if its buying or selling RPL
             if order["sellToken"] in self.tokens:
@@ -159,7 +159,7 @@ class CowOrders(EventPlugin):
                 data["ratio"] = int(order["sellAmount"]) / int(order["buyAmount"])
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["sellAmount"]))
-                s = rp.assemble_contract(name="ERC20", address=w3.toChecksumAddress(order["buyToken"]))
+                s = rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["buyToken"]))
                 try:
                     decimals = s.functions.decimals().call()
                 except:
@@ -170,7 +170,7 @@ class CowOrders(EventPlugin):
                 data["event_name"] = f"cow_order_buy_{token}_found"
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["buyAmount"]))
-                s = rp.assemble_contract(name="ERC20", address=w3.toChecksumAddress(order["sellToken"]))
+                s = rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["sellToken"]))
                 try:
                     decimals = s.functions.decimals().call()
                 except:
@@ -182,7 +182,7 @@ class CowOrders(EventPlugin):
                 data["otherToken"] = s.functions.symbol().call()
             except:
                 data["otherToken"] = "UNKWN"
-                if s.address == w3.toChecksumAddress("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"):
+                if s.address == w3.to_checksum_address("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"):
                     data["otherToken"] = "ETH"
             data["deadline"] = int(order["validTo"])
             # if the rpl value in usd is less than 25k, ignore it

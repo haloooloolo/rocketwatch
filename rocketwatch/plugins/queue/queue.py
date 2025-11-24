@@ -49,7 +49,7 @@ class Queue(Cog):
         """Get the next {limit} minipools in the queue"""
 
         queue_contract = rp.get_contract_by_name("addressQueueStorage")
-        key = w3.soliditySha3(["string"], ["minipools.available.variable"])
+        key = w3.solidity_keccak(["string"], ["minipools.available.variable"])
         q_len = queue_contract.functions.getLength(key).call()
 
         start = max(start, 0)

@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 from io import BytesIO
+from typing import Optional
 
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
@@ -29,7 +30,8 @@ log.setLevel(cfg["log_level"])
 class RockSolid(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
+        self.client = AsyncMongoClient(cfg["mongodb.uri"])
+        self.db = self.client.rocketwatch
         self.deployment_block = 23237366
 
     async def _fetch_asset_updates(self) -> list[tuple[int, float]]:
@@ -48,21 +50,22 @@ class RockSolid(Cog):
         async for doc in self.db.rocksolid.find({}):
             updates.append((doc["time"], doc["assets"]))
         
-        payload = []
+        db_operations = []
         for event_log in get_logs(vault_contract.events.TotalAssetsUpdated, b_from, b_to):
             ts = block_to_ts(event_log.blockNumber)
             assets = solidity.to_float(event_log.args.totalAssets)
             updates.append((ts, assets))
-            payload.append(InsertOne({"time": ts, "assets": assets}))
+            db_operations.append(InsertOne({"time": ts, "assets": assets}))
         
-        if payload:
-            await self.db.rocksolid.bulk_write(payload)
-            
-        await self.db.last_checked_block.replace_one(
-            {"_id": cog_id},
-            {"_id": cog_id, "block": b_to},
-            upsert=True
-        )
+        async with self.client.start_session() as session:
+            async with await session.start_transaction():
+                if db_operations:
+                    await self.db.rocksolid.bulk_write(db_operations)
+                await self.db.last_checked_block.replace_one(
+                    {"_id": cog_id},
+                    {"_id": cog_id, "block": b_to},
+                    upsert=True
+                )
 
         return updates
 
@@ -75,20 +78,24 @@ class RockSolid(Cog):
         
         current_block = w3.eth.get_block_number()
         now = block_to_ts(current_block)
-        apy_7d_block = ts_to_block(now - timedelta(days=7).total_seconds())
-        apy_30d_block = ts_to_block(now - timedelta(days=30).total_seconds())
-        apy_90d_block = ts_to_block(now - timedelta(days=90).total_seconds())
                 
         def get_eth_rate(block_number: int) -> int:
             block_number = max(block_number, self.deployment_block)
             reth_value = rp.call("RockSolidVault.convertToAssets", 10**18, block=block_number)
-            return rp.call("rocketTokenRETH.getEthValue", reth_value, block=block_number) 
+            return rp.call("rocketTokenRETH.getEthValue", reth_value, block=block_number)
         
         current_eth_rate = get_eth_rate(current_block)
-        apy_7d = (current_eth_rate / get_eth_rate(apy_7d_block) - 1) * (365 / 7) * 100
-        apy_30d = (current_eth_rate / get_eth_rate(apy_30d_block) - 1) * (365 / 30) * 100
-        apy_90d = (current_eth_rate / get_eth_rate(apy_90d_block) - 1) * (365 / 90) * 100
         
+        def get_apy(days: int) -> Optional[float]:
+            reference_block = ts_to_block(now - timedelta(days=days).total_seconds())
+            if reference_block < self.deployment_block:
+                return None
+            return (current_eth_rate / get_eth_rate(reference_block) - 1) * (365 / days) * 100
+
+        apy_7d = get_apy(days=7)
+        apy_30d = get_apy(days=30)
+        apy_90d = get_apy(days=90)
+                
         tvl_reth = solidity.to_float(rp.call("RockSolidVault.totalAssets"))
         tvl_rock_reth = solidity.to_float(rp.call("RockSolidVault.totalSupply"))
         
@@ -129,14 +136,14 @@ class RockSolid(Cog):
         ca_rock_reth = rp.get_address_by_name("RockSolidVault")
         
         embed = Embed(title="<:rocksolid:1425091714267480158> RockSolid rETH Vault")
-        embed.add_field(name="7d APY", value=f"{apy_7d:.2f}%" if (apy_7d_block >= self.deployment_block) else "-")
-        embed.add_field(name="30d APY", value=f"{apy_30d:.2f}%" if (apy_30d_block >= self.deployment_block) else "-")
-        embed.add_field(name="90d APY", value=f"{apy_90d:.2f}%" if (apy_90d_block >= self.deployment_block) else "-")
+        embed.add_field(name="7d APY", value=f"{apy_7d:.2f}%" if apy_7d else "-")
+        embed.add_field(name="30d APY", value=f"{apy_30d:.2f}%" if apy_30d else "-")
+        embed.add_field(name="90d APY", value=f"{apy_90d:.2f}%" if apy_90d else "-")
         embed.add_field(name="TVL", value=f"`{tvl_reth:,.2f}` {el_explorer_url(ca_reth, name=' rETH')}")
         embed.add_field(name="Supply", value=f"`{tvl_rock_reth:,.2f}` {el_explorer_url(ca_rock_reth, name=' rock.rETH')}")
-        embed.set_image(url="attachment://rocksolid_tvl.png")
+        embed.set_image(url="attachment://rocksolid-tvl.png")
 
-        await interaction.followup.send(embed=embed, file=File(img, "rocksolid_tvl.png"))
+        await interaction.followup.send(embed=embed, file=File(img, "rocksolid-tvl.png"))
 
 
 async def setup(bot):

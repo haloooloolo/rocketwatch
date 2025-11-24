@@ -116,7 +116,7 @@ class MinipoolsUpkeepTask(commands.Cog):
         rp.uncached_get_address_by_name("rocketMinipoolDelegate")
         for d in distribution_stats:
             # I HATE THE CHECKSUMMED ADDRESS REQUIREMENTS I HATE THEM SO MUCH
-            a = w3.toChecksumAddress(d['_id'])
+            a = w3.to_checksum_address(d['_id'])
             name = s_hex(a)
             if a == rp.get_address_by_name("rocketMinipoolDelegate"):
                 name += " (Latest)"

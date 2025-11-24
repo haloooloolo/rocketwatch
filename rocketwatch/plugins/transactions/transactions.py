@@ -159,7 +159,7 @@ class Transactions(EventPlugin):
             # get the amount of dequeues that happened in this transaction using the event logs
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                processed_logs = event.processReceipt(receipt)
+                processed_logs = event.process_receipt(receipt)
             args.count = len(processed_logs)
         elif "SettingBool" in args.function_name:
             args.value = bool(args.value)
@@ -196,7 +196,7 @@ class Transactions(EventPlugin):
                         value = bool(value_raw)
                     case 2:
                         # SettingType.ADDRESS
-                        value = w3.toChecksumAddress(value_raw)
+                        value = w3.to_checksum_address(value_raw)
                     case _:
                         value = "???"
                 description_parts.append(

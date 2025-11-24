@@ -59,7 +59,7 @@ class MinipoolTask(commands.Cog):
         minipool_addresses = []
         for index_batch in as_chunks(range(minipool_count), self.batch_size):
             minipool_addresses += [
-                w3.toChecksumAddress(r.results[0]) for r in rp.multicall.aggregate(
+                w3.to_checksum_address(r.results[0]) for r in rp.multicall.aggregate(
                     self.minipool_manager.functions.getMinipoolAt(i) for i in index_batch).results
             ]
         # remove address that are already in the minipool collection
@@ -79,25 +79,25 @@ class MinipoolTask(commands.Cog):
 
     @timerun
     def get_node_operator(self, addresses):
-        base_contract = rp.assemble_contract("rocketMinipool", w3.toChecksumAddress(addresses[0]))
+        base_contract = rp.assemble_contract("rocketMinipool", w3.to_checksum_address(addresses[0]))
         func = base_contract.functions.getNodeAddress()
         minipool_contracts = []
         for a in addresses:
             tmp = copy.deepcopy(func)
-            tmp.address = w3.toChecksumAddress(a)
+            tmp.address = w3.to_checksum_address(a)
             minipool_contracts.append(tmp)
         node_addresses = rp.multicall.aggregate(minipool_contracts)
-        node_addresses = [w3.toChecksumAddress(r.results[0]) for r in node_addresses.results]
+        node_addresses = [w3.to_checksum_address(r.results[0]) for r in node_addresses.results]
         return node_addresses
 
     @timerun
     def get_node_fee(self, addresses):
-        base_contract = rp.assemble_contract("rocketMinipool", w3.toChecksumAddress(addresses[0]))
+        base_contract = rp.assemble_contract("rocketMinipool", w3.to_checksum_address(addresses[0]))
         func = base_contract.functions.getNodeFee()
         minipool_contracts = []
         for a in addresses:
             tmp = copy.deepcopy(func)
-            tmp.address = w3.toChecksumAddress(a)
+            tmp.address = w3.to_checksum_address(a)
             minipool_contracts.append(tmp)
         node_fees = rp.multicall.aggregate(minipool_contracts)
         node_fees = [to_float(r.results[0]) for r in node_fees.results]

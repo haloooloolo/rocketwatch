@@ -144,7 +144,7 @@ class Random(commands.Cog):
             try:
                 if ".eth" in address:
                     address = ens.resolve_name(address)
-                address = w3.toChecksumAddress(address)
+                address = w3.to_checksum_address(address)
             except (ValueError, TypeError):
                 e.description = "Invalid address"
                 await ctx.send(embed=e)

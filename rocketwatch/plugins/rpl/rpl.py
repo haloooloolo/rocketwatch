@@ -53,7 +53,7 @@ class RPL(commands.Cog):
         contract = rp.get_contract_by_name("rocketVault")
         m = ts_to_block(rp.call("rocketRewardsPool.getClaimIntervalTimeStart"))
         events = contract.events["TokenDeposited"].getLogs(argument_filters={
-            "by": w3.soliditySha3(
+            "by": w3.solidity_keccak(
                 ["string", "address"],
                 ["rocketMerkleDistributorMainnet", rp.get_address_by_name("rocketTokenRPL")])
         }, fromBlock=m - 10000, toBlock=m + 10000)

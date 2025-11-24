@@ -112,6 +112,19 @@ class Debug(Cog):
         msg = await channel.fetch_message(int(message_id))
         await msg.delete()
         await interaction.followup.send(content="Done")
+        
+    @command()
+    @guilds(cfg["discord.owner.server_id"])
+    @is_owner()
+    async def edit_embed(self, interaction: Interaction, message_url: str, new_description: str):
+        await interaction.response.defer(ephemeral=True)
+        channel_id, message_id = message_url.split("/")[-2:]
+        channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        msg = await channel.fetch_message(int(message_id))
+        embed = msg.embeds[0]
+        embed.description = new_description
+        await msg.edit(embed=embed)
+        await interaction.followup.send(content="Done")
 
     @command()
     @guilds(cfg["discord.owner.server_id"])
@@ -390,7 +403,7 @@ class Debug(Cog):
             args = json.loads(json_args)
             if not isinstance(args, list):
                 args = [args]
-            v = rp.call(function, *args, block=block, address=w3.toChecksumAddress(address) if address else None)
+            v = rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
         except Exception as err:
             await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
             return

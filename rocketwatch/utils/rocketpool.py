@@ -103,7 +103,7 @@ class RocketPool:
 
     def uncached_get_address_by_name(self, name, block="latest"):
         log.debug(f"Retrieving address for {name} Contract")
-        sha3 = w3.soliditySha3(["string", "string"], ["contract.address", name])
+        sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
         address = self.get_contract_by_name("rocketStorage", historical=block != "latest").functions.getAddress(sha3).call(block_identifier=block)
         if not w3.toInt(hexstr=address):
             raise NoAddressFound(f"No address found for {name} Contract")
@@ -144,7 +144,7 @@ class RocketPool:
 
     def uncached_get_abi_by_name(self, name):
         log.debug(f"Retrieving abi for {name} Contract")
-        sha3 = w3.soliditySha3(["string", "string"], ["contract.abi", name])
+        sha3 = w3.solidity_keccak(["string", "string"], ["contract.abi", name])
         compressed_string = self.get_contract_by_name("rocketStorage").functions.getString(sha3).call()
         if not compressed_string:
             raise Exception(f"No abi found for {name} Contract")
@@ -196,8 +196,6 @@ class RocketPool:
         if not address:
             address = self.get_address_by_name(name)
         contract = self.assemble_contract(name, address, historical, mainnet)
-        if "(" in path and ")" in path:
-            return contract.get_function_by_signature(function)(*args)
         return contract.functions[function](*args)
 
     def call(self, path, *args, block: BlockIdentifier = "latest", address=None, mainnet=False):

@@ -96,7 +96,7 @@ class NodeTask(commands.Cog):
             latest_db = res["_id"]
         data = {}
         # return early if we're up to date
-        if latest_db == latest_rp:
+        if latest_db >= latest_rp:
             log.debug("No new minipools")
             return
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
