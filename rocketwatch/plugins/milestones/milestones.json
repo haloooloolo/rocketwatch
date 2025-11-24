@@ -64,7 +64,7 @@
             "RockSolidVault.totalAssets"
         ],
         "formatter": "to_float",
-        "min": 1000,
-        "step_size": 1000
+        "min": 0,
+        "step_size": 5000
     }
 ]

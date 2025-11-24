@@ -177,7 +177,7 @@
     },
     "rpl_migration_event": {
         "title": ":arrows_counterclockwise: RPL Migration",
-        "description": "%{from} migrated **%{amount} RPL V1** to the new token contract!",
+        "description": "%{from} migrated **%{amount} RPL v1** to the new token contract!",
         "description_small": ":arrows_counterclockwise: %{from} migrated **%{amount} RPL**!"
     },
     "milestone_rpl_stake": {
@@ -323,7 +323,7 @@
     },
     "pdao_spend_treasury": {
         "title": ":bank: DAO Treasury Spend",
-        "description": "**%{amount} RPL** from treasury sent to %{to}!"
+        "description": "**%{amount} RPL** from treasury sent to %{recipientAddress}!"
     },
     "pdao_spend_treasury_recurring_new": {
         "title": ":bank: DAO Treasury: New Recurring Spend",
