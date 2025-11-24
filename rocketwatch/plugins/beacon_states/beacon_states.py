@@ -32,7 +32,8 @@ class BeaconStates(commands.Cog):
             "active" : {},
             "exiting": {},
             "exited" : {},
-            "withdrawn": {}
+            "withdrawn": {},
+            "closed": {}
         }
         exiting_valis = []
         for minipool in res:
@@ -50,16 +51,16 @@ class BeaconStates(commands.Cog):
                     data["exiting"]["slashed"] = data["exiting"].get("slashed", 0) + 1
                     exiting_valis.append(minipool)
                 case "exited_unslashed" | "exited_slashed" | "withdrawal_possible":
-                    if minipool["beacon"]["slashed"]:
-                        data["exited"]["slashed"] = data["exited"].get("slashed", 0) + 1
-                    else:
-                        data["exited"]["voluntarily"] = data["exited"].get("voluntarily", 0) + 1
+                    status_2 = "slashed" if minipool["beacon"]["slashed"] else "voluntarily" 
+                    data["exited"][status_2] = data["exited"].get(status_2, 0) + 1
                     exiting_valis.append(minipool)
                 case "withdrawal_done":
-                    if minipool["beacon"]["slashed"]:
-                        data["withdrawn"]["slashed"] = data["withdrawn"].get("slashed", 0) + 1
+                    status_2 = "slashed" if minipool["beacon"]["slashed"] else "unslashed" 
+                    if minipool["execution_balance"] > 0:
+                        data["withdrawn"][status_2] = data["withdrawn"].get(status_2, 0) + 1
+                        exiting_valis.append(minipool)
                     else:
-                        data["withdrawn"]["unslashed"] = data["withdrawn"].get("unslashed", 0) + 1
+                        data["closed"][status_2] = data["closed"].get(status_2, 0) + 1
                 case _:
                     logging.warning(f"Unknown status {minipool['status']}")
 
@@ -67,14 +68,17 @@ class BeaconStates(commands.Cog):
         description = "```\n"
         # render dict as a tree like structure
         description += render_tree_legacy(data, "Minipool States")
-        if 0 < len(exiting_valis) <= 24:
+        
+        if len(exiting_valis) == 0:
+            description += "```"
+        elif len(exiting_valis) < 24:
             description += "\n\n--- Exiting Minipools ---\n\n"
             # array of validator attribute, sorted by index
-            valis = sorted([v["validator_index"] for v in exiting_valis], key=lambda x: x)
+            valis = sorted([v["validator_index"] for v in exiting_valis])
             description += ", ".join([str(v) for v in valis])
             description += "```"
-        elif len(exiting_valis) > 24:
-            description += "```\n**Exiting Node Operators:**\n"
+        else:
+            description += "```\n**Exiting Node Operators**\n"
             node_operators = {}
             # dedupe, add count of validators with matching node operator
             for v in exiting_valis:
@@ -83,14 +87,13 @@ class BeaconStates(commands.Cog):
             node_operators = list(node_operators.items())
             # sort by count
             node_operators.sort(key=lambda x: x[1], reverse=True)
-            description += ""
-            # use el_explorer_url
-            description += ", ".join([f"{el_explorer_url(w3.to_checksum_address(v))} ({c})" for v, c in node_operators[:16]])
-            # append ",…" if more than 16
-            if len(node_operators) > 16:
-                description += ",…"
-        else:
-            description += "```"
+            # create description
+            max_list_length = 16
+            description += ", ".join([f"{el_explorer_url(w3.to_checksum_address(v))} ({c})" for v, c in node_operators[:max_list_length]])
+            if len(node_operators) > max_list_length:
+                remaining_no = len(node_operators) - max_list_length
+                remaining_validators = sum([c for _, c in node_operators[max_list_length:]])
+                description += f", and {remaining_no} more ({remaining_validators})"
 
         embed.description = description
         await ctx.send(embed=embed)
