@@ -52,6 +52,7 @@ class DetectScam(Cog):
     def is_reputable(user: Member) -> bool:
         return any((
             user.id == cfg["discord.owner.user_id"],
+            user.id in cfg["rocketpool.support.user_ids"],
             {role.id for role in user.roles} & set(cfg["rocketpool.support.role_ids"]),
             user.guild_permissions.moderate_members
         ))

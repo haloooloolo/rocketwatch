@@ -53,7 +53,7 @@ class NodeTask(commands.Cog):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("node-task", api_key=cfg["other.secrets.cronitor"])
-        self.batch_size = 1000
+        self.batch_size = 50
         self.loop.start()
             
     async def cog_unload(self):

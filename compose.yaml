@@ -1,6 +1,6 @@
 services:
   rocketwatch:
-    image: invisiblesymbol/rocketwatch
+    image: haloooloolo/rocketwatch
     build: ./rocketwatch
     volumes:
       - ./rocketwatch/contracts/rocketpool:/app/contracts/rocketpool
