@@ -130,7 +130,7 @@ class AdminModal(ui.Modal, title="Change Template Message"):
         await interaction.response.edit_message(content=content, embed=embed, view=AdminView(self.db, self.template_name))
 
 
-def has_perms(interaction: Interaction):
+def has_perms(user: Interaction):
     return any([
         interaction.user.id in cfg["rocketpool.support.user_ids"],
         any(r.id in cfg["rocketpool.support.role_ids"] for r in interaction.user.roles),

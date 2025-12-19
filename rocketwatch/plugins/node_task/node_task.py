@@ -59,7 +59,7 @@ class NodeTask(commands.Cog):
     async def cog_unload(self):
         self.loop.cancel()
         
-    @tasks.loop(minutes=15)
+    @tasks.loop(minutes=60)
     async def loop(self):
         p_id = time.time() 
         self.monitor.ping(state="run", series=p_id)
@@ -94,23 +94,24 @@ class NodeTask(commands.Cog):
         latest_db = 0
         if res := await self.db.minipools_new.find_one(sort=[("_id", pymongo.DESCENDING)]):
             latest_db = res["_id"]
-        data = {}
         # return early if we're up to date
         if latest_db >= latest_rp:
             log.debug("No new minipools")
             return
+        
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
         # batch into self.batch_size minipools at a time, between latest_id and minipool_count
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
-            data |= await rp.multicall2([
+            data = await rp.multicall2([
                 Call(mm.address, [rp.seth_sig(mm.abi, "getMinipoolAt"), i], [(i, None)])
                 for i in index_batch
             ])
-        log.debug(f"Inserting {len(data)} new minipools into db")
-        await self.db.minipools_new.insert_many([
-            {"_id": i, "address": a}
-            for i, a in data.items()
-        ])
+            log.debug(f"Inserting {len(data)} new minipools into db")
+            await self.db.minipools_new.insert_many([
+                {"_id": i, "address": a}
+                for i, a in data.items()
+            ])
+            
         log.debug("New minipools inserted")
 
     @timerun_async
@@ -128,8 +129,9 @@ class NodeTask(commands.Cog):
         if not minipool_addresses:
             log.debug("No minipools need to be updated with static data")
             return
-        data = {}
+        
         for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
+            data = {}
             res = await rp.multicall2(
                 [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
                 require_success=False
@@ -139,15 +141,15 @@ class NodeTask(commands.Cog):
                 if address not in data:
                     data[address] = {}
                 data[address][variable_name] = value
-        log.debug(f"Updating {len(data)} minipools with static data")
-        # update minipools in db
-        bulk = [
-            UpdateOne(
-                {"address": a},
-                {"$set": d},
-            ) for a, d in data.items()
-        ]
-        await self.db.minipools_new.bulk_write(bulk, ordered=False)
+            log.debug(f"Updating {len(data)} minipools with static data")
+            # update minipools in db
+            bulk = [
+                UpdateOne(
+                    {"address": a},
+                    {"$set": d},
+                ) for a, d in data.items()
+            ]
+            await self.db.minipools_new.bulk_write(bulk, ordered=False)
         log.debug("Minipools updated with static data")
 
     @timerun_async
@@ -169,7 +171,6 @@ class NodeTask(commands.Cog):
         # get all minipool addresses from db
         minipool_addresses = await self.db.minipools_new.distinct("address")
         data = {}
-        att_count = 0
         for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
             res = await rp.multicall2(
                 [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
@@ -180,18 +181,17 @@ class NodeTask(commands.Cog):
                 if address not in data:
                     data[address] = {}
                 data[address][variable_name] = value
-                att_count += 1
-        log.debug(f"Updating {att_count} minipool attributes in db")
-        # update minipools in db
-        bulk = [
-            UpdateOne(
-                {"address": a},
-                {"$set": d}
-            ) for a, d in data.items()
-        ]
-        await self.db.minipools_new.bulk_write(bulk, ordered=False)
+            # update minipools in db
+            log.debug(f"Updating {len(res)} minipool attributes in db")
+            bulk = [
+                UpdateOne(
+                    {"address": a},
+                    {"$set": d}
+                ) for a, d in data.items()
+            ]
+            await self.db.minipools_new.bulk_write(bulk, ordered=False)
+                
         log.debug("Minipools updated with metadata")
-        return
 
     @timerun
     async def add_static_deposit_data_to_minipools(self):
@@ -225,6 +225,7 @@ class NodeTask(commands.Cog):
             # map to pairs of 2
             prepared_events = []
             last_addition_is_creation = False
+            
             while events:
                 # get event
                 e = events.pop(0)
@@ -237,6 +238,7 @@ class NodeTask(commands.Cog):
                 elif e["event"] == "DepositReceived" and last_addition_is_creation:
                     prepared_events[-1].insert(0, e)
                 last_addition_is_creation = e["event"] == "MinipoolCreated"
+                
             for e in prepared_events:
                 assert "amount" in e[0]["args"]
                 assert "minipool" in e[1]["args"]
@@ -247,20 +249,22 @@ class NodeTask(commands.Cog):
                     continue
                 amount = solidity.to_float(e[0]["args"]["amount"])
                 data[mp] = {"deposit_amount": amount}
-        if len(data) == 0:
-            log.debug("No minipools need to be updated with static deposit data")
-            return
-        log.debug(f"Updating {len(data)} minipools with static deposit data")
-        # update minipools in db
-        bulk = [
-            UpdateOne(
-                {"address": a},
-                {"$set": d},
-            ) for a, d in data.items()
-        ]
-        await self.db.minipools_new.bulk_write(bulk, ordered=False)
+        
+            if not data:
+                log.debug("No minipools need to be updated with static deposit data")
+                continue
+            
+            log.debug(f"Updating {len(data)} minipools with static deposit data")
+            # update minipools in db
+            bulk = [
+                UpdateOne(
+                    {"address": a},
+                    {"$set": d},
+                ) for a, d in data.items()
+            ]
+            await self.db.minipools_new.bulk_write(bulk, ordered=False)
+                
         log.debug("Minipools updated with static deposit data")
-
 
     @timerun
     async def add_static_beacon_data_to_minipools(self):
@@ -270,27 +274,27 @@ class NodeTask(commands.Cog):
         if not public_keys:
             log.debug("No minipools need to be updated with static beacon data")
             return
-        # we need to do smaller bulks as the pubkey is qutie long and we dont want to make the query url too long
-        data = {}
+        
+        # we need to do smaller bulks as the pubkey is quite long and we dont want to make the query url too long
         # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
         for pubkey_batch in as_chunks(public_keys, self.batch_size):
+            data = {}
             # get beacon data for public keys
             beacon_data = bacon.get_validators("head", ids=pubkey_batch)["data"]
             # update data dict with results
             for d in beacon_data:
                 data[d["validator"]["pubkey"]] = int(d["index"])
-        if not data:
-            log.debug("No minipools need to be updated with static beacon data")
-            return
-        log.debug(f"Updating {len(data)} minipools with static beacon data")
-        # update minipools in db
-        bulk = [
-            UpdateMany(
-                {"pubkey": a},
-                {"$set": {"validator_index": d}}
-            ) for a, d in data.items()
-        ]
-        await self.db.minipools_new.bulk_write(bulk, ordered=False)
+        
+            log.debug(f"Updating {len(data)} minipools with static beacon data")
+            # update minipools in db
+            bulk = [
+                UpdateMany(
+                    {"pubkey": a},
+                    {"$set": {"validator_index": d}}
+                ) for a, d in data.items()
+            ]
+            await self.db.minipools_new.bulk_write(bulk, ordered=False)
+            
         log.debug("Minipools updated with static beacon data")
 
     @timerun
@@ -300,9 +304,9 @@ class NodeTask(commands.Cog):
         validator_indexes = await self.db.minipools_new.distinct("validator_index")
         # remove None values
         validator_indexes = [i for i in validator_indexes if i is not None]
-        data = {}
         # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
         for index_batch in as_chunks(validator_indexes, self.batch_size):
+            data = {}
             # get beacon data for public keys
             beacon_data = bacon.get_validators("head", ids=index_batch)["data"]
             # update data dict with results
@@ -322,15 +326,16 @@ class NodeTask(commands.Cog):
                         "withdrawable_epoch"          : int(d["validator"]["withdrawable_epoch"]) if int(
                             d["validator"]["withdrawable_epoch"]) < 2 ** 32 else None,
                     }}
-        log.debug(f"Updating {len(data)} minipools with dynamic beacon data")
-        # update minipools in db
-        bulk = [
-            UpdateMany(
-                {"validator_index": a},
-                {"$set": d}
-            ) for a, d in data.items()
-        ]
-        await self.db.minipools_new.bulk_write(bulk, ordered=False)
+                log.debug(f"Updating {len(data)} minipools with dynamic beacon data")
+                # update minipools in db
+                bulk = [
+                    UpdateMany(
+                        {"validator_index": a},
+                        {"$set": d}
+                    ) for a, d in data.items()
+                ]
+                await self.db.minipools_new.bulk_write(bulk, ordered=False)
+                
         log.debug("Minipools updated with dynamic beacon data")
 
     async def check_indexes(self):
@@ -385,8 +390,9 @@ class NodeTask(commands.Cog):
         if not node_addresses:
             log.debug("No node operators need to be updated with static data")
             return
-        data = {}
+        
         for node_batch in as_chunks(node_addresses, self.batch_size // len(lambs)):
+            data = {}
             res = await rp.multicall2(
                 [Call(*lamb(a)) for a in node_batch for lamb in lambs], 
                 require_success=False
@@ -396,15 +402,16 @@ class NodeTask(commands.Cog):
                 if address not in data:
                     data[address] = {}
                 data[address][variable_name] = value
-        log.debug(f"Updating {len(data)} node operators with static data")
-        # update minipools in db
-        bulk = [
-            UpdateOne(
-                {"address": a},
-                {"$set": d},
-            ) for a, d in data.items()
-        ]
-        await self.db.node_operators_new.bulk_write(bulk, ordered=False)
+            log.debug(f"Updating {len(data)} node operators with static data")
+            # update minipools in db
+            bulk = [
+                UpdateOne(
+                    {"address": a},
+                    {"$set": d},
+                ) for a, d in data.items()
+            ]
+            await self.db.node_operators_new.bulk_write(bulk, ordered=False)
+            
         log.debug("Node operators updated with static data")
 
     @timerun_async
@@ -446,9 +453,8 @@ class NodeTask(commands.Cog):
         ]
         # get all node operators from db, but we only care about the address and the fee_distributor_address
         nodes = await self.db.node_operators_new.find({}, {"address": 1, "fee_distributor_address": 1}).to_list()
-        data = {}
-        att_count = 0
         for node_batch in as_chunks(nodes, self.batch_size // len(lambs)):
+            data = {}
             res = await rp.multicall2(
                 [Call(*lamb(n)) for n in node_batch for lamb in lambs], 
                 require_success=False
@@ -458,17 +464,18 @@ class NodeTask(commands.Cog):
                 if address not in data:
                     data[address] = {}
                 data[address][variable_name] = value
-                att_count += 1
-        log.debug(f"Updating {att_count} node operator attributes in db")
-        # update minipools in db
-        bulk = [
-            UpdateOne(
-                {"address": a},
-                {"$set": d}
-            ) for a, d in data.items()
-        ]
-        await self.db.node_operators_new.bulk_write(bulk, ordered=False)
+            log.debug(f"Updating {len(res)} node operator attributes in db")
+            # update minipools in db
+            bulk = [
+                UpdateOne(
+                    {"address": a},
+                    {"$set": d}
+                ) for a, d in data.items()
+            ]
+            await self.db.node_operators_new.bulk_write(bulk, ordered=False)
+            
         log.debug("Node operators updated with metadata")
+
 
 async def setup(self):
     await self.add_cog(NodeTask(self))
