@@ -170,13 +170,13 @@ class NodeTask(commands.Cog):
         ]
         # get all minipool addresses from db
         minipool_addresses = await self.db.minipools_new.distinct("address")
-        data = {}
         for minipool_batch in as_chunks(minipool_addresses, self.batch_size // len(lambs)):
             res = await rp.multicall2(
                 [Call(*lamb(a)) for a in minipool_batch for lamb in lambs], 
                 require_success=False
             )
             # update data dict with results
+            data = {}
             for (address, variable_name), value in res.items():
                 if address not in data:
                     data[address] = {}
@@ -209,7 +209,6 @@ class NodeTask(commands.Cog):
             return
         nd = rp.get_contract_by_name("rocketNodeDeposit")
         mm = rp.get_contract_by_name("rocketMinipoolManager")
-        data = {}
         
         for minipool_batch in as_chunks(minipools, self.batch_size):
             # turn status time of first and last minipool into blocks
@@ -239,6 +238,7 @@ class NodeTask(commands.Cog):
                     prepared_events[-1].insert(0, e)
                 last_addition_is_creation = e["event"] == "MinipoolCreated"
                 
+            data = {}
             for e in prepared_events:
                 assert "amount" in e[0]["args"]
                 assert "minipool" in e[1]["args"]
@@ -326,15 +326,16 @@ class NodeTask(commands.Cog):
                         "withdrawable_epoch"          : int(d["validator"]["withdrawable_epoch"]) if int(
                             d["validator"]["withdrawable_epoch"]) < 2 ** 32 else None,
                     }}
-                log.debug(f"Updating {len(data)} minipools with dynamic beacon data")
-                # update minipools in db
-                bulk = [
-                    UpdateMany(
-                        {"validator_index": a},
-                        {"$set": d}
-                    ) for a, d in data.items()
-                ]
-                await self.db.minipools_new.bulk_write(bulk, ordered=False)
+                
+            log.debug(f"Updating {len(data)} minipools with dynamic beacon data")
+            # update minipools in db
+            bulk = [
+                UpdateMany(
+                    {"validator_index": a},
+                    {"$set": d}
+                ) for a, d in data.items()
+            ]
+            await self.db.minipools_new.bulk_write(bulk, ordered=False)
                 
         log.debug("Minipools updated with dynamic beacon data")
 
