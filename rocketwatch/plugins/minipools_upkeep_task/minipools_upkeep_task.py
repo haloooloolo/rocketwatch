@@ -15,7 +15,7 @@ from utils import solidity
 from utils.embeds import Embed, el_explorer_url
 from utils.readable import s_hex
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 from utils.cfg import cfg
 from utils.rocketpool import rp
 from utils.time_debug import timerun_async
@@ -93,22 +93,23 @@ class MinipoolsUpkeepTask(commands.Cog):
 
     @command()
     async def delegate_stats(self, interaction: Interaction):
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
-        # get stats about delegates
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        # only consider active minipools
+        minipool_filter = {"beacon.status": {"$in": ["pending_initialized", "pending_queued", "active_ongoing"]}}
         # we want to show the distribution of minipools that are using each delegate
         distribution_stats = await (await self.db.minipools_new.aggregate([
-            {"$match": {"effective_delegate": {"$exists": True}}},
+            {"$match": minipool_filter},
             {"$group": {"_id": "$effective_delegate", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
         ])).to_list()
         # and the percentage of minipools that are using the useLatestDelegate flag
         use_latest_delegate_stats = await (await self.db.minipools_new.aggregate([
-            {"$match": {"use_latest_delegate": {"$exists": True}}},
+            {"$match": minipool_filter},
             {"$group": {"_id": "$use_latest_delegate", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
         ])).to_list()
         e = Embed()
-        e.title = "Delegate Stats"
+        e.title = "Delegate Stats (Active Minipools)"
         desc = "**Effective Delegate Distribution of Minipools:**\n"
         c_sum = sum(d['count'] for d in distribution_stats)
         s = "\u00A0" * 4
@@ -120,14 +121,14 @@ class MinipoolsUpkeepTask(commands.Cog):
             name = s_hex(a)
             if a == rp.get_address_by_name("rocketMinipoolDelegate"):
                 name += " (Latest)"
-            desc += f"{s}{el_explorer_url(a, name)}: {d['count']} ({d['count'] / c_sum * 100:.2f}%)\n"
+            desc += f"{s}{el_explorer_url(a, name)}: {d['count']:,} ({d['count'] / c_sum * 100:.2f}%)\n"
         desc += "\n"
         desc += "**Minipools configured to always use latest delegate:**\n"
         c_sum = sum(d['count'] for d in use_latest_delegate_stats)
         for d in use_latest_delegate_stats:
             # true = yes, false = no
             d['_id'] = "Yes" if d['_id'] else "No"
-            desc += f"{s}**{d['_id']}**: {d['count']} ({d['count'] / c_sum * 100:.2f}%)\n"
+            desc += f"{s}**{d['_id']}**: {d['count']:,} ({d['count'] / c_sum * 100:.2f}%)\n"
         e.description = desc
         await interaction.followup.send(embed=e)
 
