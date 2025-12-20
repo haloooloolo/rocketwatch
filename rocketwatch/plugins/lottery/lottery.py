@@ -45,7 +45,7 @@ class LotteryBase:
             sync_period += 1
         res = bacon._make_get_request(f"/eth/v1/beacon/states/head/sync_committees?epoch={sync_period * 256}")
         data = res["data"]
-        self.db.sync_committee_stats.replace_one({"period": period},
+        await self.db.sync_committee_stats.replace_one({"period": period},
                                                  {"period"     : period,
                                                   "start_epoch": sync_period * 256,
                                                   "end_epoch"  : (sync_period + 1) * 256,
