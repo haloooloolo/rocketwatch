@@ -263,6 +263,8 @@ def assemble(args) -> Embed:
             e.set_image(url="https://i.imgur.com/XT5qPWf.png")
         case "houston_hotfix_upgrade_triggered":
             e.set_image(url="https://i.imgur.com/JcQS3Sh.png")
+        case "saturn_one_upgrade_triggered":
+            e.set_image(url="https://i.imgur.com/n3wMCOA.png")            
 
     match args.event_name:
         case "pdao_set_delegate":
@@ -488,8 +490,16 @@ def assemble(args) -> Embed:
 
     # show the transaction fees
     if "tnx_fee" in args:
-        e.add_field(name="Transaction Fee",
-                    value=f"{args.tnx_fee} ETH ({args.tnx_fee_usd} USDC)",
-                    inline=False)
-
+        tnx_fee_wei = args.tnx_fee_raw
+        if tnx_fee_wei >= 10**15:
+            tnx_fee_eth = round(tnx_fee_wei / 10**18, 3)
+            value = f"{tnx_fee_eth:,} ETH ({args.tnx_fee_usd} USDC)"
+        elif tnx_fee_wei >= 10**9:
+            tnx_fee_gwei = round(tnx_fee_wei / 10**9)
+            value = f"{tnx_fee_gwei:,} Gwei ({args.tnx_fee_usd} USDC)"
+        else:
+           value = f"{tnx_fee_wei:,} Wei ({args.tnx_fee_usd} USDC)"
+           
+        e.add_field(name="Transaction Fee", value=value, inline=False)
+  
     return e

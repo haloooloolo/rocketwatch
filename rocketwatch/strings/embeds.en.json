@@ -481,6 +481,10 @@
         "title": ":tada: Houston Hotfix Upgrade Complete!",
         "description": ""
     },
+    "saturn_one_upgrade_triggered": {
+        "title": ":ringed_planet: Saturn 1 Upgrade Complete!",
+        "description": ""
+    },
     "unsteth_withdrawal_requested_event": {
         "title": ":money_with_wings: Large stETH Withdrawal Requested",
         "description": "%{owner} has requested a withdrawal of **%{amountOfStETH} stETH**!"
