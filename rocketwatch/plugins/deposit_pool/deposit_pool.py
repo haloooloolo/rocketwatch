@@ -57,10 +57,10 @@ class DepositPool(StatusPlugin):
             embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all minipools."
         else:
             lines = []
-            if (num_leb8 := int(dp_balance // 24)) > 0:
-                lines.append(f"**`{num_leb8:>4}`** 8 ETH minipools (24 ETH from DP)")
+            if (num_eb4 := int(dp_balance // 28)) > 0:
+                lines.append(f"**`{num_eb4:>4}`** 4 ETH validators (28 ETH from DP)")
             if (num_credit := int(dp_balance // 32)) > 0:
-                lines.append(f"**`{num_credit:>4}`** credit minipools (32 ETH from DP)")
+                lines.append(f"**`{num_credit:>4}`** credit validators (32 ETH from DP)")
 
             if lines:
                 embed.add_field(name="Enough For", value="\n".join(lines), inline=False)
