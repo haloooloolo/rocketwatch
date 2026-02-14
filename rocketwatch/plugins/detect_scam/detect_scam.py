@@ -338,7 +338,6 @@ class DetectScam(Cog):
     def _ticket_system(self, message: Message) -> Optional[str]:
         # message contains one of the relevant keyword combinations and a link
         txt = self._get_message_content(message)
-        log.debug(f"message content: {txt}")
         if not self.basic_url_pattern.search(txt):
             return None
 
@@ -436,7 +435,9 @@ class DetectScam(Cog):
         return "Reaction spam by message author" if (reaction_count >= 8) else None
             
     @Cog.listener()
-    async def on_message(self, message: Message) -> None:        
+    async def on_message(self, message: Message) -> None:
+        log.debug(f"Message(id={message.id}, author={message.author}, channel={message.channel}, content=\"{message.content}\", embeds={message.embeds})")
+           
         if message.author.bot:
             log.warning("Ignoring message sent by bot")
             return
