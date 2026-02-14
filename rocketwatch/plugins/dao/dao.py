@@ -15,7 +15,7 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.cfg import cfg
 from utils.embeds import Embed
-from utils.visibility import is_hidden, is_hidden_weak
+from utils.visibility import is_hidden_weak
 from utils.dao import DefaultDAO, OracleDAO, SecurityCouncil, ProtocolDAO
 from utils.views import PageView
 from utils.embeds import el_explorer_url
@@ -123,8 +123,7 @@ class OnchainDAO(Cog):
             full: bool = False
     ) -> None:
         """Show currently active on-chain proposals"""
-        visibility = is_hidden(interaction) if full else is_hidden_weak(interaction)
-        await interaction.response.defer(ephemeral=visibility)
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         match dao_name:
             case "pDAO":

@@ -1,5 +1,6 @@
 import os
 import time
+import logging
 from urllib.parse import urlencode
 
 import humanize
@@ -15,11 +16,13 @@ from utils import readable
 from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.embeds import el_explorer_url
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 
 psutil.getloadavg()
 BOOT_TIME = time.time()
 
+log = logging.getLogger("about")
+log.setLevel(cfg["log_level"])
 
 class About(commands.Cog):
     def __init__(self, bot: RocketWatch):
@@ -29,7 +32,7 @@ class About(commands.Cog):
     @hybrid_command()
     async def about(self, ctx: Context):
         """Bot and Server Information"""
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         e = Embed()
         g = self.bot.guilds
         code_time = None
@@ -76,11 +79,13 @@ class About(commands.Cog):
         bot_uptime = time.time() - BOOT_TIME
         e.add_field(name="Bot Uptime", value=f"{readable.uptime(bot_uptime)}")
 
+        repo_name = "haloooloolo/rocketwatch"
+
         # show credits
         try:
             contributors = [
                 f"[{c['login']}]({c['html_url']}) ({c['contributions']})"
-                for c in requests.get("https://api.github.com/repos/InvisibleSymbol/rocketwatch/contributors").json()
+                for c in requests.get(f"https://api.github.com/repos/{repo_name}/contributors").json()
                 if "bot" not in c["login"].lower()
             ]
             contributors_str = ", ".join(contributors[:10])
@@ -92,30 +97,6 @@ class About(commands.Cog):
 
         await ctx.send(embed=e)
 
-    @hybrid_command()
-    async def donate(self, ctx: Context):
-        """Donate to the Bot Developer"""
-        await ctx.defer(ephemeral=True)
-        e = Embed()
-        e.title = "Donate to the Developer"
-        e.description = "I hope my bot has been useful to you, it has been a fun experience building it!\n" \
-                        "Donations will help me keep doing what I love (and pay the server bills haha)\n\n" \
-                        "I accept Donations on all Ethereum related Chains! (Mainnet, Polygon, Rollups, etc.)"
-        e.add_field(name="Donation Address",
-                    value="[`0xinvis.eth`](https://etherscan.io/address/0xf0138d2e4037957d7b37de312a16a88a7f83a32a)")
-
-        # add address qrcode
-        query_string = urlencode({
-            "chs" : "128x128",
-            "cht" : "qr",
-            "chl" : "0xF0138d2e4037957D7b37De312a16a88A7f83A32a",
-            "choe": "UTF-8",
-            "chld": "L|0"
-        })
-        e.set_image(url=f"https://chart.googleapis.com/chart?{query_string}")
-
-        e.set_footer(text="Thank you for your support! <3")
-        await ctx.send(embed=e)
 
 
 async def setup(bot):

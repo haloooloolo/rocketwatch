@@ -1,5 +1,6 @@
 import logging
 from io import BytesIO
+from typing import Optional
 
 import inflect
 import matplotlib as mpl
@@ -69,32 +70,38 @@ def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]
     }
 
 
-def get_average_collateral_percentage_per_node(collateral_cap, bonded):
+def get_average_collateral_percentage_per_node(collateral_cap: Optional[int], bonded: bool):
     # get stakes for each node
     stakes = list(get_node_minipools_and_collateral().values())
     # get the current rpl price
-    rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-
-    result = {}
-    # process the data
+    rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))        
+    
+    node_collaterals = []
     for node in stakes:
         # get the minipool eth value
         minipool_value = int(node["eb16s"]) * 16 + int(node["eb8s"]) * (8 if bonded else 24)
         if not minipool_value:
             continue
         # rpl stake value
-        rpl_stake_value = solidity.to_float(node["rplStaked"]) * rpl_price
+        rpl_stake = solidity.to_float(node["rplStaked"])
+        rpl_stake_value = rpl_stake * rpl_price
         # cap rpl stake at x% of minipool_value using collateral_cap
+        collateral = rpl_stake_value / minipool_value * 100
         if collateral_cap:
-            rpl_stake_value = min(rpl_stake_value, minipool_value * collateral_cap / 100)
+            collateral = min(collateral, collateral_cap)
         # calculate percentage
-        percentage = rpl_stake_value / minipool_value * 100
-        # round percentage to 5% steps
-        percentage = (percentage * 10 // 5) / 2
-        # add to result
+        node_collaterals.append((rpl_stake, collateral))
+    
+    effective_bound = max(perc for rpl, perc in node_collaterals)
+    possible_step_sizes = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]
+    step_size = possible_step_sizes[np.argmin([abs(effective_bound / 30 - s) for s in possible_step_sizes])]
+    
+    result = {}
+    for rpl_stake, percentage in node_collaterals:
+        percentage = step_size * (percentage * 10 // (step_size * 10))      
         if percentage not in result:
             result[percentage] = []
-        result[percentage].append(rpl_stake_value / rpl_price)
+        result[percentage].append(rpl_stake)
 
     return result
 
@@ -230,13 +237,8 @@ class Collateral(commands.Cog):
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
         data = get_average_collateral_percentage_per_node(collateral_cap, bonded)
-
-        counts = []
-        for collateral, nodes in data.items():
-            counts.extend([collateral] * len(nodes))
-        counts = np.array(list(sorted(counts)))
-        bins = np.bincount((counts * 2).astype(int))
-        distribution = [(i / 2, bins[i]) for i in range(len(bins))]
+        distribution = [(collateral, len(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])]
+        counts = sum(([collateral] * num_nodes for collateral, num_nodes in distribution), [])
 
         # If the raw data were requested, print them and exit early
         if raw:
@@ -257,19 +259,13 @@ class Collateral(commands.Cog):
         ax.set_xticklabels(x_keys, rotation='vertical')
         ax.set_xlabel(f"Collateral Percent of { 'Bonded' if bonded else 'Borrowed'} Eth")
 
-        for label in ax.xaxis.get_major_ticks()[1::2]:
-            label.label.set_visible(False)
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
         ax.yaxis.set_visible(False)
         ax.get_xaxis().set_major_formatter(FuncFormatter(
             lambda n, _: f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys)-1 else ''}%")
         )
 
-        staked_distribution = [
-            (collateral, sum(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])
-        ]
-
-        bars = dict(staked_distribution)
+        bars = {collateral: sum(nodes) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])}
         line = ax2.plot(x_keys, [bars.get(float(x), 0) for x in x_keys])
         ax2.set_ylim(top=(ax2.get_ylim()[1] * 1.1))
         ax2.tick_params(axis='y', colors=line[0].get_color())
