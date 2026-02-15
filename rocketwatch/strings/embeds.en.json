@@ -366,12 +366,10 @@
         "description": "Minipool %{minipoolAddress} has had its Penalty increased to %{penalty_perc}%!"
     },
     "node_smoothing_pool_joined": {
-        "title": ":cup_with_straw: Node Operator Joined Smoothing Pool",
-        "description": "Node operator %{node} joined the smoothing pool with their %{minipoolCount} minipools!"
+        "description_small": "Node operator %{node} joined the smoothing pool with their %{minipoolCount} minipools!"
     },
     "node_smoothing_pool_left": {
-        "title": ":leaves: Node Operator Left Smoothing Pool",
-        "description": "Node operator %{node} has left the smoothing pool with their %{minipoolCount} minipools!"
+        "description_small": "Node operator %{node} has left the smoothing pool with their %{minipoolCount} minipools!"
     },
     "auction_lot_create_event": {
         "title": ":scales: Lot Created",
@@ -430,12 +428,32 @@
         "description": "Migration of solo validator %{pubkey} to minipool %{minipool} with a bond of **%{bondAmount} ETH** was initiated!"
     },
     "minipool_failed_deposit": {
-        "title": ":fire: Failed Minipool Deposit",
-        "description": ":fire_engine: %{node} burned **%{burnedValue} ETH** trying to create a minipool! :fire_engine:"
+        "title": ":fire: Failed Validator Deposit",
+        "description": ":fire_engine: %{node} burned **%{burnedValue} ETH** trying to create a validator! :fire_engine:"
     },
     "minipool_slash_event": {
         "title": ":rotating_light: Minipool Slashed",
         "description": "Minipool %{minipool} has been slashed by %{slasher}"
+    },
+    "validator_deposit_event": {
+        "description_small": ":construction_site: %{from} created a validator with a **%{amount} ETH** bond!"
+    },
+    "validator_multi_deposit_event": {
+        "title": ":construction_site: Multi Validator Deposit",
+        "description": "**%{numberOfValidators} validators** created with a total bond of **%{amount} ETH**!",
+        "description_small": ":construction_site: %{from} created **%{numberOfValidators} validators** with a **%{amount} ETH** bond!"
+    },
+    "megapool_validator_assigned_event": {
+        "description_small": ":handshake: Validator %{validatorId} of node %{node} has been assigned funds from the deposit pool!"
+    },
+    "megapool_validator_exiting_event": {
+        "description_small": ":octagonal_sign: Validator %{validatorId} of node %{node} has started exiting!"
+    },
+    "megapool_validator_exited_event": {
+        "description_small": ":leaves: Validator %{validatorId} of node %{node} has exited!"
+    },
+    "validator_queue_exited_event": {
+        "description_small": ":leaves: %{nodeAddress} has removed a validator from the queue!"
     },
     "otc_swap_event": {
         "title": ":currency_exchange: OTC Swap",

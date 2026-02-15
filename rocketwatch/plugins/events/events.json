@@ -81,6 +81,10 @@
                 {
                     "event_name": "DepositRecycled",
                     "name": "pool_deposit_recycled_event"
+                },
+                {
+                    "event_name": "QueueExited",
+                    "name": "validator_queue_exited_event"
                 }
             ]
         },
@@ -199,7 +203,7 @@
             "contract_name": "rocketNodeStaking",
             "events": [
                 {
-                    "event_name": "RPLStaked",
+                    "event_name": "RPLStaked(address,address,uint256,uint256)",
                     "name": "rpl_stake_event"
                 },
                 {
@@ -310,6 +314,14 @@
                 {
                     "event_name": "Withdrawal",
                     "name": "eth_withdraw_event"
+                },
+                {
+                    "event_name": "DepositReceived",
+                    "name": "validator_deposit_event"
+                },
+                {
+                    "event_name": "MultiDepositReceived",
+                    "name": "validator_multi_deposit_event"
                 }
             ]
         },
@@ -456,6 +468,19 @@
                     "name": "cs_rpl_target_ratio_change_event"
                 }
             ]
+        },
+        {
+            "contract_name": "RockSolidVault",
+            "events": [
+                {
+                    "event_name": "DepositSync",
+                    "name": "rocksolid_deposit_event"
+                },
+                {
+                    "event_name": "RedeemRequest",
+                    "name": "rocksolid_withdrawal_event"
+                }
+            ]
         }
     ],
     "global": [
@@ -488,6 +513,23 @@
                 }
             ]
         },
+             {
+            "contract_name": "rocketMegapoolDelegate",
+            "events": [
+                {
+                    "event_name": "MegapoolValidatorAssigned",
+                    "name": "megapool_validator_assigned_event"
+                },
+                {
+                    "event_name": "MegapoolValidatorExiting",
+                    "name": "megapool_validator_exiting_event"
+                },
+                {
+                    "event_name": "MegapoolValidatorExited",
+                    "name": "megapool_validator_exited_event"
+                }
+            ]
+        },
         {
             "contract_name": "rocketDAONodeTrustedUpgrade",
             "events": [
@@ -498,19 +540,6 @@
                 {
                     "event_name": "ContractAdded",
                     "name": "contract_added"
-                }
-            ]
-        },
-        {
-            "contract_name": "RockSolidVault",
-            "events": [
-                {
-                    "event_name": "DepositSync",
-                    "name": "rocksolid_deposit_event"
-                },
-                {
-                    "event_name": "RedeemRequest",
-                    "name": "rocksolid_withdrawal_event"
                 }
             ]
         }

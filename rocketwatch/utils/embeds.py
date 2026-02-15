@@ -239,17 +239,13 @@ def assemble(args) -> Embed:
     # do this here before the amounts are converted to a string
     amount = args.get("amount") or args.get("ethAmount", 0)
     # raise Exception(str((args, args.assets, args.event_name)))
-    if any((
-            ("pool_deposit" in args.event_name and amount >= 1000),
-            (args.event_name == "eth_deposit_event" and amount >= 500),
-            (args.event_name == "cs_deposit_eth_event" and args.assets >= 500)
-    )):
+    if ("pool_deposit" in args.event_name) and (amount >= 1000):
         e.set_image(url="https://media.giphy.com/media/VIX2atZr8dCKk5jF6L/giphy.gif")
     elif any(kw in args.event_name for kw in ["_scrub_event", "_dissolve_event", "_slash_event", "finality_delay_event"]):
         e.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
     elif "_proposal_smoothie_" in args.event_name:
         e.set_image(url="https://cdn.discordapp.com/attachments/812745786638336021/1106983677130461214/butta-commie-filter.png")
-    elif "sdao_member_kick_multi" in args.event_name:
+    elif "sdao_member_kick" in args.event_name:
         e.set_image(url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif")
 
     match args.event_name:
@@ -283,6 +279,8 @@ def assemble(args) -> Embed:
             use_large = args["assets"] >= 50
         case "rocksolid_withdrawal_event":
             use_large = args["shares"] >= 50
+        case "validator_multi_deposit_event":
+            use_large = args["numberOfValidators"] >= 5
         case _:
             use_large = (amount >= 100)
 

@@ -62,6 +62,7 @@ class Events(EventPlugin):
             for event in group["events"]:
                 event_name = event["event_name"]
                 try:
+                    log.info(f"Adding filter for {contract_name}.{event_name}")
                     topic = contract.events[event_name].build_filter().topics[0]
                 except ABIEventFunctionNotFound as e:
                     log.exception(e)
@@ -383,9 +384,20 @@ class Events(EventPlugin):
 
     def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
         receipt = w3.eth.get_transaction_receipt(event.transactionHash)
+        
+        def is_minipool(_address: ChecksumAddress) -> bool:
+            return rp.call("rocketMinipoolManager.getMinipoolExists", _address)
+        
+        def is_megapool(_address: ChecksumAddress) -> bool:
+            sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", _address])
+            return rp.get_contract_by_name("rocketStorage").functions.getBool(sha3).call() 
+        
+        is_minipool_event = is_minipool(event.address) or is_minipool(receipt.to)
+        is_megapool_event = is_megapool(event.address) or is_megapool(receipt.to)       
+        
         if not any([
-            rp.call("rocketMinipoolManager.getMinipoolExists", receipt.to),
-            rp.call("rocketMinipoolManager.getMinipoolExists", event.address),
+            is_minipool_event,
+            is_megapool_event,
             rp.get_name_by_address(receipt.to) not in [None, "multicall3"],
             rp.get_name_by_address(event.address)
         ]):
@@ -423,9 +435,13 @@ class Events(EventPlugin):
         if (n := rp.get_name_by_address(receipt["to"])) is None or not n.startswith("rocket"):
             event.args["from"] = receipt["to"]
             event.args["caller"] = receipt["from"]
-
-        # and add the minipool address, which is the origin of the event
-        event.args.minipool = event.address
+            
+        if is_minipool_event:
+            # and add the minipool address, which is the origin of the event
+            event.args.minipool = event.address
+        if is_megapool_event:
+            event.args.megapool = event.address
+            event.args.node = rp.call("rocketMegapoolDelegate.getNodeAddress", address=event.address)
 
         return self.handle_event(event_name, event)
 
@@ -653,10 +669,7 @@ class Events(EventPlugin):
             args.amount = solidity.to_float(args.amount)
             args.ethAmount = args.amount * rpl_ratio
         elif event_name in ["node_merkle_rewards_claimed"]:
-            rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-            args.amountRPL = sum(solidity.to_float(r) for r in args.amountRPL)
-            args.amountETH = sum(solidity.to_float(e) for e in args.amountETH)
-            args.ethAmount = args.amountRPL * rpl_ratio
+            return None # TODO
         elif "transfer_event" in event_name:
             token_prefix = event_name.split("_", 1)[0]
             args.amount = args.value / 10**18
@@ -670,6 +683,10 @@ class Events(EventPlugin):
             # filter small burns < 1 rETH
             if solidity.to_float(args.amount) < 1:
                 return None
+        elif event_name == "validator_multi_deposit_event":
+            args.amount = args.totalBond
+            if args.numberOfValidators == 1:
+                event_name = "validator_deposit_event"
 
         # reject if the amount is not major
         if any([event_name == "reth_transfer_event" and args.amount < 1000,

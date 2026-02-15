@@ -71,7 +71,7 @@ class Queue(Cog):
     def __format_queue_entry(entry: 'Queue.Entry') -> str:
         node_address = Queue._megapool_to_node(entry.megapool)
         node_label = Queue._cached_el_url(node_address)
-        return f"{node_label} #`{entry.validator_id + 1}`"
+        return f"{node_label} #`{entry.validator_id}`"
     
     @staticmethod
     def get_standard_queue(limit: int, start: int = 0) -> tuple[int, str]:
