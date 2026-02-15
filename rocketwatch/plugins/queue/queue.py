@@ -3,6 +3,7 @@ import logging
 
 from typing import Literal, NamedTuple
 
+from functools import cache
 from cachetools.func import ttl_cache 
 from discord import Interaction
 from discord.app_commands import command
@@ -62,10 +63,15 @@ class Queue(Cog):
         return el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
     
     @staticmethod
+    @cache
+    def _megapool_to_node(megapool_address) -> ChecksumAddress:
+        return rp.call("rocketMegapoolDelegate.getNodeAddress", address=megapool_address)
+    
+    @staticmethod
     def __format_queue_entry(entry: 'Queue.Entry') -> str:
-        node_address = rp.call("rocketMegapoolDelegate.getNodeAddress", address=entry.megapool)
+        node_address = Queue._megapool_to_node(entry.megapool)
         node_label = Queue._cached_el_url(node_address)
-        return f"{node_label} #{entry.validator_id + 1}"
+        return f"{node_label} #`{entry.validator_id + 1}`"
     
     @staticmethod
     def get_standard_queue(limit: int, start: int = 0) -> tuple[int, str]:
@@ -177,7 +183,7 @@ class Queue(Cog):
                 
             overall_pos = start + i + 1
             entry_str = Queue.__format_queue_entry(entry)
-            content += f"{overall_pos}. ({queue_pos}) {entry_str}\n"
+            content += f"{overall_pos}. (`{queue_pos}`) {entry_str}\n"
 
         return q_len, content
 
