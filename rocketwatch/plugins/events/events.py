@@ -732,8 +732,11 @@ class Events(EventPlugin):
             else:
                 event_name = "odao_member_challenge_rejected_event"
         if "node_smoothing_pool_state_changed" in event_name:
-            # geet minipool count
-            args.minipoolCount = rp.call("rocketMinipoolManager.getNodeMinipoolCount", args.node)
+            validator_count = rp.call("rocketMinipoolManager.getNodeMinipoolCount", args.node)
+            megapool_address = rp.call("rocketNodeManager.getMegapoolAddress", args.node)
+            if megapool_address != "0x0000000000000000000000000000000000000000":
+                validator_count += rp.call("rocketMegapoolDelegate.getActiveValidatorCount", address=megapool_address)
+            args.validatorCount = validator_count
             if args.state:
                 event_name = "node_smoothing_pool_joined"
             else:

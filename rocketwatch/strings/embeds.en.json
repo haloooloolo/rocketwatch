@@ -366,10 +366,10 @@
         "description": "Minipool %{minipoolAddress} has had its Penalty increased to %{penalty_perc}%!"
     },
     "node_smoothing_pool_joined": {
-        "description_small": "Node operator %{node} joined the smoothing pool with their %{minipoolCount} minipools!"
+        "description_small": ":cup_with_straw: %{node} joined the smoothing pool with their %{validatorCount} validators!"
     },
     "node_smoothing_pool_left": {
-        "description_small": "Node operator %{node} has left the smoothing pool with their %{minipoolCount} minipools!"
+        "description_small": ":cup_with_straw: %{node} has left the smoothing pool with their %{validatorCount} validators!"
     },
     "auction_lot_create_event": {
         "title": ":scales: Lot Created",
@@ -451,6 +451,14 @@
     },
     "megapool_validator_exited_event": {
         "description_small": ":leaves: Validator %{validatorId} of node %{node} has exited!"
+    },
+    "megapool_validator_dissolve_event": {
+        "title": ":rotating_light: Validator Dissolved",
+        "description": ":leaves: Validator %{validatorId} of node %{node} has been dissolved!"
+    },
+    "megapool_penalty_event": {
+        "title": ":police_car: Megapool Penalty Applied",
+        "description": "Node %{node} has been penalized for **%{amount} ETH**!"
     },
     "validator_queue_exited_event": {
         "description_small": ":leaves: %{nodeAddress} has removed a validator from the queue!"

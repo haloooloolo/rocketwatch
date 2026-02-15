@@ -243,6 +243,8 @@ def assemble(args) -> Embed:
         e.set_image(url="https://media.giphy.com/media/VIX2atZr8dCKk5jF6L/giphy.gif")
     elif any(kw in args.event_name for kw in ["_scrub_event", "_dissolve_event", "_slash_event", "finality_delay_event"]):
         e.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
+    elif "_penalty" in args.event_name:
+        e.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
     elif "_proposal_smoothie_" in args.event_name:
         e.set_image(url="https://cdn.discordapp.com/attachments/812745786638336021/1106983677130461214/butta-commie-filter.png")
     elif "sdao_member_kick" in args.event_name:
