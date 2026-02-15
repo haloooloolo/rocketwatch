@@ -46,15 +46,25 @@ class DepositPool(StatusPlugin):
         embed.add_field(name="Maximum Size", value=f"{deposit_cap:,} ETH")
         embed.add_field(name="Status", value=dp_status, inline=False)
 
-        display_limit = 3
-        queue_length, queue_content = Queue.get_minipool_queue(display_limit)
-        if queue_length > 0:
-            embed.description = f"**Minipool Queue ({queue_length})**\n"
-            embed.description += queue_content
-            if queue_length > display_limit:
-                embed.description += f"{display_limit + 1}. `...`\n"
-            queue_capacity = max(queue_length * 31 - dp_balance, 0.0)
-            embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all minipools."
+        display_limit = 2
+        exp_queue_length, exp_queue_content = Queue.get_express_queue(display_limit)
+        std_queue_length, std_queue_content = Queue.get_standard_queue(display_limit)
+        total_queue_length = exp_queue_length + std_queue_length
+        if (total_queue_length) > 0:
+            embed.description = ""
+            if exp_queue_length > 0:
+                embed.description += f"**Express Queue ({exp_queue_length})**\n"
+                embed.description += exp_queue_content
+                if exp_queue_length > display_limit:
+                    embed.description += f"{display_limit + 1}. `...`\n"
+            if std_queue_length > 0:
+                embed.description += f"**Standard Queue ({std_queue_length})**\n"
+                embed.description += std_queue_content
+                if std_queue_length > display_limit:
+                    embed.description += f"{display_limit + 1}. `...`\n"
+                    
+            queue_capacity = max(total_queue_length * 31 - dp_balance, 0.0)
+            embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
         else:
             lines = []
             if (num_eb4 := int(dp_balance // 28)) > 0:
@@ -148,57 +158,6 @@ class DepositPool(StatusPlugin):
 
         embed.add_field(name="Secondary Market", value=f"rETH is trading {rate_status}", inline=False)
         return embed
-
-    @hybrid_command()
-    async def atlas_queue(self, ctx):
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
-
-        e = Embed()
-        e.title = "Atlas Queue Stats"
-
-        data = await self.db.minipools_new.aggregate([
-            {
-                '$match': {
-                    'status'        : 'initialised',
-                    'deposit_amount': {
-                        '$gt': 1
-                    }
-                }
-            }, {
-                '$group': {
-                    '_id'     : 'total',
-                    'value'   : {
-                        '$sum': {
-                            '$subtract': [
-                                '$deposit_amount', 1
-                            ]
-                        }
-                    },
-                    'count'   : {
-                        '$sum': 1
-                    },
-                    'count_16': {
-                        '$sum': {
-                            '$floor': {
-                                '$divide': [
-                                    '$node_deposit_balance', 16
-                                ]
-                            }
-                        }
-                    }
-                }
-            }
-        ]).to_list(None)
-
-        total = int(data[0]['value'])
-        count = data[0]['count']
-        count_16 = int(data[0]['count_16'])
-        count_8 = count - count_16
-
-        e.description = f"Amount deposited into deposit pool by queued minipools: **{total} ETH**\n" \
-                        f"Non-credit minipools in the queue: **{count}** (16 ETH: **{count_16}**, 8 ETH: **{count_8}**)\n" \
-
-        await ctx.send(embed=e)
 
 
 async def setup(bot):

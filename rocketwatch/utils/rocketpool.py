@@ -137,7 +137,23 @@ class RocketPool:
                     return "Hidden Error"
         else:
             return None
-
+        
+    def get_string(self, key: str) -> str:
+        sha3 = w3.solidity_keccak(["string"], [key])
+        return self.get_contract_by_name("rocketStorage").functions.getString(sha3).call()
+    
+    def get_uint(self, key: str) -> int:
+        sha3 = w3.solidity_keccak(["string"], [key])
+        return self.get_contract_by_name("rocketStorage").functions.getUint(sha3).call()
+        
+    def get_protocol_version(self) -> tuple:
+        version_string = self.get_string("protocol.version")
+        return tuple(map(int, version_string.split(".")))
+    
+    def is_saturn_deployed(self) -> bool:
+        protocol_version = self.get_protocol_version()
+        return protocol_version >= (1, 4)
+        
     @cached(cache=ABI_CACHE)
     def get_abi_by_name(self, name):
         return self.uncached_get_abi_by_name(name)
