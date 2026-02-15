@@ -62,25 +62,20 @@ class Queue(Cog):
         return el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
     
     @staticmethod
-    def __format_queue_entries(entries: list['Queue.Entry'], offset: int = 0) -> str:
-        content = ""
-        for i, entry in enumerate(entries):
-            node_address = rp.call("rocketMegapoolDelegate.getNodeAddress", address=entry.megapool)
-            node_label = Queue._cached_el_url(node_address)
-            content += f"{offset+i+1}. {node_label} #{entry.validator_id}\n"
-        return content
+    def __format_queue_entry(entry: 'Queue.Entry') -> str:
+        node_address = rp.call("rocketMegapoolDelegate.getNodeAddress", address=entry.megapool)
+        node_label = Queue._cached_el_url(node_address)
+        return f"{node_label} #{entry.validator_id + 1}"
     
     @staticmethod
     def get_standard_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the standard queue"""
-        q_len, entries = Queue._get_queue("deposit.queue.standard", limit, start)
-        return q_len, Queue.__format_queue_entries(entries, start)
+        return Queue._get_queue("deposit.queue.standard", limit, start)
         
     @staticmethod
     def get_express_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the express queue"""
-        q_len, entries = Queue._get_queue("deposit.queue.express", limit, start)
-        return q_len, Queue.__format_queue_entries(entries, start)
+        return Queue._get_queue("deposit.queue.express", limit, start)
     
     @staticmethod
     def _scan_list(namespace: bytes, start: int, limit: int, block_identifier: BlockIdentifier) -> list['Queue.Entry']:
@@ -89,9 +84,9 @@ class Queue(Cog):
         return [Queue.Entry(*entry) for entry in raw_entries][start:]
         
     @staticmethod
-    def _get_queue(namespace: str, limit: int, start: int = 0) -> tuple[int, list['Queue.Entry']]:
+    def _get_queue(namespace: str, limit: int, start: int = 0) -> tuple[int, str]:
         if not rp.is_saturn_deployed() or limit <= 0:
-            return 0, []
+            return 0, ""
         
         list_contract = rp.get_contract_by_name("linkedListStorage")
         queue_namespace = bytes(w3.solidity_keccak(["string"], [namespace]))
@@ -101,9 +96,16 @@ class Queue(Cog):
         q_len = list_contract.functions.getLength(queue_namespace).call(block_identifier=latest_block)
         
         if start >= q_len:
-            return q_len, []   
+            return q_len, ""
+        
+        queue_entries = Queue._scan_list(queue_namespace, start, limit, latest_block)  
+        
+        content = ""
+        for i, entry in enumerate(queue_entries):
+            entry_str = Queue.__format_queue_entry(entry)
+            content += f"{start+i+1}. {entry_str}\n" 
 
-        return q_len, Queue._scan_list(queue_namespace, start, limit, latest_block)
+        return q_len, content
     
     @staticmethod
     def _get_entries_used_in_interval(start: int, end: int, len_express: int, len_standard: int, express_rate: int) -> tuple[int, int]:
@@ -122,7 +124,6 @@ class Queue(Cog):
             num_express = min(total_entries - num_standard, len_express)
         
         return num_express, num_standard            
-            
     
     @staticmethod
     def get_combined_queue(limit: int, start: int = 0) -> tuple[int, str]:
@@ -159,19 +160,26 @@ class Queue(Cog):
         
         express_entries_rev = Queue._scan_list(exp_namespace, start_express_queue, limit_express_queue, latest_block)[::-1]
         standard_entries_rev = Queue._scan_list(std_namespace, start_standard_queue, limit_standard_queue, latest_block)[::-1]
-        queue_entries = []
-        
-        for i in range(len(express_entries_rev ) + len(standard_entries_rev)):
+              
+        index_digits = len(str(q_len))    
+        content = ""
+        for i in range(len(express_entries_rev) + len(standard_entries_rev)):
             effective_queue_index = queue_index + start + i
-            is_express = (effective_queue_index % (express_queue_rate + 1)) != express_queue_rate  
-            if is_express and express_entries_rev:
-                queue_entries.append(express_entries_rev.pop())
-            elif standard_entries_rev:
-                queue_entries.append(standard_entries_rev.pop())
+            is_express = (effective_queue_index % (express_queue_rate + 1)) != express_queue_rate
+            if (is_express and express_entries_rev) or (not standard_entries_rev):
+                entry = express_entries_rev.pop()
+                express_pos = start_express_queue + limit_express_queue - len(express_entries_rev)
+                queue_pos = f"E{express_pos:0{index_digits}}"
             else:
-                queue_entries.append(express_entries_rev.pop())
+                entry = standard_entries_rev.pop()
+                standard_pos = start_standard_queue + limit_standard_queue - len(standard_entries_rev)
+                queue_pos = f"S{standard_pos:0{index_digits}}"
+                
+            overall_pos = start + i + 1
+            entry_str = Queue.__format_queue_entry(entry)
+            content += f"{overall_pos}. ({queue_pos}) {entry_str}\n"
 
-        return q_len, Queue.__format_queue_entries(queue_entries, start)
+        return q_len, content
 
     @command()
     async def queue(self, interaction: Interaction, queue_type: Literal["combined", "standard", "express"] = "combined"):
