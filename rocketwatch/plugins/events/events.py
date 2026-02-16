@@ -86,7 +86,12 @@ class Events(EventPlugin):
 
         # generate filters for global events
         for group in config["global"]:
-            contract = rp.assemble_contract(name=group["contract_name"])
+            try:
+                contract = rp.assemble_contract(name=group["contract_name"])
+            except Exception as e:
+                log.warning(f"Failed to get contract {group['contract_name']}: {e}")
+                continue
+            
             for event in group["events"]:
                 event_map[event["event_name"]] = event["name"]
                 def super_builder(_contract, _event) -> PartialFilter:
