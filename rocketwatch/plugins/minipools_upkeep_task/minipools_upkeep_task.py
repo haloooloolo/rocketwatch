@@ -92,7 +92,8 @@ class MinipoolsUpkeepTask(commands.Cog):
         logging.info("Updated minipool states")
 
     @command()
-    async def delegate_stats(self, interaction: Interaction):
+    async def minipool_delegates(self, interaction: Interaction):
+        """Show stats for minipool delegate adoption"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         # only consider active minipools
         minipool_filter = {"beacon.status": {"$in": ["pending_initialized", "pending_queued", "active_ongoing"]}}
@@ -109,8 +110,8 @@ class MinipoolsUpkeepTask(commands.Cog):
             {"$sort": {"count": -1}},
         ])).to_list()
         e = Embed()
-        e.title = "Delegate Stats (Active Minipools)"
-        desc = "**Effective Delegate Distribution of Minipools:**\n"
+        e.title = "Minipool Delegate Stats"
+        desc = "**Effective Delegate Distribution:**\n"
         c_sum = sum(d['count'] for d in distribution_stats)
         s = "\u00A0" * 4
         # latest delegate acording to rp
@@ -123,7 +124,7 @@ class MinipoolsUpkeepTask(commands.Cog):
                 name += " (Latest)"
             desc += f"{s}{el_explorer_url(a, name)}: {d['count']:,} ({d['count'] / c_sum * 100:.2f}%)\n"
         desc += "\n"
-        desc += "**Minipools configured to always use latest delegate:**\n"
+        desc += "**Use Latest Delegate:**\n"
         c_sum = sum(d['count'] for d in use_latest_delegate_stats)
         for d in use_latest_delegate_stats:
             # true = yes, false = no
