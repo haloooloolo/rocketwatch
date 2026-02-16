@@ -115,19 +115,21 @@ class Queue(Cog):
     
     @staticmethod
     def _get_entries_used_in_interval(start: int, end: int, len_express: int, len_standard: int, express_rate: int) -> tuple[int, int]:
+        log.debug(f"Calculating entries used in interval [{start}, {end}] with express_rate {express_rate} and queue lengths {len_express} (express) and {len_standard} (standard)")
+        
         total_entries = end - start + 1 # end is inclusive
-        num_express = total_entries // (express_rate + 1)
-        # express queue is used when index % (express_queue_rate + 1) != express_queue_rate
+        num_standard = total_entries // (express_rate + 1)
+        # standard queue is used when index % (express_queue_rate + 1) == express_queue_rate
         # this checks whether we "cross" an extra express queue slot in the interval
         if ((end + 1) % (express_rate + 1)) < (start % (express_rate + 1)):
-            num_express += 1
+            num_standard += 1
         
-        num_express = min(num_express, len_express)  
-        # if express queue runs out, remaining entries are taken from standard queue
-        num_standard = min(total_entries - num_express, len_standard)
+        num_standard = min(num_standard, len_standard)  
         # if standard queue runs out, remaining entries are taken from express queue
+        num_express = min(total_entries - num_standard, len_express)
+        # if express queue runs out, remaining entries are taken from standard queue
         if (num_express + num_standard) < total_entries:
-            num_express = min(total_entries - num_standard, len_express)
+            num_standard = min(total_entries - num_express, len_standard)
         
         return num_express, num_standard            
     
@@ -156,6 +158,8 @@ class Queue(Cog):
             express_queue_length, 
             standard_queue_length, express_queue_rate
         )
+        log.debug(f"{start_express_queue = }")
+        log.debug(f"{start_standard_queue = }")
         limit_express_queue, limit_standard_queue = Queue._get_entries_used_in_interval(
             queue_index + start, 
             queue_index + start + limit - 1, 
@@ -163,6 +167,8 @@ class Queue(Cog):
             standard_queue_length - start_standard_queue, 
             express_queue_rate
         )
+        log.debug(f"{limit_express_queue = }")
+        log.debug(f"{limit_standard_queue = }")
         
         express_entries_rev = Queue._scan_list(exp_namespace, start_express_queue, limit_express_queue, latest_block)[::-1]
         standard_entries_rev = Queue._scan_list(std_namespace, start_standard_queue, limit_standard_queue, latest_block)[::-1]
