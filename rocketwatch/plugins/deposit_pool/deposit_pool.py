@@ -53,12 +53,12 @@ class DepositPool(StatusPlugin):
         if (total_queue_length) > 0:
             embed.description = ""
             if exp_queue_length > 0:
-                embed.description += f"**Express Queue ({exp_queue_length})**\n"
+                embed.description += f"🐇 **Express Queue ({exp_queue_length})**\n"
                 embed.description += exp_queue_content
                 if exp_queue_length > display_limit:
                     embed.description += f"{display_limit + 1}. `...`\n"
             if std_queue_length > 0:
-                embed.description += f"**Standard Queue ({std_queue_length})**\n"
+                embed.description += f"🐢 **Standard Queue ({std_queue_length})**\n"
                 embed.description += std_queue_content
                 if std_queue_length > display_limit:
                     embed.description += f"{display_limit + 1}. `...`\n"
