@@ -9,6 +9,10 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
+      - 
+        name: Force HTTPS for Git submodules
+        run: |
+          git config --global url."https://github.com/".insteadOf git@github.com:
       -
         name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
