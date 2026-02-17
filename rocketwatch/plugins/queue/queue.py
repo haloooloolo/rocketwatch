@@ -6,7 +6,7 @@ from typing import Literal, NamedTuple
 from functools import cache
 from cachetools.func import ttl_cache 
 from discord import Interaction
-from discord.app_commands import command
+from discord.app_commands import command, describe
 from discord.ext.commands import Cog
 from eth_typing import ChecksumAddress, BlockIdentifier
 
@@ -35,13 +35,13 @@ class Queue(Cog):
         self.bot = bot
 
     class ValidatorPageView(PageView):
-        def __init__(self, queue_type: Literal["combined", "standard", "express"]):
+        def __init__(self, lane: Literal["combined", "standard", "express"]):
             super().__init__(page_size=15)
-            if queue_type == "standard":
-                self.queue_name = "Validator Standard Queue"
+            if lane == "standard":
+                self.queue_name = "🐢 Validator Standard Queue"
                 self.content_loader = Queue.get_standard_queue
-            elif queue_type == "express":
-                self.queue_name = "Validator Express Queue"
+            elif lane == "express":
+                self.queue_name = "🐇 Validator Express Queue"
                 self.content_loader = Queue.get_express_queue
             else:
                 self.queue_name = "Validator Queue"
@@ -173,31 +173,32 @@ class Queue(Cog):
         express_entries_rev = Queue._scan_list(exp_namespace, start_express_queue, limit_express_queue, latest_block)[::-1]
         standard_entries_rev = Queue._scan_list(std_namespace, start_standard_queue, limit_standard_queue, latest_block)[::-1]
               
-        index_digits = len(str(q_len))    
+        index_digits = len(str(max(standard_queue_length, express_queue_length)))  
         content = ""
         for i in range(len(express_entries_rev) + len(standard_entries_rev)):
             effective_queue_index = queue_index + start + i
             is_express = (effective_queue_index % (express_queue_rate + 1)) != express_queue_rate
             if (is_express and express_entries_rev) or (not standard_entries_rev):
                 entry = express_entries_rev.pop()
-                express_pos = start_express_queue + limit_express_queue - len(express_entries_rev)
-                queue_pos = f"E{express_pos:0{index_digits}}"
+                # express_pos = start_express_queue + limit_express_queue - len(express_entries_rev)
+                lane_pos = "🐇"
             else:
                 entry = standard_entries_rev.pop()
-                standard_pos = start_standard_queue + limit_standard_queue - len(standard_entries_rev)
-                queue_pos = f"S{standard_pos:0{index_digits}}"
+                # standard_pos = start_standard_queue + limit_standard_queue - len(standard_entries_rev)
+                lane_pos = "🐢"
                 
             overall_pos = start + i + 1
             entry_str = Queue.__format_queue_entry(entry)
-            content += f"{overall_pos}. (`{queue_pos}`) {entry_str}\n"
+            content += f"{overall_pos}. {lane_pos} {entry_str}\n"
 
         return q_len, content
 
     @command()
-    async def queue(self, interaction: Interaction, queue_type: Literal["combined", "standard", "express"] = "combined"):
+    @describe(lane="type of queue to display")
+    async def queue(self, interaction: Interaction, lane: Literal["combined", "standard", "express"] = "combined"):
         """Show the RP validator queue"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        view = Queue.ValidatorPageView(queue_type)
+        view = Queue.ValidatorPageView(lane)
         embed = await view.load()
         await interaction.followup.send(embed=embed, view=view)
 
