@@ -12,6 +12,7 @@ jobs:
       - name: Force HTTPS for Git submodules
         run: |
           git config --global url."https://github.com/".insteadOf git@github.com:
+          git config --global url."https://github.com/".insteadOf ssh://git@github.com/
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -26,7 +27,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v4
         with:
-          context: "{{defaultContext}}:rocketwatch"
+          context: ./rocketwatch
           push: true
           tags: haloooloolo/rocketwatch:latest
           no-cache: true
