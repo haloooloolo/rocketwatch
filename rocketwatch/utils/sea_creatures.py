@@ -71,9 +71,9 @@ def get_holding_for_address(address):
             if "RETH" in contract_name:
                 eth_balance += solidity.to_float(token.results[0]) * price_cache["reth_price"]
     # add eth they provided for minipools
-    eth_balance += solidity.to_int(rp.call("rocketNodeStaking.getNodeETHProvided", address))
+    eth_balance += solidity.to_float(rp.call("rocketNodeStaking.getNodeETHBonded", address))
     # add their staked RPL
-    staked_rpl = solidity.to_int(rp.call("rocketNodeStaking.getNodeRPLStake", address))
+    staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getNodeStakedRPL", address))
     eth_balance += staked_rpl * price_cache["rpl_price"]
     return eth_balance
 

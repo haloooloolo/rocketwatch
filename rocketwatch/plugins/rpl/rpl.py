@@ -109,7 +109,7 @@ class RPL(commands.Cog):
         await ctx.defer(ephemeral=is_hidden(ctx))
         e = Embed()
         # get total RPL staked
-        total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalRPLStake"))
+        total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalStakedRPL"))
         e.add_field(name="Total RPL Staked:", value=f"{humanize.intcomma(total_rpl_staked, 2)} RPL", inline=False)
         # get effective RPL staked
         effective_rpl_stake = await (await self.db.node_operators_new.aggregate([

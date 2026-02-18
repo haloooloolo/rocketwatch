@@ -337,7 +337,7 @@ class TVL(Cog):
 
         # Staked RPL: This is all ETH that has been staked by Node Operators.
         data["Total RPL Locked"]["Staked RPL"]["Node Operators"]["_val"] = solidity.to_float(
-            rp.call("rocketNodeStaking.getTotalRPLStake"))
+            rp.call("rocketNodeStaking.getTotalStakedRPL"))
 
         # oDAO bonded RPL: RPL oDAO Members have to lock up to join it. This RPL can be slashed if they misbehave.
         data["Total RPL Locked"]["Staked RPL"]["oDAO Bond"]["_val"] = solidity.to_float(
