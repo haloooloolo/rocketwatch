@@ -24,7 +24,6 @@ log.setLevel(cfg["log_level"])
 class Metrics(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.notice_ttl_cache = TTLCache(math.inf, ttl=60 * 15)
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.collection = self.db.command_metrics
 
@@ -182,16 +181,7 @@ class Metrics(commands.Cog):
 
     @commands.Cog.listener()
     async def on_command_completion(self, ctx):
-        log.info(
-            f"/{ctx.command.name} called by {ctx.author} in #{ctx.channel.name} ({ctx.guild}) completed successfully")
-        if not is_hidden(ctx) and ctx.author not in self.notice_ttl_cache:
-            self.notice_ttl_cache[ctx.author] = True
-            e = Embed()
-            e.title = 'Did you know?'
-            e.description = "Calling this command (or any!) in other channels will make them only appear for you! " \
-                            "Give it a try next time!"
-            await ctx.reply(embed=e, ephemeral=True)
-
+        log.info(f"/{ctx.command.name} called by {ctx.author} in #{ctx.channel.name} ({ctx.guild}) completed successfully")
         try:
             # get the timestamp of when the command was called from the db
             data = await self.collection.find_one({'_id': ctx.interaction.id})
