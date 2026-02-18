@@ -154,7 +154,7 @@ class Rewards(commands.Cog):
         rpl_min: float = solidity.to_float(rp.call("rocketDAOProtocolSettingsNode.getMinimumPerMinipoolStake", block=data_block))
         rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
         actual_borrowed_eth = solidity.to_float(rp.call("rocketNodeStaking.getNodeETHMatched", address, block=data_block))
-        actual_rpl_stake = solidity.to_float(rp.call("rocketNodeStaking.getNodeRPLStake", address, block=data_block))
+        actual_rpl_stake = solidity.to_float(rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
 
         inflation_rate: int = rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)
         inflation_interval: int = rp.call("rocketTokenRPL.getInflationIntervalTime", block=data_block)

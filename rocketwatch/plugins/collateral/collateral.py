@@ -58,7 +58,7 @@ def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 8 * 10**18) for node in node_batch
         ).results]
         rpl_stakes += [r.results[0] for r in rp.multicall.aggregate(
-            node_staking.functions.getNodeRPLStake(node) for node in node_batch
+            node_staking.functions.getNodeStakedRPL(node) for node in node_batch
         ).results]
 
     return {

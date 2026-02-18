@@ -439,7 +439,7 @@ class NodeTask(commands.Cog):
                        [((n["address"], "smoothing_pool_registration_state"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getAverageNodeFee"), n["address"]],
                        [((n["address"], "average_node_fee"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeRPLStake"), n["address"]],
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeStakedRPL"), n["address"]],
                        [((n["address"], "rpl_stake"), safe_to_float)]),
             lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeEffectiveRPLStake"), n["address"]],
                        [((n["address"], "effective_rpl_stake"), safe_to_float)]),
