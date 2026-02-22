@@ -72,8 +72,8 @@
     },
     "pool_deposit_event": {
         "title": ":rocket: Pool Deposit",
-        "description": "**%{amount} ETH** deposited into the deposit pool!",
-        "description_small": ":rocket: %{fancy_from} deposited **%{amount} ETH** into the deposit pool!"
+        "description": "**%{amount} ETH** deposited for rETH!",
+        "description_small": ":rocket: %{fancy_from} deposited **%{amount} ETH** for rETH!"
     },
     "odao_rewards_snapshot_event": {
         "title": ":camera_with_flash: Reward Snapshot Published",
