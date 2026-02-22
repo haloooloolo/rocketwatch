@@ -63,7 +63,7 @@ class DepositPool(StatusPlugin):
                 if std_queue_length > display_limit:
                     embed.description += f"{display_limit + 1}. `...`\n"
                     
-            queue_capacity = max(total_queue_length * 31 - dp_balance, 0.0)
+            queue_capacity = max(total_queue_length * 32 - dp_balance, 0.0)
             embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
         else:
             lines = []
