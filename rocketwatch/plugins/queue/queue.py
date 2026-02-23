@@ -91,7 +91,7 @@ class Queue(Cog):
         
     @staticmethod
     def _get_queue(namespace: str, limit: int, start: int = 0) -> tuple[int, str]:
-        if not rp.is_saturn_deployed() or limit <= 0:
+        if limit <= 0:
             return 0, ""
         
         list_contract = rp.get_contract_by_name("linkedListStorage")

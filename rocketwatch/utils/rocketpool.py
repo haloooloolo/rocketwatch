@@ -149,10 +149,6 @@ class RocketPool:
     def get_protocol_version(self) -> tuple:
         version_string = self.get_string("protocol.version")
         return tuple(map(int, version_string.split(".")))
-    
-    def is_saturn_deployed(self) -> bool:
-        protocol_version = self.get_protocol_version()
-        return protocol_version >= (1, 4)
         
     @cached(cache=ABI_CACHE)
     def get_abi_by_name(self, name):
