@@ -65,6 +65,9 @@ class DepositPool(StatusPlugin):
                     
             queue_capacity = max(free_capacity - deposit_cap, 0.0)
             embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
+            possible_assignments = min(int(dp_balance // 32), total_queue_length)
+            if possible_assignments > 0:
+                embed.description += f"\nSufficient balance for **{possible_assignments} deposit assignments**!"
         else:
             lines = []
             if (num_eb4 := int(dp_balance // 28)) > 0:
