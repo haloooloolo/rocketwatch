@@ -34,11 +34,11 @@ class DepositPool(StatusPlugin):
 
         dp_balance = solidity.to_float(multicall["getBalance"])
         deposit_cap = solidity.to_int(multicall["getMaximumDepositPoolSize"])
+        free_capacity = solidity.to_float(multicall["getMaximumDepositAmount"])
 
         if deposit_cap - dp_balance < 0.01:
             dp_status = "Capacity reached!"
         else:
-            free_capacity = solidity.to_float(multicall["getMaximumDepositAmount"])
             dp_status = f"Enough space for **{free_capacity:,.2f} ETH**."
 
         embed = Embed(title="Deposit Pool Stats")
@@ -63,7 +63,7 @@ class DepositPool(StatusPlugin):
                 if std_queue_length > display_limit:
                     embed.description += f"{display_limit + 1}. `...`\n"
                     
-            queue_capacity = max(total_queue_length * 32 - dp_balance, 0.0)
+            queue_capacity = max(free_capacity - deposit_cap, 0.0)
             embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
         else:
             lines = []
