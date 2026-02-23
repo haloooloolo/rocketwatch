@@ -97,18 +97,31 @@ def el_explorer_url(
         name_fmt: Optional[Callable[[str], str]] = None,
         block="latest"
 ):
-
     if w3.isAddress(target):
         # sanitize address
-        url = f"{cfg['execution_layer.explorer']}/address/{target}"
         target = w3.to_checksum_address(target)
-
-        if prefix != -1 and rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
-            prefix += ":cup_with_straw:"
-
+        url = f"{cfg['execution_layer.explorer']}/address/{target}"
+        
+        chain = cfg["rocketpool.chain"]
+        dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
+        
+        if rp.is_node(target):
+            megapool_address = rp.call("rocketNodeManager.getMegapoolAddress", target)
+            if megapool_address != "0x0000000000000000000000000000000000000000":
+                url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
+                
+        if rp.is_megapool(target):
+            url = f"https://saturn-1.net/megapool/{target}{dashboard_network}"
+        
+        if rp.is_minipool(target):
+            pass # TODO add explorer url once supported
+        
         n_key = f"addresses.{target}"
         if not name and (n := _(n_key)) != n_key:
             name = n
+
+        if prefix != -1 and rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
+            prefix += ":cup_with_straw:"
 
         if not name and (member_id := rp.call("rocketDAONodeTrusted.getMemberID", target, block=block)):
             if prefix != -1:
@@ -178,7 +191,6 @@ def el_explorer_url(
     if prefix == -1:
         prefix = ""
     return f"{prefix}[{name}]({url})"
-
 
 def prepare_args(args):
     for arg_key, arg_value in list(args.items()):

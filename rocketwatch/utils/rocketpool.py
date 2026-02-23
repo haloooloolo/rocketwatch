@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 from bidict import bidict
-from eth_typing import BlockIdentifier
+from eth_typing import BlockIdentifier, ChecksumAddress
 from cachetools import cached, FIFOCache
 from cachetools.func import ttl_cache
 from multicall import Call, Multicall
@@ -39,7 +39,7 @@ class RocketPool:
         self.CONTRACT_CACHE.clear()
         self.ABI_CACHE.clear()
         self.ADDRESS_CACHE.clear()
-        self.addresses = bidict()
+        self.addresses.clear()
         self._init_contract_addresses()
 
     def _init_contract_addresses(self) -> None:
@@ -226,6 +226,16 @@ class RocketPool:
         value = solidity.to_float(self.call("rocketTokenRPL.totalSwappedRPL"))
         percentage = (value / 18_000_000) * 100
         return round(percentage, 2)
+    
+    def is_node(self, address: ChecksumAddress) -> bool:
+        return self.call("rocketNodeManager.getNodeExists", address)
+    
+    def is_minipool(self, address: ChecksumAddress) -> bool:
+        return self.call("rocketMinipoolManager.getMinipoolExists", address)
+        
+    def is_megapool(self, address: ChecksumAddress) -> bool:
+        sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", address])
+        return self.get_contract_by_name("rocketStorage").functions.getBool(sha3).call() 
 
     @ttl_cache(ttl=60)
     def get_eth_usdc_price(self) -> float:

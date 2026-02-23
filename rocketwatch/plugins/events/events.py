@@ -390,15 +390,8 @@ class Events(EventPlugin):
     def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
         receipt = w3.eth.get_transaction_receipt(event.transactionHash)
         
-        def is_minipool(_address: ChecksumAddress) -> bool:
-            return rp.call("rocketMinipoolManager.getMinipoolExists", _address)
-        
-        def is_megapool(_address: ChecksumAddress) -> bool:
-            sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", _address])
-            return rp.get_contract_by_name("rocketStorage").functions.getBool(sha3).call() 
-        
-        is_minipool_event = is_minipool(event.address) or is_minipool(receipt.to)
-        is_megapool_event = is_megapool(event.address) or is_megapool(receipt.to)       
+        is_minipool_event = rp.is_minipool(event.address) or rp.is_minipool(receipt.to)
+        is_megapool_event = rp.is_megapool(event.address) or rp.is_megapool(receipt.to)       
         
         if not any([
             is_minipool_event,
