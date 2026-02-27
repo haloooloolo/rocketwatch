@@ -142,7 +142,7 @@ class Proposals(commands.Cog):
             await self.db.proposals.create_index([("validator", 1), ("slot", -1)])
             log.info("Created indexes on minipools_new and proposals collections")
         except Exception as e:
-            log.debug(f"Could not create indexes: {e}")
+            log.warning(f"Could not create indexes: {e}")
 
     async def work(self):
         log.debug("starting proposal task")

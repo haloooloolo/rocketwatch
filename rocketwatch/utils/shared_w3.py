@@ -1,7 +1,7 @@
 import logging
-import math
 
 import aiohttp
+from web3.beacon import Beacon as Bacon
 from aiohttp.web import HTTPError
 from eth_typing import BlockIdentifier
 from web3 import Web3, HTTPProvider
@@ -24,7 +24,7 @@ historical_w3 = None
 if "archive" in cfg['execution_layer.endpoint'].keys():
     historical_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.archive']))
 
-class SuperBacon:
+class SuperBacon(Bacon):
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
         timeout = aiohttp.ClientTimeout(sock_connect=3.05, total=20)

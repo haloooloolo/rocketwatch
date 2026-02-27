@@ -1,7 +1,6 @@
 import logging
 from typing import Optional, cast
 
-import asyncio
 import pymongo
 import requests
 import eth_utils
@@ -52,7 +51,7 @@ class BeaconEvents(EventPlugin):
     def _get_events_for_slot(self, slot_number: int, *, check_finality: bool) -> list[Event]:
         try:
             log.debug(f"Checking slot {slot_number}")
-            beacon_block = asyncio.run(bacon.get_block(slot_number))["data"]["message"]
+            beacon_block = await bacon.get_block(slot_number)["data"]["message"]
         except ValueError as err:
             if err.args[0] == "Block does not exist":
                 log.error(f"Beacon block {slot_number} not found, skipping.")
