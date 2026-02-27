@@ -4,26 +4,28 @@ import time
 from datetime import datetime, timedelta
 from io import BytesIO
 
-import aiohttp
+import asyncio
+from aiohttp.client_exceptions import ClientResponseError
 import matplotlib as mpl
-import numpy as np
-from PIL import Image
 from discord import File
+from discord.utils import as_chunks
 from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib import pyplot as plt
-from pymongo import AsyncMongoClient, ReplaceOne
-from wordcloud import WordCloud
+from pymongo import AsyncMongoClient
+from cronitor import Monitor
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.solidity import beacon_block_to_date, date_to_beacon_block
 from utils.time_debug import timerun_async
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
+from utils.shared_w3 import bacon
 
-log = logging.getLogger("proposals")
+cog_id = "proposals"
+log = logging.getLogger(cog_id)
 log.setLevel(cfg["log_level"])
 
 LOOKUP = {
@@ -35,30 +37,28 @@ LOOKUP = {
         "S": "Lodestar"
     },
     "execution": {
-        "I": "Infura",
-        "P": "Pocket",
         "G": "Geth",
         "B": "Besu",
         "N": "Nethermind",
+        "R": "Reth",
         "X": "External"
     }
 }
 
 COLORS = {
-    "Nimbus"          : "#cc9133",
-    "Prysm"           : "#40bfbf",
-    "Lighthouse"      : "#9933cc",
-    "Teku"            : "#3357cc",
-    "Lodestar"        : "#fb5b9d",
+    "Nimbus"          : "#CC9133",
+    "Prysm"           : "#40BFBF",
+    "Lighthouse"      : "#9933CC",
+    "Teku"            : "#3357CC",
+    "Lodestar"        : "#FB5B9D",
 
-    "Infura"          : "#ff2f00",
-    "Pocket"          : "#e216e9",
-    "Geth"            : "#40bfbf",
-    "Besu"            : "#55aa7a",
-    "Nethermind"      : "#2688d9",
+    "Geth"            : "#40BFBF",
+    "Besu"            : "#55AA7A",
+    "Nethermind"      : "#2688D9",
+    "Reth"            : "#CF0512",
     "External"        : "#808080",
 
-    "Smart Node"      : "#cc6e33",
+    "Smart Node"      : "#CC6E33",
     "Allnodes"        : "#4533cc",
     "No proposals yet": "#E0E0E0",
     "Unknown"         : "#AAAAAA",
@@ -73,14 +73,13 @@ PROPOSAL_TEMPLATE = {
 # noinspection RegExpUnnecessaryNonCapturingGroup
 SMARTNODE_REGEX = re.compile(r"^RP(?:(?:-)([A-Z])([A-Z])?)? (?:v)?(\d+\.\d+\.\d+(?:-\w+)?)(?:(?:(?: \()|(?: gw:))(.+)(?:\)))?")
 
-
-def parse_propsal(entry):
-    graffiti = bytes.fromhex(entry["validator"]["graffiti"][2:]).decode("utf-8").rstrip('\x00')
+def parse_proposal(beacon_block: dict) -> dict:
+    graffiti = bytes.fromhex(beacon_block["body"]["graffiti"][2:]).decode("utf-8").rstrip('\x00')
     data = {
-        "slot"     : int(entry["number"]),
-        "validator": int(entry["validator"]["index"]),
+        "slot"     : int(beacon_block["slot"]),
+        "validator": int(beacon_block["proposer_index"]),
         "graffiti" : graffiti,
-    }
+    } | PROPOSAL_TEMPLATE
     if m := SMARTNODE_REGEX.findall(graffiti):
         groups = m[0]
         # smart node proposal
@@ -116,179 +115,172 @@ def parse_propsal(entry):
 class Proposals(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.rocketscan_proposals_url = "https://rocketscan.io/api/mainnet/beacon/blocks/all"
-        self.last_chore_run = 0
-        # connect to local mongodb
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
-        self.created_view = False
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
+        self.monitor = Monitor("proposals-task", api_key=cfg["other.secrets.cronitor"])
+        self.batch_size = 100
+        self.bot.loop.create_task(self.loop())
+        
+    async def loop(self):
+        await self.bot.wait_until_ready()
+        await self._create_indices()
+        while not self.bot.is_closed():
+            p_id = time.time() 
+            self.monitor.ping(state="run", series=p_id)
+            try:
+                await self.work()
+                self.monitor.ping(state="complete", series=p_id)
+            except Exception as err:
+                await self.bot.report_error(err)
+                self.monitor.ping(state="fail", series=p_id)
+            finally:
+                await asyncio.sleep(300)
+                
+    async def _create_indices(self):
+        await self.bot.wait_until_ready()
+        try:
+            await self.db.minipools_new.create_index([("validator_index", 1)])
+            await self.db.proposals.create_index([("validator", 1), ("slot", -1)])
+            log.info("Created indexes on minipools_new and proposals collections")
+        except Exception as e:
+            log.debug(f"Could not create indexes: {e}")
 
-    async def create_minipool_proposal_view(self):
-        if self.created_view:
-            return
+    async def work(self):
+        log.debug("starting proposal task")
+        await self.fetch_proposals()
+        await self.create_minipool_proposal_view()
+        log.debug("finished proposal task")
+
+    async def fetch_proposals(self):
+        if db_entry := (await self.db.last_checked_block.find_one({"_id": cog_id})):
+            last_checked_slot = db_entry["slot"]
+        else:
+            last_checked_slot = 4700012 # last slot before merge
+        
+        latest_slot = int((await bacon.get_header("finalized"))["data"]["header"]["message"]["slot"])
+        for slots in as_chunks(range(last_checked_slot + 1, latest_slot + 1), self.batch_size):
+            log.info(f"Fetching proposals for slots {slots[0]} to {slots[-1]}")
+            await asyncio.gather(*[self.fetch_proposal(s) for s in slots])
+            await self.db.last_checked_block.replace_one({"_id": cog_id}, {"_id": cog_id, "slot": slots[-1]}, upsert=True)
+            
+    async def fetch_proposal(self, slot: int) -> None:
+        try:
+            beacon_header = (await bacon.get_header(slot))["data"]["header"]["message"]
+        except ClientResponseError as e:
+            if e.status == 404:
+                return None
+            else:
+                raise e
+            
+        validator_index = int(beacon_header["proposer_index"])
+        if not (minipool := (await self.db.minipools.find_one({"validator": validator_index}))):
+            return None
+                
+        beacon_block = (await bacon.get_block(slot))["data"]["message"]
+        proposal_data = parse_proposal(beacon_block)
+        await self.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
+            
+    async def create_minipool_proposal_view(self):        
         log.info("creating minipool proposal view")
         pipeline = [
             {
                 '$match': {
-                    'node_operator': {
-                        '$ne': None
-                    },
-                    'beacon.status' : 'active_ongoing',
-                    "status": "staking"
+                    'node_operator': {'$ne': None},
+                    'beacon.status' : 'active_ongoing'
                 }
-            }, {
+            },
+            {
                 '$lookup': {
                     'from'        : 'proposals',
                     'localField'  : 'validator_index',
                     'foreignField': 'validator',
                     'as'          : 'proposals',
                     'pipeline'    : [
-                        {
-                            '$sort': {
-                                'slot': -1
-                            }
-                        }
+                        {'$sort': {'slot': -1}},
+                        {'$limit': 1}
                     ]
                 }
-            }, {
-                '$project': {
-                    'node_operator': 1,
-                    'validator'    : 1,
-                    'proposal'     : {
-                        '$arrayElemAt': [
-                            '$proposals', 0
-                        ]
-                    }
+            },
+            {
+                '$unwind': {
+                    'path': '$proposals',
+                    'preserveNullAndEmptyArrays': True
                 }
-            }, {
-                '$project': {
-                    'node_operator': 1,
-                    'validator'    : "$validator_index",
-                    'slot'         : '$proposal.slot'
-                }
-            }, {
+            },
+            {
                 '$group': {
                     '_id'            : '$node_operator',
-                    'slot'           : {
-                        '$max': '$slot'
-                    },
-                    'validator_count': {
-                        '$sum': 1
-                    }
+                    'validator_count': {'$sum': 1},
+                    'latest_proposal': {'$first': '$proposals'}
                 }
-            }, {
-                '$match': {
-                    'slot': {
-                        '$ne': None
-                    }
-                }
-            }, {
-                '$lookup': {
-                    'from'        : 'proposals',
-                    'localField'  : 'slot',
-                    'foreignField': 'slot',
-                    'as'          : 'proposals'
-                }
-            }, {
+            },
+            {
+                '$match': {'latest_proposal': {'$ne': None}}
+            },
+            {
                 '$project': {
-                    'node_operator'  : 1,
-                    'latest_proposal': {
-                        '$arrayElemAt': [
-                            '$proposals', 0
-                        ]
-                    },
-                    'validator_count': 1
+                    '_id': '$_id',
+                    'node_operator': '$_id',
+                    'validator_count': 1,
+                    'latest_proposal': 1
                 }
             }
         ]
         await self.db.minipool_proposals.drop()
-        await self.db.create_collection(
-            "minipool_proposals",
-            viewOn="minipools_new",
-            pipeline=pipeline
-        )
-        self.created_view = True
-
-    async def gather_all_proposals(self):
-        log.info("getting all proposals using the rocketscan.dev API")
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self.rocketscan_proposals_url) as resp:
-                if resp.status != 200:
-                    log.error("failed to get proposals using the rocketscan.dev API")
-                    return
-                proposals = await resp.json()
-        log.info("got all proposals using the rocketscan.dev API")
-        await self.db.proposals.bulk_write([ReplaceOne({"slot": int(entry["number"])},
-                                                       PROPOSAL_TEMPLATE | parse_propsal(entry),
-                                                       upsert=True) for entry in proposals])
-        log.info("finished gathering all proposals")
-
-    async def chore(self, ctx: Context):
-        # only run if self.last_chore_run timestamp is older than 1 hour
-        msg = await ctx.send(content="doing chores...")
-        if (time.time() - self.last_chore_run) > 3600:
-            self.last_chore_run = time.time()
-            await msg.edit(content="gathering proposals...")
-            await self.gather_all_proposals()
-            await self.create_minipool_proposal_view()
-        else:
-            log.debug("skipping chore")
-        return msg
+        await self.db.create_collection("minipool_proposals", viewOn="minipools_new", pipeline=pipeline)
 
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
-        distribution = await (await self.db.minipool_proposals.aggregate([
+        # Build the match stage to filter out Allnodes if needed
+        match_stage = {}
+        if remove_allnodes:
+            match_stage['$match'] = {'latest_proposal.type': {'$ne': 'Allnodes'}}
+        
+        pipeline = [
             {
                 '$project': {
                     'attribute'      : f'$latest_proposal.{attribute}',
                     'type'           : '$latest_proposal.type',
                     'validator_count': 1
                 }
-            }, {
+            },
+            {
                 '$group': {
-                    '_id'            : ['$attribute', '$type'],
-                    'count'          : {
-                        '$sum': 1
-                    },
-                    'validator_count': {
-                        '$sum': '$validator_count'
-                    }
-                }
-            }, {
-                '$sort': {
-                    'count': 1
+                    '_id'            : {'attribute': '$attribute', 'type': '$type'},
+                    'count'          : {'$sum': 1},
+                    'validator_count': {'$sum': '$validator_count'}
                 }
             }
-        ])).to_list()
+        ]
+        
+        # Add match stage at the beginning if filtering Allnodes
+        if remove_allnodes:
+            pipeline.insert(0, match_stage)
+        
+        distribution = await (await self.db.minipool_proposals.aggregate(pipeline)).to_list()
+        
         if remove_allnodes:
             d = {'remove_from_total': {'count': 0, 'validator_count': 0}}
             for entry in distribution:
-                if entry['_id'][1] == 'Allnodes':
-                    d['remove_from_total']['count'] += entry['count']
-                    d['remove_from_total']['validator_count'] += entry['validator_count']
-                else:
-                    d[entry['_id'][0]] = entry
+                d[entry['_id']['attribute']] = entry
             return d
         else:
-            distribution = [entry | {'_id': entry['_id'][0]} for entry in distribution]
-            # merge entries that have the same _id by summing their attributes
+            # Convert nested _id structure and merge by attribute
             d = {}
             for entry in distribution:
-                if entry["_id"] in d:
-                    d[entry["_id"]]["count"] += entry["count"]
-                    d[entry["_id"]]["validator_count"] += entry["validator_count"]
+                key = entry['_id']['attribute']
+                if key in d:
+                    d[key]['count'] += entry['count']
+                    d[key]['validator_count'] += entry['validator_count']
                 else:
-                    d[entry["_id"]] = entry
-        return d
+                    d[key] = entry
+            return d
 
     @hybrid_command()
     async def version_chart(self, ctx: Context):
         """
         Show a historical chart of used Smart Node versions
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        msg = await self.chore(ctx)
-        await msg.edit(content="generating version chart...")
-
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         e = Embed(title="Version Chart")
         e.description = "The graph below shows proposal stats using a **5-day rolling window**, " \
                         "and **does not represent operator adoption**.\n" \
@@ -401,10 +393,10 @@ class Proposals(commands.Cog):
         e.set_image(url="attachment://chart.png")
 
         # send data
-        await msg.edit(content="", embed=e, attachments=[File(img, filename="chart.png")])
+        await ctx.send(embed=e, file=File(img, filename="chart.png"))
         img.close()
 
-    async def plot_axes_with_data(self, attr: str, ax1, ax2, name, remove_allnodes=False):
+    async def plot_axes_with_data(self, attr: str, ax1, ax2, remove_allnodes=False):
         # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
 
@@ -475,12 +467,11 @@ class Proposals(commands.Cog):
         )
         ax2.set_title("Node Operators", fontsize=22)
 
-    async def proposal_vs_node_operators_embed(self, attribute, name, msg, remove_allnodes=False):
+    async def proposal_vs_node_operators_embed(self, attribute, name, remove_allnodes=False):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
         # iterate axes in pairs
         title = f"Rocket Pool {name} Distribution {'without Allnodes' if remove_allnodes else ''}"
-        await msg.edit(content=f"generating {attribute} distribution graph...")
-        await self.plot_axes_with_data(attribute, ax1, ax2, name, remove_allnodes)
+        await self.plot_axes_with_data(attribute, ax1, ax2, remove_allnodes)
 
         e = Embed(title=title)
 
@@ -505,80 +496,29 @@ class Proposals(commands.Cog):
         """
         Generate a distribution graph of clients.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        msg = await self.chore(ctx)
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         embeds, files = [], []
         for attr, name in [["consensus_client", "Consensus Client"], ["execution_client", "Execution Client"]]:
-            e, f = await self.proposal_vs_node_operators_embed(attr, name, msg, remove_allnodes)
+            e, f = await self.proposal_vs_node_operators_embed(attr, name, remove_allnodes)
             embeds.append(e)
             files.append(f)
-        await msg.edit(content="", embeds=embeds, attachments=files)
+        await ctx.send(embeds=embeds, files=files)
 
     @hybrid_command()
     async def user_distribution(self, ctx: Context):
         """
         Generate a distribution graph of users.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        msg = await self.chore(ctx)
-        e, f = await self.proposal_vs_node_operators_embed("type", "User", msg)
-        await msg.edit(content="", embed=e, attachments=[f])
-
-    @hybrid_command()
-    async def comments(self, ctx: Context):
-        """
-        Generate a world cloud of comments.
-        """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        msg = await self.chore(ctx)
-        await msg.edit(content="generating comments word cloud...")
-
-        # load image
-        mask = np.array(Image.open("./plugins/proposals/assets/logo-words.png"))
-
-        # load font
-        font_path = "./plugins/proposals/assets/noto.ttf"
-
-        wc = WordCloud(max_words=2 ** 16,
-                       scale=2,
-                       mask=mask,
-                       max_font_size=100,
-                       min_font_size=1,
-                       background_color="white",
-                       relative_scaling=0,
-                       font_path=font_path,
-                       color_func=lambda *args, **kwargs: "rgb(235, 142, 85)")
-
-        # aggregate comments with their count
-        comments = await (await self.db.proposals.aggregate([
-            {"$match": {"comment": {"$exists": 1}}},
-            {"$group": {"_id": "$comment", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1, "slot": -1}}
-        ])).to_list()
-        comment_words = {x['_id']: x["count"] for x in comments}
-
-        # generate word cloud
-        wc.fit_words(comment_words)
-
-        # respond with image
-        img = BytesIO()
-        wc.to_image().save(img, format="png")
-        img.seek(0)
-        plt.close()
-        e = Embed(title="Rocket Pool Proposal Comments")
-        e.set_image(url="attachment://image.png")
-        await msg.edit(content="", embed=e, attachments=[File(img, filename="image.png")])
-        img.close()
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        embed, file = await self.proposal_vs_node_operators_embed("type", "User")
+        await ctx.send(embed=embed, file=file)
 
     @hybrid_command()
     async def client_combo_ranking(self, ctx: Context, remove_allnodes=False, group_by_node_operators=False):
         """
         Generate a ranking of most used execution and consensus clients.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        msg = await self.chore(ctx)
-        await msg.edit(content="generating client combo ranking...")
-
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         # aggregate [consensus, execution] pair counts
         client_pairs = await (await self.db.minipool_proposals.aggregate([
             {
@@ -621,7 +561,7 @@ class Proposals(commands.Cog):
             for i, pair in enumerate(client_pairs)
         )
         e.description = f"Currently showing {'node operator' if group_by_node_operators else 'validator'} counts\n```{desc}```"
-        await msg.edit(content="", embed=e)
+        await ctx.send(embed=e)
 
 
 async def setup(bot):

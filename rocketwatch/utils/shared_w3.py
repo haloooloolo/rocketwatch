@@ -1,15 +1,14 @@
 import logging
 import math
 
-import circuitbreaker
-import requests
-from requests import HTTPError, ConnectTimeout
+import aiohttp
+from aiohttp.web import HTTPError
+from eth_typing import BlockIdentifier
 from web3 import Web3, HTTPProvider
-from web3.beacon import Beacon as Bacon
 from web3.middleware import geth_poa_middleware
 
 from utils.cfg import cfg
-from utils.retry import retry
+from utils.retry import retry_async
 
 log = logging.getLogger("shared_w3")
 log.setLevel(cfg["log_level"])
@@ -25,73 +24,32 @@ historical_w3 = None
 if "archive" in cfg['execution_layer.endpoint'].keys():
     historical_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.archive']))
 
-endpoints = cfg["consensus_layer.endpoints"]
-tmp = []
-exceptions = (
-    HTTPError, ConnectionError, ConnectTimeout, requests.exceptions.ConnectionError, requests.exceptions.ReadTimeout)
-for fallback_endpoint in reversed(endpoints):
-    class SuperBacon(Bacon):
-        def __init__(
-                self,
-                base_url: str,
-                session: requests.Session = requests.Session(),
-        ) -> None:
-            super().__init__(base_url, session)
+class SuperBacon:
+    def __init__(self, base_url: str) -> None:
+        self.base_url = base_url
+        timeout = aiohttp.ClientTimeout(sock_connect=3.05, total=20)
+        self.session = aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
+        
+    @retry_async(tries=3, exceptions=HTTPError, delay=0.5)
+    async def _make_get_request(self, url: str):
+        async with self.session.get(url) as response:
+            return await response.json()
+        
+    async def get_header(self, block_id: BlockIdentifier):
+        url = f"{self.base_url}/eth/v1/beacon/headers/{block_id}"
+        return await self._make_get_request(url)
 
-        @retry(tries=3 if tmp else 1, exceptions=exceptions, delay=0.5)
-        @retry(tries=5 if tmp else 1, exceptions=ValueError, delay=0.1)
-        @circuitbreaker.circuit(failure_threshold=2 if tmp else math.inf,
-                                recovery_timeout=15,
-                                expected_exception=exceptions,
-                                fallback_function=tmp[-1].get_block if tmp else None,
-                                name=f"get_block using {fallback_endpoint}")
-        def get_block(self, *args):
-            block_id = args[-1]
-            if len(args) > 1:
-                log.warning(f"falling back to {self.base_url} for block {block_id}")
-            endpoint = f"/eth/v2/beacon/blocks/{block_id}"
-            url = self.base_url + endpoint
-            response = self.session.get(url, timeout=(3.05, 20))
-            if response.status_code == 404 and all(q in response.json()["message"].lower() for q in ["not", "found"]):
-                raise ValueError("Block does not exist")
-            response.raise_for_status()
-            return response.json()
+    async def get_block(self, block_id: BlockIdentifier):
+        url = f"{self.base_url}/eth/v2/beacon/blocks/{block_id}"
+        return await self._make_get_request(url)
 
-        @retry(tries=3 if tmp else 1, exceptions=exceptions, delay=0.5)
-        @circuitbreaker.circuit(failure_threshold=2 if tmp else math.inf,
-                                recovery_timeout=90,
-                                fallback_function=tmp[-1].get_validator_balances if tmp else None,
-                                name=f"get_validator_balances using {fallback_endpoint}")
-        def get_validator_balances(self, *args, **kwargs):
-            state_id = args[-1]
-            if len(args) > 1:
-                log.warning(f"falling back to {self.base_url} for validator balances {state_id}")
-            endpoint = f"/eth/v1/beacon/states/{state_id}/validator_balances"
-            # id array if present, and is array of ints
-            if "ids" in kwargs and all(isinstance(i, int) for i in kwargs['ids']):
-                # turn to array of strings
-                kwargs['ids'] = [str(i) for i in kwargs['ids']]
-                endpoint += f"?id={','.join(kwargs['ids'])}"
-            url = self.base_url + endpoint
-            response = self.session.get(url, timeout=(5, 30))
-            response.raise_for_status()
-            return response.json()
+    async def get_validators(self, state_id, ids: list[int]):
+        id_str = ','.join([str(i) for i in ids])
+        url = f"{self.base_url}/eth/v1/beacon/states/{state_id}/validators?id={id_str}"
+        return await self._make_get_request(url)
+    
+    async def get_sync_committee(self, epoch):
+        url = f"{self.base_url}/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
+        return await self._make_get_request(url)
 
-        def get_validators(self, *args, **kwargs):
-            state_id = args[-1]
-            if len(args) > 1:
-                log.warning(f"falling back to {self.base_url} for validator balances {state_id}")
-            endpoint = f"/eth/v1/beacon/states/{state_id}/validators"
-            # id array if present, and is array of ints
-            if "ids" in kwargs and isinstance(kwargs["ids"], list):
-                # turn to array of strings
-                kwargs['ids'] = [str(i) for i in kwargs['ids']]
-                endpoint += f"?id={','.join(kwargs['ids'])}"
-            url = self.base_url + endpoint
-            response = self.session.get(url, timeout=(5, 30))
-            response.raise_for_status()
-            return response.json()
-
-
-    tmp.append(SuperBacon(fallback_endpoint))
-bacon = tmp[-1]
+bacon = SuperBacon(cfg["consensus_layer.endpoints"][-1])

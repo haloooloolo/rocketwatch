@@ -276,11 +276,10 @@ class NodeTask(commands.Cog):
             return
         
         # we need to do smaller bulks as the pubkey is quite long and we dont want to make the query url too long
-        # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
         for pubkey_batch in as_chunks(public_keys, self.batch_size):
             data = {}
             # get beacon data for public keys
-            beacon_data = bacon.get_validators("head", ids=pubkey_batch)["data"]
+            beacon_data = (await bacon.get_validators("head", ids=pubkey_batch))["data"]
             # update data dict with results
             for d in beacon_data:
                 data[d["validator"]["pubkey"]] = int(d["index"])
@@ -304,11 +303,10 @@ class NodeTask(commands.Cog):
         validator_indexes = await self.db.minipools_new.distinct("validator_index")
         # remove None values
         validator_indexes = [i for i in validator_indexes if i is not None]
-        # endpoint = bacon.get_validators("head", ids=vali_indexes)["data"]
         for index_batch in as_chunks(validator_indexes, self.batch_size):
             data = {}
             # get beacon data for public keys
-            beacon_data = bacon.get_validators("head", ids=index_batch)["data"]
+            beacon_data = (await bacon.get_validators("head", ids=index_batch))["data"]
             # update data dict with results
             for d in beacon_data:
                 data[int(d["index"])] = {

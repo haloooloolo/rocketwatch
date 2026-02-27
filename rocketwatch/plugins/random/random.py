@@ -121,7 +121,7 @@ class Random(commands.Cog):
         e.add_field(name="Coordinated Universal Time",
                     value=f"{dev_time.strftime(time_format)}\n"
                           f"`{binary_day} (0x{uint_day:04x})`")
-        b = solidity.slot_to_beacon_day_epoch_slot(int(bacon.get_block("head")["data"]["message"]["slot"]))
+        b = solidity.slot_to_beacon_day_epoch_slot(int((await bacon.get_header("head"))["data"]["header"]["message"]["slot"]))
         e.add_field(name="Beacon Time", value=f"Day {b[0]}, {b[1]}:{b[2]}")
 
         dev_time = datetime.now(tz=pytz.timezone("Australia/Lindeman"))

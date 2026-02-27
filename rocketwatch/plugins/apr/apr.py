@@ -17,7 +17,7 @@ from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import w3, historical_w3
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("apr")
 log.setLevel(cfg["log_level"])
@@ -87,7 +87,7 @@ class APR(commands.Cog):
     @hybrid_command()
     async def reth_apr(self, ctx: Context):
         """Show the current rETH APR"""
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         e = Embed()
         e.title = "Current rETH APR"
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
@@ -257,7 +257,7 @@ class APR(commands.Cog):
     @hybrid_command()
     async def node_apr(self, ctx: Context):
         """Show the current node operator APR"""
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
         e = Embed()
         e.title = "Current NO APR"
         e.description = "Dashed red lines above and bellow the solid red one are leb8 and leb16 respectively. " \
