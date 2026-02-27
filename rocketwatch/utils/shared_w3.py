@@ -26,30 +26,30 @@ if "archive" in cfg['execution_layer.endpoint'].keys():
 
 class SuperBacon(Bacon):
     def __init__(self, base_url: str) -> None:
-        self.base_url = base_url
+        super().__init__(base_url)
         timeout = aiohttp.ClientTimeout(sock_connect=3.05, total=20)
-        self.session = aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
+        self.async_session = aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
         
     @retry_async(tries=3, exceptions=HTTPError, delay=0.5)
-    async def _make_get_request(self, url: str):
-        async with self.session.get(url) as response:
+    async def _make_get_request_async(self, url: str):
+        async with self.async_session.get(url) as response:
             return await response.json()
         
-    async def get_header(self, block_id: BlockIdentifier):
+    async def get_block_header_async(self, block_id: BlockIdentifier):
         url = f"{self.base_url}/eth/v1/beacon/headers/{block_id}"
-        return await self._make_get_request(url)
+        return await self._make_get_request_async(url)
 
-    async def get_block(self, block_id: BlockIdentifier):
+    async def get_block_async(self, block_id: BlockIdentifier):
         url = f"{self.base_url}/eth/v2/beacon/blocks/{block_id}"
-        return await self._make_get_request(url)
+        return await self._make_get_request_async(url)
 
-    async def get_validators(self, state_id, ids: list[int]):
+    async def get_validators_async(self, state_id, ids: list[int]):
         id_str = ','.join([str(i) for i in ids])
         url = f"{self.base_url}/eth/v1/beacon/states/{state_id}/validators?id={id_str}"
-        return await self._make_get_request(url)
+        return await self._make_get_request_async(url)
     
-    async def get_sync_committee(self, epoch):
+    async def get_sync_committee_async(self, epoch):
         url = f"{self.base_url}/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
-        return await self._make_get_request(url)
+        return await self._make_get_request_async(url)
 
 bacon = SuperBacon(cfg["consensus_layer.endpoints"][-1])

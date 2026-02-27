@@ -279,7 +279,7 @@ class NodeTask(commands.Cog):
         for pubkey_batch in as_chunks(public_keys, self.batch_size):
             data = {}
             # get beacon data for public keys
-            beacon_data = (await bacon.get_validators("head", ids=pubkey_batch))["data"]
+            beacon_data = (await bacon.get_validators_async("head", ids=pubkey_batch))["data"]
             # update data dict with results
             for d in beacon_data:
                 data[d["validator"]["pubkey"]] = int(d["index"])
@@ -306,7 +306,7 @@ class NodeTask(commands.Cog):
         for index_batch in as_chunks(validator_indexes, self.batch_size):
             data = {}
             # get beacon data for public keys
-            beacon_data = (await bacon.get_validators("head", ids=index_batch))["data"]
+            beacon_data = (await bacon.get_validators_async("head", ids=index_batch))["data"]
             # update data dict with results
             for d in beacon_data:
                 data[int(d["index"])] = {

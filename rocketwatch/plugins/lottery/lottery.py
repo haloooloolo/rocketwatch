@@ -39,11 +39,11 @@ class LotteryBase:
     async def load_sync_committee(self, period):
         assert period in ["latest", "next"]
         await self._check_indexes()
-        h = await bacon.get_block("head")
+        h = await bacon.get_block_async("head")
         sync_period = int(h['data']['message']['slot']) // 32 // 256
         if period == "next":
             sync_period += 1
-        data = (await bacon.get_sync_committee(sync_period * 256))["data"]
+        data = (await bacon.get_sync_committee_async(sync_period * 256))["data"]
         await self.db.sync_committee_stats.replace_one({"period": period},
                                                  {"period"     : period,
                                                   "start_epoch": sync_period * 256,

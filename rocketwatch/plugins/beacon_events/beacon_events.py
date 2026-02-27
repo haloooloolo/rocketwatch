@@ -51,12 +51,10 @@ class BeaconEvents(EventPlugin):
     def _get_events_for_slot(self, slot_number: int, *, check_finality: bool) -> list[Event]:
         try:
             log.debug(f"Checking slot {slot_number}")
-            beacon_block = await bacon.get_block(slot_number)["data"]["message"]
-        except ValueError as err:
-            if err.args[0] == "Block does not exist":
-                log.error(f"Beacon block {slot_number} not found, skipping.")
-                return []
-            raise err
+            beacon_block = bacon.get_block(slot_number)["data"]["message"]
+        except requests.exceptions.HTTPError:
+            log.error(f"Beacon block {slot_number} not found, skipping.")
+            return []
 
         events = self._get_slashings(beacon_block)
         if proposal_event := self._get_proposal(beacon_block):
