@@ -42,8 +42,8 @@ class UserDistribute(commands.Cog):
         pending = []
         distributable = []
 
-        min_pending_time = 2 ** 256
-        min_distributable_time = 2 ** 256
+        min_open_time = 2 ** 256
+        min_close_time = 2 ** 256
 
         current_time = int(time.time())
         ud_window_start = rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart")
@@ -58,10 +58,10 @@ class UserDistribute(commands.Cog):
             if elapsed_time >= ud_window_end:
                 eligible.append(mp)
             elif elapsed_time < ud_window_start:
-                min_pending_time = min(ud_window_start, min_pending_time)
+                min_open_time = min(user_distribute_time + ud_window_start, min_open_time)
                 pending.append(mp)
             elif not rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp_address): # double check, DB may lag behind
-                min_distributable_time = min(ud_window_end, min_distributable_time)
+                min_close_time = min(user_distribute_time + ud_window_end, min_close_time)
                 distributable.append(mp)
 
         embed = Embed(title="User Distribute Status")
@@ -73,20 +73,18 @@ class UserDistribute(commands.Cog):
         )
 
         if pending:
-            earliest_ts = current_time + min_pending_time
             embed.add_field(
                 name="Pending",
-                value=f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''} · first window opens <t:{earliest_ts}:R>",
+                value=f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''} · next window opens <t:{min_open_time}:R>",
                 inline=False
             )
         else:
             embed.add_field(name="Pending", value="**0** minipools", inline=False)
 
         if distributable:
-            closes_ts = current_time + min_distributable_time
             embed.add_field(
                 name="Distributable",
-                value=f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''} · first window closes <t:{closes_ts}:R>",
+                value=f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''} · next window closes <t:{min_close_time}:R>",
                 inline=False
             )
         else:
