@@ -497,9 +497,9 @@ class Proposals(commands.Cog):
         await ctx.send(embeds=embeds, files=files)
 
     @hybrid_command()
-    async def user_distribution(self, ctx: Context):
+    async def operator_type_distribution(self, ctx: Context):
         """
-        Generate a distribution graph of users.
+        Generate a graph of NO groups.
         """
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
         embed, file = await self.proposal_vs_node_operators_embed("type", "User")

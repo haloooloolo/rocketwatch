@@ -142,7 +142,7 @@ class UserDistribute(commands.Cog):
         return eligible, pending, distributable
 
     @hybrid_command()
-    async def minipool_user_distribute(self, ctx: Context):
+    async def user_distribute_status(self, ctx: Context):
         """Show user distribute summary for minipools"""
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
