@@ -58,7 +58,7 @@ class MinipoolStates(commands.Cog):
                     exiting_valis.append(minipool)
                 case "withdrawal_done":
                     status_2 = "slashed" if minipool["beacon"]["slashed"] else "unslashed" 
-                    if not minipool["finalized"]:
+                    if minipool["execution_balance"] > 0:
                         data["withdrawn"][status_2] = data["withdrawn"].get(status_2, 0) + 1
                         withdrawn_valis.append(minipool)
                     else:

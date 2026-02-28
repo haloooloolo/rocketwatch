@@ -163,6 +163,7 @@ class DBUpkeepTask(commands.Cog):
             lambda a: (a, rp.seth_sig(m.abi, "getNodeFee"), [((a, "node_fee"), safe_to_float)]),
             lambda a: (a, rp.seth_sig(m.abi, "getEffectiveDelegate"), [((a, "effective_delegate"), None)]),
             lambda a: (a, rp.seth_sig(m.abi, "getUseLatestDelegate"), [((a, "use_latest_delegate"), None)]),
+            lambda a: (a, rp.seth_sig(m.abi, "getUserDistributed"), [((a, "user_distributed"), None)]),
             lambda a: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), a], [((a, "execution_balance"), safe_to_float)])
         ]
         # get all minipool addresses from db

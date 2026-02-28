@@ -13,7 +13,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib import pyplot as plt
-from pymongo import AsyncMongoClient
+from pymongo import AsyncMongoClient, ASCENDING, DESCENDING
 from cronitor import Monitor
 
 from rocketwatch import RocketWatch
@@ -143,7 +143,7 @@ class Proposals(commands.Cog):
         try:
             await self.db.proposals.create_index("validator")
             await self.db.proposals.create_index("slot", unique=True)
-            await self.db.proposals.create_index([("validator", 1), ("slot", -1)])
+            await self.db.proposals.create_index([("validator", ASCENDING), ("slot", DESCENDING)])
         except Exception as e:
             log.warning(f"Could not create indexes: {e}")
 
