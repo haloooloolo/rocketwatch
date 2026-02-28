@@ -1,3 +1,4 @@
+import time
 import logging
 from io import StringIO
 
@@ -7,7 +8,6 @@ from discord.ext import commands
 from discord.ext.commands import Context, hybrid_command
 from pymongo import AsyncMongoClient, ASCENDING
 
-import time
 from rocketwatch import RocketWatch
 from utils.rocketpool import rp
 from utils.cfg import cfg
@@ -21,7 +21,7 @@ log.setLevel(cfg["log_level"])
 
 class InstructionsView(ui.View):
     def __init__(self, eligible: list[dict], distributable: list[dict]):
-        super().__init__(timeout=None)
+        super().__init__(timeout=300)
         self.eligible = eligible
         self.distributable = distributable
 
@@ -59,10 +59,9 @@ class InstructionsView(ui.View):
         
         embed.description += "\nThis will " + " and ".join(actions) + "."
         
-        file_data = StringIO(input_data)
         await interaction.response.send_message(
             embed=embed,
-            file=discord.File(file_data, filename="input_data.txt"),
+            file=discord.File(StringIO(input_data), filename="input_data.txt"),
             ephemeral=True
         )
 
@@ -71,12 +70,8 @@ class UserDistribute(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
-
-    @hybrid_command()
-    async def minipool_user_distribute(self, ctx: Context):
-        """Show user distribute summary for minipools"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
-
+                
+    async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:
         head = await bacon.get_block_header_async("head")
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
         threshold_epoch = current_epoch - 5000
@@ -92,9 +87,6 @@ class UserDistribute(commands.Cog):
         pending = []
         distributable = []
 
-        min_open_time = 2 ** 256
-        min_close_time = 2 ** 256
-
         current_time = int(time.time())
         ud_window_start = rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart")
         ud_window_end = ud_window_start + rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength")
@@ -102,20 +94,29 @@ class UserDistribute(commands.Cog):
         for mp in minipools:
             mp["address"] = w3.to_checksum_address(mp["address"])
             storage = w3.eth.get_storage_at(mp["address"], 0x17)
-            user_distribute_time = int.from_bytes(storage, "big")
+            user_distribute_time: int = int.from_bytes(storage, "big")
             elapsed_time = current_time - user_distribute_time
-
+                        
             if elapsed_time >= ud_window_end:
-                eligible.append(mp)
+                eligible.append((mp, user_distribute_time))
             elif elapsed_time < ud_window_start:
-                min_open_time = min(user_distribute_time + ud_window_start, min_open_time)
+                mp["ud_window_open"] = user_distribute_time + ud_window_start
                 pending.append(mp)
             elif not rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp["address"]): # double check, DB may lag behind
-                min_close_time = min(user_distribute_time + ud_window_end, min_close_time)
+                mp["ud_window_close"] = user_distribute_time + ud_window_end
                 distributable.append(mp)
+                
+        return eligible, pending, distributable
 
+    @hybrid_command()
+    async def minipool_user_distribute(self, ctx: Context):
+        """Show user distribute summary for minipools"""
+        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+
+        eligible, pending, distributable = await self._fetch_minipools()
+        
         embed = Embed(title="User Distribute Status")
-
+        
         embed.add_field(
             name="Eligible",
             value=f"**{len(eligible)}** minipool{'s' if len(eligible) != 1 else ''}",
@@ -123,25 +124,28 @@ class UserDistribute(commands.Cog):
         )
 
         if pending:
+            next_window_open = min(mp["ud_window_open"] for mp in pending)
             embed.add_field(
                 name="Pending",
-                value=f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''} · next window opens <t:{min_open_time}:R>",
+                value=f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''} · next window opens <t:{next_window_open}:R>",
                 inline=False
             )
         else:
             embed.add_field(name="Pending", value="**0** minipools", inline=False)
 
         if distributable:
+            next_window_close = min(mp["ud_window_close"] for mp in distributable)
             embed.add_field(
                 name="Distributable",
-                value=f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''} · next window closes <t:{min_close_time}:R>",
+                value=f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''} · next window closes <t:{next_window_close}:R>",
                 inline=False
             )
         else:
             embed.add_field(name="Distributable", value="**0** minipools", inline=False)
                 
         if eligible or distributable:
-            await ctx.send(embed=embed, view=InstructionsView(eligible, distributable))
+            # limit the number of distributions to not run out of gas
+            await ctx.send(embed=embed, view=InstructionsView(eligible[:50], distributable[:100]))
         else:
             await ctx.send(embed=embed)
 

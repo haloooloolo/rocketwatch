@@ -35,11 +35,11 @@ class SuperBacon(Bacon):
         async with self.async_session.get(url) as response:
             return await response.json()
         
-    async def get_block_header_async(self, block_id: BlockIdentifier):
+    async def get_block_header_async(self, block_id: int | str):
         url = f"{self.base_url}/eth/v1/beacon/headers/{block_id}"
         return await self._make_get_request_async(url)
 
-    async def get_block_async(self, block_id: BlockIdentifier):
+    async def get_block_async(self, block_id: int | str):
         url = f"{self.base_url}/eth/v2/beacon/blocks/{block_id}"
         return await self._make_get_request_async(url)
 
