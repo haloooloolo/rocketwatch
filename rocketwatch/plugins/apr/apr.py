@@ -99,7 +99,7 @@ class APR(commands.Cog):
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',
@@ -270,7 +270,7 @@ class APR(commands.Cog):
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',

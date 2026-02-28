@@ -37,7 +37,7 @@ class FeeDistribution(commands.Cog):
         fig, axs = plt.subplots(1, 2)
 
         for i, bond in enumerate([8, 16]):            
-            result = await self.db.minipools_new.aggregate([
+            result = await self.db.minipools.aggregate([
                 { 
                     "$match": { 
                         "node_deposit_balance": bond,

@@ -181,7 +181,7 @@ class Random(commands.Cog):
 
         e = Embed(title="Smoothing Pool")
         smoothie_eth = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
-        data = await (await self.db.minipools_new.aggregate([
+        data = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status': {
@@ -200,7 +200,7 @@ class Random(commands.Cog):
                 }
             }, {
                 '$lookup': {
-                    'from'        : 'node_operators_new',
+                    'from'        : 'node_operators',
                     'localField'  : '_id',
                     'foreignField': 'address',
                     'as'          : 'meta'

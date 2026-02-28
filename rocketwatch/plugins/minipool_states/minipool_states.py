@@ -25,7 +25,7 @@ class MinipoolStates(commands.Cog):
         """Show minipool counts by beacon chain and contract status"""
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
         # fetch from db
-        res = await self.db.minipools_new.find({
+        res = await self.db.minipools.find({
             "beacon.status": {"$exists": True}
         }).to_list(None)
         data = {
@@ -58,7 +58,7 @@ class MinipoolStates(commands.Cog):
                     exiting_valis.append(minipool)
                 case "withdrawal_done":
                     status_2 = "slashed" if minipool["beacon"]["slashed"] else "unslashed" 
-                    if minipool["execution_balance"] > 0:
+                    if not minipool["finalized"]:
                         data["withdrawn"][status_2] = data["withdrawn"].get(status_2, 0) + 1
                         withdrawn_valis.append(minipool)
                     else:

@@ -161,7 +161,7 @@ class Debug(Cog):
     @is_owner()
     async def purge_minipools(self, interaction: Interaction, confirm: bool = False):
         """
-        Purge minipool collection, so it can be resynced from scratch in the next update.
+        Purge minipools collection, so it can be resynced from scratch in the next update.
         """
         await interaction.response.defer(ephemeral=True)
         if not confirm:
@@ -173,23 +173,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
-    async def purge_minipools_new(self, interaction: Interaction, confirm: bool = False):
-        """
-        Purge minipools_new collection, so it can be resynced from scratch in the next update.
-        """
-        await interaction.response.defer(ephemeral=True)
-        if not confirm:
-            await interaction.followup.send("Not running. Set `confirm` to `true` to run.")
-            return
-        await self.db.minipools_new.drop()
-        await interaction.followup.send(content="Done")
-
-    @command()
-    @guilds(cfg["discord.owner.server_id"])
-    @is_owner()
     async def sync_commands(self, interaction: Interaction):
         """
-        Full sync of the commands tree
+        Full sync of the command tree
         """
         await interaction.response.defer(ephemeral=True)
         await self.bot.sync_commands()

@@ -89,7 +89,7 @@ class BeaconEvents(EventPlugin):
 
         events = []
         for slash in slashings:
-            minipool = self.db.minipools.find_one({"validator": int(slash["minipool"])})
+            minipool = self.db.minipools.find_one({"validator_index": int(slash["minipool"])})
             if not minipool:
                 log.info(f"Skipping slashing of unknown validator {slash['minipool']}")
                 continue
@@ -124,7 +124,7 @@ class BeaconEvents(EventPlugin):
             return None
 
         validator_index = int(beacon_block["proposer_index"])
-        if not (minipool := self.db.minipools.find_one({"validator": validator_index})):
+        if not (minipool := self.db.minipools.find_one({"validator_index": validator_index})):
             # not proposed by a minipool
             return None
 

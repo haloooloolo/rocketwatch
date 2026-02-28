@@ -37,7 +37,7 @@ class RPL(commands.Cog):
         e = Embed()
 
         reward_duration = rp.call("rocketRewardsPool.getClaimIntervalTime")
-        total_rpl_staked = await (await self.db.node_operators_new.aggregate([
+        total_rpl_staked = await (await self.db.node_operators.aggregate([
             {
                 '$group': {
                     '_id'                      : 'out',
@@ -112,7 +112,7 @@ class RPL(commands.Cog):
         total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalStakedRPL"))
         e.add_field(name="Total RPL Staked:", value=f"{humanize.intcomma(total_rpl_staked, 2)} RPL", inline=False)
         # get effective RPL staked
-        effective_rpl_stake = await (await self.db.node_operators_new.aggregate([
+        effective_rpl_stake = await (await self.db.node_operators.aggregate([
             {
                 '$group': {
                     '_id'                      : 'out',
@@ -143,7 +143,7 @@ class RPL(commands.Cog):
         e = Embed()
         img = BytesIO()
 
-        data = await (await self.db.node_operators_new.aggregate([
+        data = await (await self.db.node_operators.aggregate([
             {
                 '$match': {
                     'staking_minipool_count': {

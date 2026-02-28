@@ -202,57 +202,6 @@ class Queue(Cog):
         embed = await view.load()
         await interaction.followup.send(embed=embed, view=view)
 
-    @command()
-    async def clear_queue(self, interaction: Interaction):
-        """Show gas price for clearing the queue using the rocketDepositPoolQueue contract"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-
-        e = Embed(title="Gas Prices for Dequeuing Minipools")
-        e.set_author(
-            name="🔗 Forum: Clear minipool queue contract",
-            url="https://dao.rocketpool.net/t/clear-minipool-queue-contract/670"
-        )
-
-        queue_length = rp.call("rocketMinipoolQueue.getTotalLength")
-        dp_balance = solidity.to_float(rp.call("rocketDepositPool.getBalance"))
-        match_amount = solidity.to_float(rp.call("rocketDAOProtocolSettingsMinipool.getVariableDepositAmount"))
-        max_dequeues = min(int(dp_balance / match_amount), queue_length)
-
-        if max_dequeues > 0:
-            max_assignments = rp.call("rocketDAOProtocolSettingsDeposit.getMaximumDepositAssignments")
-            min_assignments = rp.call("rocketDAOProtocolSettingsDeposit.getMaximumDepositSocialisedAssignments")
-
-            # half queue clear
-            half_clear_count = int(max_dequeues / 2)
-            half_clear_input = max_assignments * math.ceil(half_clear_count / min_assignments)
-            gas = rp.estimate_gas_for_call("rocketDepositPoolQueue.clearQueueUpTo", half_clear_input)
-            e.add_field(
-                name=f"Half Clear ({half_clear_count} MPs)",
-                value=f"`clearQueueUpTo({half_clear_input})`\n `{gas:,}` gas"
-            )
-
-            # full queue clear
-            full_clear_size = max_dequeues
-            full_clear_input = max_assignments * math.ceil(full_clear_size / min_assignments)
-            gas = rp.estimate_gas_for_call("rocketDepositPoolQueue.clearQueueUpTo", full_clear_input)
-            e.add_field(
-                name=f"Full Clear ({full_clear_size} MPs)",
-                value=f"`clearQueueUpTo({full_clear_input})`\n `{gas:,}` gas"
-            )
-        elif queue_length > 0:
-            e.description = "Not enough funds in deposit pool to dequeue any minipools."
-        else:
-            e.description = "Queue is empty."
-
-        # link to contract
-        e.add_field(
-            name="Contract",
-            value=el_explorer_url(rp.get_address_by_name('rocketDepositPoolQueue'), "RocketDepositPoolQueue"),
-            inline=False
-        )
-
-        await interaction.followup.send(embed=e)
-
 
 async def setup(bot):
     await bot.add_cog(Queue(bot))

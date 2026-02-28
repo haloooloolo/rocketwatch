@@ -71,7 +71,7 @@ class MinipoolDistribution(commands.Cog):
                 }
             }
         ]
-        return [x["count"] for x in self.db.minipools_new.aggregate(pipeline)]
+        return [x["count"] for x in self.db.minipools.aggregate(pipeline)]
 
     @hybrid_command()
     @describe(raw="Show the raw Distribution Data")

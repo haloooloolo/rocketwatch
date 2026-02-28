@@ -55,7 +55,7 @@ COLORS = {
     "Geth"            : "#40BFBF",
     "Besu"            : "#55AA7A",
     "Nethermind"      : "#2688D9",
-    "Reth"            : "#CF0512",
+    "Reth"            : "#760910",
     "External"        : "#808080",
 
     "Smart Node"      : "#CC6E33",
@@ -122,12 +122,15 @@ class Proposals(commands.Cog):
         
     async def loop(self):
         await self.bot.wait_until_ready()
-        await self._create_indices()
+        await self.check_indexes()
         while not self.bot.is_closed():
             p_id = time.time() 
             self.monitor.ping(state="run", series=p_id)
             try:
-                await self.work()
+                log.debug("starting proposal task")
+                await self.fetch_proposals()
+                await self.create_minipool_proposal_view()
+                log.debug("finished proposal task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
                 await self.bot.report_error(err)
@@ -135,20 +138,14 @@ class Proposals(commands.Cog):
             finally:
                 await asyncio.sleep(300)
                 
-    async def _create_indices(self):
+    async def check_indexes(self):
         await self.bot.wait_until_ready()
         try:
-            await self.db.minipools_new.create_index([("validator_index", 1)])
+            await self.db.proposals.create_index("validator")
+            await self.db.proposals.create_index("slot", unique=True)
             await self.db.proposals.create_index([("validator", 1), ("slot", -1)])
-            log.info("Created indexes on minipools_new and proposals collections")
         except Exception as e:
             log.warning(f"Could not create indexes: {e}")
-
-    async def work(self):
-        log.debug("starting proposal task")
-        await self.fetch_proposals()
-        await self.create_minipool_proposal_view()
-        log.debug("finished proposal task")
 
     async def fetch_proposals(self):
         if db_entry := (await self.db.last_checked_block.find_one({"_id": cog_id})):
@@ -172,7 +169,7 @@ class Proposals(commands.Cog):
                 raise e
             
         validator_index = int(beacon_header["proposer_index"])
-        if not (minipool := (await self.db.minipools.find_one({"validator": validator_index}))):
+        if not (minipool := (await self.db.minipools.find_one({"validator_index": validator_index}))):
             return None
                 
         beacon_block = (await bacon.get_block_async(slot))["data"]["message"]
@@ -226,7 +223,7 @@ class Proposals(commands.Cog):
             }
         ]
         await self.db.minipool_proposals.drop()
-        await self.db.create_collection("minipool_proposals", viewOn="minipools_new", pipeline=pipeline)
+        await self.db.create_collection("minipool_proposals", viewOn="minipools", pipeline=pipeline)
 
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
@@ -282,12 +279,7 @@ class Proposals(commands.Cog):
         """
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
         e = Embed(title="Version Chart")
-        e.description = "The graph below shows proposal stats using a **5-day rolling window**, " \
-                        "and **does not represent operator adoption**.\n" \
-                        "Versions with a proposal in the **last 2 days** are emphasized.\n\n" \
-                        "The percentages in the top left legend show the percentage of proposals observed in the last 5 days using that version.\n" \
-                        "**If an old version is shown as 10%, it means that it was 10% of the proposals in the last 5 days.**\n" \
-                        "_No it does not mean that the minipools simply haven't proposed with the new version yet._\n" \
+        e.description = "The graph below shows proposal stats using a **5-day rolling window**.\n" \
                         "This only looks at proposals, it does not care about what individual minipools do."
         # get proposals
         # limit to 6 months
@@ -404,7 +396,7 @@ class Proposals(commands.Cog):
         minipools = sorted(minipools, key=lambda x: x[1])
 
         # get total minipool count from rocketpool
-        unobserved_minipools = len(await self.db.minipools_new.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("_id")) - sum(d[1] for d in minipools)
+        unobserved_minipools = len(await self.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("_id")) - sum(d[1] for d in minipools)
         if "remove_from_total" in data:
             unobserved_minipools -= data["remove_from_total"]["validator_count"]
         minipools.insert(0, ("No proposals yet", unobserved_minipools))
@@ -420,7 +412,7 @@ class Proposals(commands.Cog):
         node_operators = sorted(node_operators, key=lambda x: x[1])
 
         # get total node operator count from rp
-        unobserved_node_operators = len(await self.db.minipools_new.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("node_operator")) - sum(d[1] for d in node_operators)
+        unobserved_node_operators = len(await self.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("node_operator")) - sum(d[1] for d in node_operators)
         if "remove_from_total" in data:
             unobserved_node_operators -= data["remove_from_total"]["count"]
         node_operators.insert(0, ("No proposals yet", unobserved_node_operators))

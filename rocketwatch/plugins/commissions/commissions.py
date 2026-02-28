@@ -34,7 +34,7 @@ class Commissions(commands.Cog):
 
         e = Embed(title='Commission History')
 
-        minipools = await self.db.minipools.find().sort("validator", 1).to_list(None)
+        minipools = await self.db.minipools.find().sort("validator_index", 1).to_list(None)
         # create dot chart of minipools
         # x-axis: validator
         # y-axis: node_fee

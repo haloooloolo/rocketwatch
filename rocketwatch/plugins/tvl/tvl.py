@@ -125,7 +125,7 @@ class TVL(Cog):
         # Minipools that are flagged as initialised have the following applied to them:
         # - They have 1 ETH staked on the beacon chain.
         # - They have not yet received 31 ETH from the Deposit Pool.
-        tmp = await (await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'initialised',
@@ -148,7 +148,7 @@ class TVL(Cog):
         #  - They have deposited 1 ETH to the Beacon Chain.
         #  - They have 31 ETH from the Deposit Pool in their contract waiting to be staked as well.
         #  - They are currently in the scrubbing process (should be 12 hours) or have not yet initiated the second phase.
-        tmp = await (await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'prelaunch',
@@ -177,7 +177,7 @@ class TVL(Cog):
         # - They have 1 ETH locked on the Beacon Chain, not earning any rewards.
         # - The 31 ETH that was waiting in their address was moved back to the Deposit Pool (This can cause the Deposit Pool
         #   to grow beyond its Cap, check the bellow comment for information about that).
-        tmp = await (await self.db.minipools_new.aggregate([
+        tmp = await (await self.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'dissolved',
@@ -203,7 +203,7 @@ class TVL(Cog):
                 "execution_balance"]
 
         # Staking Minipools:
-        minipools = await self.db.minipools_new.find({
+        minipools = await self.db.minipools.find({
             'status': {"$nin": ["initialised", "prelaunch", "dissolved"]},
             'node_deposit_balance': {"$exists": True},
         }).to_list(None)
@@ -271,7 +271,7 @@ class TVL(Cog):
 
         # Smoothing Pool Balance: This is ETH from Proposals by minipools that have joined the Smoothing Pool.
         smoothie_balance = solidity.to_float(w3.eth.getBalance(rp.get_address_by_name("rocketSmoothingPool")))
-        tmp = await (await self.db.node_operators_new.aggregate([
+        tmp = await (await self.db.node_operators.aggregate([
             {
                 '$match': {
                     'smoothing_pool_registration_state': True,
@@ -364,7 +364,7 @@ class TVL(Cog):
             rp.call("rocketVault.balanceOfToken", "rocketAuctionManager", rpl_address))
 
         # create _value string for each branch. the _value is the sum of all _val or _val values in the children
-        tmp = await (await self.db.node_operators_new.aggregate([
+        tmp = await (await self.db.node_operators.aggregate([
             {
                 '$match': {
                     'fee_distributor_eth_balance': {
