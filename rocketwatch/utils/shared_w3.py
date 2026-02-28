@@ -52,4 +52,4 @@ class SuperBacon(Bacon):
         url = f"{self.base_url}/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
         return await self._make_get_request_async(url)
 
-bacon = SuperBacon(cfg["consensus_layer.endpoints"][-1])
+bacon = SuperBacon(cfg["consensus_layer.endpoint"])

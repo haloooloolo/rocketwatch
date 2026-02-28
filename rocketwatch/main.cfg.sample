@@ -14,18 +14,15 @@ discord: {
 execution_layer: {
     explorer: "https://etherscan.io"
     endpoint: {
-        current: "http://node1:8545"
-        mainnet: "http://node1:8545"
-        archive: "http://node1:8545"
+        current: "http://node:8545"
+        mainnet: "http://node:8545"
+        archive: "http://node:8545"
     }
     etherscan_secret: ""
 }
 consensus_layer: {
     explorer: "https://beaconcha.in"
-    endpoints: [
-        "http://node1:5052",
-        "http://node2:5052"
-    ],
+    endpoint: "http://node:5052"
     beaconcha_secret: ""
 }
 mongodb: {
