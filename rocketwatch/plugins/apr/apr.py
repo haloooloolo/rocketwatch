@@ -44,13 +44,13 @@ class APR(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
-        self.loop.start()
+        self.task.start()
     
     async def cog_unload(self):
-        self.loop.cancel()
+        self.task.cancel()
 
     @tasks.loop(seconds=60)
-    async def loop(self):
+    async def task(self):
         # get latest block update from the db
         latest_db_block = await self.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
@@ -76,11 +76,11 @@ class APR(commands.Cog):
             })
             cursor_block = balance_block - 1
             
-    @loop.before_loop
+    @task.before_loop
     async def before_loop(self):
         await self.bot.wait_until_ready()
         
-    @loop.error
+    @task.error
     async def on_error(self, err: Exception):
         await self.bot.report_error(err)
 

@@ -16,13 +16,13 @@ class RichActivity(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.monitor = Monitor("update-activity", api_key=cfg["other.secrets.cronitor"])
-        self.loop.start()
+        self.task.start()
 
     async def cog_unload(self):
-        self.loop.cancel()
+        self.task.cancel()
 
     @tasks.loop(seconds=60)
-    async def loop(self):
+    async def task(self):
         self.monitor.ping()
         log.debug("Updating Discord activity")
         
@@ -34,11 +34,11 @@ class RichActivity(commands.Cog):
             )
         )
 
-    @loop.before_loop
+    @task.before_loop
     async def before_loop(self):
         await self.bot.wait_until_ready()
         
-    @loop.error
+    @task.error
     async def on_error(self, err: Exception):
         await self.bot.report_error(err)
 

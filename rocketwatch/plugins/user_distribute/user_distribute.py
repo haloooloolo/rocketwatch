@@ -1,10 +1,11 @@
 import time
 import logging
 from io import StringIO
+from typing import Optional
 
 import discord
 from discord import ui, ButtonStyle, Interaction
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord.ext.commands import Context, hybrid_command
 from pymongo import AsyncMongoClient, ASCENDING
 
@@ -20,8 +21,8 @@ log = logging.getLogger("user_distribute")
 log.setLevel(cfg["log_level"])
 
 class InstructionsView(ui.View):
-    def __init__(self, eligible: list[dict], distributable: list[dict]):
-        super().__init__(timeout=300)
+    def __init__(self, eligible: list[dict], distributable: list[dict], instruction_timeout: int):
+        super().__init__(timeout=instruction_timeout)
         self.eligible = eligible
         self.distributable = distributable
 
@@ -70,6 +71,38 @@ class UserDistribute(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
+        self.task.start()
+
+    async def cog_unload(self):
+        self.task.cancel()
+
+    @tasks.loop(hours=8)
+    async def task(self):
+        channel_id = cfg.get("discord.channels.user_distribute")
+        if not channel_id:
+            return
+        
+        channel = await self.bot.get_or_fetch_channel(channel_id)
+        
+        _, _, distributable = await self._fetch_minipools()
+        if not distributable:
+            return
+
+        embed = Embed(title=":warning: User Distribution Window Open")
+        next_window_close = min(mp["ud_window_close"] for mp in distributable)
+        embed.description = (
+            f"There are **{len(distributable)}** minipools eligible for distribution.\n"
+            f"The next window closes <t:{next_window_close}:R>!"
+        )
+        await channel.send(embed=embed, view=InstructionsView([], distributable[:100], instruction_timeout=(4 * 3600)))
+
+    @task.before_loop
+    async def before_task(self):
+        await self.bot.wait_until_ready()
+
+    @task.error
+    async def on_task_error(self, err: Exception):
+        await self.bot.report_error(err)
                 
     async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:
         head = await bacon.get_block_header_async("head")
@@ -145,7 +178,7 @@ class UserDistribute(commands.Cog):
                 
         if eligible or distributable:
             # limit the number of distributions to not run out of gas
-            await ctx.send(embed=embed, view=InstructionsView(eligible[:50], distributable[:100]))
+            await ctx.send(embed=embed, view=InstructionsView(eligible[:50], distributable[:100], instruction_timeout=300))
         else:
             await ctx.send(embed=embed)
 

@@ -44,13 +44,13 @@ class EventCore(commands.Cog):
         self.head_block: BlockIdentifier = cfg["events.genesis"]
         self.block_batch_size = cfg["events.block_batch_size"]
         self.monitor = Monitor("gather-new-events", api_key=cfg["other.secrets.cronitor"])
-        self.loop.start()
+        self.task.start()
 
     async def cog_unload(self) -> None:
-        self.loop.cancel()
+        self.task.cancel()
 
     @tasks.loop(seconds=30)
-    async def loop(self) -> None:
+    async def task(self) -> None:
         p_id = time.time()
         self.monitor.ping(state="run", series=p_id)
 
@@ -64,20 +64,20 @@ class EventCore(commands.Cog):
             await self.on_error(error)
             self.monitor.ping(state="fail", series=p_id)
 
-    @loop.before_loop
+    @task.before_loop
     async def before_loop(self) -> None:
         await self.bot.wait_until_ready()
 
     async def on_success(self) -> None:
         if self.state == self.State.ERROR:
             self.state = self.State.OK
-            self.loop.change_interval(seconds=12)
+            self.task.change_interval(seconds=12)
 
     async def on_error(self, error: Exception) -> None:
         await self.bot.report_error(error)
         if self.state == self.State.OK:
             self.state = self.State.ERROR
-            self.loop.change_interval(seconds=30)
+            self.task.change_interval(seconds=30)
 
         try:
             await self.show_service_interrupt()
