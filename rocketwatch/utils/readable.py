@@ -66,29 +66,47 @@ def advanced_tnx_url(tx_hash):
 
 
 def render_tree_legacy(data: dict, name: str) -> str:
-    # remove empty states
-    data = {k: v for k, v in data.items() if v}
-    strings = []
-    values = []
-    for i, (state, substates) in enumerate(data.items()):
-        c = sum(substates.values())
-        l = "├" if i != len(data) - 1 else "└"
-        strings.append(f" {l}{state.title()}: ")
-        values.append(c)
-        l = "│" if i != len(data) - 1 else " "
-        for j, (substate, count) in enumerate(substates.items()):
-            sl = "├" if j != len(substates) - 1 else "└"
-            strings.append(f" {l} {sl}{substate.title()}: ")
-            values.append(count)
+    def render_branch(_data: dict[str, dict | int]) -> tuple[list, list, int]:
+        _strings = []
+        _values = []
+        count = 0
+        
+        for i, (state, sub_data) in enumerate(_data.items()):
+            if not sub_data:
+                continue
+            
+            link = "├" if (i != len(_data) - 1) else "└"
+            _strings.append(f" {link}{state.title()}: ")
+            
+            if isinstance(sub_data, dict):
+                sub_strings, sub_values, sub_count = render_branch(sub_data)
+                sub_link = " │" if (i != len(_data) - 1) else "  "
+                _strings.extend([sub_link + s for s in sub_strings])
+                _values.append(sub_count)
+                _values.extend(sub_values)
+                count += sub_count                   
+            elif isinstance(sub_data, int):
+                _values.append(sub_data)
+                count += sub_data
+        
+        return _strings, _values, count
+
+    strings, values, tree_sum = render_branch(data)
+    strings.insert(0, f"{name}:")
+    values.insert(0, tree_sum)
+    
+    fmt_values = [f"{v:,}" for v in values]
+            
     # longest string offset
     max_left_len = max(len(s) for s in strings)
-    max_right_len = max(len(str(v)) for v in values)
-    # right align all values
-    for i, v in enumerate(values):
-        strings[i] = strings[i].ljust(max_left_len) + str(v).rjust(max_right_len)
-    description = f"{name}:\n"
-    description += "\n".join(strings)
-    return description
+    max_right_len = max(len(v) for v in fmt_values)
+    
+    lines = []
+    for s, v in zip(strings, fmt_values):
+        # right align all values
+        lines.append(s.ljust(max_left_len) + v.rjust(max_right_len))
+    
+    return "\n".join(lines)
 
 
 def render_branch(k, v, prefix, current_depth=0, max_depth=0, reverse=False, m_prev=""):

@@ -65,10 +65,16 @@ class MinipoolStates(commands.Cog):
                         data["closed"][status_2] = data["closed"].get(status_2, 0) + 1
                 case _:
                     logging.warning(f"Unknown status {minipool['status']}")
-
+                    
+        # collapse tree where possible
+        for status in list(data.keys()):
+            if len(data[status]) == 1:
+                sub_status = list(data[status].keys())[0]
+                data[status] = data[status][sub_status]  
+        
         embed = Embed(title="Minipool States", color=0x00ff00)
         description = "```\n"
-        # render dict as a tree like structure
+        # render dict as a tree-like structure
         description += render_tree_legacy(data, "Minipools")
         
         total_listed_valis = len(exiting_valis) + len(withdrawn_valis)
