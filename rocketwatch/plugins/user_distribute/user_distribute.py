@@ -1,7 +1,7 @@
 import time
 import logging
 from io import StringIO
-from typing import Optional
+from operator import itemgetter
 
 import discord
 from discord import ui, ButtonStyle, Interaction
@@ -14,7 +14,6 @@ from utils.rocketpool import rp
 from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.shared_w3 import w3, bacon
-from utils.views import PageView
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("user_distribute")
@@ -32,15 +31,20 @@ class InstructionsView(ui.View):
         bud_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="beginUserDistribute")[2:])
         dist_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="distributeBalance", args=[False])[2:])
 
+        calls = [(mp["address"], True, dist_calldata) for mp in self.distributable]
+        calls += [(mp["address"], True, bud_calldata) for mp in self.eligible]
+        
+        multicall_contract = rp.get_contract_by_name("multicall3")
+        gas_used = multicall_contract.functions.aggregate3(calls).estimate_gas()
+        gas_price = w3.eth.gas_price 
+        cost_eth = gas_used * gas_price / 1e18
+
         tuple_strs = []
-        for mp in self.distributable:
-            tuple_strs.append(f"[\"{mp['address']}\", true, 0x{dist_calldata.hex()}]")
-        for mp in self.eligible:
-            tuple_strs.append(f"[\"{mp['address']}\", true, 0x{bud_calldata.hex()}]")
-            
+        for address, allow_failure, calldata in calls:
+            tuple_strs.append(f"[\"{address}\", {str(allow_failure).lower()}, 0x{calldata.hex()}]")
+        
         input_data = "[" + ",".join(tuple_strs) + "]"
-                
-        etherscan_url = "https://etherscan.io/address/0xcA11bde05977b3631167028862bE2a173976CA11#writeContract#F2"
+        etherscan_url = f"https://etherscan.io/address/{multicall_contract.address}#writeContract#F2"
         
         embed = Embed(title="Distribution Instructions")
         embed.description = (
@@ -59,6 +63,7 @@ class InstructionsView(ui.View):
             actions.append(f"begin the user distribution process for **{len(self.eligible)}** minipools")
         
         embed.description += "\nThis will " + " and ".join(actions) + "."
+        embed.description += f"\nEstimated cost: **{cost_eth:,.5f} ETH** ({gas_used:,} gas @ {(gas_price / 1e9):.2f} gwei)"
         
         await interaction.response.send_message(
             embed=embed,
@@ -88,12 +93,14 @@ class UserDistribute(commands.Cog):
         if not distributable:
             return
 
-        embed = Embed(title=":warning: User Distribution Window Open")
-        next_window_close = min(mp["ud_window_close"] for mp in distributable)
+        embed = Embed(title=":hourglass_flowing_sand: User Distribution Window Open")
+        count = len(distributable)
+        next_window_close = distributable[0]["ud_window_close"]
         embed.description = (
-            f"There are **{len(distributable)}** minipools eligible for distribution.\n"
+            f"There {'are' if count != 1 else 'is'} **{count}** minipool{'s' if count != 1 else ''} eligible for distribution.\n"
             f"The next window closes <t:{next_window_close}:R>!"
         )
+
         await channel.send(embed=embed, view=InstructionsView([], distributable[:100], instruction_timeout=(4 * 3600)))
 
     @task.before_loop
@@ -103,7 +110,7 @@ class UserDistribute(commands.Cog):
     @task.error
     async def on_task_error(self, err: Exception):
         await self.bot.report_error(err)
-                
+
     async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:
         head = await bacon.get_block_header_async("head")
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
@@ -138,7 +145,10 @@ class UserDistribute(commands.Cog):
             elif not rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp["address"]): # double check, DB may lag behind
                 mp["ud_window_close"] = user_distribute_time + ud_window_end
                 distributable.append(mp)
-                
+                                
+        pending.sort(key=itemgetter("ud_window_open"))
+        distributable.sort(key=itemgetter("ud_window_close"))
+                       
         return eligible, pending, distributable
 
     @hybrid_command()
@@ -157,7 +167,7 @@ class UserDistribute(commands.Cog):
         )
 
         if pending:
-            next_window_open = min(mp["ud_window_open"] for mp in pending)
+            next_window_open = pending[0]["ud_window_open"]
             embed.add_field(
                 name="Pending",
                 value=f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''} · next window opens <t:{next_window_open}:R>",
@@ -167,7 +177,7 @@ class UserDistribute(commands.Cog):
             embed.add_field(name="Pending", value="**0** minipools", inline=False)
 
         if distributable:
-            next_window_close = min(mp["ud_window_close"] for mp in distributable)
+            next_window_close = distributable[0]["ud_window_close"]
             embed.add_field(
                 name="Distributable",
                 value=f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''} · next window closes <t:{next_window_close}:R>",
