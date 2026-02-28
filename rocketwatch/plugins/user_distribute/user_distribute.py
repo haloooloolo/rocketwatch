@@ -6,7 +6,7 @@ from operator import itemgetter
 import discord
 from discord import ui, ButtonStyle, Interaction
 from discord.ext import commands, tasks
-from discord.ext.commands import Context, hybrid_command
+from discord.app_commands import command
 from pymongo import AsyncMongoClient, ASCENDING
 
 from rocketwatch import RocketWatch
@@ -151,10 +151,10 @@ class UserDistribute(commands.Cog):
                        
         return eligible, pending, distributable
 
-    @hybrid_command()
-    async def user_distribute_status(self, ctx: Context):
+    @command()
+    async def user_distribute_status(self, interaction: Interaction):
         """Show user distribute summary for minipools"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         eligible, pending, distributable = await self._fetch_minipools()
         
@@ -188,9 +188,9 @@ class UserDistribute(commands.Cog):
                 
         if eligible or distributable:
             # limit the number of distributions to not run out of gas
-            await ctx.send(embed=embed, view=InstructionsView(eligible[:50], distributable[:100], instruction_timeout=300))
+            await interaction.followup.send(embed=embed, view=InstructionsView(eligible[:50], distributable[:100], instruction_timeout=300))
         else:
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):

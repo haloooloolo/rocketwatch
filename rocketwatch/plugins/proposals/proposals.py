@@ -7,11 +7,10 @@ from io import BytesIO
 import asyncio
 from aiohttp.client_exceptions import ClientResponseError
 import matplotlib as mpl
-from discord import File
-from discord.utils import as_chunks
+from discord import File, Interaction
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord.app_commands import command, describe
+from discord.utils import as_chunks
 from matplotlib import pyplot as plt
 from pymongo import AsyncMongoClient, ASCENDING, DESCENDING
 from cronitor import Monitor
@@ -272,21 +271,24 @@ class Proposals(commands.Cog):
                     d[key] = entry
             return d
 
-    @hybrid_command()
-    async def version_chart(self, ctx: Context):
+    @command()
+    @describe(days="how many days to show history for")
+    async def version_chart(self, interaction: Interaction, days: int = 90):
         """
         Show a historical chart of used Smart Node versions
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed(title="Version Chart")
-        e.description = "The graph below shows proposal stats using a **5-day rolling window**.\n" \
-                        "This only looks at proposals, it does not care about what individual minipools do."
+        e.description = (
+            "The graph below shows proposal stats using a **5-day rolling window**. "
+            "It relies on proposal frequency to approximate adoption by active validator count."
+        )
         # get proposals
         # limit to 6 months
         proposals = await self.db.proposals.find(
             {
                 "version": {"$exists": 1},
-                "slot"   : {"$gt": date_to_beacon_block((datetime.now() - timedelta(days=180)).timestamp())}
+                "slot"   : {"$gt": date_to_beacon_block((datetime.now() - timedelta(days=days)).timestamp())}
             }).sort("slot", 1).to_list(None)
         look_back = int(60 / 12 * 60 * 24 * 2)  # last 2 days
         max_slot = proposals[-1]["slot"]
@@ -374,9 +376,6 @@ class Proposals(commands.Cog):
         plt.stackplot([x[-1], future_point], *last_y_values, colors=colors)
         plt.tight_layout()
 
-        # the title should mention that the /version_chart command contains more information about how this chart works. but short
-        plt.title("READ DESC OF /version_chart IF CONFUSED", y=0.95, fontsize=9)
-
         # respond with image
         img = BytesIO()
         plt.savefig(img, format="png", bbox_inches="tight", dpi=300)
@@ -385,10 +384,10 @@ class Proposals(commands.Cog):
         e.set_image(url="attachment://chart.png")
 
         # send data
-        await ctx.send(embed=e, file=File(img, filename="chart.png"))
+        await interaction.followup.send(embed=e, file=File(img, filename="chart.png"))
         img.close()
 
-    async def plot_axes_with_data(self, attr: str, ax1, ax2, remove_allnodes=False):
+    async def plot_axes_with_data(self, attr: str, ax1, ax2, remove_allnodes: bool = False):
         # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
 
@@ -459,7 +458,7 @@ class Proposals(commands.Cog):
         )
         ax2.set_title("Node Operators", fontsize=22)
 
-    async def proposal_vs_node_operators_embed(self, attribute, name, remove_allnodes=False):
+    async def proposal_vs_node_operators_embed(self, attribute, name, remove_allnodes: bool = False):
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
         # iterate axes in pairs
         title = f"Rocket Pool {name} Distribution {'without Allnodes' if remove_allnodes else ''}"
@@ -483,34 +482,34 @@ class Proposals(commands.Cog):
         img.close()
         return e, f
 
-    @hybrid_command()
-    async def client_distribution(self, ctx: Context, remove_allnodes=False):
+    @command()
+    async def client_distribution(self, interaction: Interaction, remove_allnodes: bool = False):
         """
         Generate a distribution graph of clients.
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         embeds, files = [], []
         for attr, name in [["consensus_client", "Consensus Client"], ["execution_client", "Execution Client"]]:
             e, f = await self.proposal_vs_node_operators_embed(attr, name, remove_allnodes)
             embeds.append(e)
             files.append(f)
-        await ctx.send(embeds=embeds, files=files)
+        await interaction.followup.send(embeds=embeds, files=files)
 
-    @hybrid_command()
-    async def operator_type_distribution(self, ctx: Context):
+    @command()
+    async def operator_type_distribution(self, interaction: Interaction):
         """
         Generate a graph of NO groups.
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         embed, file = await self.proposal_vs_node_operators_embed("type", "User")
-        await ctx.send(embed=embed, file=file)
+        await interaction.followup.send(embed=embed, file=file)
 
-    @hybrid_command()
-    async def client_combo_ranking(self, ctx: Context, remove_allnodes=False, group_by_node_operators=False):
+    @command()
+    async def client_combo_ranking(self, interaction: Interaction, remove_allnodes: bool = False, group_by_node_operators: bool = False):
         """
         Generate a ranking of most used execution and consensus clients.
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         # aggregate [consensus, execution] pair counts
         client_pairs = await (await self.db.minipool_proposals.aggregate([
             {
@@ -553,7 +552,7 @@ class Proposals(commands.Cog):
             for i, pair in enumerate(client_pairs)
         )
         e.description = f"Currently showing {'node operator' if group_by_node_operators else 'validator'} counts\n```{desc}```"
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 async def setup(bot):
