@@ -1,7 +1,6 @@
 import logging
 from io import BytesIO
 
-import humanize
 import matplotlib.pyplot as plt
 from discord import File, Interaction
 from discord.ext import commands
@@ -34,19 +33,40 @@ class RPL(commands.Cog):
         rpl_supply = solidity.to_float(rp.call("rocketTokenRPL.totalSupply"))
         legacy_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
         megapool_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
-        total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalStakedRPL"))
-        unstaked_rpl = rpl_supply - total_rpl_staked
+        staked_rpl = legacy_staked_rpl + megapool_staked_rpl
+        unstaking_rpl = (await (await self.db.node_operators.aggregate([
+            {
+                '$group': {
+                    '_id'                 : 'out',
+                    'total_unstaking_rpl_': {
+                        '$sum': '$rpl.unstaking'
+                    }
+                }
+            }
+        ])).next())['total_unstaking_rpl_']
+        unstaked_rpl = rpl_supply - staked_rpl - unstaking_rpl
 
-        sizes = [legacy_staked_rpl, megapool_staked_rpl, unstaked_rpl]
-        labels = ["Legacy", "Megapools", "Unstaked"]
-        colors = ["#CC4400", "#FF6B00", "#808080"]
+        def fmt(v):
+            if v >= 1_000_000:
+                return f"{v / 1_000_000:.2f}M"
+            if v >= 1_000:
+                return f"{v / 1_000:.1f}K"
+            return f"{v:.0f}"
+
+        sizes = [legacy_staked_rpl, megapool_staked_rpl, unstaking_rpl, unstaked_rpl]
+        labels = ["Legacy", "Megapools", "Unstaking", "Unstaked"]
+        colors = ["#CC4400", "#FF6B00", "#D2B48C", "#808080"]
+
+        total = sum(sizes)
+        def autopct(pct):
+            return f"{fmt(pct / 100 * total)} ({pct:.1f}%)"
 
         fig, ax = plt.subplots()
         ax.pie(
             sizes,
             labels=labels,
             colors=colors,
-            autopct="%1.1f%%",
+            autopct=autopct,
             startangle=90,
             wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
         )
@@ -59,12 +79,9 @@ class RPL(commands.Cog):
 
         embed = Embed()
         embed.title = "Staked RPL"
-        embed.add_field(name="Legacy", value=f"{humanize.intcomma(legacy_staked_rpl, 2)}", inline=True)
-        embed.add_field(name="Megapools", value=f"{humanize.intcomma(megapool_staked_rpl, 2)}", inline=True)
-        embed.add_field(name="Total Staked", value=f"{humanize.intcomma(total_rpl_staked, 2)}", inline=True)
         embed.set_image(url="attachment://graph.png")
         file = File(img, filename="graph.png")
-        
+
         await interaction.followup.send(embed=embed, file=file)
         img.close()
 
