@@ -152,7 +152,7 @@ class RPL(commands.Cog):
                 }
             }, {
                 '$project': {
-                    'ethStake': {
+                    'eth_stake': {
                         '$multiply': [
                             '$effective_node_share', {
                                 '$multiply': [
@@ -180,8 +180,7 @@ class RPL(commands.Cog):
             liquid_rpl = 0
 
             for node in data:
-
-                eth_stake = node["ethStake"]
+                eth_stake = node["eth_stake"]
                 rpl_stake = node["rpl_stake"]
 
                 # if there are no pools, then all the RPL can be withdrawn

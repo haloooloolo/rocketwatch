@@ -214,7 +214,7 @@ class Random(commands.Cog):
                 '$project': {
                     '_id'     : 1,
                     'count'   : 1,
-                    'smoothie': '$meta.smoothing_pool_registration_state'
+                    'smoothie': '$meta.smoothing_pool_registration'
                 }
             }, {
                 '$group': {

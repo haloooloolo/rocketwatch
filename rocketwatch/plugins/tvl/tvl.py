@@ -274,7 +274,7 @@ class TVL(Cog):
         tmp = await (await self.db.node_operators.aggregate([
             {
                 '$match': {
-                    'smoothing_pool_registration_state': True,
+                    'smoothing_pool_registration': True,
                     'staking_minipool_count'           : {
                         '$ne': 0
                     }

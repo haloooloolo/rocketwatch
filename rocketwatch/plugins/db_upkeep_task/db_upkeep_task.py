@@ -20,7 +20,7 @@ from utils.time_debug import timerun, timerun_async
 from utils.event_logs import get_logs
 
 
-log = logging.getLogger("node_task")
+log = logging.getLogger("db_upkeep_task")
 log.setLevel(cfg["log_level"])
 
 
@@ -56,7 +56,7 @@ class DBUpkeepTask(commands.Cog):
         self.monitor = Monitor("node-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 50
         self.bot.loop.create_task(self.loop())
-        
+    
     async def loop(self):
         await self.bot.wait_until_ready()
         await self.check_indexes()
@@ -65,15 +65,17 @@ class DBUpkeepTask(commands.Cog):
             self.monitor.ping(state="run", series=p_id)
             try:
                 log.debug("starting db upkeep task")
-                await self.add_untracked_minipools()
-                await self.add_static_data_to_minipools()
-                await self.update_dynamic_minipool_metadata()
-                await self.add_static_deposit_data_to_minipools()
-                await self.add_static_beacon_data_to_minipools()
-                await self.update_dynamic_minipool_beacon_metadata()
+                # node tasks
                 await self.add_untracked_node_operators()
                 await self.add_static_data_to_node_operators()
                 await self.update_dynamic_node_operator_metadata()
+                # minipool tasks
+                await self.add_untracked_minipools()
+                await self.add_static_data_to_minipools()
+                await self.add_static_deposit_data_to_minipools()
+                await self.add_static_beacon_data_to_minipools()
+                await self.update_dynamic_minipool_metadata()
+                await self.update_dynamic_minipool_beacon_metadata()
                 log.debug("finished db upkeep task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
@@ -195,7 +197,7 @@ class DBUpkeepTask(commands.Cog):
     async def add_static_deposit_data_to_minipools(self):
         # get all minipool addresses and their status time from db that :
         # - do not have a deposit_amount
-        # - are in the initialised state
+        # - are in the initialized state
         # sort by status time
         minipools = await self.db.minipools.find(
             {"deposit_amount": {"$exists": False}, "status": "initialised"},
@@ -372,12 +374,20 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def add_static_data_to_node_operators(self):
-        ndf = rp.get_contract_by_name("rocketNodeDistributorFactory")
+        df = rp.get_contract_by_name("rocketNodeDistributorFactory")
+        mf = rp.get_contract_by_name("rocketMegapoolFactory")
         lambs = [
-            lambda a: (ndf.address, [rp.seth_sig(ndf.abi, "getProxyAddress"), a], [((a, "fee_distributor_address"), None)]),
+            lambda a: (df.address, [rp.seth_sig(df.abi, "getProxyAddress"), a], [((a, "fee_distributor_address"), None)]),
+            lambda a: (mf.address, [rp.seth_sig(mf.abi, "getExpectedAddress"), a], [((a, "megapool_address"), None)]),
         ]
         # get all minipool addresses from db that do not have a node operator assigned
-        node_addresses = await self.db.node_operators.distinct("address", {"fee_distributor_address": {"$exists": False}})
+        node_addresses = await self.db.node_operators.distinct(
+            "address", 
+            {"$or": [
+                {"fee_distributor_address": {"$exists": False}}, 
+                {"megapool_address": {"$exists": False}
+            }]}
+        )
         # get node operator addresses from rp
         # return early if no minipools need to be updated
         if not node_addresses:
@@ -409,43 +419,54 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_node_operator_metadata(self):
-        ndf = rp.get_contract_by_name("rocketNodeDistributorFactory")
+        mf = rp.get_contract_by_name("rocketMegapoolFactory")
         nd = rp.get_contract_by_name("rocketNodeDeposit")
         nm = rp.get_contract_by_name("rocketNodeManager")
         mm = rp.get_contract_by_name("rocketMinipoolManager")
         ns = rp.get_contract_by_name("rocketNodeStaking")
         mc = rp.get_contract_by_name("multicall3")
         lambs = [
-            lambda n: (ndf.address, [rp.seth_sig(ndf.abi, "getProxyAddress"), n["address"]],
-                       [((n["address"], "fee_distributor_address"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getNodeWithdrawalAddress"), n["address"]],
                        [((n["address"], "withdrawal_address"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getNodeTimezoneLocation"), n["address"]],
                        [((n["address"], "timezone_location"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getFeeDistributorInitialised"), n["address"]],
-                       [((n["address"], "fee_distributor_initialised"), None)]),
-            lambda n: (
-                nm.address, [rp.seth_sig(nm.abi, "getRewardNetwork"), n["address"]],
-                [((n["address"], "reward_network"), None)]),
+                       [((n["address"], "fee_distributor_initialized"), None)]),
+            lambda n: (nm.address, [rp.seth_sig(mf.abi, "getMegapoolDeployed"), n["address"]],
+                       [((n["address"], "megapool_deployed"), is_true)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getSmoothingPoolRegistrationState"), n["address"]],
-                       [((n["address"], "smoothing_pool_registration_state"), None)]),
+                       [((n["address"], "smoothing_pool_registration"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getAverageNodeFee"), n["address"]],
                        [((n["address"], "average_node_fee"), safe_to_float)]),
             lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeStakedRPL"), n["address"]],
                        [((n["address"], "rpl_stake"), safe_to_float)]),
-            # lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeEffectiveRPLStake"), n["address"]],
-            #           [((n["address"], "effective_rpl_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLegacyStakedRPL"), n["address"]],
+                       [((n["address"], "legacy_rpl_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeMegapoolStakedRPL"), n["address"]],
+                       [((n["address"], "megapool_rpl_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLockedRPL"), n["address"]],
+                       [((n["address"], "locked_rpl"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeUnstakingRPL"), n["address"]],
+                       [((n["address"], "unstaking_rpl"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeRPLStakedTime"), n["address"]],
+                       [((n["address"], "last_rpl_stake_time"), None)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLastUnstakeTime"), n["address"]],
+                       [((n["address"], "last_rpl_unstake_time"), None)]),
             lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeETHCollateralisationRatio"), n["address"]],
                        [((n["address"], "effective_node_share"), safe_inv)]),
             lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["fee_distributor_address"]],
                        [((n["address"], "fee_distributor_eth_balance"), safe_to_float)]),
+            lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["megapool_address"]],
+                       [((n["address"], "megapool_eth_balance"), safe_to_float)]),
             lambda n: (mm.address, [rp.seth_sig(mm.abi, "getNodeStakingMinipoolCount"), n["address"]],
                        [((n["address"], "staking_minipool_count"), None)]),
             lambda n: (nd.address, [rp.seth_sig(nd.abi, "getNodeDepositCredit"), n["address"]],
-                          [((n["address"], "deposit_credit"), safe_to_float)])
+                          [((n["address"], "node_credit"), safe_to_float)]),
+            lambda n: (nd.address, [rp.seth_sig(nd.abi, "getNodeEthBalance"), n["address"]],
+                          [((n["address"], "node_eth_balance"), safe_to_float)])
         ]
         # get all node operators from db, but we only care about the address and the fee_distributor_address
-        nodes = await self.db.node_operators.find({}, {"address": 1, "fee_distributor_address": 1}).to_list()
+        nodes = await self.db.node_operators.find({}, {"address": 1, "fee_distributor_address": 1, "megapool_address": 1}).to_list()
         for node_batch in as_chunks(nodes, self.batch_size // len(lambs)):
             data = {}
             res = await rp.multicall2(
