@@ -3,21 +3,17 @@ from io import BytesIO
 
 import humanize
 import matplotlib.pyplot as plt
-import numpy as np
-from discord import File
+from discord import File, Interaction
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord.app_commands import command
 from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.cfg import cfg
 from utils.embeds import Embed
-from utils.block_time import ts_to_block
 from utils.rocketpool import rp
-from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("rpl")
 log.setLevel(cfg["log_level"])
@@ -28,120 +24,56 @@ class RPL(commands.Cog):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
-    @hybrid_command()
-    async def rpl_apr(self, ctx: Context):
+    @command()
+    async def staked_rpl(self, interaction: Interaction):
         """
-        Show the RPL APR.
+        Show the amount of RPL staked
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        e = Embed()
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        
+        rpl_supply = solidity.to_float(rp.call("rocketTokenRPL.totalSupply"))
+        legacy_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
+        megapool_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
+        total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalStakedRPL"))
+        unstaked_rpl = rpl_supply - total_rpl_staked
 
-        reward_duration = rp.call("rocketRewardsPool.getClaimIntervalTime")
-        total_rpl_staked = await (await self.db.node_operators.aggregate([
-            {
-                '$group': {
-                    '_id'                      : 'out',
-                    'total_effective_rpl_stake': {
-                        '$sum': '$effective_rpl_stake'
-                    }
-                }
-            }
-        ])).next()
-        total_rpl_staked = total_rpl_staked["total_effective_rpl_stake"]
+        sizes = [legacy_staked_rpl, megapool_staked_rpl, unstaked_rpl]
+        labels = ["Legacy", "Megapools", "Unstaked"]
+        colors = ["#CC4400", "#FF6B00", "#808080"]
 
-        # track down the rewards for node operators from the last reward period
-        contract = rp.get_contract_by_name("rocketVault")
-        m = ts_to_block(rp.call("rocketRewardsPool.getClaimIntervalTimeStart"))
-        events = contract.events["TokenDeposited"].getLogs(argument_filters={
-            "by": w3.solidity_keccak(
-                ["string", "address"],
-                ["rocketMerkleDistributorMainnet", rp.get_address_by_name("rocketTokenRPL")])
-        }, fromBlock=m - 10000, toBlock=m + 10000)
-        perc_nodes = solidity.to_float(rp.call("rocketRewardsPool.getClaimingContractPerc", "rocketClaimNode"))
-        perc_odao = solidity.to_float(rp.call("rocketRewardsPool.getClaimingContractPerc", "rocketClaimTrustedNode"))
-        node_operator_rewards = solidity.to_float(events[0].args.amount) * (perc_nodes / (perc_nodes + perc_odao))
-        if not e:
-            raise Exception("no rpl deposit event found")
-
-        xmin = total_rpl_staked * 0.66
-        xmax = total_rpl_staked * 1.33
-        x = np.linspace(xmin, xmax)
-
-        def apr_curve(staked):
-            return (node_operator_rewards / staked) / (reward_duration / 60 / 60 / 24) * 365
-
-        apr = apr_curve(total_rpl_staked)
-        y = apr_curve(x)
-        fig = plt.figure()
-        plt.plot(x, y, color=str(e.color))
-        plt.xlim(xmin, xmax)
-        plt.ylim(apr_curve(xmax) * 0.9, apr_curve(xmin) * 1.1)
-        plt.plot(total_rpl_staked, apr, 'bo')
-        plt.annotate(f"{apr:.2%}", (total_rpl_staked, apr),
-                     textcoords="offset points", xytext=(-10, -5), ha='right')
-        plt.annotate(f"{total_rpl_staked / 1000000:.2f} million staked",
-                     (total_rpl_staked, apr), textcoords="offset points", xytext=(10, -5), ha='left')
-        plt.grid()
-
-        ax = plt.gca()
-        ax.xaxis.set_major_formatter(lambda x, _: "{:.1f}m".format(x / 1000000))
-        ax.yaxis.set_major_formatter("{x:.2%}")
-        ax.set_ylabel("APR")
-        ax.set_xlabel("RPL Staked")
-        fig.tight_layout()
+        fig, ax = plt.subplots()
+        ax.pie(
+            sizes,
+            labels=labels,
+            colors=colors,
+            autopct="%1.1f%%",
+            startangle=90,
+            wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
+        )
 
         img = BytesIO()
-        fig.savefig(img, format='png')
+        fig.tight_layout()
+        fig.savefig(img, format="png")
         img.seek(0)
-        plt.close()
+        plt.close(fig)
 
-        e.title = "RPL APR Graph"
-        e.set_image(url="attachment://graph.png")
-        f = File(img, filename="graph.png")
-        await ctx.send(embed=e, files=[f])
+        embed = Embed()
+        embed.title = "Staked RPL"
+        embed.add_field(name="Legacy", value=f"{humanize.intcomma(legacy_staked_rpl, 2)}", inline=True)
+        embed.add_field(name="Megapools", value=f"{humanize.intcomma(megapool_staked_rpl, 2)}", inline=True)
+        embed.add_field(name="Total Staked", value=f"{humanize.intcomma(total_rpl_staked, 2)}", inline=True)
+        embed.set_image(url="attachment://graph.png")
+        file = File(img, filename="graph.png")
+        
+        await interaction.followup.send(embed=embed, file=file)
         img.close()
 
-    @hybrid_command()
-    async def effective_rpl_staked(self, ctx: Context):
-        """
-        Show the effective RPL staked by users
-        """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        e = Embed()
-        # get total RPL staked
-        total_rpl_staked = solidity.to_float(rp.call("rocketNodeStaking.getTotalStakedRPL"))
-        e.add_field(name="Total RPL Staked:", value=f"{humanize.intcomma(total_rpl_staked, 2)} RPL", inline=False)
-        # get effective RPL staked
-        effective_rpl_stake = await (await self.db.node_operators.aggregate([
-            {
-                '$group': {
-                    '_id'                      : 'out',
-                    'total_effective_rpl_stake': {
-                        '$sum': '$effective_rpl_stake'
-                    }
-                }
-            }
-        ])).next()
-        effective_rpl_stake = effective_rpl_stake["total_effective_rpl_stake"]        # calculate percentage staked
-        percentage_staked = effective_rpl_stake / total_rpl_staked
-        e.add_field(name="Effective RPL Staked:", value=f"{humanize.intcomma(effective_rpl_stake, 2)} RPL "
-                                                        f"({percentage_staked:.2%})", inline=False)
-        # get total supply
-        total_rpl_supply = solidity.to_float(rp.call("rocketTokenRPL.totalSupply"))
-        # calculate total staked as a percentage of total supply
-        percentage_of_total_staked = total_rpl_staked / total_rpl_supply
-        e.add_field(name="Percentage of RPL Supply Staked:", value=f"{percentage_of_total_staked:.2%}", inline=False)
-        await ctx.send(embed=e)
-
-    @hybrid_command()
-    async def withdrawable_rpl(self,
-                               ctx: Context):
+    @command()
+    async def withdrawable_rpl(self, interaction: Interaction):
         """
         Show the available liquidity at different RPL/ETH prices
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
-        e = Embed()
-        img = BytesIO()
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))        
 
         data = await (await self.db.node_operators.aggregate([
             {
@@ -161,7 +93,7 @@ class RPL(commands.Cog):
                             }
                         ]
                     },
-                    'rpl_stake': 1
+                    'rpl.legacy_stake': 1
                 }
             }
         ])).to_list()
@@ -205,7 +137,7 @@ class RPL(commands.Cog):
         x, y = zip(*list(free_rpl_liquidity.values()))
 
         # plot the data
-        plt.plot(x, y, color=str(e.color))
+        plt.plot(x, y, color=str(embed.color))
         plt.plot(rpl_eth_price, current_withdrawable_rpl, 'bo')
         plt.xlim(min(x), max(x))
 
@@ -222,16 +154,18 @@ class RPL(commands.Cog):
         ax.yaxis.set_major_formatter(lambda x, _: "{:.1f}m".format(x / 1000000))
         ax.xaxis.set_major_formatter(lambda x, _: "{:.4f}".format(x))
 
+        img = BytesIO()
         plt.tight_layout()
         plt.savefig(img, format='png')
         img.seek(0)
 
         plt.close()
 
-        e.title = "Available RPL Liquidity"
-        e.set_image(url="attachment://graph.png")
+        embed = Embed()
+        embed.title = "Available RPL Liquidity"
+        embed.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
-        await ctx.send(embed=e, files=[f])
+        await interaction.followup.send(embed=embed, files=[f])
         img.close()
 
 
