@@ -110,7 +110,7 @@ class RPL(commands.Cog):
                             }
                         ]
                     },
-                    'rpl.legacy_stake': 1
+                    'rpl_stake': "$rpl.legacy_stake"
                 }
             }
         ])).to_list()
@@ -120,7 +120,7 @@ class RPL(commands.Cog):
         # i/10 is the ratio of the price checked to the actual RPL ETH price
 
         free_rpl_liquidity = {}
-        max_collateral = solidity.to_float(rp.call("rocketDAOProtocolSettingsNode.getMaximumPerMinipoolStake"))
+        max_collateral = solidity.to_float(rp.call("rocketDAOProtocolSettingsNode.getMinimumLegacyRPLStake"))
         current_withdrawable_rpl = 0
         for i in range(1, 31):
 
@@ -153,6 +153,8 @@ class RPL(commands.Cog):
         # break the tuples into lists to plot
         x, y = zip(*list(free_rpl_liquidity.values()))
 
+        embed = Embed()
+        
         # plot the data
         plt.plot(x, y, color=str(embed.color))
         plt.plot(rpl_eth_price, current_withdrawable_rpl, 'bo')
@@ -178,7 +180,6 @@ class RPL(commands.Cog):
 
         plt.close()
 
-        embed = Embed()
         embed.title = "Available RPL Liquidity"
         embed.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
