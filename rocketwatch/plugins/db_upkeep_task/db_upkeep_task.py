@@ -377,15 +377,15 @@ class DBUpkeepTask(commands.Cog):
         df = rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = rp.get_contract_by_name("rocketMegapoolFactory")
         lambs = [
-            lambda a: (df.address, [rp.seth_sig(df.abi, "getProxyAddress"), a], [((a, "fee_distributor_address"), None)]),
-            lambda a: (mf.address, [rp.seth_sig(mf.abi, "getExpectedAddress"), a], [((a, "megapool_address"), None)]),
+            lambda a: (df.address, [rp.seth_sig(df.abi, "getProxyAddress"), a], [((a, "fee_distributor.address"), None)]),
+            lambda a: (mf.address, [rp.seth_sig(mf.abi, "getExpectedAddress"), a], [((a, "megapool.address"), None)]),
         ]
         # get all minipool addresses from db that do not have a node operator assigned
         node_addresses = await self.db.node_operators.distinct(
             "address", 
             {"$or": [
-                {"fee_distributor_address": {"$exists": False}}, 
-                {"megapool_address": {"$exists": False}
+                {"fee_distributor.address": {"$exists": False}}, 
+                {"megapool.address": {"$exists": False}
             }]}
         )
         # get node operator addresses from rp
@@ -430,43 +430,43 @@ class DBUpkeepTask(commands.Cog):
                        [((n["address"], "withdrawal_address"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getNodeTimezoneLocation"), n["address"]],
                        [((n["address"], "timezone_location"), None)]),
-            lambda n: (nm.address, [rp.seth_sig(nm.abi, "getFeeDistributorInitialised"), n["address"]],
-                       [((n["address"], "fee_distributor_initialized"), None)]),
-            lambda n: (nm.address, [rp.seth_sig(mf.abi, "getMegapoolDeployed"), n["address"]],
-                       [((n["address"], "megapool_deployed"), is_true)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getSmoothingPoolRegistrationState"), n["address"]],
                        [((n["address"], "smoothing_pool_registration"), None)]),
             lambda n: (nm.address, [rp.seth_sig(nm.abi, "getAverageNodeFee"), n["address"]],
                        [((n["address"], "average_node_fee"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeStakedRPL"), n["address"]],
-                       [((n["address"], "rpl_stake"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLegacyStakedRPL"), n["address"]],
-                       [((n["address"], "legacy_rpl_stake"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeMegapoolStakedRPL"), n["address"]],
-                       [((n["address"], "megapool_rpl_stake"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLockedRPL"), n["address"]],
-                       [((n["address"], "locked_rpl"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeUnstakingRPL"), n["address"]],
-                       [((n["address"], "unstaking_rpl"), safe_to_float)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeRPLStakedTime"), n["address"]],
-                       [((n["address"], "last_rpl_stake_time"), None)]),
-            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLastUnstakeTime"), n["address"]],
-                       [((n["address"], "last_rpl_unstake_time"), None)]),
             lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeETHCollateralisationRatio"), n["address"]],
                        [((n["address"], "effective_node_share"), safe_inv)]),
-            lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["fee_distributor_address"]],
-                       [((n["address"], "fee_distributor_eth_balance"), safe_to_float)]),
-            lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["megapool_address"]],
-                       [((n["address"], "megapool_eth_balance"), safe_to_float)]),
             lambda n: (mm.address, [rp.seth_sig(mm.abi, "getNodeStakingMinipoolCount"), n["address"]],
                        [((n["address"], "staking_minipool_count"), None)]),
             lambda n: (nd.address, [rp.seth_sig(nd.abi, "getNodeDepositCredit"), n["address"]],
                           [((n["address"], "node_credit"), safe_to_float)]),
             lambda n: (nd.address, [rp.seth_sig(nd.abi, "getNodeEthBalance"), n["address"]],
-                          [((n["address"], "node_eth_balance"), safe_to_float)])
+                          [((n["address"], "node_eth_balance"), safe_to_float)]),
+            lambda n: (nm.address, [rp.seth_sig(nm.abi, "getFeeDistributorInitialised"), n["address"]],
+                       [((n["address"], "fee_distributor.initialized"), None)]),
+            lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["fee_distributor"]["address"]],
+                       [((n["address"], "fee_distributor.eth_balance"), safe_to_float)]),
+            lambda n: (nm.address, [rp.seth_sig(mf.abi, "getMegapoolDeployed"), n["address"]],
+                       [((n["address"], "megapool.deployed"), is_true)]),
+            lambda n: (mc.address, [rp.seth_sig(mc.abi, "getEthBalance"), n["megapool"]["address"]],
+                       [((n["address"], "megapool.eth_balance"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeStakedRPL"), n["address"]],
+                       [((n["address"], "rpl.total_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLegacyStakedRPL"), n["address"]],
+                       [((n["address"], "rpl.legacy_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeMegapoolStakedRPL"), n["address"]],
+                       [((n["address"], "rpl.megapool_stake"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLockedRPL"), n["address"]],
+                       [((n["address"], "rpl.locked"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeUnstakingRPL"), n["address"]],
+                       [((n["address"], "rpl.unstaking"), safe_to_float)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeRPLStakedTime"), n["address"]],
+                       [((n["address"], "rpl.last_stake_time"), None)]),
+            lambda n: (ns.address, [rp.seth_sig(ns.abi, "getNodeLastUnstakeTime"), n["address"]],
+                       [((n["address"], "rpl.last_unstake_time"), None)])
         ]
-        # get all node operators from db, but we only care about the address and the fee_distributor_address
-        nodes = await self.db.node_operators.find({}, {"address": 1, "fee_distributor_address": 1, "megapool_address": 1}).to_list()
+        # get all node operators from db, but we only care about the address and the fee_distributor.address
+        nodes = await self.db.node_operators.find({}, {"address": 1, "fee_distributor.address": 1, "megapool.address": 1}).to_list()
         for node_batch in as_chunks(nodes, self.batch_size // len(lambs)):
             data = {}
             res = await rp.multicall2(

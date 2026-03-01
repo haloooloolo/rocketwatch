@@ -367,13 +367,13 @@ class TVL(Cog):
         tmp = await (await self.db.node_operators.aggregate([
             {
                 '$match': {
-                    'fee_distributor_eth_balance': {
+                    'fee_distributor.eth_balance': {
                         '$gt': 0
                     }
                 }
             }, {
                 '$project': {
-                    'fee_distributor_eth_balance': 1,
+                    'fee_distributor.eth_balance': 1,
                     'node_share'                 : {
                         '$sum': [
                             '$effective_node_share', {
@@ -392,12 +392,12 @@ class TVL(Cog):
                 '$project': {
                     'node_share': {
                         '$multiply': [
-                            '$fee_distributor_eth_balance', '$node_share'
+                            '$fee_distributor.eth_balance', '$node_share'
                         ]
                     },
                     'reth_share': {
                         '$multiply': [
-                            '$fee_distributor_eth_balance', {
+                            '$fee_distributor.eth_balance', {
                                 '$subtract': [
                                     1, '$node_share'
                                 ]
