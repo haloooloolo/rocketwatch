@@ -85,7 +85,7 @@ class ChatSummary(commands.Cog):
             "----------------\n"
             "- Discussions between invis, langers, knoshua and more about the meaning of life.\n"
             "- The current status of the war in europe was discussed.\n"
-            "- Patches announced that he has been taking a vacation in switzerland and shared some images of his skiing.}\n"
+            "- Patches announced that he has been taking a vacation in Switzerland and shared some images of his skiing.}\n"
             "----------------\n\n"
             "Please begin the task now."
         )

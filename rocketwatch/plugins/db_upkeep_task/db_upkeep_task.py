@@ -69,6 +69,7 @@ class DBUpkeepTask(commands.Cog):
                 await self.add_untracked_node_operators()
                 await self.add_static_data_to_node_operators()
                 await self.update_dynamic_node_operator_metadata()
+                # TODO: update megapool stats if deployed 
                 # minipool tasks
                 await self.add_untracked_minipools()
                 await self.add_static_data_to_minipools()
@@ -76,6 +77,7 @@ class DBUpkeepTask(commands.Cog):
                 await self.add_static_beacon_data_to_minipools()
                 await self.update_dynamic_minipool_metadata()
                 await self.update_dynamic_minipool_beacon_metadata()
+                # TODO: populate megapool validator DB
                 log.debug("finished db upkeep task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
