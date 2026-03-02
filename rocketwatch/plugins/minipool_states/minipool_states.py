@@ -29,6 +29,7 @@ class MinipoolStates(commands.Cog):
             "beacon.status": {"$exists": True}
         }).to_list(None)
         data = {
+            "dissolved": 0,
             "pending": {},
             "active" : {},
             "exiting": {},
@@ -41,7 +42,10 @@ class MinipoolStates(commands.Cog):
         for minipool in res:
             match minipool["beacon"]["status"]:
                 case "pending_initialized":
-                    data["pending"]["initialized"] = data["pending"].get("initialized", 0) + 1
+                    if minipool["status"] == "dissolved":
+                        data["dissolved"] += 1
+                    else:
+                        data["pending"]["initialized"] = data["pending"].get("initialized", 0) + 1
                 case "pending_queued":
                     data["pending"]["queued"] = data["pending"].get("queued", 0) + 1
                 case "active_ongoing":
@@ -68,7 +72,7 @@ class MinipoolStates(commands.Cog):
                     
         # collapse tree where possible
         for status in list(data.keys()):
-            if len(data[status]) == 1:
+            if isinstance(data[status], dict) and len(data[status]) == 1:
                 sub_status = list(data[status].keys())[0]
                 data[status] = data[status][sub_status]  
         
