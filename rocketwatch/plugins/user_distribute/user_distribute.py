@@ -56,11 +56,10 @@ class InstructionsView(ui.View):
         )
         
         actions = []
-        if self.distributable:
-            actions.append(f"distribute the balance of **{len(self.eligible)}** minipools")
-        
-        if self.eligible:
-            actions.append(f"begin the user distribution process for **{len(self.eligible)}** minipools")
+        if (count := len(self.distributable)) > 0:
+            actions.append(f"distribute the balance of **{count}** minipool{'s' if count != 1 else ''}")        
+        if (count := len(self.eligible)) > 0:
+            actions.append(f"begin the user distribution process for **{count}** minipool{'s' if count != 1 else ''}")
         
         embed.description += "\nThis will " + " and ".join(actions) + "."
         embed.description += f"\nEstimated cost: **{cost_eth:,.6f} ETH** ({gas_used:,} gas @ {(gas_price / 1e9):.2f} gwei)"
