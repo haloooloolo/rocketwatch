@@ -63,7 +63,7 @@ class InstructionsView(ui.View):
             actions.append(f"begin the user distribution process for **{len(self.eligible)}** minipools")
         
         embed.description += "\nThis will " + " and ".join(actions) + "."
-        embed.description += f"\nEstimated cost: **{cost_eth:,.5f} ETH** ({gas_used:,} gas @ {(gas_price / 1e9):.2f} gwei)"
+        embed.description += f"\nEstimated cost: **{cost_eth:,.6f} ETH** ({gas_used:,} gas @ {(gas_price / 1e9):.2f} gwei)"
         
         await interaction.response.send_message(
             embed=embed,
@@ -136,9 +136,9 @@ class UserDistribute(commands.Cog):
             storage = w3.eth.get_storage_at(mp["address"], 0x17)
             user_distribute_time: int = int.from_bytes(storage, "big")
             elapsed_time = current_time - user_distribute_time
-                        
+            
             if elapsed_time >= ud_window_end:
-                eligible.append((mp, user_distribute_time))
+                eligible.append(mp)
             elif elapsed_time < ud_window_start:
                 mp["ud_window_open"] = user_distribute_time + ud_window_start
                 pending.append(mp)
