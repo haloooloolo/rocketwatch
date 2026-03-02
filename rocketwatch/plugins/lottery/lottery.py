@@ -71,7 +71,7 @@ class LotteryBase:
                 '$lookup': {
                     'from'        : 'minipools',
                     'localField'  : 'validator',
-                    'foreignField': 'validator',
+                    'foreignField': 'validator_index',
                     'as'          : 'entry'
                 }
             }, {
@@ -89,7 +89,7 @@ class LotteryBase:
             }, {
                 '$project': {
                     '_id'          : 0,
-                    'validator'    : 1,
+                    'validator'    : "$validator_index",
                     'pubkey'       : 1,
                     'node_operator': 1
                 }
