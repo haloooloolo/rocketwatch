@@ -85,16 +85,16 @@ class DBUpkeepTask(commands.Cog):
                 log.debug("starting db upkeep task")
                 # node tasks
                 await self.add_untracked_node_operators()
-                await self.add_static_data_to_node_operators()
-                await self.update_dynamic_node_operator_metadata()
-                # TODO: update megapool stats if deployed
+                await self.add_static_node_operator_data()
+                await self.update_dynamic_node_operator_data()
+                await self.update_dynamic_megapool_data()
                 # minipool tasks
                 await self.add_untracked_minipools()
-                await self.add_static_data_to_minipools()
-                await self.add_static_deposit_data_to_minipools()
-                await self.add_static_beacon_data_to_minipools()
-                await self.update_dynamic_minipool_metadata()
-                await self.update_dynamic_minipool_beacon_metadata()
+                await self.add_static_minipool_data()
+                await self.add_static_minipool_deposit_data()
+                await self.add_static_minipool_beacon_data()
+                await self.update_dynamic_minipool_data()
+                await self.update_dynamic_minipool_beacon_data()
                 # TODO: populate megapool validator DB
                 log.debug("finished db upkeep task")
                 self.monitor.ping(state="complete", series=p_id)
@@ -155,7 +155,7 @@ class DBUpkeepTask(commands.Cog):
         await self.db.node_operators.insert_many([{"_id": i, "address": a} for i, a in data.items()])
 
     @timerun_async
-    async def add_static_data_to_node_operators(self):
+    async def add_static_node_operator_data(self):
         df = rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = rp.get_contract_by_name("rocketMegapoolFactory")
         lambs = [
@@ -169,7 +169,7 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun_async
-    async def update_dynamic_node_operator_metadata(self):
+    async def update_dynamic_node_operator_data(self):
         mf = rp.get_contract_by_name("rocketMegapoolFactory")
         nd = rp.get_contract_by_name("rocketNodeDeposit")
         nm = rp.get_contract_by_name("rocketNodeManager")
@@ -198,7 +198,7 @@ class DBUpkeepTask(commands.Cog):
             lambda n: rp.build_call(mc, "getEthBalance", n["fee_distributor"]["address"],
                                     key=(n["address"], "fee_distributor.eth_balance"), transform=safe_to_float),
             lambda n: rp.build_call(mf, "getMegapoolDeployed", n["address"],
-                                    target=nm.address, key=(n["address"], "megapool.deployed"), transform=is_true),
+                                    key=(n["address"], "megapool.deployed")),
             lambda n: rp.build_call(mc, "getEthBalance", n["megapool"]["address"],
                                     key=(n["address"], "megapool.eth_balance"), transform=safe_to_float),
             lambda n: rp.build_call(ns, "getNodeStakedRPL", n["address"],
@@ -235,6 +235,53 @@ class DBUpkeepTask(commands.Cog):
                 ordered=False
             )
 
+    @timerun_async
+    async def update_dynamic_megapool_data(self):
+        mp = rp.assemble_contract("rocketMegapoolDelegate")
+        lambs = [
+            lambda n: rp.build_call(mp, "getValidatorCount",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.validator_count")),
+            lambda n: rp.build_call(mp, "getActiveValidatorCount",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.active_validator_count")),
+            lambda n: rp.build_call(mp, "getExitingValidatorCount",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.exiting_validator_count")),
+            lambda n: rp.build_call(mp, "getLockedValidatorCount",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.locked_validator_count")),
+            lambda n: rp.build_call(mp, "getNodeBond",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.node_bond"), transform=safe_to_float),
+            lambda n: rp.build_call(mp, "getUserCapital",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.user_capital"), transform=safe_to_float),
+            lambda n: rp.build_call(mp, "getDebt",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.debt"), transform=safe_to_float),
+            lambda n: rp.build_call(mp, "getRefundValue",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.refund_value"), transform=safe_to_float),
+            lambda n: rp.build_call(mp, "getPendingRewards",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.pending_rewards"), transform=safe_to_float),
+            lambda n: rp.build_call(mp, "getLastDistributionTime",
+                                    target=n["megapool"]["address"], key=(n["address"], "megapool.last_distribution_time")),
+        ]
+        nodes = await self.db.node_operators.find(
+            {"megapool.deployed": True}, {"address": 1, "megapool.address": 1}
+        ).to_list()
+        if not nodes:
+            return
+        
+        total = len(nodes)
+        batch_size = self.batch_size // len(lambs)
+        for i, node_batch in enumerate(as_chunks(nodes, batch_size)):
+            start = i * batch_size + 1
+            end = min((i + 1) * batch_size, total)
+            log.debug(f"Processing megapools [{start}, {end}]/{total}")
+            res = await rp.multicall(
+                [lamb(n) for n in node_batch for lamb in lambs],
+                require_success=False
+            )
+            data = _group_multicall_results(res)
+            await self.db.node_operators.bulk_write(
+                [UpdateOne({"address": addr}, {"$set": d}) for addr, d in data.items()],
+                ordered=False
+            )
+
     # -- Minipool tasks --
 
     @timerun_async
@@ -256,7 +303,7 @@ class DBUpkeepTask(commands.Cog):
             await self.db.minipools.insert_many([{"_id": i, "address": a} for i, a in data.items()])
 
     @timerun_async
-    async def add_static_data_to_minipools(self):
+    async def add_static_minipool_data(self):
         m = rp.assemble_contract("rocketMinipool")
         mm = rp.get_contract_by_name("rocketMinipoolManager")
         lambs = [
@@ -270,7 +317,7 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun
-    async def add_static_deposit_data_to_minipools(self):
+    async def add_static_minipool_deposit_data(self):
         minipools = await self.db.minipools.find(
             {"deposit_amount": {"$exists": False}, "status": "initialised"},
             {"address": 1, "_id": 0, "status_time": 1}
@@ -321,7 +368,7 @@ class DBUpkeepTask(commands.Cog):
             )
 
     @timerun
-    async def add_static_beacon_data_to_minipools(self):
+    async def add_static_minipool_beacon_data(self):
         public_keys = await self.db.minipools.distinct("pubkey", {"validator_index": {"$exists": False}})
         if not public_keys:
             return
@@ -334,7 +381,7 @@ class DBUpkeepTask(commands.Cog):
             )
 
     @timerun_async
-    async def update_dynamic_minipool_metadata(self):
+    async def update_dynamic_minipool_data(self):
         m = rp.assemble_contract("rocketMinipool")
         mc = rp.get_contract_by_name("multicall3")
         lambs = [
@@ -353,7 +400,7 @@ class DBUpkeepTask(commands.Cog):
         await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, lambs, label="minipools")
 
     @timerun
-    async def update_dynamic_minipool_beacon_metadata(self):
+    async def update_dynamic_minipool_beacon_data(self):
         validator_indexes = await self.db.minipools.distinct(
             "validator_index", {"beacon.status": {"$ne": "withdrawal_done"}}
         )
