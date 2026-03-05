@@ -696,22 +696,17 @@ class UniswapV3(DEX):
             return word_position, bit_position
 
         def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
-            return dict(zip(ticks, [
-                res.results[1] for res in rp.multicall.aggregate(
-                    [self.contract.functions.ticks(tick) for tick in ticks],
-                ).results
-            ]))
+            results = rp.multicall_sync([self.contract.functions.ticks(tick) for tick in ticks])
+            return dict(zip(ticks, [r[1] for r in results]))
 
         def get_initialized_ticks(self, current_tick: int) -> list[int]:
             ticks = []
             active_word, b = self.tick_to_word_and_bit(current_tick)
 
             word_range = list(range(active_word - 5, active_word + 5))
-            bitmaps = [
-                res.results[0] for res in rp.multicall.aggregate(
-                    [self.contract.functions.tickBitmap(word) for word in word_range],
-                ).results
-            ]
+            bitmaps = rp.multicall_sync([
+                self.contract.functions.tickBitmap(word) for word in word_range
+            ])
 
             for word, tick_bitmap in zip(word_range, bitmaps):
                 if not tick_bitmap:

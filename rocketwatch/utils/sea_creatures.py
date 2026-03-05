@@ -59,17 +59,14 @@ def get_holding_for_address(address):
     eth_balance = solidity.to_float(w3.eth.getBalance(address))
     # get ERC-20 token balance for this address
     with contextlib.suppress(Exception):
-        resp = rp.multicall.aggregate(
-            rp.get_contract_by_name(name).functions.balanceOf(address) for name in
-            ["rocketTokenRPL", "rocketTokenRPLFixedSupply", "rocketTokenRETH"]
-        )
-        # add their tokens to their eth balance
-        for token in resp.results:
-            contract_name = rp.get_name_by_address(token.contract_address)
-            if "RPL" in contract_name:
-                eth_balance += solidity.to_float(token.results[0]) * price_cache["rpl_price"]
-            if "RETH" in contract_name:
-                eth_balance += solidity.to_float(token.results[0]) * price_cache["reth_price"]
+        rpl_balance, rplfs_balance, reth_balance = rp.multicall_sync([
+            rp.get_contract_by_name("rocketTokenRPL").functions.balanceOf(address),
+            rp.get_contract_by_name("rocketTokenRPLFixedSupply").functions.balanceOf(address),
+            rp.get_contract_by_name("rocketTokenRETH").functions.balanceOf(address),
+        ])
+        eth_balance += solidity.to_float(rpl_balance) * price_cache["rpl_price"]
+        eth_balance += solidity.to_float(rplfs_balance) * price_cache["rpl_price"]
+        eth_balance += solidity.to_float(reth_balance) * price_cache["reth_price"]
     # add eth they provided for minipools
     eth_balance += solidity.to_float(rp.call("rocketNodeStaking.getNodeETHBonded", address))
     # add their staked RPL

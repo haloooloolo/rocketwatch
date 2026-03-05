@@ -9,7 +9,6 @@ from cachetools.func import ttl_cache
 from multicall import Call, Multicall
 from multicall.constants import MULTICALL3_ADDRESSES
 from web3.exceptions import ContractLogicError
-from web3_multicall import Multicall as Web3Multicall
 
 from utils import solidity
 from utils.cfg import cfg
@@ -31,8 +30,14 @@ class RocketPool:
 
     def __init__(self):
         self.addresses = bidict()
-        self.multicall = Web3Multicall(w3.eth, MULTICALL3_ADDRESSES[w3.eth.chain_id])
+        self._mc3_address = MULTICALL3_ADDRESSES[w3.eth.chain_id]
+        self._mc3 = None
         self.flush()
+
+    def _get_mc3(self):
+        if self._mc3 is None:
+            self._mc3 = self.get_contract_by_name("multicall3")
+        return self._mc3
 
     def flush(self):
         log.warning("FLUSHING RP CACHE")
@@ -40,6 +45,7 @@ class RocketPool:
         self.ABI_CACHE.clear()
         self.ADDRESS_CACHE.clear()
         self.addresses.clear()
+        self._mc3 = None
         self._init_contract_addresses()
 
     def _init_contract_addresses(self) -> None:
@@ -47,7 +53,7 @@ class RocketPool:
         for name, address in manual_addresses.items():
             self.addresses[name] = address
 
-        self.addresses["multicall3"] = self.multicall.address
+        self.addresses["multicall3"] = self._mc3_address
 
         log.info("Indexing Rocket Pool contracts...")
         # generate list of all file names with the .sol extension from the rocketpool submodule
@@ -90,7 +96,41 @@ class RocketPool:
                 return f"{function_name}({inputs})({outputs})"
         raise Exception(f"Function {function_name} not found in ABI")
 
-    async def multicall2(self, calls: list[Call], require_success=True):
+    @staticmethod
+    def _fn_to_call(fn, key):
+        """Convert a web3 ContractFunction to a multicall Call with integer key."""
+        sig = RocketPool.seth_sig(fn.contract_abi, fn.function_identifier)
+        return Call(fn.address, [sig, *fn.args], [(key, None)])
+
+    @staticmethod
+    def build_call(abi_source, function_name, *args, target=None, key=None, transform=None):
+        """Build a multicall Call object.
+
+        Args:
+            abi_source: Contract object with .abi attribute
+            function_name: Function name to call
+            *args: Function arguments
+            target: Target address (defaults to abi_source.address)
+            key: Result key (defaults to function_name)
+            transform: Optional result transform function
+        """
+        abi = abi_source.abi if hasattr(abi_source, 'abi') else abi_source
+        address = target if target is not None else abi_source.address
+        sig = RocketPool.seth_sig(abi, function_name)
+        return Call(address, [sig, *args], [(key if key is not None else function_name, transform)])
+
+    def multicall_sync(self, calls, require_success=True):
+        """Sync multicall accepting ContractFunction objects. Returns list of results."""
+        mc_calls = [self._fn_to_call(fn, i) for i, fn in enumerate(calls)]
+        encoded = [(call.target, not require_success, call.data) for call in mc_calls]
+        results = self._get_mc3().functions.aggregate3(encoded).call()
+        return [
+            Call.decode_output(data, mc_calls[i].signature, success=success)
+            for i, (success, data) in enumerate(results)
+        ]
+
+    async def multicall(self, calls: list[Call], require_success=True):
+        """Async multicall accepting Call objects. Returns dict of keyed results."""
         return await Multicall(calls, _w3=w3, gas_limit=50_000_000, require_success=require_success)
 
     @cached(cache=ADDRESS_CACHE)
@@ -136,19 +176,19 @@ class RocketPool:
                     return "Hidden Error"
         else:
             return None
-        
+
     def get_string(self, key: str) -> str:
         sha3 = w3.solidity_keccak(["string"], [key])
         return self.get_contract_by_name("rocketStorage").functions.getString(sha3).call()
-    
+
     def get_uint(self, key: str) -> int:
         sha3 = w3.solidity_keccak(["string"], [key])
         return self.get_contract_by_name("rocketStorage").functions.getUint(sha3).call()
-        
+
     def get_protocol_version(self) -> tuple:
         version_string = self.get_string("protocol.version")
         return tuple(map(int, version_string.split(".")))
-        
+
     @cached(cache=ABI_CACHE)
     def get_abi_by_name(self, name):
         return self.uncached_get_abi_by_name(name)
@@ -225,16 +265,16 @@ class RocketPool:
         value = solidity.to_float(self.call("rocketTokenRPL.totalSwappedRPL"))
         percentage = (value / 18_000_000) * 100
         return round(percentage, 2)
-    
+
     def is_node(self, address: ChecksumAddress) -> bool:
         return self.call("rocketNodeManager.getNodeExists", address)
-    
+
     def is_minipool(self, address: ChecksumAddress) -> bool:
         return self.call("rocketMinipoolManager.getMinipoolExists", address)
-        
+
     def is_megapool(self, address: ChecksumAddress) -> bool:
         sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", address])
-        return self.get_contract_by_name("rocketStorage").functions.getBool(sha3).call() 
+        return self.get_contract_by_name("rocketStorage").functions.getBool(sha3).call()
 
     @ttl_cache(ttl=60)
     def get_eth_usdc_price(self) -> float:

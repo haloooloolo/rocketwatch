@@ -24,17 +24,15 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     def get_deposit_pool_stats() -> Embed:
-        multicall: dict[str, int] = {
-            res.function_name: res.results[0] for res in rp.multicall.aggregate([
-                rp.get_contract_by_name("rocketDepositPool").functions.getBalance(),
-                rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit").functions.getMaximumDepositPoolSize(),
-                rp.get_contract_by_name("rocketDepositPool").functions.getMaximumDepositAmount(),
-            ]).results
-        }
+        balance_raw, max_size_raw, max_amount_raw = rp.multicall_sync([
+            rp.get_contract_by_name("rocketDepositPool").functions.getBalance(),
+            rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit").functions.getMaximumDepositPoolSize(),
+            rp.get_contract_by_name("rocketDepositPool").functions.getMaximumDepositAmount(),
+        ])
 
-        dp_balance = solidity.to_float(multicall["getBalance"])
-        deposit_cap = solidity.to_int(multicall["getMaximumDepositPoolSize"])
-        free_capacity = solidity.to_float(multicall["getMaximumDepositAmount"])
+        dp_balance = solidity.to_float(balance_raw)
+        deposit_cap = solidity.to_int(max_size_raw)
+        free_capacity = solidity.to_float(max_amount_raw)
 
         if deposit_cap - dp_balance < 0.01:
             dp_status = "Capacity reached!"
@@ -83,18 +81,16 @@ class DepositPool(StatusPlugin):
     
     @staticmethod
     def get_contract_collateral_stats() -> Embed:
-        multicall: dict[str, int] = {
-            res.function_name: res.results[0] for res in rp.multicall.aggregate([
-                rp.get_contract_by_name("rocketTokenRETH").functions.getExchangeRate(),
-                rp.get_contract_by_name("rocketTokenRETH").functions.totalSupply(),
-                rp.get_contract_by_name("rocketTokenRETH").functions.getCollateralRate(),
-                rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork").functions.getTargetRethCollateralRate(),
-            ]).results
-        }
+        exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = rp.multicall_sync([
+            rp.get_contract_by_name("rocketTokenRETH").functions.getExchangeRate(),
+            rp.get_contract_by_name("rocketTokenRETH").functions.totalSupply(),
+            rp.get_contract_by_name("rocketTokenRETH").functions.getCollateralRate(),
+            rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork").functions.getTargetRethCollateralRate(),
+        ])
 
-        total_eth_in_reth: float = multicall["totalSupply"] * multicall["getExchangeRate"] / 10**36
-        collateral_rate: float = solidity.to_float(multicall["getCollateralRate"])
-        collateral_rate_target: float = solidity.to_float(multicall["getTargetRethCollateralRate"])
+        total_eth_in_reth: float = total_supply * exchange_rate / 10**36
+        collateral_rate: float = solidity.to_float(collateral_rate_raw)
+        collateral_rate_target: float = solidity.to_float(target_rate_raw)
 
         collateral_eth: float = total_eth_in_reth * collateral_rate
         collateral_target_eth: float = total_eth_in_reth * collateral_rate_target

@@ -108,18 +108,14 @@ class DefaultDAO(DAO):
 
     def get_proposals_by_state(self) -> dict[ProposalState, list[int]]:
         num_proposals = self.proposal_contract.functions.getTotal().call()
-        proposal_dao_names = [
-            res.results[0] for res in rp.multicall.aggregate([
-                self.proposal_contract.functions.getDAO(proposal_id) for proposal_id in range(1, num_proposals + 1)
-            ]).results
-        ]
+        proposal_dao_names = rp.multicall_sync([
+            self.proposal_contract.functions.getDAO(proposal_id) for proposal_id in range(1, num_proposals + 1)
+        ])
 
         relevant_proposals = [(i+1) for (i, dao_name) in enumerate(proposal_dao_names) if (dao_name == self.contract_name)]
-        proposal_states = [
-            res.results[0] for res in rp.multicall.aggregate([
-                self.proposal_contract.functions.getState(proposal_id) for proposal_id in relevant_proposals
-            ]).results
-        ]
+        proposal_states = rp.multicall_sync([
+            self.proposal_contract.functions.getState(proposal_id) for proposal_id in relevant_proposals
+        ])
 
         proposals = {state: [] for state in DefaultDAO.ProposalState}
         for proposal_id, state in zip(relevant_proposals, proposal_states):
@@ -132,33 +128,31 @@ class DefaultDAO(DAO):
         if not (1 <= proposal_id <= num_proposals):
             return None
         
-        # map results of functions calls to function name
-        multicall: dict[str, str | bytes | int] = {
-            res.function_name: res.results[0] for res in rp.multicall.aggregate([
-                self.proposal_contract.functions.getProposer(proposal_id),
-                self.proposal_contract.functions.getMessage(proposal_id),
-                self.proposal_contract.functions.getPayload(proposal_id),
-                self.proposal_contract.functions.getCreated(proposal_id),
-                self.proposal_contract.functions.getStart(proposal_id),
-                self.proposal_contract.functions.getEnd(proposal_id),
-                self.proposal_contract.functions.getExpires(proposal_id),
-                self.proposal_contract.functions.getVotesFor(proposal_id),
-                self.proposal_contract.functions.getVotesAgainst(proposal_id),
-                self.proposal_contract.functions.getVotesRequired(proposal_id)
-            ]).results
-        }
+        (proposer, message, payload, created, start, end, expires,
+         votes_for_raw, votes_against_raw, votes_required_raw) = rp.multicall_sync([
+            self.proposal_contract.functions.getProposer(proposal_id),
+            self.proposal_contract.functions.getMessage(proposal_id),
+            self.proposal_contract.functions.getPayload(proposal_id),
+            self.proposal_contract.functions.getCreated(proposal_id),
+            self.proposal_contract.functions.getStart(proposal_id),
+            self.proposal_contract.functions.getEnd(proposal_id),
+            self.proposal_contract.functions.getExpires(proposal_id),
+            self.proposal_contract.functions.getVotesFor(proposal_id),
+            self.proposal_contract.functions.getVotesAgainst(proposal_id),
+            self.proposal_contract.functions.getVotesRequired(proposal_id)
+        ])
         return DefaultDAO.Proposal(
             id=proposal_id,
-            proposer=cast(ChecksumAddress, multicall["getProposer"]),
-            message=multicall["getMessage"],
-            payload=multicall["getPayload"],
-            created=multicall["getCreated"],
-            start=multicall["getStart"],
-            end=multicall["getEnd"],
-            expires=multicall["getExpires"],
-            votes_for=solidity.to_int(multicall["getVotesFor"]),
-            votes_against=solidity.to_int(multicall["getVotesAgainst"]),
-            votes_required=solidity.to_float(multicall["getVotesRequired"])
+            proposer=cast(ChecksumAddress, proposer),
+            message=message,
+            payload=payload,
+            created=created,
+            start=start,
+            end=end,
+            expires=expires,
+            votes_for=solidity.to_int(votes_for_raw),
+            votes_against=solidity.to_int(votes_against_raw),
+            votes_required=solidity.to_float(votes_required_raw)
         )
 
     def _build_vote_graph(self, proposal: Proposal) -> str:
@@ -223,11 +217,9 @@ class ProtocolDAO(DAO):
 
     def get_proposals_by_state(self) -> dict[ProposalState, list[int]]:
         num_proposals = self.proposal_contract.functions.getTotal().call()
-        proposal_states = [
-            res.results[0] for res in rp.multicall.aggregate([
-                self.proposal_contract.functions.getState(proposal_id) for proposal_id in range(1, num_proposals + 1)
-            ]).results
-        ]
+        proposal_states = rp.multicall_sync([
+            self.proposal_contract.functions.getState(proposal_id) for proposal_id in range(1, num_proposals + 1)
+        ])
 
         proposals = {state: [] for state in ProtocolDAO.ProposalState}
         for proposal_id in range(1, num_proposals + 1):
@@ -241,41 +233,40 @@ class ProtocolDAO(DAO):
         if not (1 <= proposal_id <= num_proposals):
             return None
         
-        # map results of functions calls to function name
-        multicall: dict[str, str | bytes | int] = {
-            res.function_name: res.results[0] for res in rp.multicall.aggregate([
-                self.proposal_contract.functions.getProposer(proposal_id),
-                self.proposal_contract.functions.getMessage(proposal_id),
-                self.proposal_contract.functions.getPayload(proposal_id),
-                self.proposal_contract.functions.getCreated(proposal_id),
-                self.proposal_contract.functions.getStart(proposal_id),
-                self.proposal_contract.functions.getPhase1End(proposal_id),
-                self.proposal_contract.functions.getPhase2End(proposal_id),
-                self.proposal_contract.functions.getExpires(proposal_id),
-                self.proposal_contract.functions.getVotingPowerFor(proposal_id),
-                self.proposal_contract.functions.getVotingPowerAgainst(proposal_id),
-                self.proposal_contract.functions.getVotingPowerVeto(proposal_id),
-                self.proposal_contract.functions.getVotingPowerAbstained(proposal_id),
-                self.proposal_contract.functions.getVotingPowerRequired(proposal_id),
-                self.proposal_contract.functions.getVetoQuorum(proposal_id)
-            ]).results
-        }
+        (proposer, message, payload, created, start, phase1_end, phase2_end,
+         expires, vp_for_raw, vp_against_raw, vp_veto_raw, vp_abstain_raw,
+         vp_required_raw, veto_quorum_raw) = rp.multicall_sync([
+            self.proposal_contract.functions.getProposer(proposal_id),
+            self.proposal_contract.functions.getMessage(proposal_id),
+            self.proposal_contract.functions.getPayload(proposal_id),
+            self.proposal_contract.functions.getCreated(proposal_id),
+            self.proposal_contract.functions.getStart(proposal_id),
+            self.proposal_contract.functions.getPhase1End(proposal_id),
+            self.proposal_contract.functions.getPhase2End(proposal_id),
+            self.proposal_contract.functions.getExpires(proposal_id),
+            self.proposal_contract.functions.getVotingPowerFor(proposal_id),
+            self.proposal_contract.functions.getVotingPowerAgainst(proposal_id),
+            self.proposal_contract.functions.getVotingPowerVeto(proposal_id),
+            self.proposal_contract.functions.getVotingPowerAbstained(proposal_id),
+            self.proposal_contract.functions.getVotingPowerRequired(proposal_id),
+            self.proposal_contract.functions.getVetoQuorum(proposal_id)
+        ])
         return ProtocolDAO.Proposal(
             id=proposal_id,
-            proposer=cast(ChecksumAddress, multicall["getProposer"]),
-            message=multicall["getMessage"],
-            payload=multicall["getPayload"],
-            created=multicall["getCreated"],
-            start=multicall["getStart"],
-            end_phase_1=multicall["getPhase1End"],
-            end_phase_2= multicall["getPhase2End"],
-            expires=multicall["getExpires"],
-            votes_for=solidity.to_float(multicall["getVotingPowerFor"]),
-            votes_against=solidity.to_float(multicall["getVotingPowerAgainst"]),
-            votes_veto=solidity.to_float(multicall["getVotingPowerVeto"]),
-            votes_abstain=solidity.to_float(multicall["getVotingPowerAbstained"]),
-            quorum=solidity.to_float(multicall["getVotingPowerRequired"]),
-            veto_quorum=solidity.to_float(multicall["getVetoQuorum"])
+            proposer=cast(ChecksumAddress, proposer),
+            message=message,
+            payload=payload,
+            created=created,
+            start=start,
+            end_phase_1=phase1_end,
+            end_phase_2=phase2_end,
+            expires=expires,
+            votes_for=solidity.to_float(vp_for_raw),
+            votes_against=solidity.to_float(vp_against_raw),
+            votes_veto=solidity.to_float(vp_veto_raw),
+            votes_abstain=solidity.to_float(vp_abstain_raw),
+            quorum=solidity.to_float(vp_required_raw),
+            veto_quorum=solidity.to_float(veto_quorum_raw)
         )
 
     def _build_vote_graph(self, proposal: Proposal) -> str:
