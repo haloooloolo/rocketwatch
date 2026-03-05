@@ -3,7 +3,6 @@ import logging
 import aiohttp
 from web3.beacon import Beacon as Bacon
 from aiohttp.web import HTTPError
-from eth_typing import BlockIdentifier
 from web3 import Web3, HTTPProvider
 from web3.middleware import geth_poa_middleware
 
@@ -27,31 +26,28 @@ if "archive" in cfg['execution_layer.endpoint'].keys():
 class SuperBacon(Bacon):
     def __init__(self, base_url: str) -> None:
         super().__init__(base_url)
-        timeout = aiohttp.ClientTimeout(sock_connect=3.05, total=20)
-        self.async_session = aiohttp.ClientSession(raise_for_status=True, timeout=timeout)
-        
+        self.async_session = aiohttp.ClientSession(
+            raise_for_status=True,
+            timeout=aiohttp.ClientTimeout(sock_connect=3.05, total=20)
+        )
+
     @retry_async(tries=3, exceptions=HTTPError, delay=0.5)
     async def _make_get_request_async(self, path: str):
-        url = self.base_url + path
-        async with self.async_session.get(url) as response:
+        async with self.async_session.get(self.base_url + path) as response:
             return await response.json()
-        
+
     async def get_block_header_async(self, block_id: int | str):
-        path = f"/eth/v1/beacon/headers/{block_id}"
-        return await self._make_get_request_async(path)
+        return await self._make_get_request_async(f"/eth/v1/beacon/headers/{block_id}")
 
     async def get_block_async(self, block_id: int | str):
-        path = f"/eth/v2/beacon/blocks/{block_id}"
-        return await self._make_get_request_async(path)
+        return await self._make_get_request_async(f"/eth/v2/beacon/blocks/{block_id}")
 
     async def get_validators_async(self, state_id, ids: list[int]):
-        id_str = ','.join([str(i) for i in ids])
-        path = f"/eth/v1/beacon/states/{state_id}/validators?id={id_str}"
-        return await self._make_get_request_async(path)
-    
+        id_str = ','.join(map(str, ids))
+        return await self._make_get_request_async(f"/eth/v1/beacon/states/{state_id}/validators?id={id_str}")
+
     async def get_sync_committee_async(self, epoch: int):
-        path = f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
-        return await self._make_get_request_async(path)
+        return await self._make_get_request_async(f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}")
 
 
 bacon = SuperBacon(cfg["consensus_layer.endpoint"])

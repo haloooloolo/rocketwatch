@@ -90,7 +90,6 @@ class RocketPool:
                 return f"{function_name}({inputs})({outputs})"
         raise Exception(f"Function {function_name} not found in ABI")
 
-    @timerun_async
     async def multicall2(self, calls: list[Call], require_success=True):
         return await Multicall(calls, _w3=w3, gas_limit=50_000_000, require_success=require_success)
 
