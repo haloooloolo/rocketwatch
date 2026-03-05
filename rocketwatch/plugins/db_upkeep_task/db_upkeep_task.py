@@ -51,13 +51,52 @@ def safe_inv(_, num):
         return None
 
 
-def is_true(_, b):
-    return b is True
-
-
 def _parse_epoch(value):
     epoch = int(value)
     return epoch if epoch < FAR_FUTURE_EPOCH else None
+
+
+def _derive_validator_status(info):
+    if info[9]:   # dissolved
+        return "dissolved"
+    if info[5]:   # exited
+        return "exited"
+    if info[6]:   # inQueue
+        return "in_queue"
+    if info[7]:   # inPrestake
+        return "prestaked"
+    if info[11]:  # locked
+        return "locked"
+    if info[10]:  # exiting
+        return "exiting"
+    if info[4]:   # staked
+        return "staking"
+    return "unknown"
+
+
+def _unpack_validator_info(_, info):
+    if info is None:
+        return None
+    return {
+        "status": _derive_validator_status(info),
+        "express_used": info[8],
+        "assignment_time": info[0],
+        "requested_bond": info[2] / 1000,  # milliether to ETH
+        "deposit_value": info[3] / 1000,  # milliether to ETH
+        "exit_balance": solidity.to_float(info[12], 9),  # gwei to ETH
+    }
+
+
+def _unpack_validator_info_dynamic(_, info):
+    if info is None:
+        return None
+    return {
+        "status": _derive_validator_status(info),
+        "assignment_time": info[0],
+        "requested_bond": info[2] / 1000,
+        "deposit_value": info[3] / 1000,
+        "exit_balance": solidity.to_float(info[12], 9),
+    }
 
 
 def _group_multicall_results(res):
@@ -95,7 +134,11 @@ class DBUpkeepTask(commands.Cog):
                 await self.add_static_minipool_beacon_data()
                 await self.update_dynamic_minipool_data()
                 await self.update_dynamic_minipool_beacon_data()
-                # TODO: populate megapool validator DB
+                # megapool validator tasks
+                await self.add_untracked_megapool_validators()
+                await self.add_static_megapool_validator_beacon_data()
+                await self.update_dynamic_megapool_validator_data()
+                await self.update_dynamic_megapool_validator_beacon_data()
                 log.debug("finished db upkeep task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
@@ -106,10 +149,16 @@ class DBUpkeepTask(commands.Cog):
 
     async def check_indexes(self):
         log.debug("checking indexes")
+        await self.db.node_operators.create_index("address")
+        await self.db.node_operators.create_index("megapool.address")
         await self.db.minipools.create_index("address")
         await self.db.minipools.create_index("pubkey")
         await self.db.minipools.create_index("validator_index")
-        await self.db.node_operators.create_index("address")
+        await self.db.megapool_validators.create_index(
+            [("megapool", pymongo.ASCENDING), ("validator_id", pymongo.ASCENDING)], unique=True
+        )
+        await self.db.megapool_validators.create_index("pubkey")
+        await self.db.megapool_validators.create_index("validator_index")
         log.debug("indexes checked")
 
     async def _batch_multicall_update(self, collection, query, lambs, label=None):
@@ -387,7 +436,8 @@ class DBUpkeepTask(commands.Cog):
         lambs = [
             lambda a: rp.build_call(m, "getStatus", target=a, key=(a, "status"), transform=safe_state_to_str),
             lambda a: rp.build_call(m, "getStatusTime", target=a, key=(a, "status_time")),
-            lambda a: rp.build_call(m, "getVacant", target=a, key=(a, "vacant"), transform=is_true),
+            lambda a: rp.build_call(m, "getVacant", target=a, key=(a, "vacant")),
+            lambda a: rp.build_call(m, "getFinalised", target=a, key=(a, "finalized")),
             lambda a: rp.build_call(m, "getNodeDepositBalance", target=a, key=(a, "node_deposit_balance"), transform=safe_to_float),
             lambda a: rp.build_call(m, "getNodeRefundBalance", target=a, key=(a, "node_refund_balance"), transform=safe_to_float),
             lambda a: rp.build_call(m, "getPreMigrationBalance", target=a, key=(a, "pre_migration_balance"), transform=safe_to_float),
@@ -428,6 +478,135 @@ class DBUpkeepTask(commands.Cog):
                 [UpdateMany({"validator_index": idx}, {"$set": d}) for idx, d in data.items()],
                 ordered=False
             )
+
+
+    # -- Megapool validator tasks --
+
+    @timerun_async
+    async def add_untracked_megapool_validators(self):
+        mp = rp.assemble_contract("rocketMegapoolDelegate")
+        # get deployed megapools with their on-chain validator count
+        nodes = await self.db.node_operators.find(
+            {"megapool.deployed": True, "megapool.validator_count": {"$gt": 0}},
+            {"address": 1, "megapool.address": 1, "megapool.validator_count": 1}
+        ).to_list()
+        if not nodes:
+            return
+
+        for node in nodes:
+            megapool_addr = node["megapool"]["address"]
+            on_chain_count = node["megapool"]["validator_count"]
+            db_count = await self.db.megapool_validators.count_documents({"megapool": megapool_addr})
+            if db_count >= on_chain_count:
+                continue
+
+            new_ids = list(range(db_count, on_chain_count))
+            log.debug(f"Adding {len(new_ids)} new validators for megapool {megapool_addr}")
+
+            for id_batch in as_chunks(new_ids, self.batch_size // 2):
+                # fetch pubkey + validator info for each new validator
+                calls = []
+                for vid in id_batch:
+                    calls.append(rp.build_call(mp, "getValidatorPubkey", vid,
+                                               target=megapool_addr, key=(vid, "pubkey"), transform=safe_to_hex))
+                    calls.append(rp.build_call(mp, "getValidatorInfo", vid,
+                                               target=megapool_addr, key=(vid, "info"), transform=_unpack_validator_info))
+                res = await rp.multicall(calls, require_success=False)
+                grouped = _group_multicall_results(res)
+
+                docs = []
+                for vid, data in grouped.items():
+                    doc = {
+                        "megapool": megapool_addr,
+                        "node_operator": node["address"],
+                        "validator_id": vid,
+                        "pubkey": data.get("pubkey"),
+                    }
+                    info = data.get("info")
+                    if info:
+                        doc.update(info)
+                    docs.append(doc)
+                if docs:
+                    await self.db.megapool_validators.insert_many(docs, ordered=False)
+
+    @timerun
+    async def add_static_megapool_validator_beacon_data(self):
+        public_keys = await self.db.megapool_validators.distinct(
+            "pubkey", {"validator_index": {"$exists": False}, "pubkey": {"$ne": None}}
+        )
+        if not public_keys:
+            return
+        
+        for pubkey_batch in as_chunks(public_keys, self.batch_size):
+            beacon_data = (await bacon.get_validators_async("head", ids=pubkey_batch))["data"]
+            data = {d["validator"]["pubkey"]: int(d["index"]) for d in beacon_data}
+            if data:
+                await self.db.megapool_validators.bulk_write(
+                    [UpdateMany({"pubkey": pk}, {"$set": {"validator_index": idx}}) for pk, idx in data.items()],
+                    ordered=False
+                )
+
+    @timerun_async
+    async def update_dynamic_megapool_validator_data(self):
+        mp = rp.assemble_contract("rocketMegapoolDelegate")
+        validators = await self.db.megapool_validators.find(
+            {"status": {"$nin": ["exited", "dissolved"]}},
+            {"megapool": 1, "validator_id": 1}
+        ).to_list()
+        if not validators:
+            return
+
+        total = len(validators)
+        for i, batch in enumerate(as_chunks(validators, self.batch_size)):
+            start = i * self.batch_size + 1
+            end = min((i + 1) * self.batch_size, total)
+            log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
+            calls = [
+                rp.build_call(mp, "getValidatorInfo", v["validator_id"],
+                              target=v["megapool"], key=j, transform=_unpack_validator_info_dynamic)
+                for j, v in enumerate(batch)
+            ]
+            res = await rp.multicall(calls, require_success=False)
+            ops = []
+            for j, v in enumerate(batch):
+                info = res.get(j)
+                if info is not None:
+                    ops.append(UpdateOne({"_id": v["_id"]}, {"$set": info}))
+            if ops:
+                await self.db.megapool_validators.bulk_write(ops, ordered=False)
+
+    @timerun
+    async def update_dynamic_megapool_validator_beacon_data(self):
+        validator_indexes = await self.db.megapool_validators.distinct(
+            "validator_index", {"beacon.status": {"$ne": "withdrawal_done"}}
+        )
+        validator_indexes = [i for i in validator_indexes if i is not None]
+        if not validator_indexes:
+            return
+        total = len(validator_indexes)
+        for i, index_batch in enumerate(as_chunks(validator_indexes, self.batch_size)):
+            start = i * self.batch_size + 1
+            end = min((i + 1) * self.batch_size, total)
+            log.debug(f"Updating beacon data for megapool validators [{start}, {end}]/{total}")
+            beacon_data = (await bacon.get_validators_async("head", ids=index_batch))["data"]
+            data = {}
+            for d in beacon_data:
+                v = d["validator"]
+                data[int(d["index"])] = {"beacon": {
+                    "status": d["status"],
+                    "balance": solidity.to_float(d["balance"], 9),
+                    "effective_balance": solidity.to_float(v["effective_balance"], 9),
+                    "slashed": v["slashed"],
+                    "activation_eligibility_epoch": _parse_epoch(v["activation_eligibility_epoch"]),
+                    "activation_epoch": _parse_epoch(v["activation_epoch"]),
+                    "exit_epoch": _parse_epoch(v["exit_epoch"]),
+                    "withdrawable_epoch": _parse_epoch(v["withdrawable_epoch"]),
+                }}
+            if data:
+                await self.db.megapool_validators.bulk_write(
+                    [UpdateMany({"validator_index": idx}, {"$set": d}) for idx, d in data.items()],
+                    ordered=False
+                )
 
 
 async def setup(self):
