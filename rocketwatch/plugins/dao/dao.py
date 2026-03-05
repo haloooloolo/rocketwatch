@@ -40,7 +40,7 @@ class OnchainDAO(Cog):
             dao.ProposalState.Succeeded: [],
         }
 
-        for state, ids in dao.get_proposals_by_state().items():
+        for state, ids in dao.get_proposal_ids_by_state().items():
             if state in current_proposals:
                 current_proposals[state].extend([dao.fetch_proposal(pid) for pid in ids])
 
@@ -78,7 +78,7 @@ class OnchainDAO(Cog):
             dao.ProposalState.Succeeded: [],
         }
 
-        for state, ids in dao.get_proposals_by_state().items():
+        for state, ids in dao.get_proposal_ids_by_state().items():
             if state in current_proposals:
                 current_proposals[state].extend([dao.fetch_proposal(pid) for pid in ids])
 

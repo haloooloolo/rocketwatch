@@ -24,16 +24,16 @@ log.setLevel(cfg["log_level"])
 class Governance(StatusPlugin):
     @staticmethod
     def _get_active_pdao_proposals(dao: ProtocolDAO) -> list[ProtocolDAO.Proposal]:
-        proposals = dao.get_proposals_by_state()
+        proposal_ids = dao.get_proposal_ids_by_state()
         active_proposal_ids = []
-        active_proposal_ids += proposals[dao.ProposalState.ActivePhase1]
-        active_proposal_ids += proposals[dao.ProposalState.ActivePhase2]
+        active_proposal_ids += proposal_ids[dao.ProposalState.ActivePhase1]
+        active_proposal_ids += proposal_ids[dao.ProposalState.ActivePhase2]
         return [dao.fetch_proposal(proposal_id) for proposal_id in reversed(active_proposal_ids)]
 
     @staticmethod
     def _get_active_dao_proposals(dao: DefaultDAO) -> list[DefaultDAO.Proposal]:
-        proposals = dao.get_proposals_by_state()
-        active_proposal_ids = proposals[dao.ProposalState.Active]
+        proposal_ids = dao.get_proposal_ids_by_state()
+        active_proposal_ids = proposal_ids[dao.ProposalState.Active]
         return [dao.fetch_proposal(proposal_id) for proposal_id in reversed(active_proposal_ids)]
 
     @staticmethod
@@ -76,7 +76,8 @@ class Governance(StatusPlugin):
             return []
 
     async def get_digest(self) -> Embed:
-        embed = Embed(title="Governance Digest", description="")
+        embed = Embed(title="Governance Digest")
+        embed.description = ""
 
         def sanitize(text: str, max_length: int = 50) -> str:
             text = text.strip()

@@ -30,14 +30,7 @@ class RocketPool:
 
     def __init__(self):
         self.addresses = bidict()
-        self._mc3_address = MULTICALL3_ADDRESSES[w3.eth.chain_id]
-        self._mc3 = None
         self.flush()
-
-    def _get_mc3(self):
-        if self._mc3 is None:
-            self._mc3 = self.get_contract_by_name("multicall3")
-        return self._mc3
 
     def flush(self):
         log.warning("FLUSHING RP CACHE")
@@ -45,15 +38,16 @@ class RocketPool:
         self.ABI_CACHE.clear()
         self.ADDRESS_CACHE.clear()
         self.addresses.clear()
-        self._mc3 = None
         self._init_contract_addresses()
+        
 
     def _init_contract_addresses(self) -> None:
         manual_addresses = cfg["rocketpool.manual_addresses"]
         for name, address in manual_addresses.items():
             self.addresses[name] = address
 
-        self.addresses["multicall3"] = self._mc3_address
+        self.addresses["multicall3"] = w3.to_checksum_address(MULTICALL3_ADDRESSES[w3.eth.chain_id])
+        self._multicall = self.get_contract_by_name("multicall3")
 
         log.info("Indexing Rocket Pool contracts...")
         # generate list of all file names with the .sol extension from the rocketpool submodule
@@ -123,7 +117,7 @@ class RocketPool:
         """Sync multicall accepting ContractFunction objects. Returns list of results."""
         mc_calls = [self._fn_to_call(fn, i) for i, fn in enumerate(calls)]
         encoded = [(call.target, not require_success, call.data) for call in mc_calls]
-        results = self._get_mc3().functions.aggregate3(encoded).call()
+        results = self._multicall.functions.aggregate3(encoded).call()
         return [
             Call.decode_output(data, mc_calls[i].signature, success=success)
             for i, (success, data) in enumerate(results)

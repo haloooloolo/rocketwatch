@@ -33,7 +33,7 @@ class DAO(ABC):
 
     @staticmethod
     @abstractmethod
-    def fetch_proposal(self, proposal_id: int) -> Optional[Proposal]:
+    def fetch_proposal(self, proposal_id: int) -> Proposal:
         pass
 
     @abstractmethod
@@ -106,7 +106,7 @@ class DefaultDAO(DAO):
         votes_against: int
         votes_required: int
 
-    def get_proposals_by_state(self) -> dict[ProposalState, list[int]]:
+    def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
         num_proposals = self.proposal_contract.functions.getTotal().call()
         proposal_dao_names = rp.multicall_sync([
             self.proposal_contract.functions.getDAO(proposal_id) for proposal_id in range(1, num_proposals + 1)
@@ -123,11 +123,7 @@ class DefaultDAO(DAO):
 
         return proposals
 
-    def fetch_proposal(self, proposal_id: int) -> Optional[Proposal]:
-        num_proposals = self.proposal_contract.functions.getTotal().call()
-        if not (1 <= proposal_id <= num_proposals):
-            return None
-        
+    def fetch_proposal(self, proposal_id: int) -> Proposal:        
         (proposer, message, payload, created, start, end, expires,
          votes_for_raw, votes_against_raw, votes_required_raw) = rp.multicall_sync([
             self.proposal_contract.functions.getProposer(proposal_id),
@@ -215,7 +211,7 @@ class ProtocolDAO(DAO):
         def votes_total(self):
             return self.votes_for + self.votes_against + self.votes_abstain
 
-    def get_proposals_by_state(self) -> dict[ProposalState, list[int]]:
+    def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
         num_proposals = self.proposal_contract.functions.getTotal().call()
         proposal_states = rp.multicall_sync([
             self.proposal_contract.functions.getState(proposal_id) for proposal_id in range(1, num_proposals + 1)
@@ -228,11 +224,7 @@ class ProtocolDAO(DAO):
 
         return proposals
 
-    def fetch_proposal(self, proposal_id: int) -> Optional[Proposal]:
-        num_proposals = self.proposal_contract.functions.getTotal().call()
-        if not (1 <= proposal_id <= num_proposals):
-            return None
-        
+    def fetch_proposal(self, proposal_id: int) -> Proposal:
         (proposer, message, payload, created, start, phase1_end, phase2_end,
          expires, vp_for_raw, vp_against_raw, vp_veto_raw, vp_abstain_raw,
          vp_required_raw, veto_quorum_raw) = rp.multicall_sync([
