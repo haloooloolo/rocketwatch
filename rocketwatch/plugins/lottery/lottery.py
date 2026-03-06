@@ -1,7 +1,8 @@
 import logging
 
 from discord.ext import commands
-from discord.ext.commands import hybrid_command, Context
+from discord import Interaction
+from discord.app_commands import command
 from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
@@ -129,17 +130,17 @@ class Lottery(commands.Cog):
                                   node_operators])
         return description
 
-    @hybrid_command()
-    async def lottery(self, ctx: Context):
+    @command()
+    async def lottery(self, interaction: Interaction):
         """
         Get the status of the current and next sync committee.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         embeds = [
             Embed(title="Current sync committee:", description=await self.generate_sync_committee_description("latest")),
             Embed(title="Next sync committee:", description=await self.generate_sync_committee_description("next"))
         ]
-        await ctx.send(embeds=embeds)
+        await interaction.followup.send(embeds=embeds)
 
 
 async def setup(bot):

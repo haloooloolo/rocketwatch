@@ -3,8 +3,8 @@ import random
 import random as pyrandom
 
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
@@ -15,14 +15,14 @@ class EightBall(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    @hybrid_command(name="8ball")
-    async def eight_ball(self, ctx: Context, question: str):
+    @command(name="8ball")
+    async def eight_ball(self, interaction: Interaction, question: str):
         e = Embed(title="🎱 Magic 8 Ball")
         if not question.endswith("?"):
             e.description = "You must ask a yes or no question to the magic 8 ball (hint: add a `?` at the end of your question)"
-            await ctx.send(embed=e, ephemeral=True)
+            await interaction.response.send_message(embed=e, ephemeral=True)
             return
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         await asyncio.sleep(random.randint(2,5))
         res = pyrandom.choice([
             "As I see it, yes",
@@ -46,8 +46,8 @@ class EightBall(commands.Cog):
             "No",
             "Absolutely not"
         ])
-        e.description = f"> \"{question}\"\n - `{ctx.author.display_name}`\n\nThe Magic 8 Ball says: `{res}`"
-        await ctx.send(embed=e)
+        e.description = f"> \"{question}\"\n - `{interaction.user.display_name}`\n\nThe Magic 8 Ball says: `{res}`"
+        await interaction.followup.send(embed=e)
 
 
 async def setup(bot):

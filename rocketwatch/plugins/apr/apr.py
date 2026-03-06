@@ -6,8 +6,8 @@ from io import BytesIO
 import matplotlib.pyplot as plt
 from discord import File
 from discord.ext import commands, tasks
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 from matplotlib.dates import DateFormatter
 
 from rocketwatch import RocketWatch
@@ -82,10 +82,10 @@ class APR(commands.Cog):
     async def on_error(self, err: Exception):
         await self.bot.report_error(err)
 
-    @hybrid_command()
-    async def reth_apr(self, ctx: Context):
+    @command()
+    async def reth_apr(self, interaction: Interaction):
         """Show the current rETH APR"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed()
         e.title = "Current rETH APR"
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
@@ -94,7 +94,7 @@ class APR(commands.Cog):
         datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
         if len(datapoints) == 0:
             e.description = "No data available yet."
-            return await ctx.send(embed=e)
+            return await interaction.followup.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
         tmp = await (await self.bot.db.minipools.aggregate([
@@ -250,12 +250,12 @@ class APR(commands.Cog):
         e.add_field(name="Effectiveness",
                     value=f"{y_effectiveness[-1]:.2%}",
                     inline=False)
-        await ctx.send(embed=e, file=File(img, "reth_apr.png"))
+        await interaction.followup.send(embed=e, file=File(img, "reth_apr.png"))
 
-    @hybrid_command()
-    async def node_apr(self, ctx: Context):
+    @command()
+    async def node_apr(self, interaction: Interaction):
         """Show the current node operator APR"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed()
         e.title = "Current NO APR"
         e.description = "Dashed red lines above and bellow the solid red one are leb8 and leb16 respectively. " \
@@ -265,7 +265,7 @@ class APR(commands.Cog):
         datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
         if len(datapoints) == 0:
             e.description = "No data available yet."
-            return await ctx.send(embed=e)
+            return await interaction.followup.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
         tmp = await (await self.bot.db.minipools.aggregate([
@@ -422,7 +422,7 @@ class APR(commands.Cog):
 
         e.set_image(url="attachment://no_apr.png")
 
-        await ctx.send(embed=e, file=File(img, "no_apr.png"))
+        await interaction.followup.send(embed=e, file=File(img, "no_apr.png"))
 
 async def setup(bot):
     await bot.add_cog(APR(bot))

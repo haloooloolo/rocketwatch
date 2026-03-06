@@ -1,14 +1,12 @@
 import logging
-import math
 from datetime import datetime, timedelta
 from io import BytesIO
 
 from bson import SON
-from cachetools import TTLCache
 from discord import File
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
@@ -25,12 +23,12 @@ class Metrics(commands.Cog):
         self.bot = bot
         self.collection = self.bot.db.command_metrics
 
-    @hybrid_command()
-    async def metrics(self, ctx: Context):
+    @command()
+    async def metrics(self, interaction: Interaction):
         """
         Show various metrics about the bot.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         try:
             e = Embed(title="Metrics from the last 7 days")
             desc = "```\n"
@@ -82,14 +80,14 @@ class Metrics(commands.Cog):
             for channel in top_channels:
                 desc += f" - {channel['_id']['name']}: {channel['count']}\n"
             e.description = desc + "```"
-            await ctx.send(embed=e)
+            await interaction.followup.send(embed=e)
         except Exception as e:
             log.error(f"Failed to get command metrics: {e}")
             await self.bot.report_error(e)
 
-    @hybrid_command()
-    async def metrics_chart(self, ctx):
-        await ctx.defer(ephemeral=is_hidden(ctx))
+    @command()
+    async def metrics_chart(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         # generate mathplotlib chart that shows monthly command usage and monthly event emission, in separate subplots
 
         command_usage = await (await self.collection.aggregate([
@@ -148,68 +146,8 @@ class Metrics(commands.Cog):
 
         e = Embed(title="Command Usage and Event ")
         e.set_image(url="attachment://metrics.png")
-        await ctx.send(embed=e, file=File(file, filename="metrics.png"))
+        await interaction.followup.send(embed=e, file=File(file, filename="metrics.png"))
 
-    @commands.Cog.listener()
-    async def on_command(self, ctx):
-        log.info(f"/{ctx.command.name} triggered by {ctx.author} in #{ctx.channel.name} ({ctx.guild})")
-        try:
-            await self.collection.insert_one({
-                '_id'      : ctx.interaction.id,
-                'command'  : ctx.command.name,
-                'options'  : ctx.interaction.data.get("options", []),
-                'user'     : {
-                    'id'  : ctx.author.id,
-                    'name': ctx.author.name,
-                },
-                'guild'    : {
-                    'id'  : ctx.guild.id,
-                    'name': ctx.guild.name,
-                },
-                'channel'  : {
-                    'id'  : ctx.channel.id,
-                    'name': ctx.channel.name,
-                },
-                "timestamp": datetime.utcnow(),
-                'status'   : 'pending'
-            })
-        except Exception as e:
-            log.error(f"Failed to insert command into database: {e}")
-            await self.bot.report_error(e)
-
-    @commands.Cog.listener()
-    async def on_command_completion(self, ctx):
-        log.info(f"/{ctx.command.name} called by {ctx.author} in #{ctx.channel.name} ({ctx.guild}) completed successfully")
-        try:
-            # get the timestamp of when the command was called from the db
-            data = await self.collection.find_one({'_id': ctx.interaction.id})
-            await self.collection.update_one({'_id': ctx.interaction.id},
-                                             {
-                                                 '$set': {
-                                                     'status': 'completed',
-                                                     'took'  : (datetime.utcnow() - data['timestamp']).total_seconds()
-                                                 }
-                                             })
-        except Exception as e:
-            log.error(f"Failed to update command status to completed: {e}")
-            await self.bot.report_error(e)
-
-    @commands.Cog.listener()
-    async def on_command_error(self, ctx: Context, exception: Exception):
-        try:
-            # get the timestamp of when the command was called from the db
-            data = await self.collection.find_one({'_id': ctx.interaction.id})
-            await self.collection.update_one(
-                {'_id': ctx.interaction.id},
-                {'$set': {
-                    'status': 'error',
-                    'took': (datetime.now() - data['timestamp']).total_seconds(),
-                    'error': str(exception)
-                }}
-            )
-        except Exception as e:
-            log.exception("Failed to update command status to error")
-            await self.bot.report_error(e)
 
 
 async def setup(bot):

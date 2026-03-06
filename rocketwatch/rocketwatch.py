@@ -5,22 +5,22 @@ from pathlib import Path
 from typing import Optional
 
 from discord import (
-    app_commands, 
+    app_commands,
     Interaction,
     Intents,
-    Thread, 
-    File, 
-    Object, 
+    Thread,
+    File,
+    Guild,
     User,
 )
 from discord.abc import GuildChannel, PrivateChannel
 from discord.ext import commands
-from discord.ext.commands import Bot, Context
-from discord.app_commands import CommandTree, AppCommandError
+from discord.ext.commands import Bot
 
 from pymongo import AsyncMongoClient
 
 from utils.cfg import cfg
+from utils.command_tree import RWCommandTree
 from utils.retry import retry_async
 from utils.rocketpool import rp
 
@@ -29,13 +29,8 @@ log.setLevel(cfg["log_level"])
 
 
 class RocketWatch(Bot):
-    class RWCommandTree(CommandTree):
-        async def on_error(self, interaction: Interaction, error: AppCommandError) -> None:
-            ctx = await Context.from_interaction(interaction)
-            await self.client.on_command_error(ctx, error)
-    
     def __init__(self, intents: Intents) -> None:
-        super().__init__(command_prefix=(), tree_cls=self.RWCommandTree, intents=intents)
+        super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
     
     async def _load_plugins(self):
@@ -104,8 +99,9 @@ class RocketWatch(Bot):
 
         await self.sync_commands()
 
-    async def on_command_error(self, ctx: Context, error: Exception) -> None:
-        log.error(f"/{ctx.command.name} called by {ctx.author} in #{ctx.channel.name} ({ctx.guild}) failed")
+    async def on_app_command_error(self, interaction: Interaction, error: Exception) -> None:
+        cmd_name = interaction.command.name if interaction.command else "unknown"
+        log.error(f"/{cmd_name} called by {interaction.user} in #{interaction.channel.name} ({interaction.guild}) failed")
         if isinstance(error, commands.errors.MaxConcurrencyReached):
             msg = "Someone else is already using this command. Please try again later."
         elif isinstance(error, app_commands.errors.CommandOnCooldown):
@@ -114,12 +110,12 @@ class RocketWatch(Bot):
             msg = "An unexpected error occurred and has been reported to the developer. Please try again later."
 
         try:
-            await self.report_error(error, ctx)
-            await ctx.send(content=msg, ephemeral=True)
+            await self.report_error(error, interaction)
+            await interaction.followup.send(content=msg, ephemeral=True)
         except Exception:
             log.exception("Failed to alert user")
 
-    async def get_or_fetch_guild(self, guild_id: int) -> Object:
+    async def get_or_fetch_guild(self, guild_id: int) -> Guild:
         return self.get_guild(guild_id) or await self.fetch_guild(guild_id)
 
     async def get_or_fetch_channel(self, channel_id: int) -> GuildChannel | PrivateChannel | Thread:
@@ -128,20 +124,21 @@ class RocketWatch(Bot):
     async def get_or_fetch_user(self, user_id: int) -> User:
         return self.get_user(user_id) or await self.fetch_user(user_id)
 
-    async def report_error(self, exception: Exception, ctx: Optional[Context] = None, *args) -> None:
+    async def report_error(self, exception: Exception, interaction: Optional[Interaction] = None, *args) -> None:
         err_description = f"`{repr(exception)[:150]}`"
-        
+
         if args:
             args_fmt = "\n".join(f"args[{i}] = {arg}" for i, arg in enumerate(args))
             err_description += f"\n```{args_fmt}```"
-        
-        if ctx:
+
+        if interaction:
+            cmd_name = interaction.command.name if interaction.command else "unknown"
             err_description += (
                 f"\n```"
-                f"{ctx.command.name = }\n"
-                f"ctx.command.params = {getattr(ctx.command, 'params', '')}\n"
-                f"{ctx.channel = }\n"
-                f"{ctx.author = }"
+                f"command = {cmd_name}\n"
+                f"command.params = {getattr(interaction.command, 'parameters', '')}\n"
+                f"channel = {interaction.channel}\n"
+                f"user = {interaction.user}"
                 f"```"
             )
 

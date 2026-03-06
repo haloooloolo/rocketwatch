@@ -9,8 +9,9 @@ import tiktoken
 from discord import File, DeletedReferencedMessage
 from discord.channel import TextChannel
 from discord.ext import commands
-from discord.ext.commands import Context, is_owner
-from discord.ext.commands import hybrid_command
+from discord.ext.commands import is_owner
+from discord.app_commands import command
+from discord import Interaction
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -53,19 +54,19 @@ class ChatSummary(commands.Cog):
         text = re.sub(r":[0-9]+>", ":>", text)
         return text
 
-    @hybrid_command()
+    @command()
     @is_owner()
-    async def summarize_chat(self, ctx: Context):
-        await ctx.defer(ephemeral=True)
-        last_ts = await self.bot.db["last_summary"].find_one({"channel_id": ctx.channel.id})
+    async def summarize_chat(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
+        last_ts = await self.bot.db["last_summary"].find_one({"channel_id": interaction.channel.id})
         # ratelimit
         if last_ts and (datetime.now(timezone.utc) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
-             await ctx.send("You can only summarize once every 6 hours.", ephemeral=True)
+             await interaction.followup.send("You can only summarize once every 6 hours.", ephemeral=True)
              return
-        if ctx.channel.id not in [405163713063288832]:
-            await ctx.send("You can't summarize here.", ephemeral=True)
+        if interaction.channel.id not in [405163713063288832]:
+            await interaction.followup.send("You can't summarize here.", ephemeral=True)
             return
-        msg = await ctx.channel.send("Summarizing chat…")
+        msg = await interaction.channel.send("Summarizing chat…")
         last_ts = last_ts["timestamp"].replace(tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(timezone.utc) - timedelta(days=365)
         prompt = (
             "Task Description:\n"
@@ -87,10 +88,10 @@ class ChatSummary(commands.Cog):
             "----------------\n\n"
             "Please begin the task now."
         )
-        response, prompt, msgs = await self.prompt_model(ctx.channel, prompt, last_ts)
+        response, prompt, msgs = await self.prompt_model(interaction.channel, prompt, last_ts)
         if not response:
             await msg.delete()
-            await ctx.send(content="Not enough messages to summarize.")
+            await interaction.followup.send(content="Not enough messages to summarize.")
             return
         es = [Embed()]
         es[0].title = f"Chat Summarization of {msgs} messages since {last_ts.strftime('%Y-%m-%d %H:%M')}"
@@ -120,10 +121,10 @@ class ChatSummary(commands.Cog):
         f.name = "prompt._log"
         f = File(f, filename=f"prompt_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}._log")
         # send message in the channel
-        await ctx.send("done", ephemeral=True)
+        await interaction.followup.send("done", ephemeral=True)
         await msg.edit(embeds=es, attachments=[f])
         # save the timestamp of the last summary
-        await self.bot.db["last_summary"].update_one({"channel_id": ctx.channel.id}, {"$set": {"timestamp": datetime.now(timezone.utc)}}, upsert=True)
+        await self.bot.db["last_summary"].update_one({"channel_id": interaction.channel.id}, {"$set": {"timestamp": datetime.now(timezone.utc)}}, upsert=True)
 
     # a function that generates the prompt for the model by taking an array of messages, a prefix and a suffix
     def generate_prompt(self, messages, prefix, suffix):

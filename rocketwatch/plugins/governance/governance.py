@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime, timedelta
 
-from discord.ext.commands import Context, hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 from discord.utils import escape_markdown
 from eth_typing import HexStr
 from web3.constants import HASH_ZERO
@@ -153,12 +154,12 @@ class Governance(StatusPlugin):
 
         return embed
 
-    @hybrid_command()
-    async def governance_digest(self, ctx: Context) -> None:
+    @command()
+    async def governance_digest(self, interaction: Interaction) -> None:
         """Get a summary of recent activity in protocol governance"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         embed = await self.get_digest()
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
     async def get_status(self) -> Embed:
         embed = await self.get_digest()

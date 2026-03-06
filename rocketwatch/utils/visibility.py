@@ -1,14 +1,13 @@
 from discord import Interaction
-from discord.ext.commands import Context
 
 from plugins.support_utils.support_utils import has_perms
 
 
-def is_hidden(interaction: Context | Interaction):
+def is_hidden(interaction: Interaction):
     return all(w not in interaction.channel.name for w in ["random", "rocket-watch"])
 
 
-def is_hidden_weak(interaction: Context | Interaction):
+def is_hidden_weak(interaction: Interaction):
     return all(w not in interaction.channel.name for w in ["random", "rocket-watch", "trading"])
 
 

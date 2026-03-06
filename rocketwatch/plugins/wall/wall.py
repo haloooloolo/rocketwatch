@@ -7,10 +7,9 @@ from collections import OrderedDict
 import aiohttp
 import numpy as np
 from discord import File
+from discord import Interaction
+from discord.app_commands import command, describe
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
-from discord.app_commands import describe
 from matplotlib import (
     pyplot as plt,
     font_manager as fm,
@@ -233,24 +232,24 @@ class Wall(commands.Cog):
 
         return fig
 
-    @hybrid_command()
+    @command()
     @describe(min_price="lower end of price range in USD")
     @describe(max_price="upper end of price range in USD")
     @describe(sources="choose places to pull liquidity data from")
     async def wall(
             self,
-            ctx: Context,
+            interaction: Interaction,
             min_price: float = 0.0,
             max_price: float = None,
             sources: Literal["All", "CEX", "DEX"] = "All"
     ) -> None:
         """Show the current RPL market depth across exchanges"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         embed = Embed(title="RPL Market Depth")
 
         async def on_fail() -> None:
             embed.set_image(url="https://media1.giphy.com/media/hEc4k5pN17GZq/giphy.gif")
-            await ctx.send(embed=embed)
+            await interaction.followup.send(embed=embed)
             return None
 
         try:
@@ -260,7 +259,7 @@ class Wall(commands.Cog):
                 eth_usd = await rp.get_eth_usdc_price()
                 rpl_eth = rpl_usd / eth_usd
         except Exception as e:
-            await self.bot.report_error(e, ctx)
+            await self.bot.report_error(e, interaction)
             return await on_fail()
 
         if min_price < 0:
@@ -287,7 +286,7 @@ class Wall(commands.Cog):
                 cex_data = await self._get_cex_data(x, rpl_usd)
                 source_desc.append(f"{len(cex_data)} CEX")
         except Exception as e:
-            await self.bot.report_error(e, ctx)
+            await self.bot.report_error(e, interaction)
             return await on_fail()
 
         if (not cex_data) and (not dex_data):
@@ -310,7 +309,7 @@ class Wall(commands.Cog):
 
         file_name = "wall.png"
         embed.set_image(url=f"attachment://{file_name}")
-        await ctx.send(embed=embed, files=[File(buffer, file_name)])
+        await interaction.followup.send(embed=embed, files=[File(buffer, file_name)])
         return None
 
 

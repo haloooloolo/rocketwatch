@@ -5,8 +5,8 @@ import numpy as np
 import seaborn as sns
 from discord import File
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
@@ -22,12 +22,12 @@ class Commissions(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    @hybrid_command()
-    async def commission_history(self, ctx: Context):
+    @command()
+    async def commission_history(self, interaction: Interaction):
         """
         Show the history of commissions.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         e = Embed(title='Commission History')
 
@@ -72,7 +72,7 @@ class Commissions(commands.Cog):
         e.add_field(name="Bar Width", value=f"{step_size} minipools")
 
         # send data
-        await ctx.send(content="", embed=e, files=[File(img, filename="chart.png")])
+        await interaction.followup.send(content="", embed=e, files=[File(img, filename="chart.png")])
         img.close()
 
 

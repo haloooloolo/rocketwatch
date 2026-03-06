@@ -47,32 +47,32 @@ class Embed(discord.Embed):
 # If an ens name is provided, it will be used as the display name.
 # If an address is provided, the display name will either be the reverse record or the address.
 # If the user input isn't sanitary, send an error message back to the user and return None, None.
-async def resolve_ens(ctx, node_address):
+async def resolve_ens(interaction, node_address):
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
         try:
             address = await ens.resolve_name(node_address)
             if not address:
-                await ctx.send("ENS name not found")
+                await interaction.followup.send("ENS name not found")
                 return None, None
 
             return node_address, address
         except InvalidName:
-            await ctx.send("Invalid ENS name")
+            await interaction.followup.send("Invalid ENS name")
             return None, None
 
     # if it's just an address, look for a reverse record
     try:
         address = w3.to_checksum_address(node_address)
     except Exception:
-        await ctx.send("Invalid address")
+        await interaction.followup.send("Invalid address")
         return None, None
 
     try:
         display_name = await ens.get_name(node_address) or address
         return display_name, address
     except InvalidName:
-        await ctx.send("Invalid address")
+        await interaction.followup.send("Invalid address")
         return None, None
 
 

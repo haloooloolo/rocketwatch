@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime, timedelta
 
-from discord.app_commands import guilds
+from discord import Interaction
+from discord.app_commands import command, guilds
 from discord.ext import commands, tasks
-from discord.ext.commands import hybrid_command, is_owner
+from discord.ext.commands import is_owner
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -66,15 +67,15 @@ class PinnedMessages(commands.Cog):
             except Exception as err:
                 await self.bot.report_error(err)
 
-    @hybrid_command()
+    @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
-    async def pin(self, ctx, channel_id, title, description):
-        await ctx.defer()
+    async def pin(self, interaction, channel_id, title, description):
+        await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(int(channel_id))
         if not channel:
-            await ctx.send("Channel not found")
+            await interaction.followup.send("Channel not found")
             return
         # check if we already have a pinned message
         message = await self.bot.db.pinned_messages.find_one({"channel_id": channel.id})
@@ -84,38 +85,38 @@ class PinnedMessages(commands.Cog):
                 "$set": {"title"     : title, "content": description, "disabled": False, "cleaned_up": False,
                          "message_id": None, "created_at": datetime.utcnow()}})
             # rest is done by the run_loop
-            await ctx.send("Updated pinned message")
+            await interaction.followup.send("Updated pinned message")
             return
         # create new message
         await self.bot.db.pinned_messages.insert_one(
             {"channel_id": channel.id, "message_id": None, "title": title, "content": description, "disabled": False,
              "cleaned_up": False, "created_at": datetime.utcnow()})
         # rest is done by the run_loop
-        await ctx.send("Created pinned message")
+        await interaction.followup.send("Created pinned message")
 
-    @hybrid_command()
+    @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
-    async def unpin(self, ctx, channel_id):
-        await ctx.defer()
+    async def unpin(self, interaction, channel_id):
+        await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(int(channel_id))
         if not channel:
-            await ctx.send("Channel not found")
+            await interaction.followup.send("Channel not found")
             return
         # check if we already have a pinned message
         message = await self.bot.db.pinned_messages.find_one({"channel_id": channel.id})
         if not message:
-            await ctx.send("No pinned message found")
+            await interaction.followup.send("No pinned message found")
             return
         # check if its already marked as disabled
         if message["disabled"]:
-            await ctx.send("Pinned message already disabled")
+            await interaction.followup.send("Pinned message already disabled")
             return
         # soft delete
         await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
         # rest is done by the run_loop
-        await ctx.send("Disabled pinned message")
+        await interaction.followup.send("Disabled pinned message")
 
     async def cog_unload(self):
         self.run_loop.cancel()

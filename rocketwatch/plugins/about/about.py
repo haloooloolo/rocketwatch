@@ -8,8 +8,8 @@ import psutil
 import requests
 import uptime
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 
 from rocketwatch import RocketWatch
 from utils import readable
@@ -29,10 +29,10 @@ class About(commands.Cog):
         self.bot = bot
         self.process = psutil.Process(os.getpid())
 
-    @hybrid_command()
-    async def about(self, ctx: Context):
+    @command()
+    async def about(self, interaction: Interaction):
         """Bot and Server Information"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed()
         g = self.bot.guilds
         code_time = None
@@ -95,7 +95,7 @@ class About(commands.Cog):
         except Exception as err:
             await self.bot.report_error(err)
 
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 

@@ -6,9 +6,9 @@ import inflect
 import matplotlib.pyplot as plt
 import numpy as np
 from discord import File
-from discord.app_commands import describe
+from discord import Interaction
+from discord.app_commands import command, describe
 from discord.ext import commands
-from discord.ext.commands import Context, hybrid_command
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -25,7 +25,7 @@ def get_percentiles(percentiles, counts):
         yield p, np.percentile(counts, p, method='nearest')
 
 
-async def minipool_distribution_raw(ctx: Context, distribution):
+async def minipool_distribution_raw(interaction: Interaction, distribution):
     e = Embed()
     e.title = "Minipool Distribution"
     description = "```\n"
@@ -34,7 +34,7 @@ async def minipool_distribution_raw(ctx: Context, distribution):
                        f"{nodes:>4} {p.plural('node', nodes)}\n"
     description += "```"
     e.description = description
-    await ctx.send(embed=e)
+    await interaction.followup.send(embed=e)
 
 
 class MinipoolDistribution(commands.Cog):
@@ -71,13 +71,13 @@ class MinipoolDistribution(commands.Cog):
         ]
         return [x["count"] async for x in self.bot.db.minipools.aggregate(pipeline)]
 
-    @hybrid_command()
+    @command()
     @describe(raw="Show the raw Distribution Data")
     async def minipool_distribution(self,
-                                    ctx: Context,
+                                    interaction: Interaction,
                                     raw: bool = False):
         """Show the distribution of minipools per node."""
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
 
         # Get the minipool distribution
@@ -90,7 +90,7 @@ class MinipoolDistribution(commands.Cog):
 
         # If the raw data were requested, print them and exit early
         if raw:
-            await minipool_distribution_raw(ctx, distribution[::-1])
+            await minipool_distribution_raw(interaction, distribution[::-1])
             return
 
         img = BytesIO()
@@ -123,16 +123,16 @@ class MinipoolDistribution(commands.Cog):
         percentile_strings.append(f"Max: {distribution[-1][0]} minipools per node")
         percentile_strings.append(f"Total: {p.no('minipool', sum(counts))}")
         e.set_footer(text="\n".join(percentile_strings))
-        await ctx.send(embed=e, files=[f])
+        await interaction.followup.send(embed=e, files=[f])
         img.close()
 
-    @hybrid_command()
+    @command()
     @describe(raw="Show the raw distribution data")
-    async def node_gini(self, ctx: Context, raw: bool = False):
+    async def node_gini(self, interaction: Interaction, raw: bool = False):
         """
         Show the cumulative validator share of the largest nodes.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         e.title = "Validator Share of Largest Nodes"
 
@@ -163,7 +163,7 @@ class MinipoolDistribution(commands.Cog):
 
             description += f"\nTotal: {x[-1]} nodes"
             e.description = description
-            await ctx.send(embed=e)
+            await interaction.followup.send(embed=e)
             return
 
         fig, ax = plt.subplots(1, 1)
@@ -211,7 +211,7 @@ class MinipoolDistribution(commands.Cog):
         e.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
 
-        await ctx.send(embed=e, files=[f])
+        await interaction.followup.send(embed=e, files=[f])
         img.close()
 
 

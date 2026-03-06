@@ -2,8 +2,9 @@ import logging
 
 import aiohttp
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+
+from discord.app_commands import command
+from discord import Interaction
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -19,12 +20,12 @@ class Releases(commands.Cog):
         self.bot = bot
         self.tag_url = "https://github.com/rocket-pool/smartnode-install/releases/tag/"
 
-    @hybrid_command()
-    async def latest_release(self, ctx: Context):
+    @command()
+    async def latest_release(self, interaction: Interaction):
         """
         Get the latest release of Smart Node.
         """
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         async with aiohttp.ClientSession() as session:
             res = await session.get("https://api.github.com/repos/rocket-pool/smartnode-install/tags")
@@ -37,7 +38,7 @@ class Releases(commands.Cog):
 
         e = Embed()
         e.add_field(name="Latest Smart Node Release", value=latest_release, inline=False)
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 async def setup(bot):

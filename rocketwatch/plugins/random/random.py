@@ -8,8 +8,8 @@ import humanize
 import pytz
 from discord import File
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,24 +29,24 @@ class Random(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    @hybrid_command()
-    async def dice(self, ctx: Context, dice_string: str = "1d6"):
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+    @command()
+    async def dice(self, interaction: Interaction, dice_string: str = "1d6"):
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         result = dice.roll(dice_string)
         e = Embed()
         e.title = f"🎲 {dice_string}"
         if len(str(result)) >= 2000:
             e.description = "Result too long to display, attaching as file."
             file = File(io.StringIO(str(result)), filename="dice_result.txt")
-            await ctx.send(embed=e, file=file)
+            await interaction.followup.send(embed=e, file=file)
         else:
             e.description = f"Result: `{result}`"
-            await ctx.send(embed=e)
+            await interaction.followup.send(embed=e)
 
-    @hybrid_command()
-    async def burn_reason(self, ctx: Context):
+    @command()
+    async def burn_reason(self, interaction: Interaction):
         """Show the largest sources of burned ETH"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         url = "https://ultrasound.money/api/fees/grouped-analysis-1"
         # get data from url using aiohttp
         async with aiohttp.ClientSession() as session:
@@ -87,10 +87,10 @@ class Random(commands.Cog):
             value=f"`{solidity.to_float(data['latestBlockFees'][0]['baseFeePerGas'], 9):,.2f} GWEI`"
         )
         e.description = description
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
-    @hybrid_command()
-    async def dev_time(self, ctx: Context):
+    @command()
+    async def dev_time(self, interaction: Interaction):
         """Timezones too confusing to you? Well worry no more, this command is here to help!"""
         e = Embed()
         time_format = "%A %H:%M:%S %Z"
@@ -118,12 +118,12 @@ class Random(commands.Cog):
         fornax_time = datetime.now(tz=pytz.timezone("America/Sao_Paulo"))
         e.add_field(name="Fornax's Time", value=fornax_time.strftime(time_format), inline=False)
 
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
-    @hybrid_command()
-    async def sea_creatures(self, ctx: Context, address: str = None):
+    @command()
+    async def sea_creatures(self, interaction: Interaction, address: str = None):
         """List all sea creatures with their required minimum holding."""
-        await ctx.defer(ephemeral=is_hidden(ctx))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         if address is not None:
             try:
@@ -132,7 +132,7 @@ class Random(commands.Cog):
                 address = w3.to_checksum_address(address)
             except (ValueError, TypeError):
                 e.description = "Invalid address"
-                await ctx.send(embed=e)
+                await interaction.followup.send(embed=e)
                 return
             creature = await get_sea_creature_for_address(address)
             if not creature:
@@ -150,19 +150,19 @@ class Random(commands.Cog):
             for holding_value, sea_creature in sea_creatures.items():
                 e.add_field(name=f"{sea_creature}:", value=f"holds over {holding_value} ETH worth of assets",
                             inline=False)
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
         return
 
-    @hybrid_command()
-    async def smoothie(self, ctx: Context):
+    @command()
+    async def smoothie(self, interaction: Interaction):
         """Show smoothing pool information"""
         try:
             await rp.get_address_by_name("rocketSmoothingPool")
         except Exception as err:
             log.exception(err)
-            await ctx.send("redstone not deployed yet", ephemeral=True)
+            await interaction.followup.send("redstone not deployed yet", ephemeral=True)
             return
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         e = Embed(title="Smoothing Pool")
         smoothie_eth = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
@@ -245,7 +245,7 @@ class Random(commands.Cog):
             }
         ])).to_list()
         if not data:
-            await ctx.send("no minipools found", ephemeral=True)
+            await interaction.followup.send("no minipools found", ephemeral=True)
             return
         data = {d["_id"]: d for d in data}
         # node counts
@@ -265,12 +265,12 @@ class Random(commands.Cog):
         lines = [f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}" for d in
                  data[True]["counts"][:min(smoothie_node_count, 5)]]
         e.description += "\n".join(lines)
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
-    @hybrid_command()
-    async def odao_challenges(self, ctx: Context):
+    @command()
+    async def odao_challenges(self, interaction: Interaction):
         """Shows the current oDAO challenges"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         c = await rp.get_contract_by_name("rocketDAONodeTrustedActions")
         # get challenges made
         events = list(c.events["ActionChallengeMade"].get_logs(
@@ -282,7 +282,7 @@ class Random(commands.Cog):
         # sort by block number
         events.sort(key=lambda x: x.blockNumber)
         if not events:
-            await ctx.send("No active challenges found")
+            await interaction.followup.send("No active challenges found")
             return
         e = Embed(title="Active oDAO Challenges")
         e.description = ""
@@ -296,7 +296,7 @@ class Random(commands.Cog):
             challenger = await el_explorer_url(event.args.nodeChallengerAddress)
             e.description += f"**{challenged}** was challenged by **{challenger}**\n"
             e.description += f"Time Left: **{time_left}**\n\n"
-        await ctx.send(embed=e)
+        await interaction.followup.send(embed=e)
 
 
 async def setup(self):

@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 
 from io import BytesIO
 from discord import File
-from discord.app_commands import describe
+from discord.app_commands import command, describe
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+
 
 from typing import Optional
 from dataclasses import dataclass
@@ -47,16 +47,16 @@ class Rewards(commands.Cog):
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
             return await response.json()
 
-    async def get_estimated_rewards(self, ctx: Context, address: str) -> Optional[RewardEstimate]:
+    async def get_estimated_rewards(self, interaction: Interaction, address: str) -> Optional[RewardEstimate]:
         if not await rp.call("rocketNodeManager.getNodeExists", address):
-            await ctx.send(f"{address} is not a registered node.")
+            await interaction.followup.send(f"{address} is not a registered node.")
             return None
 
         try:
             patches_res = await self._make_request(address)
         except Exception as e:
-            await self.bot.report_error(e, ctx)
-            await ctx.send("Error fetching node data from Sprocket Pool API. Blame Patches.")
+            await self.bot.report_error(e, interaction)
+            await interaction.followup.send("Error fetching node data from Sprocket Pool API. Blame Patches.")
             return None
 
         data_block = await ts_to_block(patches_res["time"])
@@ -86,19 +86,19 @@ class Rewards(commands.Cog):
         )
         return embed
 
-    @hybrid_command()
+    @command()
     @describe(node_address="address of node to show rewards for")
     @describe(extrapolate="whether to extrapolate partial rewards for the entire period")
-    async def upcoming_rewards(self, ctx: Context, node_address: str, extrapolate: bool = True):
+    async def upcoming_rewards(self, interaction: Interaction, node_address: str, extrapolate: bool = True):
         """
         Show estimated RPL and smoothing pool rewards for this period.
         """
-        await ctx.defer(ephemeral=True)
-        display_name, address = await resolve_ens(ctx, node_address)
+        await interaction.response.defer(ephemeral=True)
+        display_name, address = await resolve_ens(interaction, node_address)
         if display_name is None:
             return
 
-        rewards = await self.get_estimated_rewards(ctx, address)
+        rewards = await self.get_estimated_rewards(interaction, address)
         if rewards is None:
             return
 
@@ -114,9 +114,9 @@ class Rewards(commands.Cog):
         embed = self.create_embed(title, rewards)
         embed.add_field(name="RPL Staking:", value=f"{rewards.rpl_rewards:,.3f} RPL")
         embed.add_field(name="Smoothing Pool:", value=f"{rewards.eth_rewards:,.3f} ETH")
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @hybrid_command()
+    @command()
     @describe(
         node_address="address of node to simulate rewards for",
         rpl_stake="amount of staked RPL to simulate",
@@ -125,7 +125,7 @@ class Rewards(commands.Cog):
     )
     async def simulate_rewards(
             self,
-            ctx: Context,
+            interaction: Interaction,
             node_address: str,
             rpl_stake: int = 0,
             num_leb8: int = 0,
@@ -134,12 +134,12 @@ class Rewards(commands.Cog):
         """
         Simulate RPL rewards for this period
         """
-        await ctx.defer(ephemeral=True)
-        display_name, address = await resolve_ens(ctx, node_address)
+        await interaction.response.defer(ephemeral=True)
+        display_name, address = await resolve_ens(interaction, node_address)
         if display_name is None:
             return
 
-        rewards = await self.get_estimated_rewards(ctx, address)
+        rewards = await self.get_estimated_rewards(interaction, address)
         if rewards is None:
             return
 
@@ -221,7 +221,7 @@ class Rewards(commands.Cog):
         elif borrowed_eth > 0:
             draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
         else:
-            await ctx.send("Empty node. Choose another one or specify the minipool count.")
+            await interaction.followup.send("Empty node. Choose another one or specify the minipool count.")
             return
 
         def formatter(_x, _pos) -> str:
@@ -267,7 +267,7 @@ class Rewards(commands.Cog):
         embed.set_image(url="attachment://rewards.png")
 
         f = File(img, filename="rewards.png")
-        await ctx.send(embed=embed, files=[f])
+        await interaction.followup.send(embed=embed, files=[f])
         img.close()
 
 

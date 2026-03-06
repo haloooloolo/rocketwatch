@@ -7,9 +7,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from discord import File
-from discord.app_commands import describe
+from discord import Interaction
+from discord.app_commands import command, describe
 from discord.ext import commands
-from discord.ext.commands import Context, hybrid_command
 from discord.utils import as_chunks
 from matplotlib.ticker import FuncFormatter
 from eth_typing import ChecksumAddress
@@ -32,7 +32,7 @@ def get_percentiles(percentiles, counts):
         yield p, np.percentile(counts, p, method='nearest')
 
 
-async def collateral_distribution_raw(ctx: Context, distribution):
+async def collateral_distribution_raw(interaction: Interaction, distribution):
     e = Embed()
     e.title = "Collateral Distribution"
     description = "```\n"
@@ -41,7 +41,7 @@ async def collateral_distribution_raw(ctx: Context, distribution):
                        f"{nodes:>4} {p.plural('node', nodes)}\n"
     description += "```"
     e.description = description
-    await ctx.send(embed=e)
+    await interaction.followup.send(embed=e)
 
 
 async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]:
@@ -110,22 +110,22 @@ class Collateral(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    @hybrid_command()
+    @command()
     @describe(node_address="Node Address or ENS to highlight",
               bonded="Calculate collateral as a percent of bonded eth instead of borrowed")
     async def node_tvl_vs_collateral(self,
-                                     ctx: Context,
+                                     interaction: Interaction,
                                      node_address: str = None,
                                      bonded: bool = False):
         """
         Show a scatter plot of collateral ratios for given node TVLs
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         display_name = None
         address = None
         if node_address is not None:
-            display_name, address = await resolve_ens(ctx, node_address)
+            display_name, address = await resolve_ens(interaction, node_address)
             if display_name is None:
                 return
 
@@ -202,7 +202,7 @@ class Collateral(commands.Cog):
                 ax2.plot(node_tvl(target_node), node_collateral(target_node), 'ro')
                 e.description = f"Showing location of {display_name}"
             except KeyError:
-                await ctx.send(f"{display_name} not found in data set - it must have at least one minipool")
+                await interaction.followup.send(f"{display_name} not found in data set - it must have at least one minipool")
                 return
 
         # Add horizontal lines showing the 10-15% range made optimal by RPIP-30
@@ -220,21 +220,21 @@ class Collateral(commands.Cog):
         e.title = "Node TVL vs Collateral Scatter Plot"
         e.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
-        await ctx.send(embed=e, files=[f])
+        await interaction.followup.send(embed=e, files=[f])
         img.close()
 
-    @hybrid_command()
+    @command()
     @describe(raw="Show Raw Distribution Data",
               bonded="Calculate collateral as percent of bonded eth instead of borrowed")
     async def collateral_distribution(self,
-                                      ctx: Context,
+                                      interaction: Interaction,
                                       raw: bool = False,
                                       collateral_cap: int = 15,
                                       bonded: bool = False):
         """
         Show the distribution of collateral across nodes.
         """
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         data = await get_average_collateral_percentage_per_node(collateral_cap, bonded)
         distribution = [(collateral, len(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])]
@@ -242,7 +242,7 @@ class Collateral(commands.Cog):
 
         # If the raw data were requested, print them and exit early
         if raw:
-            await collateral_distribution_raw(ctx, distribution[::-1])
+            await collateral_distribution_raw(interaction, distribution[::-1])
             return
 
         e = Embed()
@@ -287,7 +287,7 @@ class Collateral(commands.Cog):
                               get_percentiles([50, 75, 90, 99], counts)]
         e.description = f"Total Effective Staked RPL: {sum(bars.values()):,}"
         e.set_footer(text="\n".join(percentile_strings))
-        await ctx.send(embed=e, files=[f])
+        await interaction.followup.send(embed=e, files=[f])
         img.close()
 
 
