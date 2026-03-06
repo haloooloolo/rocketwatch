@@ -11,6 +11,7 @@ from typing import Optional, Any
 
 import pymongo
 from cronitor import Monitor
+import discord
 from discord.ext import commands, tasks
 from eth_typing import BlockIdentifier, BlockNumber
 from pymongo import AsyncMongoClient
@@ -284,13 +285,18 @@ class EventCore(commands.Cog):
         if embed and prev_status and (prev_status["channel_id"] == target_channel_id):
             log.debug(f"Replacing existing status message for channel {target_channel}")
             channel = await self.bot.get_or_fetch_channel(target_channel_id)
-            msg = await channel.fetch_message(prev_status["message_id"])
-            await msg.edit(embed=embed)
-            await self.db.state_messages.update_one(
-                prev_status,
-                {"$set": {"sent_at": datetime.now(), "state": str(self.state)}}
-            )
-            return
+            try:
+                msg = await channel.fetch_message(prev_status["message_id"])
+                await msg.edit(embed=embed)
+                await self.db.state_messages.update_one(
+                    prev_status,
+                    {"$set": {"sent_at": datetime.now(), "state": str(self.state)}}
+                )
+                return
+            except discord.errors.NotFound:
+                log.warning("Could not fetch status, removing DB entry")
+                await self.db.state_messages.delete_one(prev_status)
+                prev_status = None
 
         if prev_status:
             log.debug(f"Deleting status message for channel {target_channel}")
