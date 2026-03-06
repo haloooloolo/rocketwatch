@@ -1,20 +1,17 @@
 import math
 import logging
 
+from aiocache import cached
+
 from utils.cfg import cfg
 from utils.shared_w3 import w3
 
 log = logging.getLogger("block_time")
 log.setLevel(cfg["log_level"])
 
-_block_ts_cache: dict[int, int] = {}
-
+@cached()
 async def block_to_ts(block_number: int) -> int:
-    if block_number in _block_ts_cache:
-        return _block_ts_cache[block_number]
-    ts = (await w3.eth.get_block(block_number)).timestamp
-    _block_ts_cache[block_number] = ts
-    return ts
+    return (await w3.eth.get_block(block_number)).timestamp
 
 async def ts_to_block(target_ts: int) -> int:
     log.debug(f"Looking for block at timestamp {target_ts}")

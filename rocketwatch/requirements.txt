@@ -5,7 +5,6 @@ humanize==4.15.0
 termplotlib==0.3.9
 cachetools==7.0.3
 bidict==0.23.1
-requests==2.32.5
 uptime==3.0.1
 discord.py==2.7.1
 config==0.5.1

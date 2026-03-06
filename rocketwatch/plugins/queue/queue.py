@@ -2,6 +2,7 @@ import logging
 
 from typing import Literal, NamedTuple
 
+from aiocache import cached
 from discord import Interaction
 from discord.app_commands import command, describe
 from discord.ext.commands import Cog
@@ -52,14 +53,10 @@ class Queue(Cog):
             )
             return queue_length, queue_content
 
-    _el_url_cache: dict[tuple[str, str], str] = {}
-
     @staticmethod
+    @cached(key_builder=lambda _, address, prefix="": (address, prefix))
     async def _cached_el_url(address, prefix="") -> str:
-        key = (address, prefix)
-        if key not in Queue._el_url_cache:
-            Queue._el_url_cache[key] = await el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
-        return Queue._el_url_cache[key]
+        return await el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
     
     @staticmethod
     async def _megapool_to_node(megapool_address) -> ChecksumAddress:

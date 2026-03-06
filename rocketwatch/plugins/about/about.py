@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 
 import humanize
 import psutil
-import requests
+import aiohttp
 import uptime
 from discord.ext import commands
 from discord import Interaction
@@ -39,13 +39,15 @@ class About(commands.Cog):
 
         if api_key := cfg.get("other.secrets.wakatime"):
             try:
-                code_time = requests.get(
-                    "https://wakatime.com/api/v1/users/current/all_time_since_today",
-                     params={
-                         "project": "rocketwatch",
-                         "api_key": api_key
-                     }
-                ).json()["data"]["text"]
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        "https://wakatime.com/api/v1/users/current/all_time_since_today",
+                        params={
+                            "project": "rocketwatch",
+                            "api_key": api_key
+                        }
+                    ) as resp:
+                        code_time = (await resp.json())["data"]["text"]
             except Exception as err:
                 await self.bot.report_error(err)
 
@@ -55,8 +57,8 @@ class About(commands.Cog):
                         inline=False)
 
         e.add_field(name="Bot Statistics",
-                    value=f"{len(g)} Guilds joined and "
-                          f"{humanize.intcomma(sum(guild.member_count for guild in g))} Members reached!",
+                    value=f"{len(g)} guilds joined and "
+                          f"{humanize.intcomma(sum(guild.member_count for guild in g))} members reached!",
                     inline=False)
 
         address = await el_explorer_url(cfg["rocketpool.manual_addresses.rocketStorage"])
@@ -70,8 +72,8 @@ class About(commands.Cog):
         e.add_field(name="Host Memory", value=f"{psutil.virtual_memory().percent}% used")
         e.add_field(name="Bot Memory", value=f"{humanize.naturalsize(self.process.memory_info().rss)} used")
 
-        load = psutil.getloadavg()
-        e.add_field(name="Host Load", value='/'.join(str(l) for l in load))
+        load = [x / psutil.cpu_count() for x in psutil.getloadavg()]
+        e.add_field(name="Host Load", value=' / '.join(f"{l:.0%}" for l in load))
 
         system_uptime = uptime.uptime()
         e.add_field(name="Host Uptime", value=f"{readable.uptime(system_uptime)}")
@@ -83,9 +85,12 @@ class About(commands.Cog):
 
         # show credits
         try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"https://api.github.com/repos/{repo_name}/contributors") as resp:
+                    contributors_data = await resp.json()
             contributors = [
                 f"[{c['login']}]({c['html_url']}) ({c['contributions']})"
-                for c in requests.get(f"https://api.github.com/repos/{repo_name}/contributors").json()
+                for c in contributors_data
                 if "bot" not in c["login"].lower()
             ]
             contributors_str = ", ".join(contributors[:10])

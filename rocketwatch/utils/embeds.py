@@ -6,8 +6,8 @@ from typing import Optional, Callable, Literal
 
 import discord
 import humanize
-import requests
-from cachetools.func import ttl_cache
+import aiohttp
+from aiocache import cached
 from discord import Color
 from ens import InvalidName
 from etherscan_labels import Addresses
@@ -20,7 +20,7 @@ from utils.readable import cl_explorer_url, advanced_tnx_url, s_hex
 from utils.rocketpool import rp
 from utils.sea_creatures import get_sea_creature_for_address
 from utils.shared_w3 import w3
-from utils.retry import retry
+from utils.retry import retry_async
 from utils.block_time import block_to_ts
 
 ens = CachedEns()
@@ -78,20 +78,16 @@ async def resolve_ens(interaction, node_address):
 
 _pdao_delegates: dict[str, str] = {}
 
-@ttl_cache(ttl=900)
-def get_pdao_delegates() -> dict[str, str]:
+@cached(ttl=900)
+@retry_async(tries=3, delay=1)
+async def get_pdao_delegates() -> dict[str, str]:
     global _pdao_delegates
-
-    @retry(tries=3, delay=1)
-    def _get_delegates() -> dict[str, str]:
-        response = requests.get("https://delegates.rocketpool.net/api/delegates")
-        return {delegate["nodeAddress"]: delegate["name"] for delegate in response.json()}
-
     try:
-        _pdao_delegates = _get_delegates()
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://delegates.rocketpool.net/api/delegates") as resp:
+                _pdao_delegates = {d["nodeAddress"]: d["name"] for d in await resp.json()}
     except Exception:
         log.warning("Failed to fetch pDAO delegates.")
-
     return _pdao_delegates
 
 
@@ -138,7 +134,7 @@ async def el_explorer_url(
                 prefix += "🔒"
             name = member_id
 
-        if not name and (delegate_name := get_pdao_delegates().get(target)):
+        if not name and (delegate_name := (await get_pdao_delegates()).get(target)):
             if prefix != -1:
                 prefix += "🏛️"
             name = delegate_name

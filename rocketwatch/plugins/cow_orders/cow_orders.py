@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 
-import requests
+import aiohttp
 from datetime import timezone
 from web3.datastructures import MutableAttributeDict as aDict
 
@@ -79,12 +79,13 @@ class CowOrders(EventPlugin):
 
         # get all pending orders from the cow api (https://api.cow.fi/mainnet/api/v1/auction)
 
-        response = requests.get("https://api.cow.fi/mainnet/api/v1/auction")
-        if response.status_code != 200:
-            log.error("Cow API returned non-200 status code: %s", response.text)
-            raise Exception("Cow API returned non-200 status code")
-
-        cow_orders = response.json()["orders"]
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.cow.fi/mainnet/api/v1/auction") as response:
+                if response.status != 200:
+                    text = await response.text()
+                    log.error("Cow API returned non-200 status code: %s", text)
+                    raise Exception("Cow API returned non-200 status code")
+                cow_orders = (await response.json())["orders"]
 
         """
          entity example:
@@ -198,11 +199,12 @@ class CowOrders(EventPlugin):
 
             # request more data from the api
             try:
-                t = requests.get(f"https://cow-proxy.invis.workers.dev/mainnet/api/v1/orders/{order['uid']}")
-                if t.status_code != 200:
-                    log.error(f"Failed to get more data from the cow api for order {order['uid']}: {t.text}")
-                    continue
-                extra = t.json()
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"https://cow-proxy.invis.workers.dev/mainnet/api/v1/orders/{order['uid']}") as t:
+                        if t.status != 200:
+                            log.error(f"Failed to get more data from the cow api for order {order['uid']}: {await t.text()}")
+                            continue
+                        extra = await t.json()
             except Exception as e:
                 log.error(f"Failed to get more data from the cow api for order {order['uid']}: {e}")
                 continue

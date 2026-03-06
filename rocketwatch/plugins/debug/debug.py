@@ -5,7 +5,7 @@ import random
 import time
 
 import humanize
-import requests
+import aiohttp
 from colorama import Fore, Style
 from discord import File, Interaction
 from discord.app_commands import Choice, command, guilds, describe
@@ -308,7 +308,9 @@ class Debug(Cog):
         Randomly generated Asian restaurant names
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        a = requests.get("https://www.dotomator.com/api/random_name.json?type=asian").json()["name"]
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
+                a = (await resp.json())["name"]
         await interaction.followup.send(a)
 
     @command()
