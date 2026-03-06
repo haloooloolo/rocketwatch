@@ -58,15 +58,20 @@ class Wall(commands.Cog):
             Bitrue("RPL", ["USDT"]),
             CoinTR("RPL", ["USDT"]),
         }
-        self.dex: set[DEX] = {
-            BalancerV2([
-                BalancerV2.WeightedPool(HexStr("0x9f9d900462492d4c21e9523ca95a7cd86142f298000200000000000000000462"))
-            ]),
-            UniswapV3([
-                cast(ChecksumAddress, "0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45"),
-                cast(ChecksumAddress, "0xcf15aD9bE9d33384B74b94D63D06B4A9Bd82f640")
-            ])
-        }
+        self.dex: Optional[set[DEX]] = None
+
+    async def _get_dex(self) -> set[DEX]:
+        if self.dex is None:
+            self.dex = {
+                BalancerV2([
+                    await BalancerV2.WeightedPool.create(HexStr("0x9f9d900462492d4c21e9523ca95a7cd86142f298000200000000000000000462"))
+                ]),
+                await UniswapV3.create([
+                    cast(ChecksumAddress, "0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45"),
+                    cast(ChecksumAddress, "0xcf15aD9bE9d33384B74b94D63D06B4A9Bd82f640")
+                ])
+            }
+        return self.dex
 
     @staticmethod
     def _get_market_depth_and_liquidity(
@@ -104,7 +109,7 @@ class Wall(commands.Cog):
     async def _get_dex_data(self, x: np.ndarray, rpl_usd: float) -> OrderedDict[DEX, np.ndarray]:
         depth: dict[DEX, np.ndarray] = {}
         liquidity: dict[DEX, float] = {}
-        for dex in self.dex:
+        for dex in await self._get_dex():
             if pools := await dex.get_liquidity():
                 depth[dex], liquidity[dex] = self._get_market_depth_and_liquidity(pools, x, rpl_usd)
 
@@ -252,7 +257,7 @@ class Wall(commands.Cog):
             async with aiohttp.ClientSession() as session:
                 # use Binance as USD price oracle
                 rpl_usd = list((await Binance("RPL", ["USDT"]).get_liquidity(session)).values())[0].price
-                eth_usd = rp.get_eth_usdc_price()
+                eth_usd = await rp.get_eth_usdc_price()
                 rpl_eth = rpl_usd / eth_usd
         except Exception as e:
             await self.bot.report_error(e, ctx)

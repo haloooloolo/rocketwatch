@@ -15,7 +15,7 @@ from utils import solidity
 from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
-from utils.shared_w3 import w3, historical_w3
+from utils.shared_w3 import w3, w3_archive
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("apr")
@@ -52,20 +52,20 @@ class APR(commands.Cog):
         # get latest block update from the db
         latest_db_block = await self.bot.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
-        cursor_block = historical_w3.eth.get_block("latest")["number"]
+        cursor_block = (await w3_archive.eth.get_block("latest"))["number"]
         while True:
             # get address of rocketNetworkBalances contract at cursor block
-            address = rp.uncached_get_address_by_name("rocketNetworkBalances", block=cursor_block)
-            balance_block = rp.call("rocketNetworkBalances.getBalancesBlock", block=cursor_block, address=address)
+            address = await rp.uncached_get_address_by_name("rocketNetworkBalances", block=cursor_block)
+            balance_block = await rp.call("rocketNetworkBalances.getBalancesBlock", block=cursor_block, address=address)
             if balance_block == latest_db_block:
                 break
-            block_time = w3.eth.get_block(balance_block)["timestamp"]
+            block_time = (await w3.eth.get_block(balance_block))["timestamp"]
             # abort if the blocktime is older than 120 days
             if block_time < (datetime.now().timestamp() - 120 * 24 * 60 * 60):
                 break
-            reth_ratio = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block))
+            reth_ratio = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block))
             effectiveness = solidity.to_float(
-                rp.call("rocketNetworkBalances.getETHUtilizationRate", block=cursor_block, address=address))
+                await rp.call("rocketNetworkBalances.getETHUtilizationRate", block=cursor_block, address=address))
             await self.bot.db.reth_apr.insert_one({
                 "block"        : balance_block,
                 "time"         : block_time,

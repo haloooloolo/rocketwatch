@@ -12,7 +12,7 @@ from utils.cfg import cfg
 from utils.embeds import assemble, prepare_args
 from utils.readable import cl_explorer_url
 from utils.rocketpool import rp
-from utils.shared_w3 import bacon, w3_async
+from utils.shared_w3 import bacon, w3
 from utils.solidity import date_to_beacon_block, beacon_block_to_date
 from utils.event import EventPlugin, Event
 from utils.block_time import ts_to_block
@@ -32,8 +32,8 @@ class BeaconEvents(EventPlugin):
         return await self.get_past_events(from_block, self._pending_block)
 
     async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
-        from_slot = max(0, date_to_beacon_block((await w3_async.eth.get_block(from_block - 1)).timestamp) + 1)
-        to_slot = date_to_beacon_block((await w3_async.eth.get_block(to_block)).timestamp)
+        from_slot = max(0, date_to_beacon_block((await w3.eth.get_block(from_block - 1)).timestamp) + 1)
+        to_slot = date_to_beacon_block((await w3.eth.get_block(to_block)).timestamp)
         log.info(f"Checking for new beacon chain events in slot range [{from_slot}, {to_slot}]")
 
         events: list[Event] = []
@@ -109,13 +109,13 @@ class BeaconEvents(EventPlugin):
             slash["event_name"] = "validator_slash_event"
 
             args = await prepare_args(aDict(slash))
-            if embed := assemble(args):
+            if embed := await assemble(args):
                 events.append(Event(
                     topic="beacon_events",
                     embed=embed,
                     event_name=slash["event_name"],
                     unique_id=unique_id,
-                    block_number=ts_to_block(timestamp),
+                    block_number=await ts_to_block(timestamp),
                 ))
 
         return events
@@ -172,16 +172,16 @@ class BeaconEvents(EventPlugin):
             "timestamp": timestamp
         }
 
-        if eth_utils.is_same_address(fee_recipient, rp.get_address_by_name("rocketSmoothingPool")):
+        if eth_utils.is_same_address(fee_recipient, await rp.get_address_by_name("rocketSmoothingPool")):
             args["event_name"] = "mev_proposal_smoothie_event"
-            args["smoothie_amount"] = await w3_async.eth.get_balance(
-                w3_async.to_checksum_address(fee_recipient), block_identifier=block_number
+            args["smoothie_amount"] = await w3.eth.get_balance(
+                w3.to_checksum_address(fee_recipient), block_identifier=block_number
             )
         else:
             args["event_name"] = "mev_proposal_event"
 
         args = await prepare_args(aDict(args))
-        if not (embed := assemble(args)):
+        if not (embed := await assemble(args)):
             return None
 
         return Event(
@@ -227,7 +227,7 @@ class BeaconEvents(EventPlugin):
                 "epoch": epoch_number
             }
             args = await prepare_args(aDict(args))
-            if not (embed := assemble(args)):
+            if not (embed := await assemble(args)):
                 return None
 
             event = Event(
@@ -235,7 +235,7 @@ class BeaconEvents(EventPlugin):
                 embed=embed,
                 event_name=event_name,
                 unique_id=f"finality_delay_recover:{epoch_number}",
-                block_number=ts_to_block(timestamp)
+                block_number=await ts_to_block(timestamp)
             )
             return event
 
@@ -249,7 +249,7 @@ class BeaconEvents(EventPlugin):
                 "epoch"         : epoch_number
             }
             args = await prepare_args(aDict(args))
-            if not (embed := assemble(args)):
+            if not (embed := await assemble(args)):
                 return None
 
             return Event(
@@ -257,7 +257,7 @@ class BeaconEvents(EventPlugin):
                 embed=embed,
                 event_name=event_name,
                 unique_id=f"{epoch_number}:finality_delay",
-                block_number=ts_to_block(timestamp)
+                block_number=await ts_to_block(timestamp)
             )
 
         return None

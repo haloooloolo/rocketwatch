@@ -240,13 +240,13 @@ class Snapshot(EventPlugin):
             self.render_to(canvas, width, pad_left, pad_top, include_title=include_title)
             return canvas.image
 
-        def create_start_event(self) -> Event:
+        async def create_start_event(self) -> Event:
             embed = self.get_embed_template()
             embed.title = ":bulb: New Snapshot Proposal"
             return Event(
                 embed=embed,
                 topic="snapshot",
-                block_number=ts_to_block(self.start),
+                block_number=await ts_to_block(self.start),
                 event_name="pdao_snapshot_vote_start",
                 unique_id=f"snapshot_vote_start:{self.id}",
                 image=self.create_image(include_title=True)
@@ -264,7 +264,7 @@ class Snapshot(EventPlugin):
                 image=self.create_image(include_title=True)
             )
 
-        def create_end_event(self) -> Event:
+        async def create_end_event(self) -> Event:
             max_for, max_against = 0, 0
             for choice, score in zip(self.choices, self.scores):
                 if "against" in choice.lower():
@@ -281,7 +281,7 @@ class Snapshot(EventPlugin):
             return Event(
                 embed=embed,
                 topic="snapshot",
-                block_number=ts_to_block(self.end),
+                block_number=await ts_to_block(self.end),
                 event_name="pdao_snapshot_vote_end",
                 unique_id=f"snapshot_vote_end:{self.id}",
                 image=self.create_image(include_title=True)
@@ -350,10 +350,10 @@ class Snapshot(EventPlugin):
             )
             return "```" + graph.get_string().replace("]", "%]") + "```"
 
-        def create_event(self, prev_vote: Optional['Snapshot.Vote']) -> Optional[Event]:
-            node = rp.call("rocketSignerRegistry.signerToNode", self.voter)
-            signer = el_explorer_url(self.voter)
-            voter = signer if (node == ADDRESS_ZERO) else el_explorer_url(node)
+        async def create_event(self, prev_vote: Optional['Snapshot.Vote']) -> Optional[Event]:
+            node = await rp.call("rocketSignerRegistry.signerToNode", self.voter)
+            signer = await el_explorer_url(self.voter)
+            voter = signer if (node == ADDRESS_ZERO) else await el_explorer_url(node)
 
             vote_fmt = self.pretty_print()
             if vote_fmt is None:
@@ -408,7 +408,7 @@ class Snapshot(EventPlugin):
             return Event(
                 embed=embed,
                 topic="snapshot",
-                block_number=ts_to_block(self.created),
+                block_number=await ts_to_block(self.created),
                 unique_id=f"snapshot_vote:{self.proposal.id}:{self.voter}:{self.created}",
                 **conditional_args
             )
@@ -496,7 +496,7 @@ class Snapshot(EventPlugin):
                 log.info(f"Found expired proposal: {stored_proposal}")
                 # recover full proposal
                 if proposal := await self.fetch_proposal(stored_proposal["_id"]):
-                    event = proposal.create_end_event()
+                    event = await proposal.create_end_event()
                     proposal_db_changes.append(DeleteOne(stored_proposal))
                     events.append(event)
 
@@ -506,7 +506,7 @@ class Snapshot(EventPlugin):
             if proposal.id not in known_active_proposals:
                 # not aware of this proposal yet, emit event and insert into DB
                 log.info(f"Found new proposal: {proposal}")
-                event = proposal.create_start_event()
+                event = await proposal.create_start_event()
                 proposal_dict = {
                     "_id"   : proposal.id,
                     "start" : proposal.start,
@@ -553,7 +553,7 @@ class Snapshot(EventPlugin):
                 except IndexError:
                     prev_vote = None
 
-                event = vote.create_event(prev_vote)
+                event = await vote.create_event(prev_vote)
                 if event is None:
                     continue
 

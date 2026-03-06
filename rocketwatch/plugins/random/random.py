@@ -128,7 +128,7 @@ class Random(commands.Cog):
         if address is not None:
             try:
                 if ".eth" in address:
-                    address = ens.resolve_name(address)
+                    address = await ens.resolve_name(address)
                 address = w3.to_checksum_address(address)
             except (ValueError, TypeError):
                 e.description = "Invalid address"
@@ -140,7 +140,7 @@ class Random(commands.Cog):
             else:
                 # get the required holding from the dictionary
                 required_holding = [h for h, c in sea_creatures.items() if c == creature[0]][0]
-                e.add_field(name="Visualization", value=el_explorer_url(address, prefix=creature), inline=False)
+                e.add_field(name="Visualization", value=await el_explorer_url(address, prefix=creature), inline=False)
                 e.add_field(name="Required holding for emoji", value=f"{required_holding * len(creature)} ETH", inline=False)
                 holding = await get_holding_for_address(address)
                 e.add_field(name="Actual Holding", value=f"{holding:.0f} ETH", inline=False)
@@ -157,7 +157,7 @@ class Random(commands.Cog):
     async def smoothie(self, ctx: Context):
         """Show smoothing pool information"""
         try:
-            rp.get_address_by_name("rocketSmoothingPool")
+            await rp.get_address_by_name("rocketSmoothingPool")
         except Exception as err:
             log.exception(err)
             await ctx.send("redstone not deployed yet", ephemeral=True)
@@ -165,7 +165,7 @@ class Random(commands.Cog):
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
         e = Embed(title="Smoothing Pool")
-        smoothie_eth = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
+        smoothie_eth = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
         data = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
@@ -254,7 +254,7 @@ class Random(commands.Cog):
         # minipool counts
         total_minipool_count = data[True]["count"] + data[False]["count"]
         smoothie_minipool_count = data[True]["count"]
-        d = datetime.now().timestamp() - rp.call("rocketRewardsPool.getClaimIntervalTimeStart")
+        d = datetime.now().timestamp() - await rp.call("rocketRewardsPool.getClaimIntervalTimeStart")
         e.description = f"`{smoothie_node_count}/{total_node_count}` nodes (`{smoothie_node_count / total_node_count:.2%}`)" \
                         f" have joined the smoothing pool.\n" \
                         f" That is `{smoothie_minipool_count}/{total_minipool_count}` minipools " \
@@ -262,21 +262,22 @@ class Random(commands.Cog):
                         f"The current (not overall) balance is **`{smoothie_eth:,.2f}` ETH.**\n" \
                         f"This is over a span of `{uptime(d)}`.\n\n" \
                         f"{min(smoothie_node_count, 5)} largest nodes:\n"
-        e.description += "\n".join(f"- `{d['count']:>4}` minipools - {el_explorer_url(d['address'])}" for d in
-                                   data[True]["counts"][:min(smoothie_node_count, 5)])
+        lines = [f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}" for d in
+                 data[True]["counts"][:min(smoothie_node_count, 5)]]
+        e.description += "\n".join(lines)
         await ctx.send(embed=e)
 
     @hybrid_command()
     async def odao_challenges(self, ctx: Context):
         """Shows the current oDAO challenges"""
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
-        c = rp.get_contract_by_name("rocketDAONodeTrustedActions")
+        c = await rp.get_contract_by_name("rocketDAONodeTrustedActions")
         # get challenges made
         events = list(c.events["ActionChallengeMade"].get_logs(
-            from_block=w3.eth.get_block("latest").number - 7 * 24 * 60 * 60 // 12))
+            from_block=(await w3.eth.get_block("latest")).number - 7 * 24 * 60 * 60 // 12))
         # remove all events of nodes that aren't challenged anymore
         for event in events:
-            if not rp.call("rocketDAONodeTrusted.getMemberIsChallenged", event.args.nodeChallengedAddress):
+            if not await rp.call("rocketDAONodeTrusted.getMemberIsChallenged", event.args.nodeChallengedAddress):
                 events.remove(event)
         # sort by block number
         events.sort(key=lambda x: x.blockNumber)
@@ -286,11 +287,14 @@ class Random(commands.Cog):
         e = Embed(title="Active oDAO Challenges")
         e.description = ""
         # get duration of challenge period
-        challenge_period = rp.call("rocketDAONodeTrustedSettingsMembers.getChallengeWindow")
+        challenge_period = await rp.call("rocketDAONodeTrustedSettingsMembers.getChallengeWindow")
         for event in events:
-            time_left = challenge_period - (w3.eth.get_block("latest").timestamp - event.args.time)
+            latest_block = await w3.eth.get_block("latest")
+            time_left = challenge_period - (latest_block.timestamp - event.args.time)
             time_left = uptime(time_left, True)
-            e.description += f"**{el_explorer_url(event.args.nodeChallengedAddress)}** was challenged by **{el_explorer_url(event.args.nodeChallengerAddress)}**\n"
+            challenged = await el_explorer_url(event.args.nodeChallengedAddress)
+            challenger = await el_explorer_url(event.args.nodeChallengerAddress)
+            e.description += f"**{challenged}** was challenged by **{challenger}**\n"
             e.description += f"Time Left: **{time_left}**\n\n"
         await ctx.send(embed=e)
 

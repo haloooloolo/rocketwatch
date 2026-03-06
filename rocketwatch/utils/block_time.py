@@ -1,6 +1,5 @@
 import math
 import logging
-from functools import cache
 
 from utils.cfg import cfg
 from utils.shared_w3 import w3
@@ -8,25 +7,28 @@ from utils.shared_w3 import w3
 log = logging.getLogger("block_time")
 log.setLevel(cfg["log_level"])
 
+_block_ts_cache: dict[int, int] = {}
 
-@cache
-def block_to_ts(block_number: int) -> int:
-    return w3.eth.get_block(block_number).timestamp
+async def block_to_ts(block_number: int) -> int:
+    if block_number in _block_ts_cache:
+        return _block_ts_cache[block_number]
+    ts = (await w3.eth.get_block(block_number)).timestamp
+    _block_ts_cache[block_number] = ts
+    return ts
 
-@cache
-def ts_to_block(target_ts: int) -> int:
+async def ts_to_block(target_ts: int) -> int:
     log.debug(f"Looking for block at timestamp {target_ts}")
-    if target_ts < block_to_ts(1):
+    if target_ts < await block_to_ts(1):
         # genesis block doesn't have a timestamp
         return 0
 
     lo = 1
-    hi = w3.eth.block_number - 1
-    
+    hi = await w3.eth.get_block_number() - 1
+
     # simple binary search over block numbers
     while lo < hi:
         mid = math.ceil((lo + hi) / 2)
-        ts = block_to_ts(mid)
+        ts = await block_to_ts(mid)
 
         if ts < target_ts:
             lo = mid
@@ -38,8 +40,8 @@ def ts_to_block(target_ts: int) -> int:
 
     # l == r, highest block number below target
     block = hi
-    if abs(block_to_ts(block + 1) - target_ts) < abs(block_to_ts(block) - target_ts):
+    if abs(await block_to_ts(block + 1) - target_ts) < abs(await block_to_ts(block) - target_ts):
         block += 1
-        
-    log.debug(f"Closest match: block {block} @ {block_to_ts(block)}")
+
+    log.debug(f"Closest match: block {block} @ {await block_to_ts(block)}")
     return block

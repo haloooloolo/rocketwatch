@@ -45,11 +45,11 @@ async def collateral_distribution_raw(ctx: Context, distribution):
 
 
 async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]:
-    node_staking = rp.get_contract_by_name("rocketNodeStaking")
-    minipool_manager = rp.get_contract_by_name("rocketMinipoolManager")
+    node_staking = await rp.get_contract_by_name("rocketNodeStaking")
+    minipool_manager = await rp.get_contract_by_name("rocketMinipoolManager")
     eb16s, eb8s, rpl_stakes = [], [], []
 
-    nodes = rp.call("rocketNodeManager.getNodeAddresses", 0, 10_000)
+    nodes = await rp.call("rocketNodeManager.getNodeAddresses", 0, 10_000)
     for node_batch in as_chunks(nodes, 500):
         eb16s += await rp.multicall([
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 16 * 10**18) for node in node_batch
@@ -72,9 +72,9 @@ async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str,
 
 async def get_average_collateral_percentage_per_node(collateral_cap: Optional[int], bonded: bool):
     # get stakes for each node
-    stakes = list(await get_node_minipools_and_collateral().values())
+    stakes = list((await get_node_minipools_and_collateral()).values())
     # get the current rpl price
-    rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))        
+    rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))        
     
     node_collaterals = []
     for node in stakes:
@@ -129,7 +129,7 @@ class Collateral(commands.Cog):
             if display_name is None:
                 return
 
-        rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
+        rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         data = await get_node_minipools_and_collateral()
 
         # Calculate each node's tvl and collateral and add it to the data

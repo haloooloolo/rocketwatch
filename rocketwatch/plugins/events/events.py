@@ -20,7 +20,7 @@ from utils.dao import DefaultDAO, ProtocolDAO
 from utils.embeds import assemble, prepare_args, el_explorer_url, Embed
 from utils.event import EventPlugin, Event
 from utils.rocketpool import rp, NoAddressFound
-from utils.shared_w3 import w3_async, bacon
+from utils.shared_w3 import w3, bacon
 from utils.solidity import SUBMISSION_KEYS
 from utils.block_time import block_to_ts
 
@@ -34,12 +34,17 @@ PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Corouti
 class Events(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
-        partial_filters, event_map, topic_map = self._parse_event_config()
+        self._partial_filters = []
+        self.event_map = {}
+        self.topic_map = {}
+
+    async def async_init(self):
+        partial_filters, event_map, topic_map = await self._parse_event_config()
         self._partial_filters = partial_filters
         self.event_map = event_map
         self.topic_map = topic_map
 
-    def _parse_event_config(self) -> tuple[list[PartialFilter], dict, dict]:
+    async def _parse_event_config(self) -> tuple[list[PartialFilter], dict, dict]:
         with open("./plugins/events/events.json") as f:
             config = json.load(f)
 
@@ -53,7 +58,7 @@ class Events(EventPlugin):
         for group in config["direct"]:
             contract_name = group["contract_name"]
             try:
-                contract = rp.get_contract_by_name(contract_name)
+                contract = await rp.get_contract_by_name(contract_name)
                 addresses.add(contract.address)
             except NoAddressFound:
                 log.warning(f"Failed to get contract {contract_name}")
@@ -65,7 +70,7 @@ class Events(EventPlugin):
                     log.info(f"Adding filter for {contract_name}.{event_name}")
                     event_abi = contract.events[event_name].abi
                     input_types = ','.join(i['type'] for i in event_abi['inputs'])
-                    topic = w3_async.keccak(text=f"{event_name}({input_types})").hex()
+                    topic = w3.keccak(text=f"{event_name}({input_types})").hex()
                 except Exception as e:
                     log.exception(e)
                     log.warning(f"Couldn't find event {event_name} ({event['name']}) in the contract")
@@ -77,7 +82,7 @@ class Events(EventPlugin):
 
         if addresses:
             async def build_direct_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[LogReceipt]:
-                return await w3_async.eth.get_logs({
+                return await w3.eth.get_logs({
                     "address"  : list(addresses),
                     "topics"   : [list(aggregated_topics)],
                     "fromBlock": _from,
@@ -88,7 +93,7 @@ class Events(EventPlugin):
         # generate filters for global events
         for group in config["global"]:
             try:
-                contract = rp.get_contract_by_name(name=group["contract_name"])
+                contract = await rp.get_contract_by_name(name=group["contract_name"])
             except Exception as e:
                 log.warning(f"Failed to get contract {group['contract_name']}: {e}")
                 continue
@@ -101,8 +106,8 @@ class Events(EventPlugin):
                         event_cls = _contract.events[_event["event_name"]]
                         event_abi = event_cls.abi
                         input_types = ','.join(i['type'] for i in event_abi['inputs'])
-                        topic0 = w3_async.keccak(text=f"{_event['event_name']}({input_types})").hex()
-                        raw_logs = await w3_async.eth.get_logs({
+                        topic0 = w3.keccak(text=f"{_event['event_name']}({input_types})").hex()
+                        raw_logs = await w3.eth.get_logs({
                             "topics"   : [topic0],
                             "fromBlock": _from,
                             "toBlock"  : _to,
@@ -152,7 +157,7 @@ class Events(EventPlugin):
     @is_owner()
     async def replay_events(self, interaction: Interaction, tx_hash: str):
         await interaction.response.defer()
-        receipt = await w3_async.eth.get_transaction_receipt(tx_hash)
+        receipt = await w3.eth.get_transaction_receipt(tx_hash)
         logs: list[LogReceipt] = receipt.logs
 
         filtered_events: list[LogReceipt | EventData] = []
@@ -168,7 +173,7 @@ class Events(EventPlugin):
             global_events = json.load(f)["global"]
 
         for group in global_events:
-            contract = rp.assemble_contract(name=group["contract_name"])
+            contract = await rp.assemble_contract(name=group["contract_name"])
             for event in group["events"]:
                 event = contract.events[event["event_name"]]()
                 rich_logs = event.process_receipt(receipt, errors=DISCARD)
@@ -200,8 +205,9 @@ class Events(EventPlugin):
         old_config = self._partial_filters, self.event_map, self.topic_map
 
         try:
-            rp.flush()
+            await rp.flush()
             self.__init__(self.bot)
+            await self.async_init()
             return messages + await self.get_past_events(contract_upgrade_block + 1, to_block)
         except Exception as err:
             # rollback to pre upgrade config if this goes wrong
@@ -214,7 +220,7 @@ class Events(EventPlugin):
         upgrade_block = None
 
         log.debug(f"Aggregating {len(events)} events")
-        events: list[aDict] = self.aggregate_events(events)
+        events: list[aDict] = await self.aggregate_events(events)
         log.debug(f"Processing {len(events)} events")
 
         for event in events:
@@ -233,9 +239,9 @@ class Events(EventPlugin):
             if (n := rp.get_name_by_address(event.address)) and "topics" in event:
                 log.debug(f"Found event {event} for {n}")
                 # default event path
-                contract = rp.get_contract_by_address(event.address)
+                contract = await rp.get_contract_by_address(event.address)
                 contract_event = self.topic_map[event.topics[0].hex()]
-                topics = [w3_async.to_hex(t) for t in event.topics]
+                topics = [w3.to_hex(t) for t in event.topics]
                 _event = aDict(contract.events[contract_event]().process_log(event))
                 _event.topics = topics
                 _event.args = aDict(_event.args)
@@ -289,7 +295,7 @@ class Events(EventPlugin):
 
         return messages, upgrade_block
 
-    def aggregate_events(self, events: list[LogReceipt | EventData]) -> list[aDict]:
+    async def aggregate_events(self, events: list[LogReceipt | EventData]) -> list[aDict]:
         # aggregate and deduplicate events within the same transaction
         events_by_tx = {}
         for event in reversed(events):
@@ -304,7 +310,7 @@ class Events(EventPlugin):
             "unstETH.WithdrawalRequested": "amountOfStETH"
         }
 
-        def get_event_name(_event: LogReceipt | EventData) -> tuple[str, str]:
+        async def get_event_name(_event: LogReceipt | EventData) -> tuple[str, str]:
             if "topics" in _event:
                 contract_name = rp.get_name_by_address(_event["address"])
                 name = self.topic_map[_event["topics"][0].hex()]
@@ -322,14 +328,14 @@ class Events(EventPlugin):
             events_by_name: dict[str, list[LogReceipt | EventData]] = {}
 
             for event in tx_events:
-                event_name, full_event_name = get_event_name(event)
+                event_name, full_event_name = await get_event_name(event)
                 log.debug(f"Processing event {full_event_name}")
 
                 if full_event_name not in events_by_name:
                     events_by_name[full_event_name] = []
 
                 if full_event_name == "unstETH.WithdrawalRequested":
-                    contract = rp.get_contract_by_address(event["address"])
+                    contract = await rp.get_contract_by_address(event["address"])
                     _event = aDict(contract.events[event_name]().process_log(event))
                     # sum up the amount of stETH withdrawn in this transaction
                     if amount := tx_aggregates.get(full_event_name, 0):
@@ -342,7 +348,7 @@ class Events(EventPlugin):
                         continue
                     if prev_event := tx_aggregates.get(full_event_name, None):
                         # only keep largest rETH transfer
-                        contract = rp.get_contract_by_address(event["address"])
+                        contract = await rp.get_contract_by_address(event["address"])
                         _event = aDict(contract.events[event_name]().process_log(event))
                         _prev_event = aDict(contract.events[event_name]().process_log(event))
                         if _prev_event["args"]["value"] > _event["args"]["value"]:
@@ -363,7 +369,7 @@ class Events(EventPlugin):
                         events.remove(vote_event)
                 elif full_event_name == "MinipoolPrestaked":
                     for assign_event in events_by_name.get("rocketDepositPool.DepositAssigned", []).copy():
-                        assigned_minipool = w3_async.to_checksum_address(assign_event["topics"][1][-20:])
+                        assigned_minipool = w3.to_checksum_address(assign_event["topics"][1][-20:])
                         if event["address"] == assigned_minipool:
                             events_by_name["rocketDepositPool.DepositAssigned"].remove(assign_event)
                             events.remove(assign_event)
@@ -382,7 +388,7 @@ class Events(EventPlugin):
 
         events = [aDict(event) for event in events]
         for event in events:
-            _, full_event_name = get_event_name(event)
+            _, full_event_name = await get_event_name(event)
             if full_event_name not in aggregation_attributes:
                 continue
 
@@ -395,10 +401,10 @@ class Events(EventPlugin):
         return events
 
     async def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
-        receipt = await w3_async.eth.get_transaction_receipt(event.transactionHash)
+        receipt = await w3.eth.get_transaction_receipt(event.transactionHash)
         
-        is_minipool_event = rp.is_minipool(event.address) or rp.is_minipool(receipt.to)
-        is_megapool_event = rp.is_megapool(event.address) or rp.is_megapool(receipt.to)       
+        is_minipool_event = await rp.is_minipool(event.address) or await rp.is_minipool(receipt.to)
+        is_megapool_event = await rp.is_megapool(event.address) or await rp.is_megapool(receipt.to)
         
         if not any([
             is_minipool_event,
@@ -418,13 +424,13 @@ class Events(EventPlugin):
 
         # maybe the contract has it stored?
         if not pubkey:
-            pubkey = rp.call("rocketMinipoolManager.getMinipoolPubkey", event.address).hex()
+            pubkey = (await rp.call("rocketMinipoolManager.getMinipoolPubkey", event.address)).hex()
 
         # maybe it's in the transaction?
         if not pubkey:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                deposit_contract = rp.get_contract_by_name("casperDeposit")
+                deposit_contract = await rp.get_contract_by_name("casperDeposit")
                 processed_logs = deposit_contract.events.DepositEvent().process_receipt(receipt)
 
             # attempt to retrieve the pubkey
@@ -446,7 +452,7 @@ class Events(EventPlugin):
             event.args.minipool = event.address
         if is_megapool_event:
             event.args.megapool = event.address
-            event.args.node = rp.call("rocketMegapoolDelegate.getNodeAddress", address=event.address)
+            event.args.node = await rp.call("rocketMegapoolDelegate.getNodeAddress", address=event.address)
 
         return await self.handle_event(event_name, event)
 
@@ -455,17 +461,17 @@ class Events(EventPlugin):
 
         if "negative_rETH_ratio_update_event" in event_name:
             args.currRETHRate = solidity.to_float(args.totalEth) / solidity.to_float(args.rethSupply) if args.rethSupply > 0 else 1
-            args.prevRETHRate = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate", block=event.blockNumber - 1))
+            args.prevRETHRate = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate", block=event.blockNumber - 1))
             d = args.currRETHRate - args.prevRETHRate
             if d > 0 or abs(d) < 0.00001:
                 return None
         elif "price_update_event" in event_name:
             args.value = args.rplPrice
-            next_period = rp.call("rocketRewardsPool.getClaimIntervalTimeStart", block=event.blockNumber) + rp.call("rocketRewardsPool.getClaimIntervalTime", block=event.blockNumber)
+            next_period = await rp.call("rocketRewardsPool.getClaimIntervalTimeStart", block=event.blockNumber) + await rp.call("rocketRewardsPool.getClaimIntervalTime", block=event.blockNumber)
             args.rewardPeriodEnd = next_period
-            update_rate = rp.call("rocketDAOProtocolSettingsNetwork.getSubmitPricesFrequency", block=event.blockNumber) # in seconds
+            update_rate = await rp.call("rocketDAOProtocolSettingsNetwork.getSubmitPricesFrequency", block=event.blockNumber) # in seconds
             # get timestamp of event block
-            ts = block_to_ts(event.blockNumber)
+            ts = await block_to_ts(event.blockNumber)
             # check if the next update is after the next period ts
             earliest_next_update = ts + update_rate
             # if it will update before the next period, skip
@@ -478,13 +484,13 @@ class Events(EventPlugin):
                 match args.types[i]:
                     case 0:
                         # SettingType.UINT256
-                        value = w3_async.to_int(value_raw)
+                        value = w3.to_int(value_raw)
                     case 1:
                         # SettingType.BOOL
                         value = bool(value_raw)
                     case 2:
                         # SettingType.ADDRESS
-                        value = w3_async.to_checksum_address(value_raw)
+                        value = w3.to_checksum_address(value_raw)
                     case _:
                         value = "???"
                 description_parts.append(
@@ -510,19 +516,19 @@ class Events(EventPlugin):
                 f"{share_repr(odao_share)} {odao_share:.1f}%",
             ])
         elif event_name == "bootstrap_sdao_member_kick_event":
-            args.memberAddress = el_explorer_url(args.memberAddress, block=(event.blockNumber - 1))
+            args.memberAddress = await el_explorer_url(args.memberAddress, block=(event.blockNumber - 1))
         elif event_name in [
             "odao_member_leave_event",
             "odao_member_kick_event",
             "sdao_member_leave_event",
             "sdao_member_request_leave_event"
         ]:
-            args.nodeAddress = el_explorer_url(args.nodeAddress, block=(event.blockNumber - 1))
+            args.nodeAddress = await el_explorer_url(args.nodeAddress, block=(event.blockNumber - 1))
         elif event_name.startswith("cs_deposit") or event_name.startswith("cs_withdraw") or event_name.startswith("rocksolid_deposit"):
             args.assets = solidity.to_float(args.assets)
             args.shares = solidity.to_float(args.shares)
         elif event_name.startswith("rocksolid_withdraw"):
-            assets = rp.call("RockSolidVault.convertToAssets", args.shares, block=event.blockNumber)
+            assets = await rp.call("RockSolidVault.convertToAssets", args.shares, block=event.blockNumber)
             args.assets = solidity.to_float(assets)
             args.shares = solidity.to_float(args.shares)
         elif event_name == "cs_max_validator_change_event":
@@ -532,7 +538,7 @@ class Events(EventPlugin):
             elif args.newLimit < args.oldLimit:
                 event_name = event_name.replace("change", "decrease")
         elif event_name == "cs_operator_added_event":
-            args.address = await w3_async.eth.get_transaction_receipt(event.transactionHash)["from"]
+            args.address = await w3.eth.get_transaction_receipt(event.transactionHash)["from"]
         elif event_name == "cs_rpl_treasury_fee_change_event":
             args.oldFee = 100 * solidity.to_float(args.oldFee)
             args.newFee = 100 * solidity.to_float(args.newFee)
@@ -544,7 +550,7 @@ class Events(EventPlugin):
             args.oldFee = 100 * solidity.to_float(args.oldValue)
             args.newFee = 100 * solidity.to_float(args.newValue)
         elif event_name.startswith("cs_operators"):
-            args.operatorList = "\n".join([el_explorer_url(address) for address in args.operators])
+            args.operatorList = "\n".join([await el_explorer_url(address) for address in args.operators])
         elif event_name in ["cs_rpl_min_ratio_change_event", "cs_rpl_target_ratio_change_event"]:
             args.oldRatio = 100 * solidity.to_float(args.oldRatio)
             args.newRatio = 100 * solidity.to_float(args.newRatio)
@@ -556,18 +562,18 @@ class Events(EventPlugin):
             # signer = seller
             # sender = buyer
             # either the selling or buying token has to be the RPL token
-            rpl = rp.get_address_by_name("rocketTokenRPL")
+            rpl = await rp.get_address_by_name("rocketTokenRPL")
             if args.signerToken != rpl and args.senderToken != rpl:
                 return None
-            args.seller = w3_async.to_checksum_address(f"0x{event.topics[2][-40:]}")
-            args.buyer = w3_async.to_checksum_address(f"0x{event.topics[3][-40:]}")
+            args.seller = w3.to_checksum_address(f"0x{event.topics[2][-40:]}")
+            args.buyer = w3.to_checksum_address(f"0x{event.topics[3][-40:]}")
             # token names
-            s = rp.assemble_contract(name="ERC20", address=args.signerToken)
-            args.sellToken = s.functions.symbol().call()
-            sell_decimals = s.functions.decimals().call()
-            b = rp.assemble_contract(name="ERC20", address=args.senderToken)
-            args.buyToken = b.functions.symbol().call()
-            buy_decimals = b.functions.decimals().call()
+            s = await rp.assemble_contract(name="ERC20", address=args.signerToken)
+            args.sellToken = await s.functions.symbol().call()
+            sell_decimals = await s.functions.decimals().call()
+            b = await rp.assemble_contract(name="ERC20", address=args.senderToken)
+            args.buyToken = await b.functions.symbol().call()
+            buy_decimals = await b.functions.decimals().call()
             # token amounts
             args.sellAmount = solidity.to_float(args.signerAmount, sell_decimals)
             args.buyAmount = solidity.to_float(args.senderAmount, buy_decimals)
@@ -580,15 +586,15 @@ class Events(EventPlugin):
                 args.otherToken = args.sellToken
             if args.otherToken.lower() == "wETH":
                 # get exchange rate from rp
-                args.marketExchangeRate = rp.call("rocketNetworkPrices.getRPLPrice")
+                args.marketExchangeRate = await rp.call("rocketNetworkPrices.getRPLPrice")
                 # calculate the discount received compared to the market price
                 args.discountAmount = (1 - args.exchangeRate / solidity.to_float(args.marketExchangeRate)) * 100
 
         receipt = None
         if cfg["rocketpool.chain"] == "mainnet":
-            receipt = await w3_async.eth.get_transaction_receipt(event.transactionHash)
+            receipt = await w3.eth.get_transaction_receipt(event.transactionHash)
             args.tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
-            args.tnx_fee_usd = round(rp.get_eth_usdc_price() * args.tnx_fee / 10**18, 2)
+            args.tnx_fee_usd = round(await rp.get_eth_usdc_price() * args.tnx_fee / 10**18, 2)
             args.caller = receipt["from"]
 
         # add transaction hash and block number to args
@@ -602,16 +608,16 @@ class Events(EventPlugin):
             if "root" in event_name:
                 # not interesting if the root wasn't submitted in response to a challenge
                 # ChallengeState.Challenged = 1
-                challenge_state = rp.call("rocketDAOProtocolVerifier.getChallengeState", proposal_id, args.index, block=event.blockNumber)
+                challenge_state = await rp.call("rocketDAOProtocolVerifier.getChallengeState", proposal_id, args.index, block=event.blockNumber)
                 if challenge_state != 1:
                     return None
 
             if "add" in event_name or "destroy" in event_name:
-                args.proposalBond = solidity.to_int(rp.call("rocketDAOProtocolVerifier.getProposalBond", proposal_id))
+                args.proposalBond = solidity.to_int(await rp.call("rocketDAOProtocolVerifier.getProposalBond", proposal_id))
             elif "root" in event_name or "challenge" in event_name:
-                args.proposalBond = solidity.to_int(rp.call("rocketDAOProtocolVerifier.getProposalBond", proposal_id))
-                args.challengeBond = solidity.to_int(rp.call("rocketDAOProtocolVerifier.getChallengeBond", proposal_id))
-                args.challengePeriod = rp.call("rocketDAOProtocolVerifier.getChallengePeriod", proposal_id)
+                args.proposalBond = solidity.to_int(await rp.call("rocketDAOProtocolVerifier.getProposalBond", proposal_id))
+                args.challengeBond = solidity.to_int(await rp.call("rocketDAOProtocolVerifier.getChallengeBond", proposal_id))
+                args.challengePeriod = await rp.call("rocketDAOProtocolVerifier.getChallengePeriod", proposal_id)
 
             # create human-readable decision for votes
             if "direction" in args:
@@ -623,8 +629,8 @@ class Events(EventPlugin):
                     # not interesting
                     return None
             elif "vote_override" in event_name:
-                proposal_block = rp.call("rocketDAOProtocolProposal.getProposalBlock", proposal_id)
-                args.votingPower = solidity.to_float(rp.call("rocketNetworkVoting.getVotingPower", args.voter, proposal_block))
+                proposal_block = await rp.call("rocketDAOProtocolProposal.getProposalBlock", proposal_id)
+                args.votingPower = solidity.to_float(await rp.call("rocketNetworkVoting.getVotingPower", args.voter, proposal_block))
                 if args.votingPower < 100:
                     # not interesting
                     return None
@@ -645,7 +651,7 @@ class Events(EventPlugin):
                 args.decision = "for" if args.supported else "against"
 
             # change prefix for DAO-specific event
-            dao_name = rp.call("rocketDAOProposal.getDAO", proposal_id)
+            dao_name = await rp.call("rocketDAOProposal.getDAO", proposal_id)
             event_name = event_name.replace("dao", {
                 "rocketDAONodeTrustedProposals": "odao",
                 "rocketDAOSecurityProposals": "sdao"
@@ -661,16 +667,16 @@ class Events(EventPlugin):
             )
         # add inflation and new supply if inflation occurred
         elif "rpl_inflation" in event_name:
-            args.total_supply = int(solidity.to_float(rp.call("rocketTokenRPL.totalSupply")))
-            args.inflation = round(rp.get_annual_rpl_inflation() * 100, 4)
+            args.total_supply = int(solidity.to_float(await rp.call("rocketTokenRPL.totalSupply")))
+            args.inflation = round(await rp.get_annual_rpl_inflation() * 100, 4)
         elif "auction_bid_event" in event_name:
             eth = solidity.to_float(args.bidAmount)
             price = solidity.to_float(
-                rp.call("rocketAuctionManager.getLotPriceAtBlock", args.lotIndex, args.blockNumber))
+                await rp.call("rocketAuctionManager.getLotPriceAtBlock", args.lotIndex, args.blockNumber))
             args.rplAmount = eth / price
         if event_name in ["rpl_stake_event", "rpl_withdraw_event"]:
             # get eth price by multiplying the amount by the current RPL ratio
-            rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
+            rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
             args.amount = solidity.to_float(args.amount)
             args.ethAmount = args.amount * rpl_ratio
         elif event_name in ["node_merkle_rewards_claimed"]:
@@ -680,8 +686,8 @@ class Events(EventPlugin):
             args.amount = args.value / 10**18
             if args["from"] in cfg["rocketpool.dao_multsigs"]:
                 event_name = "pdao_erc20_transfer_event"
-                token_contract = rp.assemble_contract(name="ERC20", address=event["address"])
-                args.symbol = token_contract.functions.symbol().call()
+                token_contract = await rp.assemble_contract(name="ERC20", address=event["address"])
+                args.symbol = await token_contract.functions.symbol().call()
             elif token_prefix != "reth":
                 return None
         elif event_name == "reth_burn_event":
@@ -715,19 +721,19 @@ class Events(EventPlugin):
 
             # loop over all possible contracts if we get a match return empty response
             for contract in possible_contracts:
-                if rp.get_address_by_name(contract) == args.claimingContract:
+                if await rp.get_address_by_name(contract) == args.claimingContract:
                     return None
 
         if "node_register_event" in event_name:
-            args.timezone = rp.call("rocketNodeManager.getNodeTimezoneLocation", args.node)
+            args.timezone = await rp.call("rocketNodeManager.getNodeTimezoneLocation", args.node)
         if "odao_member_challenge_event" in event_name:
-            args.challengeDeadline = args.time + rp.call("rocketDAONodeTrustedSettingsMembers.getChallengeWindow")
+            args.challengeDeadline = args.time + await rp.call("rocketDAONodeTrustedSettingsMembers.getChallengeWindow")
         if "odao_member_challenge_decision_event" in event_name:
             if args.success:
                 event_name = "odao_member_challenge_accepted_event"
                 # get their RPL bond that was burned by querying the previous block
                 args.rplBondAmount = solidity.to_float(
-                    rp.call(
+                    await rp.call(
                         "rocketDAONodeTrusted.getMemberRPLBondAmount",
                         args.nodeChallengedAddress,
                         block=args.blockNumber - 1
@@ -737,10 +743,10 @@ class Events(EventPlugin):
             else:
                 event_name = "odao_member_challenge_rejected_event"
         if "node_smoothing_pool_state_changed" in event_name:
-            validator_count = rp.call("rocketMinipoolManager.getNodeMinipoolCount", args.node)
-            megapool_address = rp.call("rocketNodeManager.getMegapoolAddress", args.node)
+            validator_count = await rp.call("rocketMinipoolManager.getNodeMinipoolCount", args.node)
+            megapool_address = await rp.call("rocketNodeManager.getMegapoolAddress", args.node)
             if megapool_address != "0x0000000000000000000000000000000000000000":
-                validator_count += rp.call("rocketMegapoolDelegate.getActiveValidatorCount", address=megapool_address)
+                validator_count += await rp.call("rocketMegapoolDelegate.getActiveValidatorCount", address=megapool_address)
             args.validatorCount = validator_count
             if args.state:
                 event_name = "node_smoothing_pool_joined"
@@ -753,14 +759,14 @@ class Events(EventPlugin):
                 event_name = "node_merkle_rewards_claimed_rpl"
 
         if "minipool_deposit_received_event" in event_name:
-            contract = rp.assemble_contract("rocketMinipoolDelegate", args.minipool)
-            args.commission = solidity.to_float(contract.functions.getNodeFee().call())
+            contract = await rp.assemble_contract("rocketMinipoolDelegate", args.minipool)
+            args.commission = solidity.to_float(await contract.functions.getNodeFee().call())
             # get the transaction receipt
-            args.depositAmount = rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber)
+            args.depositAmount = await rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber)
             user_deposit = args.depositAmount
-            receipt = await w3_async.eth.get_transaction_receipt(args.transactionHash)
+            receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
             args.node = receipt["from"]
-            ee = rp.get_contract_by_name("rocketNodeDeposit").events.DepositReceived()
+            ee = (await rp.get_contract_by_name("rocketNodeDeposit")).events.DepositReceived()
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 processed_logs = ee.process_receipt(receipt)
@@ -771,12 +777,12 @@ class Events(EventPlugin):
             if user_deposit < args.depositAmount:
                 args.creditAmount = args.depositAmount - user_deposit
                 args.balanceAmount = 0
-                e = rp.get_contract_by_name("rocketVault").events.EtherWithdrawn()
+                e = (await rp.get_contract_by_name("rocketVault")).events.EtherWithdrawn()
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore")
                     processed_logs = e.process_receipt(receipt)
 
-                deposit_contract = bytes(w3_async.solidity_keccak(["string"], ["rocketNodeDeposit"]))
+                deposit_contract = bytes(w3.solidity_keccak(["string"], ["rocketNodeDeposit"]))
                 for withdraw_event in processed_logs:
                     # event.logindex 44, withdraw_event.logindex 50, rough distance like that
                     # reminder order is different than the previous example
@@ -799,18 +805,18 @@ class Events(EventPlugin):
                 case _:
                     return None
             
-            args.operator = rp.call("rocketMinipoolDelegate.getNodeAddress", address=args.minipool)
+            args.operator = await rp.call("rocketMinipoolDelegate.getNodeAddress", address=args.minipool)
 
         if event_name in ["minipool_bond_reduce_event", "minipool_vacancy_prepared_event",
                           "minipool_withdrawal_processed_event", "minipool_bond_reduction_started_event",
                           "pool_deposit_assigned_event"]:
             # get the node operator address from minipool contract
-            contract = rp.assemble_contract("rocketMinipool", args.minipool)
-            args.node = contract.functions.getNodeAddress().call()
+            contract = await rp.assemble_contract("rocketMinipool", args.minipool)
+            args.node = await contract.functions.getNodeAddress().call()
         if "minipool_bond_reduction_started_event" in event_name:
             # get the previousBondAmount from the minipool contract
             args.previousBondAmount = solidity.to_float(
-                rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber - 1))
+                await rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber - 1))
         elif event_name == "minipool_withdrawal_processed_event":
             args.totalAmount = args.nodeAmount + args.userAmount
         elif event_name == "pool_deposit_assigned_event":
@@ -820,7 +826,7 @@ class Events(EventPlugin):
                 args.assignmentCount = event["assignment_count"]
             else:
                 return None
-        elif "minipool_scrub" in event_name and rp.call("rocketMinipoolDelegate.getVacant", address=args.minipool):
+        elif "minipool_scrub" in event_name and await rp.call("rocketMinipoolDelegate.getVacant", address=args.minipool):
             event_name = f"vacant_{event_name}"
             if event_name == "vacant_minipool_scrub_event":
                 # let's try to determine the reason. there are 4 reasons a vacant minipool can get scrubbed:
@@ -829,7 +835,7 @@ class Events(EventPlugin):
                 # 3. the validator does not have the active_ongoing validator status
                 # 4. the migration could have timed out, the oDAO will scrub minipools after they have passed half of the migration window
                 # get pubkey from minipool contract
-                pubkey = rp.call("rocketMinipoolManager.getMinipoolPubkey", args.minipool).hex()
+                pubkey = (await rp.call("rocketMinipoolManager.getMinipoolPubkey", args.minipool)).hex()
                 vali_info = (await bacon.get_validator(f"0x{pubkey}"))["data"]
                 reason = "joe fucking up (unknown reason)"
                 if vali_info:
@@ -839,7 +845,7 @@ class Events(EventPlugin):
                         reason = "having invalid withdrawal credentials set on the beacon chain"
                     # check for #2
                     configured_balance = solidity.to_float(
-                        rp.call("rocketMinipoolDelegate.getPreMigrationBalance", address=args.minipool,
+                        await rp.call("rocketMinipoolDelegate.getPreMigrationBalance", address=args.minipool,
                                 block=args.blockNumber - 1))
                     if (solidity.to_float(vali_info["balance"], 9) - configured_balance) < -0.01:
                         reason = "having a balance lower than configured in the minipool contract on the beacon chain"
@@ -847,11 +853,11 @@ class Events(EventPlugin):
                     if vali_info["status"] != "active_ongoing":
                         reason = "not being active on the beacon chain"
                     # check for #4
-                    scrub_period = rp.call("rocketDAONodeTrustedSettingsMinipool.getPromotionScrubPeriod",
+                    scrub_period = await rp.call("rocketDAONodeTrustedSettingsMinipool.getPromotionScrubPeriod",
                                            block=args.blockNumber - 1)
-                    minipool_creation = rp.call("rocketMinipoolDelegate.getStatusTime", address=args.minipool,
+                    minipool_creation = await rp.call("rocketMinipoolDelegate.getStatusTime", address=args.minipool,
                                                 block=args.blockNumber - 1)
-                    block_time = block_to_ts(args.blockNumber - 1)
+                    block_time = await block_to_ts(args.blockNumber - 1)
                     if block_time - minipool_creation > scrub_period // 2:
                         reason = "taking too long to migrate their withdrawal credentials on the beacon chain"
                 args.scrub_reason = reason
@@ -860,12 +866,14 @@ class Events(EventPlugin):
             if solidity.to_float(args.amountOfStETH) < 10_000:
                 return None
             if receipt:
-                args.timestamp = block_to_ts(receipt["blockNumber"])
+                args.timestamp = await block_to_ts(receipt["blockNumber"])
 
         args.event_name = event_name
         args = await prepare_args(args)
         event.args = args
-        return assemble(args)
+        return await assemble(args)
 
 async def setup(bot):
-    await bot.add_cog(Events(bot))
+    cog = Events(bot)
+    await cog.async_init()
+    await bot.add_cog(cog)

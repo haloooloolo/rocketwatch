@@ -125,7 +125,7 @@ class Lottery(commands.Cog):
         # sort by count
         node_operators = sorted(node_operators.items(), key=lambda x: x[1], reverse=True)
         description += "_Node Operators:_ "
-        description += ", ".join([f"{count}x {el_explorer_url(node_operator)}" for node_operator, count in
+        description += ", ".join([f"{count}x {await el_explorer_url(node_operator)}" for node_operator, count in
                                   node_operators])
         return description
 

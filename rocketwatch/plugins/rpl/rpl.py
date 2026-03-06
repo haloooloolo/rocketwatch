@@ -28,9 +28,9 @@ class RPL(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         
-        rpl_supply = solidity.to_float(rp.call("rocketTokenRPL.totalSupply"))
-        legacy_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
-        megapool_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
+        rpl_supply = solidity.to_float(await rp.call("rocketTokenRPL.totalSupply"))
+        legacy_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
+        megapool_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
         staked_rpl = legacy_staked_rpl + megapool_staked_rpl
         unstaking_rpl = (await (await self.bot.db.node_operators.aggregate([
             {
@@ -112,13 +112,13 @@ class RPL(commands.Cog):
                 }
             }
         ])).to_list()
-        rpl_eth_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
+        rpl_eth_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
 
         # calculate withdrawable RPL at various RPL ETH prices
         # i/10 is the ratio of the price checked to the actual RPL ETH price
 
         free_rpl_liquidity = {}
-        max_collateral = solidity.to_float(rp.call("rocketDAOProtocolSettingsNode.getMinimumLegacyRPLStake"))
+        max_collateral = solidity.to_float(await rp.call("rocketDAOProtocolSettingsNode.getMinimumLegacyRPLStake"))
         current_withdrawable_rpl = 0
         for i in range(1, 31):
 

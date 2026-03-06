@@ -40,7 +40,7 @@ class Debug(Cog):
 
         for contract in rp.addresses.copy():
             try:
-                for function in rp.get_contract_by_name(contract).functions:
+                for function in (await rp.get_contract_by_name(contract)).functions:
                     self.function_names.append(f"{contract}.{function}")
                 self.contract_names.append(contract)
             except Exception:
@@ -132,11 +132,11 @@ class Debug(Cog):
         Decode transaction calldata
         """
         await interaction.response.defer(ephemeral=True)
-        tnx = w3.eth.get_transaction(tnx_hash)
+        tnx = await w3.eth.get_transaction(tnx_hash)
         if contract_name:
-            contract = rp.get_contract_by_name(contract_name)
+            contract = await rp.get_contract_by_name(contract_name)
         else:
-            contract = rp.get_contract_by_address(tnx.to)
+            contract = await rp.get_contract_by_address(tnx.to)
         data = contract.decode_function_input(tnx.input)
         await interaction.followup.send(content=f"```Input:\n{data}```")
 
@@ -148,8 +148,8 @@ class Debug(Cog):
         Try to return the revert reason of a transaction.
         """
         await interaction.response.defer(ephemeral=True)
-        transaction_receipt = w3.eth.get_transaction(tnx_hash)
-        if revert_reason := rp.get_revert_reason(transaction_receipt):
+        transaction_receipt = await w3.eth.get_transaction(tnx_hash)
+        if revert_reason := await rp.get_revert_reason(transaction_receipt):
             await interaction.followup.send(content=f"```Revert reason: {revert_reason}```")
         else:
             await interaction.followup.send(content="```No revert reason Available```")
@@ -262,7 +262,7 @@ class Debug(Cog):
         events_plugin: Events = self.bot.cogs["Events"]
 
         filtered_events = []
-        for event_log in w3.eth.get_transaction_receipt(tx_hash).logs:
+        for event_log in (await w3.eth.get_transaction_receipt(tx_hash)).logs:
             if ("topics" in event_log) and (event_log["topics"][0].hex() in events_plugin.topic_map):
                 filtered_events.append(event_log)
 
@@ -318,8 +318,8 @@ class Debug(Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
-        block = ts_to_block(timestamp)
-        found_ts = block_to_ts(block)
+        block = await ts_to_block(timestamp)
+        found_ts = await block_to_ts(block)
 
         if found_ts == timestamp:
             text = (
@@ -340,7 +340,7 @@ class Debug(Cog):
         """Retrieve the latest ABI for a contract"""
         await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
         try:
-            abi = prettify_json_string(rp.uncached_get_abi_by_name(contract))
+            abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
             file = File(io.StringIO(abi), f"{contract}.{cfg['rocketpool.chain'].lower()}.abi.json")
             await interaction.followup.send(file=file)
         except Exception as err:
@@ -353,8 +353,8 @@ class Debug(Cog):
         try:
             address = cfg["rocketpool.manual_addresses"].get(contract)
             if not address:
-                address = rp.uncached_get_address_by_name(contract)
-            await interaction.followup.send(content=el_explorer_url(address))
+                address = await rp.uncached_get_address_by_name(contract)
+            await interaction.followup.send(content=await el_explorer_url(address))
         except Exception as err:
             await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
             if "No address found for" in repr(err):
@@ -387,12 +387,12 @@ class Debug(Cog):
             args = json.loads(json_args)
             if not isinstance(args, list):
                 args = [args]
-            v = rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
+            v = await rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
         except Exception as err:
             await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
             return
         try:
-            g = rp.estimate_gas_for_call(function, *args, block=block)
+            g = await rp.estimate_gas_for_call(function, *args, block=block)
         except Exception as err:
             g = "N/A"
             if isinstance(err, ValueError) and err.args and "code" in err.args and err.args[0]["code"] == -32000:

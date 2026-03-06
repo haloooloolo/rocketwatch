@@ -33,7 +33,7 @@ class RockSolid(Cog):
         self.deployment_block = 23237366
 
     async def _fetch_asset_updates(self) -> list[tuple[int, float]]:
-        vault_contract = rp.get_contract_by_name("RockSolidVault")
+        vault_contract = await rp.get_contract_by_name("RockSolidVault")
 
         if db_entry := (await self.bot.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_block = db_entry["block"]
@@ -41,7 +41,7 @@ class RockSolid(Cog):
             last_checked_block = self.deployment_block
 
         b_from = last_checked_block + 1
-        b_to = w3.eth.get_block_number()
+        b_to = await w3.eth.get_block_number()
         
         updates = []
         
@@ -50,7 +50,7 @@ class RockSolid(Cog):
         
         db_operations = []
         for event_log in get_logs(vault_contract.events.TotalAssetsUpdated, b_from, b_to):
-            ts = block_to_ts(event_log.blockNumber)
+            ts = await block_to_ts(event_log.blockNumber)
             assets = solidity.to_float(event_log.args.totalAssets)
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
@@ -74,28 +74,28 @@ class RockSolid(Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         
-        current_block = w3.eth.get_block_number()
-        now = block_to_ts(current_block)
+        current_block = await w3.eth.get_block_number()
+        now = await block_to_ts(current_block)
                 
-        def get_eth_rate(block_number: int) -> int:
+        async def get_eth_rate(block_number: int) -> int:
             block_number = max(block_number, self.deployment_block)
-            reth_value = rp.call("RockSolidVault.convertToAssets", 10**18, block=block_number)
-            return rp.call("rocketTokenRETH.getEthValue", reth_value, block=block_number)
-        
-        current_eth_rate = get_eth_rate(current_block)
-        
-        def get_apy(days: int) -> Optional[float]:
-            reference_block = ts_to_block(now - timedelta(days=days).total_seconds())
+            reth_value = await rp.call("RockSolidVault.convertToAssets", 10**18, block=block_number)
+            return await rp.call("rocketTokenRETH.getEthValue", reth_value, block=block_number)
+
+        current_eth_rate = await get_eth_rate(current_block)
+
+        async def get_apy(days: int) -> Optional[float]:
+            reference_block = await ts_to_block(now - timedelta(days=days).total_seconds())
             if reference_block < self.deployment_block:
                 return None
-            return (current_eth_rate / get_eth_rate(reference_block) - 1) * (365 / days) * 100
+            return (current_eth_rate / await get_eth_rate(reference_block) - 1) * (365 / days) * 100
 
-        apy_7d = get_apy(days=7)
-        apy_30d = get_apy(days=30)
-        apy_90d = get_apy(days=90)
-                
-        tvl_reth = solidity.to_float(rp.call("RockSolidVault.totalAssets"))
-        tvl_rock_reth = solidity.to_float(rp.call("RockSolidVault.totalSupply"))
+        apy_7d = await get_apy(days=7)
+        apy_30d = await get_apy(days=30)
+        apy_90d = await get_apy(days=90)
+
+        tvl_reth = solidity.to_float(await rp.call("RockSolidVault.totalAssets"))
+        tvl_rock_reth = solidity.to_float(await rp.call("RockSolidVault.totalSupply"))
         
         asset_updates: list[tuple[int, float]] = await self._fetch_asset_updates()
         current_date = datetime.fromtimestamp(asset_updates[0][0]).date() - timedelta(days=1)
@@ -130,15 +130,15 @@ class RockSolid(Cog):
         img.seek(0)
         plt.clf()
         
-        ca_reth = rp.get_address_by_name("rocketTokenRETH")
-        ca_rock_reth = rp.get_address_by_name("RockSolidVault")
+        ca_reth = await rp.get_address_by_name("rocketTokenRETH")
+        ca_rock_reth = await rp.get_address_by_name("RockSolidVault")
         
         embed = Embed(title="<:rocksolid:1425091714267480158> RockSolid rETH Vault")
         embed.add_field(name="7d APY", value=f"{apy_7d:.2f}%" if apy_7d else "-")
         embed.add_field(name="30d APY", value=f"{apy_30d:.2f}%" if apy_30d else "-")
         embed.add_field(name="90d APY", value=f"{apy_90d:.2f}%" if apy_90d else "-")
-        embed.add_field(name="TVL", value=f"`{tvl_reth:,.2f}` {el_explorer_url(ca_reth, name=' rETH')}")
-        embed.add_field(name="Supply", value=f"`{tvl_rock_reth:,.2f}` {el_explorer_url(ca_rock_reth, name=' rock.rETH')}")
+        embed.add_field(name="TVL", value=f"`{tvl_reth:,.2f}` {await el_explorer_url(ca_reth, name=' rETH')}")
+        embed.add_field(name="Supply", value=f"`{tvl_rock_reth:,.2f}` {await el_explorer_url(ca_rock_reth, name=' rock.rETH')}")
         embed.set_image(url="attachment://rocksolid-tvl.png")
 
         await interaction.followup.send(embed=embed, file=File(img, "rocksolid-tvl.png"))

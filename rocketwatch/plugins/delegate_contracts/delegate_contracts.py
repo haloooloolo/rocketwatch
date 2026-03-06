@@ -49,14 +49,14 @@ class DelegateContracts(commands.Cog):
         desc = "**Effective Delegate Distribution:**\n"
         c_sum = sum(d["count"] for d in distribution_stats)
         # refresh cached address
-        rp.uncached_get_address_by_name(latest_contract)
-        latest_addr = rp.get_address_by_name(latest_contract)
+        await rp.uncached_get_address_by_name(latest_contract)
+        latest_addr = await rp.get_address_by_name(latest_contract)
         for d in distribution_stats:
             a = w3.to_checksum_address(d["_id"])
             name = s_hex(a)
             if a == latest_addr:
                 name += " (Latest)"
-            desc += f"{s}{el_explorer_url(a, name)}: {d['count']:,} ({d['count'] / c_sum * 100:.2f}%)\n"
+            desc += f"{s}{await el_explorer_url(a, name)}: {d['count']:,} ({d['count'] / c_sum * 100:.2f}%)\n"
         desc += "\n"
         desc += "**Use Latest Delegate:**\n"
         c_sum = sum(use_latest_counts.values())

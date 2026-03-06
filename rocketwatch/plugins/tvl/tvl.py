@@ -114,9 +114,9 @@ class TVL(Cog):
         }
         # note: _value in each dict will store the final string that gets rendered in the render
 
-        eth_price = rp.get_eth_usdc_price()
-        rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-        rpl_address = rp.get_address_by_name("rocketTokenRPL")
+        eth_price = await rp.get_eth_usdc_price()
+        rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
+        rpl_address = await rp.get_address_by_name("rocketTokenRPL")
 
         # Queued Minipools: initialisedCount of minipool_count_per_status * 1 ETH.
         # Minipools that are flagged as initialised have the following applied to them:
@@ -259,15 +259,15 @@ class TVL(Cog):
         #  - ETH from withdrawn Minipools, which gets stored in the rETH contract, surpasses the configured targetCollateralRate,
         #    which is 10% at the time of writing. Once this occurs the ETH gets moved from the rETH contract to the Deposit Pool.
         data["Total ETH Locked"]["rETH Collateral"]["Deposit Pool"]["_val"] = solidity.to_float(
-            rp.call("rocketDepositPool.getBalance"))
+            await rp.call("rocketDepositPool.getBalance"))
 
         # Extra Collateral: This is ETH stored in the rETH contract from Minipools that have been withdrawn from.
         # This value has a cap - read the above comment for more information about that.
         data["Total ETH Locked"]["rETH Collateral"]["Extra Collateral"]["_val"] = solidity.to_float(
-            w3.eth.get_balance(rp.get_address_by_name("rocketTokenRETH")))
+            await w3.eth.get_balance(await rp.get_address_by_name("rocketTokenRETH")))
 
         # Smoothing Pool Balance: This is ETH from Proposals by minipools that have joined the Smoothing Pool.
-        smoothie_balance = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
+        smoothie_balance = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
         tmp = await (await self.bot.db.node_operators.aggregate([
             {
                 '$match': {
@@ -330,35 +330,35 @@ class TVL(Cog):
 
         # Unclaimed Smoothing Pool Rewards: This is ETH from the previous Reward Periods that have not been claimed yet.
         data["Total ETH Locked"]["Unclaimed Rewards"]["Smoothing Pool"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOf", "rocketMerkleDistributorMainnet"))
+            await rp.call("rocketVault.balanceOf", "rocketMerkleDistributorMainnet"))
 
         # Staked RPL: This is all ETH that has been staked by Node Operators.
         data["Total RPL Locked"]["Staked RPL"]["Node Operators"]["_val"] = solidity.to_float(
-            rp.call("rocketNodeStaking.getTotalStakedRPL"))
+            await rp.call("rocketNodeStaking.getTotalStakedRPL"))
 
         # oDAO bonded RPL: RPL oDAO Members have to lock up to join it. This RPL can be slashed if they misbehave.
         data["Total RPL Locked"]["Staked RPL"]["oDAO Bond"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOfToken", "rocketDAONodeTrustedActions", rpl_address))
+            await rp.call("rocketVault.balanceOfToken", "rocketDAONodeTrustedActions", rpl_address))
 
         # Unclaimed RPL Rewards: RPL rewards that have been earned by Node Operators but have not been claimed yet.
         data["Total RPL Locked"]["Unclaimed Rewards"]["Node Operators & oDAO"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOfToken", "rocketMerkleDistributorMainnet", rpl_address))
+            await rp.call("rocketVault.balanceOfToken", "rocketMerkleDistributorMainnet", rpl_address))
 
         # Undistributed pDAO Rewards: RPL rewards that have been earned by the pDAO but have not been distributed yet.
         data["Total RPL Locked"]["Unclaimed Rewards"]["pDAO"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOfToken", "rocketClaimDAO", rpl_address))
+            await rp.call("rocketVault.balanceOfToken", "rocketClaimDAO", rpl_address))
 
         # Unused Inflation: RPL that has been minted but not yet been used for rewards.
         # This is (or was) an issue as the snapshots didn't account for the last day of inflation.
         # Joe is already looking into this.
         data["Total RPL Locked"]["Unused Inflation"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOfToken", "rocketRewardsPool", rpl_address))
+            await rp.call("rocketVault.balanceOfToken", "rocketRewardsPool", rpl_address))
 
         # Slashed RPL: RPL that is slashed gets moved to the Auction Manager Contract.
         # This RPL will be sold using a Dutch Auction for ETH, which the gets moved to the rETH contract to be used as
         # extra rETH collateral.
         data["Total RPL Locked"]["Slashed RPL"]["_val"] = solidity.to_float(
-            rp.call("rocketVault.balanceOfToken", "rocketAuctionManager", rpl_address))
+            await rp.call("rocketVault.balanceOfToken", "rocketAuctionManager", rpl_address))
 
         # create _value string for each branch. the _value is the sum of all _val or _val values in the children
         tmp = await (await self.bot.db.node_operators.aggregate([

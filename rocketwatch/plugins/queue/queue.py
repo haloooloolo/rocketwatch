@@ -1,23 +1,18 @@
-import math
 import logging
 
 from typing import Literal, NamedTuple
 
-from functools import cache
-from cachetools.func import ttl_cache 
 from discord import Interaction
 from discord.app_commands import command, describe
 from discord.ext.commands import Cog
 from eth_typing import ChecksumAddress, BlockIdentifier
 
 from rocketwatch import RocketWatch
-from utils import solidity
 from utils.cfg import cfg
-from utils.embeds import Embed
 from utils.embeds import el_explorer_url
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
-from utils.shared_w3 import w3_async
+from utils.shared_w3 import w3
 from utils.views import PageView
 
 log = logging.getLogger("queue")
@@ -57,20 +52,23 @@ class Queue(Cog):
             )
             return queue_length, queue_content
 
+    _el_url_cache: dict[tuple[str, str], str] = {}
+
     @staticmethod
-    @ttl_cache(ttl=600)
-    def _cached_el_url(address, prefix="") -> str:
-        return el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
+    async def _cached_el_url(address, prefix="") -> str:
+        key = (address, prefix)
+        if key not in Queue._el_url_cache:
+            Queue._el_url_cache[key] = await el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
+        return Queue._el_url_cache[key]
     
     @staticmethod
-    @cache
-    def _megapool_to_node(megapool_address) -> ChecksumAddress:
-        return rp.call("rocketMegapoolDelegate.getNodeAddress", address=megapool_address)
+    async def _megapool_to_node(megapool_address) -> ChecksumAddress:
+        return await rp.call("rocketMegapoolDelegate.getNodeAddress", address=megapool_address)
     
     @staticmethod
-    def __format_queue_entry(entry: 'Queue.Entry') -> str:
-        node_address = Queue._megapool_to_node(entry.megapool)
-        node_label = Queue._cached_el_url(node_address)
+    async def __format_queue_entry(entry: 'Queue.Entry') -> str:
+        node_address = await Queue._megapool_to_node(entry.megapool)
+        node_label = await Queue._cached_el_url(node_address)
         return f"{node_label} #`{entry.validator_id}`"
     
     @staticmethod
@@ -84,9 +82,9 @@ class Queue(Cog):
         return await Queue._get_queue("deposit.queue.express", limit, start)
     
     @staticmethod
-    def _scan_list(namespace: bytes, start: int, limit: int, block_identifier: BlockIdentifier) -> list['Queue.Entry']:
-        list_contract = rp.get_contract_by_name("linkedListStorage")
-        raw_entries, _ = list_contract.functions.scan(namespace, 0, start + limit).call(block_identifier=block_identifier)
+    async def _scan_list(namespace: bytes, start: int, limit: int, block_identifier: BlockIdentifier) -> list['Queue.Entry']:
+        list_contract = await rp.get_contract_by_name("linkedListStorage")
+        raw_entries, _ = await list_contract.functions.scan(namespace, 0, start + limit).call(block_identifier=block_identifier)
         return [Queue.Entry(*entry) for entry in raw_entries][start:]
         
     @staticmethod
@@ -94,22 +92,22 @@ class Queue(Cog):
         if limit <= 0:
             return 0, ""
 
-        list_contract = rp.get_contract_by_name("linkedListStorage")
-        queue_namespace = bytes(w3_async.solidity_keccak(["string"], [namespace]))
+        list_contract = await rp.get_contract_by_name("linkedListStorage")
+        queue_namespace = bytes(w3.solidity_keccak(["string"], [namespace]))
 
         start = max(start, 0)
-        latest_block = await w3_async.eth.get_block_number()
-        q_len = list_contract.functions.getLength(queue_namespace).call(block_identifier=latest_block)
-        
+        latest_block = await w3.eth.get_block_number()
+        q_len = await list_contract.functions.getLength(queue_namespace).call(block_identifier=latest_block)
+
         if start >= q_len:
             return q_len, ""
-        
-        queue_entries = Queue._scan_list(queue_namespace, start, limit, latest_block)  
+
+        queue_entries = await Queue._scan_list(queue_namespace, start, limit, latest_block)  
         
         content = ""
         for i, entry in enumerate(queue_entries):
-            entry_str = Queue.__format_queue_entry(entry)
-            content += f"{start+i+1}. {entry_str}\n" 
+            entry_str = await Queue.__format_queue_entry(entry)
+            content += f"{start+i+1}. {entry_str}\n"
 
         return q_len, content
     
@@ -137,16 +135,16 @@ class Queue(Cog):
     async def get_combined_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the combined queue (express + standard)"""
 
-        latest_block = await w3_async.eth.get_block_number()
-        express_queue_rate = rp.call("rocketDAOProtocolSettingsDeposit.getExpressQueueRate", block=latest_block)
-        queue_index = rp.call("rocketDepositPool.getQueueIndex", block=latest_block)
+        latest_block = await w3.eth.get_block_number()
+        express_queue_rate = await rp.call("rocketDAOProtocolSettingsDeposit.getExpressQueueRate", block=latest_block)
+        queue_index = await rp.call("rocketDepositPool.getQueueIndex", block=latest_block)
 
-        list_contract = rp.get_contract_by_name("linkedListStorage")
-        exp_namespace = bytes(w3_async.solidity_keccak(["string"], ["deposit.queue.express"]))
-        std_namespace = bytes(w3_async.solidity_keccak(["string"], ["deposit.queue.standard"]))
-        
-        express_queue_length = list_contract.functions.getLength(exp_namespace).call(block_identifier=latest_block)
-        standard_queue_length = list_contract.functions.getLength(std_namespace).call(block_identifier=latest_block)
+        list_contract = await rp.get_contract_by_name("linkedListStorage")
+        exp_namespace = bytes(w3.solidity_keccak(["string"], ["deposit.queue.express"]))
+        std_namespace = bytes(w3.solidity_keccak(["string"], ["deposit.queue.standard"]))
+
+        express_queue_length = await list_contract.functions.getLength(exp_namespace).call(block_identifier=latest_block)
+        standard_queue_length = await list_contract.functions.getLength(std_namespace).call(block_identifier=latest_block)
         q_len = express_queue_length + standard_queue_length
         
         if start >= q_len:
@@ -170,25 +168,22 @@ class Queue(Cog):
         log.debug(f"{limit_express_queue = }")
         log.debug(f"{limit_standard_queue = }")
         
-        express_entries_rev = Queue._scan_list(exp_namespace, start_express_queue, limit_express_queue, latest_block)[::-1]
-        standard_entries_rev = Queue._scan_list(std_namespace, start_standard_queue, limit_standard_queue, latest_block)[::-1]
+        express_entries_rev = (await Queue._scan_list(exp_namespace, start_express_queue, limit_express_queue, latest_block))[::-1]
+        standard_entries_rev = (await Queue._scan_list(std_namespace, start_standard_queue, limit_standard_queue, latest_block))[::-1]
               
-        index_digits = len(str(max(standard_queue_length, express_queue_length)))  
         content = ""
         for i in range(len(express_entries_rev) + len(standard_entries_rev)):
             effective_queue_index = queue_index + start + i
             is_express = (effective_queue_index % (express_queue_rate + 1)) != express_queue_rate
             if (is_express and express_entries_rev) or (not standard_entries_rev):
                 entry = express_entries_rev.pop()
-                # express_pos = start_express_queue + limit_express_queue - len(express_entries_rev)
                 lane_pos = "🐇"
             else:
                 entry = standard_entries_rev.pop()
-                # standard_pos = start_standard_queue + limit_standard_queue - len(standard_entries_rev)
                 lane_pos = "🐢"
                 
             overall_pos = start + i + 1
-            entry_str = Queue.__format_queue_entry(entry)
+            entry_str = await Queue.__format_queue_entry(entry)
             content += f"{overall_pos}. {lane_pos} {entry_str}\n"
 
         return q_len, content

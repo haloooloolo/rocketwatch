@@ -48,7 +48,7 @@ class Rewards(commands.Cog):
             return await response.json()
 
     async def get_estimated_rewards(self, ctx: Context, address: str) -> Optional[RewardEstimate]:
-        if not rp.call("rocketNodeManager.getNodeExists", address):
+        if not await rp.call("rocketNodeManager.getNodeExists", address):
             await ctx.send(f"{address} is not a registered node.")
             return None
 
@@ -59,10 +59,10 @@ class Rewards(commands.Cog):
             await ctx.send("Error fetching node data from Sprocket Pool API. Blame Patches.")
             return None
 
-        data_block = ts_to_block(patches_res["time"])
+        data_block = await ts_to_block(patches_res["time"])
         rpl_rewards: int = patches_res[address].get("collateralRpl", 0)
         eth_rewards: int = patches_res[address].get("smoothingPoolEth", 0)
-        interval_time = rp.call("rocketDAOProtocolSettingsRewards.getRewardsClaimIntervalTime", block=data_block)
+        interval_time = await rp.call("rocketDAOProtocolSettingsRewards.getRewardsClaimIntervalTime", block=data_block)
 
         return Rewards.RewardEstimate(
             address=address,
@@ -103,7 +103,7 @@ class Rewards(commands.Cog):
             return
 
         if extrapolate:
-            registration_time = rp.call("rocketNodeManager.getNodeRegistrationTime", address)
+            registration_time = await rp.call("rocketNodeManager.getNodeRegistrationTime", address)
             reward_start_time = max(registration_time, rewards.start_time)
             proj_factor = (rewards.end_time - reward_start_time) / (rewards.data_time - reward_start_time)
             rewards.rpl_rewards *= proj_factor
@@ -149,16 +149,16 @@ class Rewards(commands.Cog):
         borrowed_eth = (24 * num_leb8) + (16 * num_eb16)
 
         data_block: int = rewards.data_block
-        reward_start_block = ts_to_block(rewards.start_time)
+        reward_start_block = await ts_to_block(rewards.start_time)
 
-        rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
-        actual_borrowed_eth = solidity.to_float(rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block))
-        actual_rpl_stake = solidity.to_float(rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
+        rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
+        actual_borrowed_eth = solidity.to_float(await rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block))
+        actual_rpl_stake = solidity.to_float(await rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
 
-        inflation_rate: int = rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)
-        inflation_interval: int = rp.call("rocketTokenRPL.getInflationIntervalTime", block=data_block)
+        inflation_rate: int = await rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)
+        inflation_interval: int = await rp.call("rocketTokenRPL.getInflationIntervalTime", block=data_block)
         num_inflation_intervals: int = (rewards.end_time - rewards.start_time) // inflation_interval
-        total_supply: int = rp.call("rocketTokenRPL.totalSupply", block=reward_start_block)
+        total_supply: int = await rp.call("rocketTokenRPL.totalSupply", block=reward_start_block)
 
         period_inflation: int = total_supply
         for i in range(num_inflation_intervals):

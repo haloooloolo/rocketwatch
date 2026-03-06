@@ -2,7 +2,7 @@ import logging
 from typing import Dict, Any
 
 from web3.beacon import AsyncBeacon
-from web3 import Web3, AsyncWeb3, HTTPProvider
+from web3 import AsyncWeb3
 from web3.providers import AsyncHTTPProvider
 
 from utils.cfg import cfg
@@ -10,16 +10,15 @@ from utils.cfg import cfg
 log = logging.getLogger("shared_w3")
 log.setLevel(cfg["log_level"])
 
-w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
-w3_async = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
-mainnet_w3 = w3
+w3 = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
+w3_mainnet = w3
 
 if cfg['rocketpool.chain'] != "mainnet":
-    mainnet_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.mainnet']))
+    w3_mainnet = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.mainnet']))
 
-historical_w3 = None
+w3_archive = None
 if "archive" in cfg['execution_layer.endpoint'].keys():
-    historical_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.archive']))
+    w3_archive = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.archive']))
 
 
 class Bacon(AsyncBeacon):

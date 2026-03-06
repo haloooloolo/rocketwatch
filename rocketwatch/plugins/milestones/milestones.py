@@ -43,7 +43,7 @@ class Milestones(EventPlugin):
 
             state = await self.collection.find_one({"_id": milestone["id"]})
 
-            value = getattr(rp, milestone.function)(*milestone.args)
+            value = await getattr(rp, milestone.function)(*milestone.args)
             if milestone.formatter:
                 value = getattr(solidity, milestone.formatter)(value)
             log.debug(f"{milestone.id}:{value}")
@@ -62,7 +62,7 @@ class Milestones(EventPlugin):
                 previous_milestone = milestone.min
             if previous_milestone < latest_goal:
                 log.info(f"Goal for milestone {milestone.id} has increased. Triggering Milestone!")
-                embed = assemble(aDict({
+                embed = await assemble(aDict({
                     "event_name"  : milestone.id,
                     "result_value": value
                 }))

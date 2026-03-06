@@ -51,7 +51,7 @@ async def resolve_ens(ctx, node_address):
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
         try:
-            address = ens.resolve_name(node_address)
+            address = await ens.resolve_name(node_address)
             if not address:
                 await ctx.send("ENS name not found")
                 return None, None
@@ -69,7 +69,7 @@ async def resolve_ens(ctx, node_address):
         return None, None
 
     try:
-        display_name = ens.get_name(node_address) or address
+        display_name = await ens.get_name(node_address) or address
         return display_name, address
     except InvalidName:
         await ctx.send("Invalid address")
@@ -95,7 +95,7 @@ def get_pdao_delegates() -> dict[str, str]:
     return _pdao_delegates
 
 
-def el_explorer_url(
+async def el_explorer_url(
         target: str,
         name: str = "",
         prefix: str | Literal[-1] = "",
@@ -106,34 +106,34 @@ def el_explorer_url(
         # sanitize address
         target = w3.to_checksum_address(target)
         url = f"{cfg['execution_layer.explorer']}/address/{target}"
-        
+
         chain = cfg["rocketpool.chain"]
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
-        
-        if rp.is_node(target):
-            megapool_address = rp.call("rocketNodeManager.getMegapoolAddress", target)
+
+        if await rp.is_node(target):
+            megapool_address = await rp.call("rocketNodeManager.getMegapoolAddress", target)
             if megapool_address != "0x0000000000000000000000000000000000000000":
                 url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
-                
-        if rp.is_megapool(target):
+
+        if await rp.is_megapool(target):
             url = f"https://saturn-1.net/megapool/{target}{dashboard_network}"
-        
-        if rp.is_minipool(target):
+
+        if await rp.is_minipool(target):
             pass # TODO add explorer url once supported
-        
+
         n_key = f"addresses.{target}"
         if not name and (n := _(n_key)) != n_key:
             name = n
 
-        if prefix != -1 and rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
+        if prefix != -1 and await rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
             prefix += ":cup_with_straw:"
 
-        if not name and (member_id := rp.call("rocketDAONodeTrusted.getMemberID", target, block=block)):
+        if not name and (member_id := await rp.call("rocketDAONodeTrusted.getMemberID", target, block=block)):
             if prefix != -1:
                 prefix += "🔮"
             name = member_id
 
-        if not name and (member_id := rp.call("rocketDAOSecurity.getMemberID", target, block=block)):
+        if not name and (member_id := await rp.call("rocketDAOSecurity.getMemberID", target, block=block)):
             if prefix != -1:
                 prefix += "🔒"
             name = member_id
@@ -153,9 +153,9 @@ def el_explorer_url(
                 name = a.name
         if not name:
             # not an odao member, try to get their ens
-            name = ens.get_name(target)
+            name = await ens.get_name(target)
 
-        if code := w3.eth.get_code(target):
+        if code := await w3.eth.get_code(target):
             if prefix != -1:
                 prefix += "📄"
             if (
@@ -167,13 +167,13 @@ def el_explorer_url(
             if not name:
                 with contextlib.suppress(Exception):
                     c = w3.eth.contract(address=target, abi=[{"inputs"         : [],
-                                                              "name"           : "name",
-                                                              "outputs"        : [{"internalType": "string",
-                                                                                   "name"        : "",
-                                                                                   "type"        : "string"}],
-                                                              "stateMutability": "view",
-                                                              "type"           : "function"}])
-                    n = c.functions.name().call()
+                                                                    "name"           : "name",
+                                                                    "outputs"        : [{"internalType": "string",
+                                                                                         "name"        : "",
+                                                                                         "type"        : "string"}],
+                                                                    "stateMutability": "view",
+                                                                    "type"           : "function"}])
+                    n = await c.functions.name().call()
                     # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
                     # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
                     # in an attempt to get people to click on his contract
@@ -231,10 +231,10 @@ async def prepare_args(args):
             elif arg_key == "cow_uid":
                 args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
             else:
-                args[arg_key] = el_explorer_url(arg_value, prefix=prefix)
-                args[f"{arg_key}_clean"] = el_explorer_url(arg_value)
+                args[arg_key] = await el_explorer_url(arg_value, prefix=prefix)
+                args[f"{arg_key}_clean"] = await el_explorer_url(arg_value)
                 if len(arg_value) == 66:
-                    args[f'{arg_key}_small'] = el_explorer_url(arg_value, name="[tnx]")
+                    args[f'{arg_key}_small'] = await el_explorer_url(arg_value, name="[tnx]")
     if "from" in args:
         args["fancy_from"] = args["from"]
         if "caller" in args and args["from"] != args["caller"]:
@@ -242,7 +242,7 @@ async def prepare_args(args):
     return args
 
 
-def assemble(args) -> Embed:
+async def assemble(args) -> Embed:
     e = Embed()
     if args.event_name in ["service_interrupted", "finality_delay_event"]:
         e.colour = Color.from_rgb(235, 86, 86)
@@ -287,13 +287,13 @@ def assemble(args) -> Embed:
         case "eth_deposit_event":
             use_large = (amount >= 32)
         case "rpl_stake_event":
-            use_large = (amount >= ((3 * 2.4) / solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))))
+            use_large = (amount >= ((3 * 2.4) / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))))
         case "rpl_migration_event":
             use_large = (amount >= 1000)
         case "cs_deposit_eth_event" | "cs_withdraw_eth_event":
             use_large = (args["assets"] >= 100)
         case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
-            use_large = (args["assets"] >= 16 / solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice")))
+            use_large = (args["assets"] >= 16 / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice")))
         case "rocksolid_deposit_event":
             use_large = args["assets"] >= 50
         case "rocksolid_withdrawal_event":
@@ -498,7 +498,7 @@ def assemble(args) -> Embed:
         times = [value for key, value in args.items() if "time" in key.lower()]
 
     if block := args.get("blockNumber"):
-        times += [block_to_ts(block)]
+        times += [await block_to_ts(block)]
 
     time = times[0] if times else int(datetime.datetime.now().timestamp())
     e.add_field(name="Timestamp",

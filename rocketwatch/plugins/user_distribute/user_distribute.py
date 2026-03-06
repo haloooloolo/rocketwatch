@@ -27,16 +27,16 @@ class InstructionsView(ui.View):
 
     @ui.button(label="Instructions", style=ButtonStyle.blurple)
     async def instructions(self, interaction: Interaction, _) -> None:
-        mp_contract = rp.assemble_contract("rocketMinipoolDelegate")
+        mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
         bud_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="beginUserDistribute")[2:])
         dist_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="distributeBalance", args=[False])[2:])
 
         calls = [(mp["address"], True, dist_calldata) for mp in self.distributable]
         calls += [(mp["address"], True, bud_calldata) for mp in self.eligible]
         
-        multicall_contract = rp.get_contract_by_name("multicall3")
-        gas_used = multicall_contract.functions.aggregate3(calls).estimate_gas()
-        gas_price = w3.eth.gas_price 
+        multicall_contract = await rp.get_contract_by_name("multicall3")
+        gas_used = await multicall_contract.functions.aggregate3(calls).estimate_gas()
+        gas_price = await w3.eth.gas_price
         cost_eth = gas_used * gas_price / 1e18
 
         tuple_strs = []
@@ -126,12 +126,12 @@ class UserDistribute(commands.Cog):
         distributable = []
 
         current_time = int(time.time())
-        ud_window_start = rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart")
-        ud_window_end = ud_window_start + rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength")
+        ud_window_start = await rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart")
+        ud_window_end = ud_window_start + await rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength")
 
         for mp in minipools:
             mp["address"] = w3.to_checksum_address(mp["address"])
-            storage = w3.eth.get_storage_at(mp["address"], 0x17)
+            storage = await w3.eth.get_storage_at(mp["address"], 0x17)
             user_distribute_time: int = int.from_bytes(storage, "big")
             elapsed_time = current_time - user_distribute_time
             
@@ -140,7 +140,7 @@ class UserDistribute(commands.Cog):
             elif elapsed_time < ud_window_start:
                 mp["ud_window_open"] = user_distribute_time + ud_window_start
                 pending.append(mp)
-            elif not rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp["address"]): # double check, DB may lag behind
+            elif not await rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp["address"]): # double check, DB may lag behind
                 mp["ud_window_close"] = user_distribute_time + ud_window_end
                 distributable.append(mp)
                                 

@@ -37,9 +37,9 @@ class Governance(StatusPlugin):
         return [await dao.fetch_proposal(proposal_id) for proposal_id in reversed(active_proposal_ids)]
 
     @staticmethod
-    def _get_tx_hash_for_proposal(dao: DAO, proposal: DAO.Proposal) -> HexStr:
-        from_block = ts_to_block(proposal.created) - 1
-        to_block = ts_to_block(proposal.created) + 1
+    async def _get_tx_hash_for_proposal(dao: DAO, proposal: DAO.Proposal) -> HexStr:
+        from_block = (await ts_to_block(proposal.created)) - 1
+        to_block = (await ts_to_block(proposal.created)) + 1
 
         log.info(f"Looking for proposal {proposal} in [{from_block},{to_block}]")
         for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(from_block=from_block, to_block=to_block):
@@ -88,11 +88,11 @@ class Governance(StatusPlugin):
                 text = text[:(max_length - 1)] + "…"
             return text
 
-        def print_proposals(_dao: DAO, _proposals: list[DAO.Proposal]) -> str:
+        async def print_proposals(_dao: DAO, _proposals: list[DAO.Proposal]) -> str:
             text = ""
             for _i, _proposal in enumerate(_proposals, start=1):
                 _title = sanitize(_proposal.message, 40)
-                _tx_hash = self._get_tx_hash_for_proposal(_dao, _proposal)
+                _tx_hash = await self._get_tx_hash_for_proposal(_dao, _proposal)
                 _url = f"{cfg['execution_layer.explorer']}/tx/{_tx_hash}"
                 text += f"  {_i}. [{_title}]({_url}) (#{_proposal.id})\n"
             return text
@@ -103,7 +103,7 @@ class Governance(StatusPlugin):
         if proposals := await self._get_active_dao_proposals(dao):
             embed.description += "### Security Council\n"
             embed.description += "- **Active on-chain proposals**\n"
-            embed.description += print_proposals(dao, proposals)
+            embed.description += await print_proposals(dao, proposals)
             
         # --------- ORACLE DAO --------- #
 
@@ -111,7 +111,7 @@ class Governance(StatusPlugin):
         if proposals := await self._get_active_dao_proposals(dao):
             embed.description += "### Oracle DAO\n"
             embed.description += "- **Active on-chain proposals**\n"
-            embed.description += print_proposals(dao, proposals)
+            embed.description += await print_proposals(dao, proposals)
 
         # --------- PROTOCOL DAO --------- #
 
@@ -120,7 +120,7 @@ class Governance(StatusPlugin):
 
         if proposals := await self._get_active_pdao_proposals(dao):
             section_content += "- **Active on-chain proposals**\n"
-            section_content += print_proposals(dao, proposals)
+            section_content += await print_proposals(dao, proposals)
 
         if snapshot_proposals := await self._get_active_snapshot_proposals():
             section_content += "- **Active Snapshot proposals**\n"

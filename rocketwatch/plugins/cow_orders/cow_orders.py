@@ -27,11 +27,7 @@ class CowOrders(EventPlugin):
         self.state = "OK"
         self.collection = bot.db.cow_orders
         self._did_setup = False
-
-        self.tokens = [
-            str(rp.get_address_by_name("rocketTokenRPL")).lower(),
-            str(rp.get_address_by_name("rocketTokenRETH")).lower()
-        ]
+        self.tokens = None
 
     @command()
     async def cow(self, interaction: Interaction, tnx: str):
@@ -53,7 +49,15 @@ class CowOrders(EventPlugin):
         await self.collection.create_index("order_uid", unique=True)
         self._did_setup = True
 
+    async def _ensure_tokens(self):
+        if self.tokens is None:
+            self.tokens = [
+                str(await rp.get_address_by_name("rocketTokenRPL")).lower(),
+                str(await rp.get_address_by_name("rocketTokenRETH")).lower()
+            ]
+
     async def _get_new_events(self) -> list[Event]:
+        await self._ensure_tokens()
         await self._setup_collection()
         if self.state == "RUNNING":
             log.error("Cow Orders plugin was interrupted while running. Re-initializing...")
@@ -141,10 +145,11 @@ class CowOrders(EventPlugin):
         if not cow_orders:
             return []
         # get rpl price in dai
-        rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-        reth_ratio = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate"))
-        rpl_price = rpl_ratio * rp.get_eth_usdc_price()
-        reth_price = reth_ratio * rp.get_eth_usdc_price()
+        rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
+        reth_ratio = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate"))
+        eth_usdc_price = await rp.get_eth_usdc_price()
+        rpl_price = rpl_ratio * eth_usdc_price
+        reth_price = reth_ratio * eth_usdc_price
 
         # generate payloads
         for order in cow_orders:
@@ -161,9 +166,9 @@ class CowOrders(EventPlugin):
                 data["ratio"] = int(order["sellAmount"]) / int(order["buyAmount"])
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["sellAmount"]))
-                s = rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["buyToken"]))
+                s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["buyToken"]))
                 try:
-                    decimals = s.functions.decimals().call()
+                    decimals = await s.functions.decimals().call()
                 except:
                     pass
                 data["otherAmount"] = solidity.to_float(int(order["buyAmount"]), decimals)
@@ -172,16 +177,16 @@ class CowOrders(EventPlugin):
                 data["event_name"] = f"cow_order_buy_{token}_found"
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["buyAmount"]))
-                s = rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["sellToken"]))
+                s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["sellToken"]))
                 try:
-                    decimals = s.functions.decimals().call()
+                    decimals = await s.functions.decimals().call()
                 except:
                     pass
                 data["otherAmount"] = solidity.to_float(int(order["sellAmount"]), decimals)
             # our/other ratio
             data["ratioAmount"] = data["otherAmount"] / data["ourAmount"]
             try:
-                data["otherToken"] = s.functions.symbol().call()
+                data["otherToken"] = await s.functions.symbol().call()
             except:
                 data["otherToken"] = "UNKWN"
                 if s.address == w3.to_checksum_address("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"):
@@ -214,7 +219,7 @@ class CowOrders(EventPlugin):
 
 
             data = await prepare_args(data)
-            embed = assemble(data)
+            embed = await assemble(data)
             payload.append(Event(
                 embed=embed,
                 topic="cow_orders",

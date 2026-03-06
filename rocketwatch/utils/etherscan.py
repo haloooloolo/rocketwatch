@@ -12,7 +12,7 @@ log.setLevel(cfg["log_level"])
 async def get_recent_account_transactions(address, block_count=44800):
     ETHERSCAN_URL = "https://api.etherscan.io/api"
 
-    highest_block = w3.eth.get_block("latest")["number"]
+    highest_block = (await w3.eth.get_block("latest"))["number"]
     page = 1
     lowest_block = highest_block - block_count
 

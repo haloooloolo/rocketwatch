@@ -20,7 +20,7 @@ from utils.status import StatusPlugin
 from utils.cfg import cfg
 from utils.embeds import assemble, Embed
 from utils.event import EventPlugin
-from utils.shared_w3 import w3_async
+from utils.shared_w3 import w3
 
 log = logging.getLogger("event_core")
 log.setLevel(cfg["log_level"])
@@ -85,7 +85,7 @@ class EventCore(commands.Cog):
         log.info("Gathering messages from submodules")
         log.debug(f"{self.head_block = }")
 
-        latest_block = await w3_async.eth.get_block_number()
+        latest_block = await w3.eth.get_block_number()
         submodules = [cog for cog in self.bot.cogs.values() if isinstance(cog, EventPlugin)]
         log.debug(f"Running {len(submodules)} submodules")
 
@@ -260,7 +260,7 @@ class EventCore(commands.Cog):
         await self._replace_or_add_status(channel_name, embed, state_message)
 
     async def show_service_interrupt(self) -> None:
-        embed = assemble(MutableAttributeDict({"event_name": "service_interrupted"}))
+        embed = await assemble(MutableAttributeDict({"event_name": "service_interrupted"}))
         for channel_name in cfg.get("events.status_message", {}).keys():
             state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
             if (not state_message) or (state_message["state"] != str(self.state.ERROR)):

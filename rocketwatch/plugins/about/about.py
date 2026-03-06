@@ -59,7 +59,7 @@ class About(commands.Cog):
                           f"{humanize.intcomma(sum(guild.member_count for guild in g))} Members reached!",
                     inline=False)
 
-        address = el_explorer_url(cfg["rocketpool.manual_addresses.rocketStorage"])
+        address = await el_explorer_url(cfg["rocketpool.manual_addresses.rocketStorage"])
         e.add_field(name="Storage Contract", value=address)
 
         e.add_field(name="Chain", value=cfg["rocketpool.chain"].capitalize())

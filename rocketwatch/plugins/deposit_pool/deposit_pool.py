@@ -23,9 +23,9 @@ class DepositPool(StatusPlugin):
     @staticmethod
     async def get_deposit_pool_stats() -> Embed:
         balance_raw, max_size_raw, max_amount_raw = await rp.multicall([
-            rp.get_contract_by_name("rocketDepositPool").functions.getBalance(),
-            rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit").functions.getMaximumDepositPoolSize(),
-            rp.get_contract_by_name("rocketDepositPool").functions.getMaximumDepositAmount(),
+            (await rp.get_contract_by_name("rocketDepositPool")).functions.getBalance(),
+            (await rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit")).functions.getMaximumDepositPoolSize(),
+            (await rp.get_contract_by_name("rocketDepositPool")).functions.getMaximumDepositAmount(),
         ])
 
         dp_balance = solidity.to_float(balance_raw)
@@ -80,10 +80,10 @@ class DepositPool(StatusPlugin):
     @staticmethod
     async def get_contract_collateral_stats() -> Embed:
         exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = await rp.multicall([
-            rp.get_contract_by_name("rocketTokenRETH").functions.getExchangeRate(),
-            rp.get_contract_by_name("rocketTokenRETH").functions.totalSupply(),
-            rp.get_contract_by_name("rocketTokenRETH").functions.getCollateralRate(),
-            rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork").functions.getTargetRethCollateralRate(),
+            (await rp.get_contract_by_name("rocketTokenRETH")).functions.getExchangeRate(),
+            (await rp.get_contract_by_name("rocketTokenRETH")).functions.totalSupply(),
+            (await rp.get_contract_by_name("rocketTokenRETH")).functions.getCollateralRate(),
+            (await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")).functions.getTargetRethCollateralRate(),
         ])
 
         total_eth_in_reth: float = total_supply * exchange_rate / 10**36
@@ -142,8 +142,8 @@ class DepositPool(StatusPlugin):
         if cfg["rocketpool.chain"] != "mainnet":
             return embed
 
-        reth_price = rp.get_reth_eth_price()
-        protocol_rate = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate"))
+        reth_price = await rp.get_reth_eth_price()
+        protocol_rate = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate"))
         relative_rate_diff = (reth_price / protocol_rate) - 1
         expected_rate_diff = 0.0005
 

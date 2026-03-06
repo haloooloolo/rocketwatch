@@ -22,6 +22,7 @@ from pymongo import AsyncMongoClient
 
 from utils.cfg import cfg
 from utils.retry import retry_async
+from utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch")
 log.setLevel(cfg["log_level"])
@@ -77,6 +78,7 @@ class RocketWatch(Bot):
         log.info('Finished loading plugins')
 
     async def setup_hook(self) -> None:
+        await rp.async_init()
         await self._load_plugins()
         
     async def sync_commands(self) -> None:

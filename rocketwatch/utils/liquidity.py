@@ -13,6 +13,7 @@ from eth_typing import ChecksumAddress, HexStr
 from utils.cfg import cfg
 from utils.retry import retry_async
 from utils.rocketpool import rp
+from utils.shared_w3 import w3
 
 log = logging.getLogger("liquidity")
 log.setLevel(cfg["log_level"])
@@ -583,11 +584,20 @@ class DigiFinex(CEX):
 
 
 class ERC20Token:
-    def __init__(self, address: ChecksumAddress):
+    def __init__(self, address: ChecksumAddress, symbol: str, decimals: int):
         self.address = address
-        contract = rp.assemble_contract("ERC20", address, mainnet=True)
-        self.symbol: str = contract.functions.symbol().call()
-        self.decimals: int = contract.functions.decimals().call()
+        self.symbol = symbol
+        self.decimals = decimals
+
+    @classmethod
+    async def create(cls, address: ChecksumAddress) -> 'ERC20Token':
+        address = w3.to_checksum_address(address)
+        contract = await rp.assemble_contract("ERC20", address, mainnet=True)
+        symbol, decimals = await rp.multicall([
+            contract.functions.symbol(),
+            contract.functions.decimals()
+        ])
+        return cls(address, symbol, decimals)
 
     def __str__(self) -> str:
         return self.symbol
@@ -599,11 +609,11 @@ class ERC20Token:
 class DEX(Exchange, ABC):
     class LiquidityPool(ABC):
         @abstractmethod
-        def get_price(self) -> float:
+        async def get_price(self) -> float:
             pass
 
         @abstractmethod
-        def get_normalized_price(self) -> float:
+        async def get_normalized_price(self) -> float:
             pass
 
         @abstractmethod
@@ -623,22 +633,29 @@ class DEX(Exchange, ABC):
 
 class BalancerV2(DEX):
     class WeightedPool(DEX.LiquidityPool):
-        def __init__(self, pool_id: HexStr):
+        def __init__(self, pool_id: HexStr, vault, token_0: ERC20Token, token_1: ERC20Token):
             self.id = pool_id
-            self.vault = rp.get_contract_by_name("BalancerVault", mainnet=True)
-            tokens = self.vault.functions.getPoolTokens(self.id).call()[0]
-            self.token_0 = ERC20Token(tokens[0])
-            self.token_1 = ERC20Token(tokens[1])
+            self.vault = vault
+            self.token_0 = token_0
+            self.token_1 = token_1
 
-        def get_price(self) -> float:
-            balances = self.vault.functions.getPoolTokens(self.id).call()[1]
+        @classmethod
+        async def create(cls, pool_id: HexStr) -> 'BalancerV2.WeightedPool':
+            vault = await rp.get_contract_by_name("BalancerVault", mainnet=True)
+            tokens = (await vault.functions.getPoolTokens(pool_id).call())[0]
+            token_0 = await ERC20Token.create(tokens[0])
+            token_1 = await ERC20Token.create(tokens[1])
+            return cls(pool_id, vault, token_0, token_1)
+
+        async def get_price(self) -> float:
+            balances = (await self.vault.functions.getPoolTokens(self.id).call())[1]
             return balances[1] / balances[0] if (balances[0] > 0) else 0
 
-        def get_normalized_price(self) -> float:
-            return self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
+        async def get_normalized_price(self) -> float:
+            return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
         async def get_liquidity(self) -> Optional[Liquidity]:
-            balance_0, balance_1 = self.vault.functions.getPoolTokens(self.id).call()[1]
+            balance_0, balance_1 = (await self.vault.functions.getPoolTokens(self.id).call())[1]
             if (balance_0 == 0) or (balance_1 == 0):
                 log.warning("Empty token balances")
                 return None
@@ -680,11 +697,24 @@ class UniswapV3(DEX):
         return math.log(price, 1.0001)
 
     class Pool(DEX.LiquidityPool):
-        def __init__(self, pool_address: ChecksumAddress):
-            self.contract = rp.assemble_contract("UniswapV3Pool", pool_address, mainnet=True)
-            self.tick_spacing: int = self.contract.functions.tickSpacing().call()
-            self.token_0 = ERC20Token(self.contract.functions.token0().call())
-            self.token_1 = ERC20Token(self.contract.functions.token1().call())
+        def __init__(self, pool_address: ChecksumAddress, contract, tick_spacing: int, token_0: ERC20Token, token_1: ERC20Token):
+            self.pool_address = pool_address
+            self.contract = contract
+            self.tick_spacing = tick_spacing
+            self.token_0 = token_0
+            self.token_1 = token_1
+
+        @classmethod
+        async def create(cls, pool_address: ChecksumAddress) -> 'UniswapV3.Pool':
+            contract = await rp.assemble_contract("UniswapV3Pool", pool_address, mainnet=True)
+            tick_spacing, token_0_addr, token_1_addr = await rp.multicall([
+                contract.functions.tickSpacing(),
+                contract.functions.token0(),
+                contract.functions.token1()
+            ])
+            token_0 = await ERC20Token.create(token_0_addr)
+            token_1 = await ERC20Token.create(token_1_addr)
+            return cls(pool_address, contract, tick_spacing, token_0, token_1)
 
         def tick_to_word_and_bit(self, tick: int) -> tuple[int, int]:
             compressed = int(tick // self.tick_spacing)
@@ -731,16 +761,16 @@ class UniswapV3(DEX):
 
             return balance_0, balance_1
 
-        def get_price(self) -> float:
-            sqrt96x = self.contract.functions.slot0().call()[0]
+        async def get_price(self) -> float:
+            sqrt96x = (await self.contract.functions.slot0().call())[0]
             return (sqrt96x ** 2) / (2 ** 192)
 
-        def get_normalized_price(self) -> float:
-            return self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
+        async def get_normalized_price(self) -> float:
+            return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
         async def get_liquidity(self) -> Optional[Liquidity]:
-            price = self.get_price()
-            initial_liquidity = self.contract.functions.liquidity().call()
+            price = await self.get_price()
+            initial_liquidity = await self.contract.functions.liquidity().call()
 
             calculated_tick = UniswapV3.price_to_tick(price)
             current_tick = int(calculated_tick)
@@ -810,8 +840,13 @@ class UniswapV3(DEX):
 
             return Liquidity(balance_norm / price, depth_at)
 
-    def __init__(self, pools: list[ChecksumAddress]):
-        super().__init__([UniswapV3.Pool(pool) for pool in pools])
+    def __init__(self, pools: list[Pool]):
+        super().__init__(pools)
+
+    @classmethod
+    async def create(cls, pool_addresses: list[ChecksumAddress]) -> 'UniswapV3':
+        pools = [await UniswapV3.Pool.create(addr) for addr in pool_addresses]
+        return cls(pools)
 
     def __str__(self) -> str:
         return "Uniswap"
