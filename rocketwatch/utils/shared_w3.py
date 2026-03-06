@@ -4,7 +4,6 @@ from typing import Dict, Any
 from web3.beacon import AsyncBeacon
 from web3 import Web3, AsyncWeb3, HTTPProvider
 from web3.providers import AsyncHTTPProvider
-from web3.middleware import ExtraDataToPOAMiddleware
 
 from utils.cfg import cfg
 
@@ -17,8 +16,6 @@ mainnet_w3 = w3
 
 if cfg['rocketpool.chain'] != "mainnet":
     mainnet_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.mainnet']))
-    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
-    w3_async.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
 historical_w3 = None
 if "archive" in cfg['execution_layer.endpoint'].keys():
@@ -30,6 +27,11 @@ class Bacon(AsyncBeacon):
         id_str = ','.join(map(str, ids))
         return await self._async_make_get_request(
             f"/eth/v1/beacon/states/{state_id}/validators?id={id_str}"
+        )
+
+    async def get_sync_committee(self, epoch: int) -> Dict[str, Any]:
+        return await self._async_make_get_request(
+            f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
         )
 
 bacon = Bacon(cfg["consensus_layer.endpoint"])

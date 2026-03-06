@@ -41,7 +41,7 @@ class Lottery(commands.Cog):
         sync_period = int(h['data']['message']['slot']) // 32 // 256
         if period == "next":
             sync_period += 1
-        data = (await bacon.get_epoch_sync_committees(str(sync_period * 256)))["data"]
+        data = (await bacon.get_sync_committee(sync_period * 256))["data"]
         await self.bot.db.sync_committee_stats.replace_one({"period": period},
                                                  {"period"     : period,
                                                   "start_epoch": sync_period * 256,
