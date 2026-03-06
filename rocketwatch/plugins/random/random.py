@@ -134,7 +134,7 @@ class Random(commands.Cog):
                 e.description = "Invalid address"
                 await ctx.send(embed=e)
                 return
-            creature = get_sea_creature_for_address(address)
+            creature = await get_sea_creature_for_address(address)
             if not creature:
                 e.description = f"No sea creature for {address}"
             else:
@@ -142,7 +142,7 @@ class Random(commands.Cog):
                 required_holding = [h for h, c in sea_creatures.items() if c == creature[0]][0]
                 e.add_field(name="Visualization", value=el_explorer_url(address, prefix=creature), inline=False)
                 e.add_field(name="Required holding for emoji", value=f"{required_holding * len(creature)} ETH", inline=False)
-                holding = get_holding_for_address(address)
+                holding = await get_holding_for_address(address)
                 e.add_field(name="Actual Holding", value=f"{holding:.0f} ETH", inline=False)
         else:
             e.title = "Possible Sea Creatures"

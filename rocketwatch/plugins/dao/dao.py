@@ -33,16 +33,16 @@ class OnchainDAO(Cog):
         self.bot = bot
 
     @staticmethod
-    def get_dao_votes_embed(dao: DefaultDAO, full: bool) -> Embed:
+    async def get_dao_votes_embed(dao: DefaultDAO, full: bool) -> Embed:
         current_proposals: dict[DefaultDAO.ProposalState, list[DefaultDAO.Proposal]] = {
             dao.ProposalState.Pending: [],
             dao.ProposalState.Active: [],
             dao.ProposalState.Succeeded: [],
         }
 
-        for state, ids in dao.get_proposal_ids_by_state().items():
+        for state, ids in (await dao.get_proposal_ids_by_state()).items():
             if state in current_proposals:
-                current_proposals[state].extend([dao.fetch_proposal(pid) for pid in ids])
+                current_proposals[state].extend([await dao.fetch_proposal(pid) for pid in ids])
 
         return Embed(
             title=f"{dao.display_name} Proposals",
@@ -70,7 +70,7 @@ class OnchainDAO(Cog):
         )
 
     @staticmethod
-    def get_pdao_votes_embed(dao: ProtocolDAO, full: bool) -> Embed:
+    async def get_pdao_votes_embed(dao: ProtocolDAO, full: bool) -> Embed:
         current_proposals: dict[ProtocolDAO.ProposalState, list[ProtocolDAO.Proposal]] = {
             dao.ProposalState.Pending: [],
             dao.ProposalState.ActivePhase1: [],
@@ -78,9 +78,9 @@ class OnchainDAO(Cog):
             dao.ProposalState.Succeeded: [],
         }
 
-        for state, ids in dao.get_proposal_ids_by_state().items():
+        for state, ids in (await dao.get_proposal_ids_by_state()).items():
             if state in current_proposals:
-                current_proposals[state].extend([dao.fetch_proposal(pid) for pid in ids])
+                current_proposals[state].extend([await dao.fetch_proposal(pid) for pid in ids])
 
         return Embed(
             title="pDAO Proposals",
@@ -128,13 +128,13 @@ class OnchainDAO(Cog):
         match dao_name:
             case "pDAO":
                 dao = ProtocolDAO()
-                embed = self.get_pdao_votes_embed(dao, full)
+                embed = await self.get_pdao_votes_embed(dao, full)
             case "oDAO":
                 dao = OracleDAO()
-                embed = self.get_dao_votes_embed(dao, full)
+                embed = await self.get_dao_votes_embed(dao, full)
             case "Security Council":
                 dao = SecurityCouncil()
-                embed = self.get_dao_votes_embed(dao, full)
+                embed = await self.get_dao_votes_embed(dao, full)
             case _:
                 raise ValueError(f"Invalid DAO name: {dao_name}")
 
@@ -214,7 +214,7 @@ class OnchainDAO(Cog):
         else:
             suggestions = list(range(1, num_proposals + 1))[:-26:-1]
                     
-        titles: list[str] = rp.multicall([
+        titles: list[str] = await rp.multicall([
             dao.proposal_contract.functions.getMessage(proposal_id) for proposal_id in suggestions
         ])
         return [Choice(name=f"#{pid}: {title}", value=pid) for pid, title in zip(suggestions, titles)]
@@ -225,7 +225,7 @@ class OnchainDAO(Cog):
     async def voter_list(self, interaction: Interaction, proposal: int) -> None:
         """Show the list of voters for a pDAO proposal"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        if not (proposal := ProtocolDAO().fetch_proposal(proposal)):
+        if not (proposal := await ProtocolDAO().fetch_proposal(proposal)):
             return await interaction.followup.send("Invalid proposal ID.")
         
         view = OnchainDAO.VoterPageView(proposal)

@@ -44,20 +44,20 @@ async def collateral_distribution_raw(ctx: Context, distribution):
     await ctx.send(embed=e)
 
 
-def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]:
+async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]:
     node_staking = rp.get_contract_by_name("rocketNodeStaking")
     minipool_manager = rp.get_contract_by_name("rocketMinipoolManager")
     eb16s, eb8s, rpl_stakes = [], [], []
 
     nodes = rp.call("rocketNodeManager.getNodeAddresses", 0, 10_000)
     for node_batch in as_chunks(nodes, 500):
-        eb16s += rp.multicall([
+        eb16s += await rp.multicall([
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 16 * 10**18) for node in node_batch
         ])
-        eb8s += rp.multicall([
+        eb8s += await rp.multicall([
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 8 * 10**18) for node in node_batch
         ])
-        rpl_stakes += rp.multicall([
+        rpl_stakes += await rp.multicall([
             node_staking.functions.getNodeStakedRPL(node) for node in node_batch
         ])
 
@@ -70,9 +70,9 @@ def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]
     }
 
 
-def get_average_collateral_percentage_per_node(collateral_cap: Optional[int], bonded: bool):
+async def get_average_collateral_percentage_per_node(collateral_cap: Optional[int], bonded: bool):
     # get stakes for each node
-    stakes = list(get_node_minipools_and_collateral().values())
+    stakes = list(await get_node_minipools_and_collateral().values())
     # get the current rpl price
     rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))        
     
@@ -130,7 +130,7 @@ class Collateral(commands.Cog):
                 return
 
         rpl_price = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
-        data = get_node_minipools_and_collateral()
+        data = await get_node_minipools_and_collateral()
 
         # Calculate each node's tvl and collateral and add it to the data
         def node_tvl(node):
@@ -236,7 +236,7 @@ class Collateral(commands.Cog):
         """
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
 
-        data = get_average_collateral_percentage_per_node(collateral_cap, bonded)
+        data = await get_average_collateral_percentage_per_node(collateral_cap, bonded)
         distribution = [(collateral, len(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])]
         counts = sum(([collateral] * num_nodes for collateral, num_nodes in distribution), [])
 

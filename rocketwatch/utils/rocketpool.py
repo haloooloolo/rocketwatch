@@ -111,18 +111,8 @@ class RocketPool:
             flags.append(not req)
         return fns, flags
 
-    def multicall(self, calls, require_success=True) -> list:
-        """Sync multicall accepting ContractFunction objects or (fn, require_success) tuples."""
-        fns, flags = self._normalize_calls(calls, require_success)
-        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags)]
-        results = self._multicall.functions.aggregate3(encoded).call()
-        return [
-            RocketPool._decode_fn_output(fns[i], data) if success else None
-            for i, (success, data) in enumerate(results)
-        ]
-
-    async def multicall_async(self, calls, require_success=True) -> list:
-        """Async multicall accepting ContractFunction objects or (fn, require_success) tuples."""
+    async def multicall(self, calls, require_success=True) -> list:
+        """Multicall accepting ContractFunction objects or (fn, require_success) tuples."""
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags)]
         results = await self._multicall_async.functions.aggregate3(encoded).call()

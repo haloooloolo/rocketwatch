@@ -22,7 +22,7 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     async def get_deposit_pool_stats() -> Embed:
-        balance_raw, max_size_raw, max_amount_raw = rp.multicall([
+        balance_raw, max_size_raw, max_amount_raw = await rp.multicall([
             rp.get_contract_by_name("rocketDepositPool").functions.getBalance(),
             rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit").functions.getMaximumDepositPoolSize(),
             rp.get_contract_by_name("rocketDepositPool").functions.getMaximumDepositAmount(),
@@ -79,7 +79,7 @@ class DepositPool(StatusPlugin):
     
     @staticmethod
     async def get_contract_collateral_stats() -> Embed:
-        exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = rp.multicall([
+        exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = await rp.multicall([
             rp.get_contract_by_name("rocketTokenRETH").functions.getExchangeRate(),
             rp.get_contract_by_name("rocketTokenRETH").functions.totalSupply(),
             rp.get_contract_by_name("rocketTokenRETH").functions.getCollateralRate(),

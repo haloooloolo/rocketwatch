@@ -2,7 +2,7 @@ import contextlib
 from utils import solidity
 from utils.cfg import cfg
 from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from utils.shared_w3 import w3_async
 
 price_cache = {
     "block"     : 0,
@@ -47,19 +47,17 @@ def get_sea_creature_for_holdings(holdings):
     return next((sea_creature for holding_value, sea_creature in sea_creatures.items() if holdings >= holding_value), '')
 
 
-def get_holding_for_address(address):
-    if cfg["rocketpool.chain"] != "mainnet":
-        return 0
-    if price_cache["block"] != (b := w3.eth.block_number):
+async def get_holding_for_address(address):
+    if price_cache["block"] != (b := await w3_async.eth.get_block_number()):
         price_cache["rpl_price"] = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
         price_cache["reth_price"] = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate"))
         price_cache["block"] = b
 
     # get their eth balance
-    eth_balance = solidity.to_float(w3.eth.get_balance(address))
+    eth_balance = solidity.to_float(await w3_async.eth.get_balance(address))
     # get ERC-20 token balance for this address
     with contextlib.suppress(Exception):
-        rpl_balance, rplfs_balance, reth_balance = rp.multicall([
+        rpl_balance, rplfs_balance, reth_balance = await rp.multicall([
             rp.get_contract_by_name("rocketTokenRPL").functions.balanceOf(address),
             rp.get_contract_by_name("rocketTokenRPLFixedSupply").functions.balanceOf(address),
             rp.get_contract_by_name("rocketTokenRETH").functions.balanceOf(address),
@@ -75,6 +73,5 @@ def get_holding_for_address(address):
     return eth_balance
 
 
-def get_sea_creature_for_address(address):
-    # return the sea creature for the given holdings
-    return get_sea_creature_for_holdings(get_holding_for_address(address))
+async def get_sea_creature_for_address(address):
+    return get_sea_creature_for_holdings(await get_holding_for_address(address))

@@ -630,7 +630,7 @@ class Events(EventPlugin):
                     return None
 
             dao = ProtocolDAO()
-            proposal = dao.fetch_proposal(proposal_id)
+            proposal = await dao.fetch_proposal(proposal_id)
             args.proposal_body = dao.build_proposal_body(
                 proposal,
                 include_proposer=False,
@@ -652,7 +652,7 @@ class Events(EventPlugin):
             }[dao_name])
 
             dao = DefaultDAO(dao_name)
-            proposal = dao.fetch_proposal(proposal_id)
+            proposal = await dao.fetch_proposal(proposal_id)
             args.proposal_body = dao.build_proposal_body(
                 proposal,
                 include_proposer=False,

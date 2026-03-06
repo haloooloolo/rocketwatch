@@ -90,7 +90,7 @@ class CEX(Exchange, ABC):
     async def _get_liquidity(self, market: Market, session: aiohttp.ClientSession) -> Optional[Liquidity]:
         bids, asks = await self._get_order_book(market, session)
         if not (bids and asks):
-            log.warning(f"Empty order book")
+            log.warning("Empty order book")
             return None
 
         bid_prices = np.array(list(bids.keys()))
@@ -607,16 +607,16 @@ class DEX(Exchange, ABC):
             pass
 
         @abstractmethod
-        def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Optional[Liquidity]:
             pass
 
     def __init__(self, pools: list[LiquidityPool]):
         self.pools = pools
 
-    def get_liquidity(self) -> dict[LiquidityPool, Liquidity]:
+    async def get_liquidity(self) -> dict[LiquidityPool, Liquidity]:
         pools = {}
         for pool in self.pools:
-            if liq := pool.get_liquidity():
+            if liq := await pool.get_liquidity():
                 pools[pool] = liq
         return pools
 
@@ -637,7 +637,7 @@ class BalancerV2(DEX):
         def get_normalized_price(self) -> float:
             return self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
-        def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Optional[Liquidity]:
             balance_0, balance_1 = self.vault.functions.getPoolTokens(self.id).call()[1]
             if (balance_0 == 0) or (balance_1 == 0):
                 log.warning("Empty token balances")
@@ -695,16 +695,16 @@ class UniswapV3(DEX):
             bit_position = compressed % UniswapV3.TICK_WORD_SIZE
             return word_position, bit_position
 
-        def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
-            results = rp.multicall([self.contract.functions.ticks(tick) for tick in ticks])
+        async def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
+            results = await rp.multicall([self.contract.functions.ticks(tick) for tick in ticks])
             return dict(zip(ticks, [r[1] for r in results]))
 
-        def get_initialized_ticks(self, current_tick: int) -> list[int]:
+        async def get_initialized_ticks(self, current_tick: int) -> list[int]:
             ticks = []
             active_word, b = self.tick_to_word_and_bit(current_tick)
 
             word_range = list(range(active_word - 5, active_word + 5))
-            bitmaps = rp.multicall([
+            bitmaps = await rp.multicall([
                 self.contract.functions.tickBitmap(word) for word in word_range
             ])
 
@@ -738,13 +738,13 @@ class UniswapV3(DEX):
         def get_normalized_price(self) -> float:
             return self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
-        def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Optional[Liquidity]:
             price = self.get_price()
             initial_liquidity = self.contract.functions.liquidity().call()
 
             calculated_tick = UniswapV3.price_to_tick(price)
             current_tick = int(calculated_tick)
-            ticks = self.get_initialized_ticks(current_tick)
+            ticks = await self.get_initialized_ticks(current_tick)
 
             if not ticks:
                 log.warning("No liquidity found")
@@ -752,12 +752,12 @@ class UniswapV3(DEX):
 
             log.debug(f"Found {len(ticks)} initialized ticks!")
 
-            def get_cumulative_liquidity(_ticks: list[int]) -> list[float]:
+            async def get_cumulative_liquidity(_ticks: list[int]) -> list[float]:
                 cumulative_liquidity = 0
                 last_tick = calculated_tick
                 active_liquidity = initial_liquidity
 
-                net_liquidity: dict[int, int] = self.get_ticks_net_liquidity(_ticks)
+                net_liquidity: dict[int, int] = await self.get_ticks_net_liquidity(_ticks)
                 liquidity = []
 
                 # assume liquidity in token 0 for now
@@ -776,12 +776,12 @@ class UniswapV3(DEX):
                 return liquidity
 
             ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [UniswapV3.MIN_TICK]
-            ask_liquidity = [0] + get_cumulative_liquidity(ask_ticks)
-            ask_ticks = [calculated_tick] + ask_ticks
+            ask_liquidity = [0] + await get_cumulative_liquidity(ask_ticks)
+            ask_ticks.insert(0, calculated_tick)
 
             bid_ticks = [t for t in ticks if t > current_tick] + [UniswapV3.MAX_TICK]
-            bid_liquidity = [0] + get_cumulative_liquidity(bid_ticks)
-            bid_ticks = [calculated_tick] + bid_ticks
+            bid_liquidity = [0] + await get_cumulative_liquidity(bid_ticks)
+            bid_ticks.insert(0, calculated_tick)
 
             balance_norm = 10 ** (self.token_1.decimals - self.token_0.decimals)
 

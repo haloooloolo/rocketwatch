@@ -174,7 +174,7 @@ class DBUpkeepTask(commands.Cog):
             # call_fn(item) returns a list of (fn, require_success, transform, field)
             expanded = [(item["address"], *t) for item in batch for t in call_fn(item)]
             calls = [(e[1], e[2]) for e in expanded]
-            results = await rp.multicall_async(calls)
+            results = await rp.multicall(calls)
             updates = defaultdict(dict)
             for e, value in zip(expanded, results):
                 addr, transform, field = e[0], e[3], e[4]
@@ -200,7 +200,7 @@ class DBUpkeepTask(commands.Cog):
             return
         data = {}
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
-            results = await rp.multicall_async([nm.functions.getNodeAt(i) for i in index_batch])
+            results = await rp.multicall([nm.functions.getNodeAt(i) for i in index_batch])
             data |= dict(zip(index_batch, results))
         await self.bot.db.node_operators.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()])
 
@@ -291,7 +291,7 @@ class DBUpkeepTask(commands.Cog):
             return
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
-            results = await rp.multicall_async([mm.functions.getMinipoolAt(i) for i in index_batch])
+            results = await rp.multicall([mm.functions.getMinipoolAt(i) for i in index_batch])
             await self.bot.db.minipools.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results)])
 
     @timerun_async
@@ -448,7 +448,7 @@ class DBUpkeepTask(commands.Cog):
                         megapool_contract.functions.getValidatorInfo(vid),
                     ]
                 ]
-                results = await rp.multicall_async(fns)
+                results = await rp.multicall(fns)
 
                 docs = []
                 for i, vid in enumerate(id_batch):
@@ -485,7 +485,7 @@ class DBUpkeepTask(commands.Cog):
                 rp.assemble_contract("rocketMegapoolDelegate", address=v["megapool"]).functions.getValidatorInfo(v["validator_id"])
                 for v in batch
             ]
-            results = await rp.multicall_async(fns)
+            results = await rp.multicall(fns)
             ops = []
             for v, info_raw in zip(batch, results):
                 info = _unpack_validator_info_dynamic(info_raw) if info_raw is not None else None

@@ -313,7 +313,7 @@ class Transactions(EventPlugin):
                 payload = rp.call("rocketDAOProposal.getPayload", proposal_id)
 
             event.args["executor"] = event["from"]
-            proposal = dao.fetch_proposal(proposal_id)
+            proposal = await dao.fetch_proposal(proposal_id)
             event.args["proposal_body"] = dao.build_proposal_body(proposal, include_proposer=False)
 
             dao_address = dao.contract.address

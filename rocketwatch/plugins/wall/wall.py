@@ -101,11 +101,11 @@ class Wall(commands.Cog):
         return OrderedDict(sorted(depth.items(), key=lambda e: liquidity[e[0]], reverse=True))
 
     @timerun
-    def _get_dex_data(self, x: np.ndarray, rpl_usd: float) -> OrderedDict[DEX, np.ndarray]:
+    async def _get_dex_data(self, x: np.ndarray, rpl_usd: float) -> OrderedDict[DEX, np.ndarray]:
         depth: dict[DEX, np.ndarray] = {}
         liquidity: dict[DEX, float] = {}
         for dex in self.dex:
-            if pools := dex.get_liquidity():
+            if pools := await dex.get_liquidity():
                 depth[dex], liquidity[dex] = self._get_market_depth_and_liquidity(pools, x, rpl_usd)
 
         return OrderedDict(sorted(depth.items(), key=lambda e: liquidity[e[0]], reverse=True))
@@ -276,7 +276,7 @@ class Wall(commands.Cog):
 
         try:
             if sources != "CEX":
-                dex_data = self._get_dex_data(x, rpl_usd)
+                dex_data = await self._get_dex_data(x, rpl_usd)
                 source_desc.append(f"{len(dex_data)} DEX")
             if sources != "DEX":
                 cex_data = await self._get_cex_data(x, rpl_usd)
