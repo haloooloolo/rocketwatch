@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from typing import Optional, Literal, cast
 
 import aiohttp
+from discord import Interaction
 from discord.ext import commands
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
-from discord.app_commands import Choice
+from discord.app_commands import command, Choice
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -118,19 +117,20 @@ class Forum(commands.Cog):
             ))
         return users
 
-    @hybrid_command()
+    @command()
     async def top_forum_posts(
         self,
-        ctx: Context,
+        interaction: Interaction,
         period: Period = "monthly"
     ) -> None:
         """Get the most popular topics from the forum"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         if isinstance(period, Choice):
             period: Forum.Period = cast(Forum.Period, period.value)
 
-        embed = Embed(title=f"Top Forum Posts ({period})", description="")
+        embed = Embed(title=f"Top Forum Posts ({period})")
+        embed.description = ""
 
         if topics := await self.get_popular_topics(period):
             for i, topic in enumerate(topics[:10], start=1):
@@ -142,22 +142,20 @@ class Forum(commands.Cog):
         else:
             embed.description = "No topics found."
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
-    @hybrid_command()
+    @command()
     async def top_forum_users(
         self,
-        ctx: Context,
+        interaction: Interaction,
         period: Period = "monthly",
         order_by: UserMetric = "likes_received"
     ) -> None:
         """Get the most active forum users"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
-        embed = Embed(
-            title=f"Top Forum Users ({period})",
-            description=""
-        )
+        embed = Embed(title=f"Top Forum Users ({period})")
+        embed.description = ""
 
         users = await self.get_top_users(period, order_by)
         if users:
@@ -169,7 +167,7 @@ class Forum(commands.Cog):
         else:
             embed.description = "No users found."
 
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):
