@@ -1,23 +1,20 @@
 {
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "extends": [
-        "config:base"
+        "config:recommended"
     ],
-    "patch": {
-        "automerge": true
-    },
-    "pin": {
-        "automerge": true
-    },
-    "rollback": {
-        "automerge": true
-    },
-    "docker-compose": {
-        "automerge": false
-    },
-    "docker": {
-        "automerge": false
-    },
+    "forkProcessing": "enabled",
     "prCreation": "not-pending",
     "rollbackPrs": true,
-    "stabilityDays": 3
+    "stabilityDays": 3,
+    "packageRules": [
+        {
+            "matchUpdateTypes": ["patch", "pin", "rollback"],
+            "automerge": true
+        },
+        {
+            "matchManagers": ["dockerfile", "docker-compose"],
+            "automerge": false
+        }
+    ]
 }
