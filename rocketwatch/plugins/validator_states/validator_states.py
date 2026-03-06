@@ -3,7 +3,6 @@ import logging
 from discord import Interaction
 from discord.ext import commands
 from discord.app_commands import command
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -111,18 +110,17 @@ def _collapse_tree(data: dict) -> dict:
 class ValidatorStates(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @command()
     async def validator_states(self, interaction: Interaction):
         """Show validator counts by beacon chain and contract status"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
-        minipools = await self.db.minipools.find(
+        minipools = await self.bot.db.minipools.find(
             {"beacon.status": {"$exists": True}},
             {"beacon": 1, "status": 1, "finalized": 1, "node_operator": 1, "validator_index": 1}
         ).to_list(None)
-        megapool_vals = await self.db.megapool_validators.find(
+        megapool_vals = await self.bot.db.megapool_validators.find(
             {}, {"beacon": 1, "status": 1, "node_operator": 1, "validator_index": 1}
         ).to_list(None)
 

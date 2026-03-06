@@ -40,20 +40,20 @@ class EventPlugin(commands.Cog):
     def start_tracking(self, block: BlockNumber) -> None:
         self.last_served_block = block - 1
 
-    def get_new_events(self) -> list[Event]:
+    async def get_new_events(self) -> list[Event]:
         now = datetime.now()
         if (now - self._last_run) < self.rate_limit:
             return []
 
         self._last_run = now
         self._pending_block = w3.eth.get_block_number()
-        events = self._get_new_events()
+        events = await self._get_new_events()
         self.last_served_block = self._pending_block
         return events
 
     @abstractmethod
-    def _get_new_events(self) -> list[Event]:
+    async def _get_new_events(self) -> list[Event]:
         pass
 
-    def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
+    async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
         return []

@@ -7,7 +7,7 @@ import discord
 from discord import ui, ButtonStyle, Interaction
 from discord.ext import commands, tasks
 from discord.app_commands import command
-from pymongo import AsyncMongoClient, ASCENDING
+from pymongo import ASCENDING
 
 from rocketwatch import RocketWatch
 from utils.rocketpool import rp
@@ -74,7 +74,6 @@ class InstructionsView(ui.View):
 class UserDistribute(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         self.task.start()
 
     async def cog_unload(self):
@@ -115,7 +114,7 @@ class UserDistribute(commands.Cog):
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
         threshold_epoch = current_epoch - 5000
 
-        minipools = await self.db.minipools.find({
+        minipools = await self.bot.db.minipools.find({
             "user_distributed": False,
             "status": "staking",
             "execution_balance": {"$gte": 8},

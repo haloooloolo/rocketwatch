@@ -20,7 +20,7 @@ from utils.dao import DefaultDAO, ProtocolDAO
 from utils.embeds import assemble, prepare_args, el_explorer_url, Embed
 from utils.event import EventPlugin, Event
 from utils.rocketpool import rp, NoAddressFound
-from utils.shared_w3 import w3, bacon
+from utils.shared_w3 import w3_async, bacon
 from utils.solidity import SUBMISSION_KEYS
 from utils.block_time import block_to_ts
 
@@ -28,7 +28,8 @@ log = logging.getLogger("events")
 log.setLevel(cfg["log_level"])
 
 
-PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], list[LogReceipt | EventData]]
+from collections.abc import Coroutine
+PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Coroutine[None, None, list[LogReceipt | EventData]]]
 
 class Events(EventPlugin):
     def __init__(self, bot: RocketWatch):
@@ -64,7 +65,7 @@ class Events(EventPlugin):
                     log.info(f"Adding filter for {contract_name}.{event_name}")
                     event_abi = contract.events[event_name].abi
                     input_types = ','.join(i['type'] for i in event_abi['inputs'])
-                    topic = w3.keccak(text=f"{event_name}({input_types})").hex()
+                    topic = w3_async.keccak(text=f"{event_name}({input_types})").hex()
                 except Exception as e:
                     log.exception(e)
                     log.warning(f"Couldn't find event {event_name} ({event['name']}) in the contract")
@@ -75,8 +76,8 @@ class Events(EventPlugin):
                 topic_map[topic] = event_name
 
         if addresses:
-            def build_direct_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[LogReceipt]:
-                return w3.eth.get_logs({
+            async def build_direct_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[LogReceipt]:
+                return await w3_async.eth.get_logs({
                     "address"  : list(addresses),
                     "topics"   : [list(aggregated_topics)],
                     "fromBlock": _from,
@@ -96,12 +97,12 @@ class Events(EventPlugin):
                 event_map[event["event_name"]] = event["name"]
                 def super_builder(_contract, _event) -> PartialFilter:
                     # this is needed to pin nonlocal variables
-                    def build_topic_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[EventData]:
+                    async def build_topic_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[EventData]:
                         event_cls = _contract.events[_event["event_name"]]
                         event_abi = event_cls.abi
                         input_types = ','.join(i['type'] for i in event_abi['inputs'])
-                        topic0 = w3.keccak(text=f"{_event['event_name']}({input_types})").hex()
-                        raw_logs = w3.eth.get_logs({
+                        topic0 = w3_async.keccak(text=f"{_event['event_name']}({input_types})").hex()
+                        raw_logs = await w3_async.eth.get_logs({
                             "topics"   : [topic0],
                             "fromBlock": _from,
                             "toBlock"  : _to,
@@ -141,7 +142,7 @@ class Events(EventPlugin):
         if not (event_name := self.event_map.get(event, None)):
             event_name = self.event_map[f"{contract}.{event}"]
 
-        if embed := self.handle_event(event_name, event_obj):
+        if embed := await self.handle_event(event_name, event_obj):
             await interaction.followup.send(embed=embed)
         else:
             await interaction.followup.send(content="No events triggered.")
@@ -151,7 +152,7 @@ class Events(EventPlugin):
     @is_owner()
     async def replay_events(self, interaction: Interaction, tx_hash: str):
         await interaction.response.defer()
-        receipt = w3.eth.get_transaction_receipt(tx_hash)
+        receipt = await w3_async.eth.get_transaction_receipt(tx_hash)
         logs: list[LogReceipt] = receipt.logs
 
         filtered_events: list[LogReceipt | EventData] = []
@@ -173,25 +174,25 @@ class Events(EventPlugin):
                 rich_logs = event.process_receipt(receipt, errors=DISCARD)
                 filtered_events.extend(rich_logs)
 
-        responses, _ = self.process_events(filtered_events)
+        responses, _ = await self.process_events(filtered_events)
         if responses:
             await interaction.followup.send(embeds=[response.embed for response in responses])
         else:
             await interaction.followup.send(content="No events found.")
 
-    def _get_new_events(self) -> list[Event]:
+    async def _get_new_events(self) -> list[Event]:
         from_block = self.last_served_block + 1 - self.lookback_distance
-        return self.get_past_events(from_block, self._pending_block)
+        return await self.get_past_events(from_block, self._pending_block)
 
-    def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
+    async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
         log.debug(f"Fetching events in [{from_block}, {to_block}]")
         log.debug(f"Using {len(self._partial_filters)} filters")
         
         events = []
         for pf in self._partial_filters:
-            events.extend(pf(from_block, to_block))
+            events.extend(await pf(from_block, to_block))
 
-        messages, contract_upgrade_block = self.process_events(events)
+        messages, contract_upgrade_block = await self.process_events(events)
         if not contract_upgrade_block:
             return messages
 
@@ -201,13 +202,13 @@ class Events(EventPlugin):
         try:
             rp.flush()
             self.__init__(self.bot)
-            return messages + self.get_past_events(contract_upgrade_block + 1, to_block)
+            return messages + await self.get_past_events(contract_upgrade_block + 1, to_block)
         except Exception as err:
             # rollback to pre upgrade config if this goes wrong
             self._partial_filters, self.event_map, self.topic_map = old_config
             raise err
 
-    def process_events(self, events: list[LogReceipt | EventData]) -> tuple[list[Event], Optional[BlockNumber]]:
+    async def process_events(self, events: list[LogReceipt | EventData]) -> tuple[list[Event], Optional[BlockNumber]]:
         events.sort(key=lambda e: (e.blockNumber, e.logIndex))
         messages = []
         upgrade_block = None
@@ -234,7 +235,7 @@ class Events(EventPlugin):
                 # default event path
                 contract = rp.get_contract_by_address(event.address)
                 contract_event = self.topic_map[event.topics[0].hex()]
-                topics = [w3.to_hex(t) for t in event.topics]
+                topics = [w3_async.to_hex(t) for t in event.topics]
                 _event = aDict(contract.events[contract_event]().process_log(event))
                 _event.topics = topics
                 _event.args = aDict(_event.args)
@@ -248,7 +249,7 @@ class Events(EventPlugin):
                 event = _event
 
                 if event_name := self.event_map.get(f"{n}.{event.event}"):
-                    embed = self.handle_event(event_name, event)
+                    embed = await self.handle_event(event_name, event)
                     event_name = event.args.get("event_name", event_name)
                 else:
                     log.warning(f"Skipping unknown event {n}.{event.event}")
@@ -261,7 +262,7 @@ class Events(EventPlugin):
                     # deposit/exit event path
                     event.args = aDict(event.args)
                     hash_args(event.args)
-                    embed = self.handle_global_event(event_name, event)
+                    embed = await self.handle_global_event(event_name, event)
                     event_name = event.args.get("event_name", event_name)
 
             if (event_name is None) or (embed is None):
@@ -362,7 +363,7 @@ class Events(EventPlugin):
                         events.remove(vote_event)
                 elif full_event_name == "MinipoolPrestaked":
                     for assign_event in events_by_name.get("rocketDepositPool.DepositAssigned", []).copy():
-                        assigned_minipool = w3.to_checksum_address(assign_event["topics"][1][-20:])
+                        assigned_minipool = w3_async.to_checksum_address(assign_event["topics"][1][-20:])
                         if event["address"] == assigned_minipool:
                             events_by_name["rocketDepositPool.DepositAssigned"].remove(assign_event)
                             events.remove(assign_event)
@@ -393,8 +394,8 @@ class Events(EventPlugin):
 
         return events
 
-    def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
-        receipt = w3.eth.get_transaction_receipt(event.transactionHash)
+    async def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
+        receipt = await w3_async.eth.get_transaction_receipt(event.transactionHash)
         
         is_minipool_event = rp.is_minipool(event.address) or rp.is_minipool(receipt.to)
         is_megapool_event = rp.is_megapool(event.address) or rp.is_megapool(receipt.to)       
@@ -447,9 +448,9 @@ class Events(EventPlugin):
             event.args.megapool = event.address
             event.args.node = rp.call("rocketMegapoolDelegate.getNodeAddress", address=event.address)
 
-        return self.handle_event(event_name, event)
+        return await self.handle_event(event_name, event)
 
-    def handle_event(self, event_name: str, event: aDict) -> Optional[Embed]:
+    async def handle_event(self, event_name: str, event: aDict) -> Optional[Embed]:
         args = aDict(event.args)
 
         if "negative_rETH_ratio_update_event" in event_name:
@@ -477,13 +478,13 @@ class Events(EventPlugin):
                 match args.types[i]:
                     case 0:
                         # SettingType.UINT256
-                        value = w3.to_int(value_raw)
+                        value = w3_async.to_int(value_raw)
                     case 1:
                         # SettingType.BOOL
                         value = bool(value_raw)
                     case 2:
                         # SettingType.ADDRESS
-                        value = w3.to_checksum_address(value_raw)
+                        value = w3_async.to_checksum_address(value_raw)
                     case _:
                         value = "???"
                 description_parts.append(
@@ -531,7 +532,7 @@ class Events(EventPlugin):
             elif args.newLimit < args.oldLimit:
                 event_name = event_name.replace("change", "decrease")
         elif event_name == "cs_operator_added_event":
-            args.address = w3.eth.get_transaction_receipt(event.transactionHash)["from"]
+            args.address = await w3_async.eth.get_transaction_receipt(event.transactionHash)["from"]
         elif event_name == "cs_rpl_treasury_fee_change_event":
             args.oldFee = 100 * solidity.to_float(args.oldFee)
             args.newFee = 100 * solidity.to_float(args.newFee)
@@ -558,8 +559,8 @@ class Events(EventPlugin):
             rpl = rp.get_address_by_name("rocketTokenRPL")
             if args.signerToken != rpl and args.senderToken != rpl:
                 return None
-            args.seller = w3.to_checksum_address(f"0x{event.topics[2][-40:]}")
-            args.buyer = w3.to_checksum_address(f"0x{event.topics[3][-40:]}")
+            args.seller = w3_async.to_checksum_address(f"0x{event.topics[2][-40:]}")
+            args.buyer = w3_async.to_checksum_address(f"0x{event.topics[3][-40:]}")
             # token names
             s = rp.assemble_contract(name="ERC20", address=args.signerToken)
             args.sellToken = s.functions.symbol().call()
@@ -585,7 +586,7 @@ class Events(EventPlugin):
 
         receipt = None
         if cfg["rocketpool.chain"] == "mainnet":
-            receipt = w3.eth.get_transaction_receipt(event.transactionHash)
+            receipt = await w3_async.eth.get_transaction_receipt(event.transactionHash)
             args.tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
             args.tnx_fee_usd = round(rp.get_eth_usdc_price() * args.tnx_fee / 10**18, 2)
             args.caller = receipt["from"]
@@ -757,7 +758,7 @@ class Events(EventPlugin):
             # get the transaction receipt
             args.depositAmount = rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber)
             user_deposit = args.depositAmount
-            receipt = w3.eth.get_transaction_receipt(args.transactionHash)
+            receipt = await w3_async.eth.get_transaction_receipt(args.transactionHash)
             args.node = receipt["from"]
             ee = rp.get_contract_by_name("rocketNodeDeposit").events.DepositReceived()
             with warnings.catch_warnings():
@@ -775,7 +776,7 @@ class Events(EventPlugin):
                     warnings.simplefilter("ignore")
                     processed_logs = e.process_receipt(receipt)
 
-                deposit_contract = bytes(w3.solidity_keccak(["string"], ["rocketNodeDeposit"]))
+                deposit_contract = bytes(w3_async.solidity_keccak(["string"], ["rocketNodeDeposit"]))
                 for withdraw_event in processed_logs:
                     # event.logindex 44, withdraw_event.logindex 50, rough distance like that
                     # reminder order is different than the previous example

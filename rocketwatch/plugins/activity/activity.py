@@ -3,7 +3,6 @@ import logging
 from cronitor import Monitor
 from discord import Activity, ActivityType
 from discord.ext import commands, tasks
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -15,7 +14,6 @@ log.setLevel(cfg["log_level"])
 class RichActivity(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("update-activity", api_key=cfg["other.secrets.cronitor"])
         self.task.start()
 
@@ -27,10 +25,10 @@ class RichActivity(commands.Cog):
         self.monitor.ping()
         log.debug("Updating Discord activity")
 
-        minipool_count = await self.db.minipools.count_documents(
+        minipool_count = await self.bot.db.minipools.count_documents(
             {"beacon.status": "active_ongoing"}
         )
-        megapool_count = await self.db.megapool_validators.count_documents(
+        megapool_count = await self.bot.db.megapool_validators.count_documents(
             {"beacon.status": "active_ongoing"}
         )
         validator_count = minipool_count + megapool_count

@@ -3,7 +3,6 @@ import math
 from datetime import datetime, timedelta
 from io import BytesIO
 
-from pymongo import AsyncMongoClient
 from bson import SON
 from cachetools import TTLCache
 from discord import File
@@ -24,8 +23,7 @@ log.setLevel(cfg["log_level"])
 class Metrics(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
-        self.collection = self.db.command_metrics
+        self.collection = self.bot.db.command_metrics
 
     @hybrid_command()
     async def metrics(self, ctx: Context):
@@ -40,7 +38,7 @@ class Metrics(commands.Cog):
             start = datetime.utcnow() - timedelta(days=7)
 
             # get the total number of processed events from the event_queue in the last 7 days
-            total_events_processed = await self.db.event_queue.count_documents({'time_seen': {'$gte': start}})
+            total_events_processed = await self.bot.db.event_queue.count_documents({'time_seen': {'$gte': start}})
             desc += f"Total Events Processed:\n\t{total_events_processed}\n\n"
 
             # get the total number of handled commands in the last 7 days
@@ -108,7 +106,7 @@ class Metrics(commands.Cog):
                 '$sort': SON([('_id.year', 1), ('_id.month', 1)])
             }
         ])).to_list(None)
-        event_emission = await (await self.db.event_queue.aggregate([
+        event_emission = await (await self.bot.db.event_queue.aggregate([
             {
                 '$group': {
                     '_id'  : {

@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 
-from pymongo import AsyncMongoClient
 from discord.app_commands import guilds
 from discord.ext import commands, tasks
 from discord.ext.commands import hybrid_command, is_owner
@@ -17,7 +16,6 @@ log.setLevel(cfg["log_level"])
 class PinnedMessages(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
         if not self.run_loop.is_running() and bot.is_ready():
             self.run_loop.start()
@@ -31,11 +29,11 @@ class PinnedMessages(commands.Cog):
     @tasks.loop(seconds=60.0)
     async def run_loop(self):
         # get all pinned messages in db
-        messages = await self.db.pinned_messages.find().to_list()
+        messages = await self.bot.db.pinned_messages.find().to_list()
         for message in messages:
             # if it's older than 6 hours and not disabled, mark as disabled
             if message["created_at"] + timedelta(hours=6) < datetime.utcnow() and not message["disabled"]:
-                await self.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
+                await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
                 message["disabled"] = True
             try:
                 # check if it's marked as disabled but not cleaned_up
@@ -47,7 +45,7 @@ class PinnedMessages(commands.Cog):
                     # delete message
                     await msg.delete()
                     # mark as cleaned_up
-                    await self.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"cleaned_up": True}})
+                    await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"cleaned_up": True}})
                 elif not message["disabled"]:
                     # delete and resend message
                     channel = self.bot.get_channel(message["channel_id"])
@@ -64,7 +62,7 @@ class PinnedMessages(commands.Cog):
                     e.description = message["content"]
                     e.set_footer(text="This message has been pinned by Invis. Will be automatically removed if not updated within 6 hours.")
                     m = await channel.send(embed=e)
-                    await self.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"message_id": m.id}})
+                    await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"message_id": m.id}})
             except Exception as err:
                 await self.bot.report_error(err)
 
@@ -79,17 +77,17 @@ class PinnedMessages(commands.Cog):
             await ctx.send("Channel not found")
             return
         # check if we already have a pinned message
-        message = await self.db.pinned_messages.find_one({"channel_id": channel.id})
+        message = await self.bot.db.pinned_messages.find_one({"channel_id": channel.id})
         if message:
             # update message
-            await self.db.pinned_messages.update_one({"_id": message["_id"]}, {
+            await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {
                 "$set": {"title"     : title, "content": description, "disabled": False, "cleaned_up": False,
                          "message_id": None, "created_at": datetime.utcnow()}})
             # rest is done by the run_loop
             await ctx.send("Updated pinned message")
             return
         # create new message
-        await self.db.pinned_messages.insert_one(
+        await self.bot.db.pinned_messages.insert_one(
             {"channel_id": channel.id, "message_id": None, "title": title, "content": description, "disabled": False,
              "cleaned_up": False, "created_at": datetime.utcnow()})
         # rest is done by the run_loop
@@ -106,7 +104,7 @@ class PinnedMessages(commands.Cog):
             await ctx.send("Channel not found")
             return
         # check if we already have a pinned message
-        message = await self.db.pinned_messages.find_one({"channel_id": channel.id})
+        message = await self.bot.db.pinned_messages.find_one({"channel_id": channel.id})
         if not message:
             await ctx.send("No pinned message found")
             return
@@ -115,7 +113,7 @@ class PinnedMessages(commands.Cog):
             await ctx.send("Pinned message already disabled")
             return
         # soft delete
-        await self.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
+        await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
         # rest is done by the run_loop
         await ctx.send("Disabled pinned message")
 

@@ -6,7 +6,6 @@ from bson import CodecOptions
 from discord import app_commands, ui, Interaction, TextStyle, ButtonStyle, File, User
 from discord.app_commands import Group, Choice, choices
 from discord.ext.commands import Cog, GroupCog
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -34,7 +33,7 @@ async def generate_template_embed(db, template_name: str):
 
 # Define a simple View that gives us a counter button
 class AdminView(ui.View):
-    def __init__(self, db: AsyncMongoClient, template_name: str):
+    def __init__(self, db, template_name: str):
         super().__init__()
         self.db = db
         self.template_name = template_name
@@ -172,18 +171,17 @@ async def _use(db, interaction: Interaction, name: str, mention: User | None):
 class SupportGlobal(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @app_commands.command(name="use")
     async def _use(self, interaction: Interaction, name: str, mention: User | None):
-        await _use(self.db, interaction, name, mention)
+        await _use(self.bot.db, interaction, name, mention)
 
     @_use.autocomplete("name")
     async def match_template(self, interaction: Interaction, current: str):
         return [
             Choice(
                 name=c["_id"], value=c["_id"]
-            ) for c in await self.db.support_bot.find(
+            ) for c in await self.bot.db.support_bot.find(
                 {"_id": {"$regex": current, "$options": "i"}}
             ).to_list(25)
         ]
@@ -191,14 +189,13 @@ class SupportGlobal(Cog):
 
 class SupportUtils(GroupCog, name="support"):
     subgroup = Group(
-        name='template', 
+        name='template',
         description='various templates used by active support members',
         guild_ids=[cfg["rocketpool.support.server_id"]]
     )
 
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @subgroup.command()
     async def add(self, interaction: Interaction, name: str):
@@ -208,7 +205,7 @@ class SupportUtils(GroupCog, name="support"):
             return
         await interaction.response.defer(ephemeral=True)
         # check if the template already exists in the db
-        if await self.db.support_bot.find_one({"_id": name}):
+        if await self.bot.db.support_bot.find_one({"_id": name}):
             await interaction.edit_original_response(
                 embed=Embed(
                     title="Error",
@@ -217,15 +214,15 @@ class SupportUtils(GroupCog, name="support"):
             )
             return
         # create the template in the db
-        await self.db.support_bot.insert_one(
+        await self.bot.db.support_bot.insert_one(
             {"_id": name, "title": "Insert Title here", "description": "Insert Description here"}
         )
         content = (
             f"This is a preview of the `{name}` template.\n"
             f"You can change it using the `Edit` button."
         )
-        embed = await generate_template_embed(self.db, name)
-        await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.db, name))
+        embed = await generate_template_embed(self.bot.db, name)
+        await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.bot.db, name))
 
     @subgroup.command()
     async def edit(self, interaction: Interaction, name: str):
@@ -235,7 +232,7 @@ class SupportUtils(GroupCog, name="support"):
             return
         await interaction.response.defer(ephemeral=True)
         # check if the template exists in the db
-        template = await self.db.support_bot.find_one({"_id": name})
+        template = await self.bot.db.support_bot.find_one({"_id": name})
 
         if not template:
             await interaction.edit_original_response(
@@ -245,13 +242,13 @@ class SupportUtils(GroupCog, name="support"):
                 ),
             )
             return
-        
+
         content = (
             f"This is a preview of the `{name}` template.\n"
             f"You can change it using the `Edit` button."
         )
-        embed = await generate_template_embed(self.db, name)
-        await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.db, name))
+        embed = await generate_template_embed(self.bot.db, name)
+        await interaction.edit_original_response(content=content, embed=embed, view=AdminView(self.bot.db, name))
 
     @subgroup.command()
     async def remove(self, interaction: Interaction, name: str):
@@ -261,7 +258,7 @@ class SupportUtils(GroupCog, name="support"):
             return
         await interaction.response.defer(ephemeral=True)
         # check if the template exists in the db
-        template = await self.db.support_bot.find_one({"_id": name})
+        template = await self.bot.db.support_bot.find_one({"_id": name})
         if not template:
             await interaction.edit_original_response(
                 embed=Embed(
@@ -271,7 +268,7 @@ class SupportUtils(GroupCog, name="support"):
             )
             return
         # remove the template from the db
-        await self.db.support_bot.delete_one({"_id": name})
+        await self.bot.db.support_bot.delete_one({"_id": name})
         await interaction.edit_original_response(
             embed=Embed(
                 title="Success",
@@ -289,7 +286,7 @@ class SupportUtils(GroupCog, name="support"):
     async def list(self, interaction: Interaction, order_by: Choice[str] = "_id"):
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
-        templates = await (await self.db.support_bot.aggregate([
+        templates = await (await self.bot.db.support_bot.aggregate([
             {
                 "$lookup": {
                     "from": "support_bot_dumps",
@@ -324,7 +321,7 @@ class SupportUtils(GroupCog, name="support"):
 
     @subgroup.command()
     async def use(self, interaction: Interaction, name: str, mention: User | None):
-        await _use(self.db, interaction, name, mention)
+        await _use(self.bot.db, interaction, name, mention)
 
     @edit.autocomplete("name")
     @remove.autocomplete("name")
@@ -334,7 +331,7 @@ class SupportUtils(GroupCog, name="support"):
             Choice(
                 name=c["_id"],
                 value=c["_id"]
-            ) for c in await self.db.support_bot.find(
+            ) for c in await self.bot.db.support_bot.find(
                 {
                     "_id": {
                         "$regex": current,

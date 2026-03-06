@@ -11,7 +11,6 @@ from discord.channel import TextChannel
 from discord.ext import commands
 from discord.ext.commands import Context, is_owner
 from discord.ext.commands import hybrid_command
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -27,7 +26,6 @@ class ChatSummary(commands.Cog):
         self.client = anthropic.AsyncAnthropic(api_key=cfg["other.secrets.anthropic"])
         # log all possible engines
         self.tokenizer = tiktoken.encoding_for_model("gpt-4-turbo")
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @classmethod
     def message_to_text(cls, message, index):
@@ -59,7 +57,7 @@ class ChatSummary(commands.Cog):
     @is_owner()
     async def summarize_chat(self, ctx: Context):
         await ctx.defer(ephemeral=True)
-        last_ts = await self.db["last_summary"].find_one({"channel_id": ctx.channel.id})
+        last_ts = await self.bot.db["last_summary"].find_one({"channel_id": ctx.channel.id})
         # ratelimit
         if last_ts and (datetime.now(timezone.utc) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
              await ctx.send("You can only summarize once every 6 hours.", ephemeral=True)
@@ -125,7 +123,7 @@ class ChatSummary(commands.Cog):
         await ctx.send("done", ephemeral=True)
         await msg.edit(embeds=es, attachments=[f])
         # save the timestamp of the last summary
-        await self.db["last_summary"].update_one({"channel_id": ctx.channel.id}, {"$set": {"timestamp": datetime.now(timezone.utc)}}, upsert=True)
+        await self.bot.db["last_summary"].update_one({"channel_id": ctx.channel.id}, {"$set": {"timestamp": datetime.now(timezone.utc)}}, upsert=True)
 
     # a function that generates the prompt for the model by taking an array of messages, a prefix and a suffix
     def generate_prompt(self, messages, prefix, suffix):

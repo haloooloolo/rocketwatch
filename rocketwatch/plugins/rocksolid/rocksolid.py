@@ -9,7 +9,7 @@ from discord import File
 from discord import Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
-from pymongo import AsyncMongoClient, InsertOne
+from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -30,14 +30,12 @@ log.setLevel(cfg["log_level"])
 class RockSolid(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.client = AsyncMongoClient(cfg["mongodb.uri"])
-        self.db = self.client.rocketwatch
         self.deployment_block = 23237366
 
     async def _fetch_asset_updates(self) -> list[tuple[int, float]]:
         vault_contract = rp.get_contract_by_name("RockSolidVault")
 
-        if db_entry := (await self.db.last_checked_block.find_one({"_id": cog_id})):
+        if db_entry := (await self.bot.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_block = db_entry["block"]
         else:
             last_checked_block = self.deployment_block
@@ -47,7 +45,7 @@ class RockSolid(Cog):
         
         updates = []
         
-        async for doc in self.db.rocksolid.find({}):
+        async for doc in self.bot.db.rocksolid.find({}):
             updates.append((doc["time"], doc["assets"]))
         
         db_operations = []
@@ -57,11 +55,11 @@ class RockSolid(Cog):
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
         
-        async with self.client.start_session() as session:
+        async with self.bot.db.client.start_session() as session:
             async with await session.start_transaction():
                 if db_operations:
-                    await self.db.rocksolid.bulk_write(db_operations)
-                await self.db.last_checked_block.replace_one(
+                    await self.bot.db.rocksolid.bulk_write(db_operations)
+                await self.bot.db.last_checked_block.replace_one(
                     {"_id": cog_id},
                     {"_id": cog_id, "block": b_to},
                     upsert=True

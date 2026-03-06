@@ -5,14 +5,14 @@ from typing import Optional, Literal
 from datetime import datetime, timedelta
 
 import regex
-import requests
+import aiohttp
 import termplotlib as tpl
 from discord import Interaction
 from discord.app_commands import command
 from web3.constants import ADDRESS_ZERO
 from eth_typing import ChecksumAddress, BlockNumber
 from graphql_query import Operation, Query, Argument
-from pymongo import MongoClient, InsertOne, UpdateOne, DeleteOne, DESCENDING
+from pymongo import InsertOne, UpdateOne, DeleteOne, DESCENDING
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -23,7 +23,7 @@ from utils.rocketpool import rp
 from utils.event import EventPlugin, Event
 from utils.visibility import is_hidden_weak
 from utils.block_time import ts_to_block
-from utils.retry import retry
+from utils.retry import retry_async
 
 log = logging.getLogger("snapshot")
 log.setLevel(cfg["log_level"])
@@ -32,16 +32,17 @@ log.setLevel(cfg["log_level"])
 class Snapshot(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot, timedelta(minutes=2))
-        client = MongoClient(cfg["mongodb.uri"]).rocketwatch
-        self.proposal_db = client.snapshot_proposals
-        self.vote_db = client.snapshot_votes
+        self.proposal_db = bot.db.snapshot_proposals
+        self.vote_db = bot.db.snapshot_votes
 
     @staticmethod
-    @retry(tries=3, delay=1)
-    def _query_api(query: Query) -> list[dict] | Optional[dict]:
+    @retry_async(tries=3, delay=1)
+    async def _query_api(query: Query) -> list[dict] | Optional[dict]:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")
-        response = requests.get("https://hub.snapshot.org/graphql", json=query_json).json()
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://hub.snapshot.org/graphql", json=query_json) as resp:
+                response = await resp.json()
         if "errors" in response:
             raise Exception(response["errors"])
         return response["data"][query.name]
@@ -413,17 +414,17 @@ class Snapshot(EventPlugin):
             )
 
     @staticmethod
-    def fetch_proposal(proposal_id: str) -> Optional[Proposal]:
+    async def fetch_proposal(proposal_id: str) -> Optional[Proposal]:
         query = Query(
             name="proposal",
             arguments=[Argument(name="id", value=f"\"{proposal_id}\"")],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"]
         )
-        response: Optional[dict] = Snapshot._query_api(query)
+        response: Optional[dict] = await Snapshot._query_api(query)
         return Snapshot.Proposal(**response) if response else None
 
     @staticmethod
-    def fetch_proposals(
+    async def fetch_proposals(
             state: Proposal.State,
             *,
             reverse: bool = False,
@@ -447,11 +448,11 @@ class Snapshot(EventPlugin):
             ],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"]
         )
-        response: list[dict] = Snapshot._query_api(query)
+        response: list[dict] = await Snapshot._query_api(query)
         return [Snapshot.Proposal(**d) for d in response]
 
     @staticmethod
-    def fetch_votes(
+    async def fetch_votes(
             proposal: Proposal,
             *,
             created_after: int = 0,
@@ -476,10 +477,10 @@ class Snapshot(EventPlugin):
             ],
             fields=["id", "voter", "created", "vp", "choice", "reason"]
         )
-        response: list[dict] = Snapshot._query_api(query)
+        response: list[dict] = await Snapshot._query_api(query)
         return [Snapshot.Vote(proposal=proposal, **d) for d in response]
 
-    def _get_new_events(self) -> list[Event]:
+    async def _get_new_events(self) -> list[Event]:
         now = datetime.now()
         events: list[Event] = []
 
@@ -487,19 +488,19 @@ class Snapshot(EventPlugin):
         vote_db_changes: list[InsertOne] = []
 
         known_active_proposals: dict[str, dict] = {}
-        for stored_proposal in self.proposal_db.find():
+        async for stored_proposal in self.proposal_db.find():
             if stored_proposal["end"] >= now.timestamp():
                 known_active_proposals[stored_proposal["_id"]] = stored_proposal
             else:
                 # stored proposal ended, emit event and delete from DB
                 log.info(f"Found expired proposal: {stored_proposal}")
                 # recover full proposal
-                if proposal := self.fetch_proposal(stored_proposal["_id"]):
+                if proposal := await self.fetch_proposal(stored_proposal["_id"]):
                     event = proposal.create_end_event()
                     proposal_db_changes.append(DeleteOne(stored_proposal))
                     events.append(event)
 
-        active_proposals = self.fetch_proposals("active")
+        active_proposals = await self.fetch_proposals("active")
         for proposal in active_proposals:
             log.debug(f"Processing proposal {proposal}")
             if proposal.id not in known_active_proposals:
@@ -525,20 +526,21 @@ class Snapshot(EventPlugin):
                 events.append(event)
 
             try:
-                last_vote_ts = self.vote_db.find(
+                last_vote_entry = await self.vote_db.find(
                     {"proposal_id": proposal.id}
-                ).sort({"created": DESCENDING}).limit(1)[0]["created"]
+                ).sort({"created": DESCENDING}).limit(1).to_list()
+                last_vote_ts = last_vote_entry[0]["created"]
             except IndexError:
                 last_vote_ts = 0
 
-            current_votes: list[Snapshot.Vote] = self.fetch_votes(proposal, created_after=last_vote_ts)
+            current_votes: list[Snapshot.Vote] = await self.fetch_votes(proposal, created_after=last_vote_ts)
             for vote in current_votes:
                 log.debug(f"Processing vote {vote}")
 
                 try:
-                    stored_vote = self.vote_db.find(
+                    stored_vote = (await self.vote_db.find(
                         {"proposal_id": proposal.id, "voter": vote.voter}
-                    ).sort({"created": DESCENDING}).limit(1)[0]
+                    ).sort({"created": DESCENDING}).limit(1).to_list())[0]
                     prev_vote = Snapshot.Vote(
                         id=stored_vote["_id"],
                         proposal=proposal,
@@ -568,10 +570,10 @@ class Snapshot(EventPlugin):
                 vote_db_changes.append(db_update)
 
         if proposal_db_changes:
-            self.proposal_db.bulk_write(proposal_db_changes)
+            await self.proposal_db.bulk_write(proposal_db_changes)
 
         if vote_db_changes:
-            self.vote_db.bulk_write(vote_db_changes)
+            await self.vote_db.bulk_write(vote_db_changes)
 
         return events
 
@@ -583,7 +585,7 @@ class Snapshot(EventPlugin):
         embed = Embed(title="Snapshot Proposals")
         embed.set_author(name="🔗 Data from snapshot.org", url="https://vote.rocketpool.net")
 
-        proposals = self.fetch_proposals("active", reverse=True)[::-1]
+        proposals = (await self.fetch_proposals("active", reverse=True))[::-1]
         if not proposals:
             embed.description = "No active proposals."
             return await interaction.followup.send(embed=embed)

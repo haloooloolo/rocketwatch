@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 import pymongo
 from cronitor import Monitor
-from pymongo import AsyncMongoClient, UpdateOne, UpdateMany
+from pymongo import UpdateOne, UpdateMany
 from pymongo.asynchronous.collection import AsyncCollection
 from web3.contract.contract import ContractFunction
 
@@ -101,7 +101,6 @@ def _unpack_validator_info_dynamic(info):
 class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("db-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 250
         self.cooldown = timedelta(minutes=10)
@@ -140,18 +139,18 @@ class DBUpkeepTask(commands.Cog):
 
     async def check_indexes(self):
         log.debug("checking indexes")
-        await self.db.node_operators.create_index("address")
-        await self.db.node_operators.create_index("megapool.address")
-        await self.db.minipools.create_index("address")
-        await self.db.minipools.create_index("pubkey")
-        await self.db.minipools.create_index("validator_index")
-        await self.db.minipools.create_index("beacon.status")
-        await self.db.megapool_validators.create_index(
+        await self.bot.db.node_operators.create_index("address")
+        await self.bot.db.node_operators.create_index("megapool.address")
+        await self.bot.db.minipools.create_index("address")
+        await self.bot.db.minipools.create_index("pubkey")
+        await self.bot.db.minipools.create_index("validator_index")
+        await self.bot.db.minipools.create_index("beacon.status")
+        await self.bot.db.megapool_validators.create_index(
             [("megapool", pymongo.ASCENDING), ("validator_id", pymongo.ASCENDING)], unique=True
         )
-        await self.db.megapool_validators.create_index("pubkey")
-        await self.db.megapool_validators.create_index("validator_index")
-        await self.db.megapool_validators.create_index("beacon.status")
+        await self.bot.db.megapool_validators.create_index("pubkey")
+        await self.bot.db.megapool_validators.create_index("validator_index")
+        await self.bot.db.megapool_validators.create_index("beacon.status")
         log.debug("indexes checked")
 
     async def _batch_multicall_update(
@@ -195,7 +194,7 @@ class DBUpkeepTask(commands.Cog):
         nm = rp.get_contract_by_name("rocketNodeManager")
         latest_rp = rp.call("rocketNodeManager.getNodeCount") - 1
         latest_db = 0
-        if res := await self.db.node_operators.find_one(sort=[("_id", pymongo.DESCENDING)]):
+        if res := await self.bot.db.node_operators.find_one(sort=[("_id", pymongo.DESCENDING)]):
             latest_db = res["_id"]
         if latest_db >= latest_rp:
             log.debug("No new nodes")
@@ -204,7 +203,7 @@ class DBUpkeepTask(commands.Cog):
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             results = await rp.multicall_async([nm.functions.getNodeAt(i) for i in index_batch])
             data |= dict(zip(index_batch, results))
-        await self.db.node_operators.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()])
+        await self.bot.db.node_operators.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()])
 
     @timerun_async
     async def add_static_node_operator_data(self):
@@ -215,7 +214,7 @@ class DBUpkeepTask(commands.Cog):
             (mf.functions.getExpectedAddress(n["address"]), True, w3.to_checksum_address, "megapool.address"),
         ]
         await self._batch_multicall_update(
-            self.db.node_operators,
+            self.bot.db.node_operators,
             {"$or": [{"fee_distributor.address": {"$exists": False}}, {"megapool.address": {"$exists": False}}]},
             get_calls, {"address": 1}, label="node operators"
         )
@@ -250,7 +249,7 @@ class DBUpkeepTask(commands.Cog):
             (ns.functions.getNodeLastUnstakeTime(n["address"]),             True, None,                   "rpl.last_unstake_time"),
         ]
         await self._batch_multicall_update(
-            self.db.node_operators, {}, get_calls, label="node operators",
+            self.bot.db.node_operators, {}, get_calls, label="node operators",
             projection={"address": 1, "fee_distributor.address": 1, "megapool.address": 1}
         )
 
@@ -274,7 +273,7 @@ class DBUpkeepTask(commands.Cog):
             (proxy_at(n["megapool"]["address"]).functions.getUseLatestDelegate(),      True, None,                   "megapool.use_latest_delegate"),
         ]
         await self._batch_multicall_update(
-            self.db.node_operators, {"megapool.deployed": True}, 
+            self.bot.db.node_operators, {"megapool.deployed": True}, 
             get_calls, {"address": 1, "megapool.address": 1}, 
             label="megapools"
         )
@@ -286,7 +285,7 @@ class DBUpkeepTask(commands.Cog):
         mm = rp.get_contract_by_name("rocketMinipoolManager")
         latest_rp = rp.call("rocketMinipoolManager.getMinipoolCount") - 1
         latest_db = 0
-        if res := await self.db.minipools.find_one(sort=[("_id", pymongo.DESCENDING)]):
+        if res := await self.bot.db.minipools.find_one(sort=[("_id", pymongo.DESCENDING)]):
             latest_db = res["_id"]
         if latest_db >= latest_rp:
             log.debug("No new minipools")
@@ -294,7 +293,7 @@ class DBUpkeepTask(commands.Cog):
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             results = await rp.multicall_async([mm.functions.getMinipoolAt(i) for i in index_batch])
-            await self.db.minipools.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results)])
+            await self.bot.db.minipools.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results)])
 
     @timerun_async
     async def add_static_minipool_data(self):
@@ -304,14 +303,14 @@ class DBUpkeepTask(commands.Cog):
             (mm.functions.getMinipoolPubkey(n["address"]),                                            True, safe_to_hex,            "pubkey"),
         ]
         await self._batch_multicall_update(
-            self.db.minipools,
+            self.bot.db.minipools,
             {"node_operator": {"$exists": False}},
             lamb, {"address": 1}, label="minipools"
         )
 
     @timerun
     async def add_static_minipool_deposit_data(self):
-        minipools = await self.db.minipools.find(
+        minipools = await self.bot.db.minipools.find(
             {"deposit_amount": {"$exists": False}, "status": "initialised"},
             {"address": 1, "_id": 0, "status_time": 1}
         ).sort("status_time", pymongo.ASCENDING).to_list()
@@ -355,7 +354,7 @@ class DBUpkeepTask(commands.Cog):
 
             if not data:
                 continue
-            await self.db.minipools.bulk_write(
+            await self.bot.db.minipools.bulk_write(
                 [UpdateOne({"address": addr}, {"$set": d}) for addr, d in data.items()],
                 ordered=False
             )
@@ -381,11 +380,11 @@ class DBUpkeepTask(commands.Cog):
                 (minipool_contract.functions.getUserDistributed(),     False, is_true,                "user_distributed"),
                 (mc.functions.getEthBalance(n["address"]),             True,  safe_to_float,          "execution_balance"),
             ]
-        await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, get_calls, {"address": 1}, label="minipools")
+        await self._batch_multicall_update(self.bot.db.minipools, {"finalized": {"$ne": True}}, get_calls, {"address": 1}, label="minipools")
 
     @timerun
     async def update_dynamic_minipool_beacon_data(self):
-        pubkeys = await self.db.minipools.distinct(
+        pubkeys = await self.bot.db.minipools.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
         )
         pubkeys = [pk for pk in pubkeys if pk is not None]
@@ -412,7 +411,7 @@ class DBUpkeepTask(commands.Cog):
                     },
                 }
             if data:
-                await self.db.minipools.bulk_write(
+                await self.bot.db.minipools.bulk_write(
                     [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
                     ordered=False
                 )
@@ -423,7 +422,7 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def add_untracked_megapool_validators(self):
         # get deployed megapools with their on-chain validator count
-        nodes = await self.db.node_operators.find(
+        nodes = await self.bot.db.node_operators.find(
             {"megapool.deployed": True, "megapool.validator_count": {"$gt": 0}},
             {"address": 1, "megapool.address": 1, "megapool.validator_count": 1}
         ).to_list()
@@ -433,7 +432,7 @@ class DBUpkeepTask(commands.Cog):
         for node in nodes:
             megapool_addr = node["megapool"]["address"]
             on_chain_count = node["megapool"]["validator_count"]
-            db_count = await self.db.megapool_validators.count_documents({"megapool": megapool_addr})
+            db_count = await self.bot.db.megapool_validators.count_documents({"megapool": megapool_addr})
             if db_count >= on_chain_count:
                 continue
 
@@ -467,11 +466,11 @@ class DBUpkeepTask(commands.Cog):
                         doc.update(info)
                     docs.append(doc)
                 if docs:
-                    await self.db.megapool_validators.insert_many(docs, ordered=False)
+                    await self.bot.db.megapool_validators.insert_many(docs, ordered=False)
 
     @timerun_async
     async def update_dynamic_megapool_validator_data(self):
-        validators = await self.db.megapool_validators.find(
+        validators = await self.bot.db.megapool_validators.find(
             {"status": {"$nin": ["exited", "dissolved"]}},
             {"megapool": 1, "validator_id": 1}
         ).to_list()
@@ -494,11 +493,11 @@ class DBUpkeepTask(commands.Cog):
                 if info is not None:
                     ops.append(UpdateOne({"_id": v["_id"]}, {"$set": info}))
             if ops:
-                await self.db.megapool_validators.bulk_write(ops, ordered=False)
+                await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
     @timerun
     async def update_dynamic_megapool_validator_beacon_data(self):
-        pubkeys = await self.db.megapool_validators.distinct(
+        pubkeys = await self.bot.db.megapool_validators.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
         )
         pubkeys = [pk for pk in pubkeys if pk is not None]
@@ -527,7 +526,7 @@ class DBUpkeepTask(commands.Cog):
                     },
                 }
             if data:
-                await self.db.megapool_validators.bulk_write(
+                await self.bot.db.megapool_validators.bulk_write(
                     [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
                     ordered=False
                 )

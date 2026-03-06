@@ -2,8 +2,6 @@ import logging
 
 import humanize
 from colorama import Style
-from pymongo import AsyncMongoClient
-
 from discord import Interaction
 from discord.ext.commands import Cog
 from discord.app_commands import command, describe
@@ -52,7 +50,6 @@ def split_rewards_logic(balance, node_share, commission, force_base=False):
 class TVL(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @command()
     @describe(show_all="Also show entries with 0 value")
@@ -125,7 +122,7 @@ class TVL(Cog):
         # Minipools that are flagged as initialised have the following applied to them:
         # - They have 1 ETH staked on the beacon chain.
         # - They have not yet received 31 ETH from the Deposit Pool.
-        tmp = await (await self.db.minipools.aggregate([
+        tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'initialised',
@@ -148,7 +145,7 @@ class TVL(Cog):
         #  - They have deposited 1 ETH to the Beacon Chain.
         #  - They have 31 ETH from the Deposit Pool in their contract waiting to be staked as well.
         #  - They are currently in the scrubbing process (should be 12 hours) or have not yet initiated the second phase.
-        tmp = await (await self.db.minipools.aggregate([
+        tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'prelaunch',
@@ -177,7 +174,7 @@ class TVL(Cog):
         # - They have 1 ETH locked on the Beacon Chain, not earning any rewards.
         # - The 31 ETH that was waiting in their address was moved back to the Deposit Pool (This can cause the Deposit Pool
         #   to grow beyond its Cap, check the bellow comment for information about that).
-        tmp = await (await self.db.minipools.aggregate([
+        tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'status': 'dissolved',
@@ -203,7 +200,7 @@ class TVL(Cog):
                 "execution_balance"]
 
         # Staking Minipools:
-        minipools = await self.db.minipools.find({
+        minipools = await self.bot.db.minipools.find({
             'status': {"$nin": ["initialised", "prelaunch", "dissolved"]},
             'node_deposit_balance': {"$exists": True},
         }).to_list(None)
@@ -271,7 +268,7 @@ class TVL(Cog):
 
         # Smoothing Pool Balance: This is ETH from Proposals by minipools that have joined the Smoothing Pool.
         smoothie_balance = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
-        tmp = await (await self.db.node_operators.aggregate([
+        tmp = await (await self.bot.db.node_operators.aggregate([
             {
                 '$match': {
                     'smoothing_pool_registration': True,
@@ -364,7 +361,7 @@ class TVL(Cog):
             rp.call("rocketVault.balanceOfToken", "rocketAuctionManager", rpl_address))
 
         # create _value string for each branch. the _value is the sum of all _val or _val values in the children
-        tmp = await (await self.db.node_operators.aggregate([
+        tmp = await (await self.bot.db.node_operators.aggregate([
             {
                 '$match': {
                     'fee_distributor.eth_balance': {

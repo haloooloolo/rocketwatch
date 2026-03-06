@@ -5,7 +5,6 @@ from io import BytesIO
 import inflect
 import matplotlib.pyplot as plt
 import numpy as np
-import pymongo
 from discord import File
 from discord.app_commands import describe
 from discord.ext import commands
@@ -41,9 +40,8 @@ async def minipool_distribution_raw(ctx: Context, distribution):
 class MinipoolDistribution(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = pymongo.MongoClient(cfg["mongodb.uri"]).rocketwatch
 
-    def get_minipool_counts_per_node(self):
+    async def get_minipool_counts_per_node(self):
         # get an array for minipool counts per node from db using aggregation
         # example: [0,0,1,2,3,3,3]
         # 2 nodes have 0 minipools
@@ -71,7 +69,7 @@ class MinipoolDistribution(commands.Cog):
                 }
             }
         ]
-        return [x["count"] for x in self.db.minipools.aggregate(pipeline)]
+        return [x["count"] async for x in self.bot.db.minipools.aggregate(pipeline)]
 
     @hybrid_command()
     @describe(raw="Show the raw Distribution Data")
@@ -83,7 +81,7 @@ class MinipoolDistribution(commands.Cog):
         e = Embed()
 
         # Get the minipool distribution
-        counts = self.get_minipool_counts_per_node()
+        counts = await self.get_minipool_counts_per_node()
         # Converts the array of counts, eg [ 0, 0, 0, 1, 1, 2 ], to a list of tuples
         # where the first item is the number of minipools and the second item is the
         # number of nodes, eg [ (0, 3), (1, 2), (2, 1) ]
@@ -138,7 +136,7 @@ class MinipoolDistribution(commands.Cog):
         e = Embed()
         e.title = "Validator Share of Largest Nodes"
 
-        minipool_counts = np.array(self.get_minipool_counts_per_node())
+        minipool_counts = np.array(await self.get_minipool_counts_per_node())
         # sort descending
         minipool_counts[::-1].sort()
 

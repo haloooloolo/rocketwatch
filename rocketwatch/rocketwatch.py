@@ -18,6 +18,8 @@ from discord.ext import commands
 from discord.ext.commands import Bot, Context
 from discord.app_commands import CommandTree, AppCommandError
 
+from pymongo import AsyncMongoClient
+
 from utils.cfg import cfg
 from utils.retry import retry_async
 
@@ -34,6 +36,7 @@ class RocketWatch(Bot):
     
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=self.RWCommandTree, intents=intents)
+        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
     
     async def _load_plugins(self):
         chain = cfg["rocketpool.chain"]

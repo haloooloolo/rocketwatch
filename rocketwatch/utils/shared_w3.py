@@ -51,6 +51,9 @@ class SuperBacon(Bacon):
 
     async def get_sync_committee_async(self, epoch: int):
         return await self._make_get_request_async(f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}")
+    
+    async def get_finality_checkpoint_async(self, state_id):
+        return await self._make_get_request_async(f"/eth/v1/beacon/states/{state_id}/finality_checkpoints")
 
 
 bacon = SuperBacon(cfg["consensus_layer.endpoint"])

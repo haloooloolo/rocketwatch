@@ -32,7 +32,6 @@ from discord import (
 )
 from discord.ext.commands import Cog
 from discord.app_commands import command, guilds, ContextMenu
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -108,14 +107,13 @@ class DetectScam(Cog):
 
             await interaction.message.delete()
             async with self.plugin._update_lock:
-                report = await self.plugin.db.scam_reports.find_one(db_filter)
+                report = await self.plugin.bot.db.scam_reports.find_one(db_filter)
                 await self.plugin._update_report(report, f"This has been marked as safe by {user_repr}.")
-                await self.plugin.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None}})
+                await self.plugin.bot.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None}})
                 await interaction.response.send_message(content="Warning removed!", ephemeral=True)
 
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         
         self._report_lock = asyncio.Lock()
         self._update_lock = asyncio.Lock()
@@ -172,7 +170,7 @@ class DetectScam(Cog):
             return None
 
         async with self._report_lock:
-            if await self.db.scam_reports.find_one({"type": "message", "message_id": message.id}):
+            if await self.bot.db.scam_reports.find_one({"type": "message", "message_id": message.id}):
                 log.info(f"Found existing report for message {message.id} in database")
                 return None
 
@@ -197,7 +195,7 @@ class DetectScam(Cog):
             with io.StringIO(text) as f:
                 contents = File(f, filename="original_message.txt")
 
-            await self.db.scam_reports.insert_one({
+            await self.bot.db.scam_reports.insert_one({
                 "type"       : "message",
                 "guild_id"   : message.guild.id,
                 "channel_id" : message.channel.id,
@@ -219,7 +217,7 @@ class DetectScam(Cog):
             return None
         
         async with self._report_lock:
-            if await self.db.scam_reports.find_one({"type": "thread", "channel_id": thread.id}):
+            if await self.bot.db.scam_reports.find_one({"type": "thread", "channel_id": thread.id}):
                 log.info(f"Found existing report for thread {thread.id} in database")
                 return None
 
@@ -241,7 +239,7 @@ class DetectScam(Cog):
                 "\n"
                 "Please review and take appropriate action."
             )
-            await self.db.scam_reports.insert_one({
+            await self.bot.db.scam_reports.insert_one({
                 "type"       : "thread",
                 "guild_id"   : thread.guild.id,
                 "channel_id" : thread.id,
@@ -271,7 +269,7 @@ class DetectScam(Cog):
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report, file=contents)
 
-        await self.db.scam_reports.update_one(
+        await self.bot.db.scam_reports.update_one(
             {"message_id": message.id},
             {"$set": {"warning_id": warning_msg.id if warning_msg else None, "report_id": report_msg.id}}
         )
@@ -296,7 +294,7 @@ class DetectScam(Cog):
         
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report, file=contents)
-        await self.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"report_id": report_msg.id}})
+        await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"report_id": report_msg.id}})
         
         moderator = await self.bot.get_or_fetch_user(cfg["rocketpool.support.moderator_id"])
         view = self.RemovalVoteView(self, message)
@@ -306,7 +304,7 @@ class DetectScam(Cog):
             view=view,
             mention_author=False
         )
-        await self.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"warning_id": warning_msg.id}})
+        await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"warning_id": warning_msg.id}})
         await interaction.followup.send(content="Thanks for reporting!")
 
     def _markdown_link_trick(self, message: Message) -> Optional[str]:
@@ -496,7 +494,7 @@ class DetectScam(Cog):
 
     async def _on_message_delete(self, message_id: int) -> None:
         db_filter = {"type": "message", "message_id": message_id, "removed": False}
-        if not (report := await self.db.scam_reports.find_one(db_filter)):
+        if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
             return
 
         channel = await self.bot.get_or_fetch_channel(report["channel_id"])
@@ -505,17 +503,17 @@ class DetectScam(Cog):
             await message.delete()
 
         await self._update_report(report, "Original message has been deleted.")
-        await self.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
+        await self.bot.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
 
     @Cog.listener()
     async def on_member_ban(self, guild: Guild, user: User) -> None:
         async with self._update_lock:
-            reports = await self.db.scam_reports.find(
+            reports = await self.bot.db.scam_reports.find(
                 {"guild_id": guild.id, "user_id": user.id, "user_banned": False}
             ).to_list(None)
             for report in reports:
                 await self._update_report(report, "User has been banned.")
-                await self.db.scam_reports.update_one(report, {"$set": {"user_banned": True}})
+                await self.bot.db.scam_reports.update_one(report, {"$set": {"user_banned": True}})
 
     async def _update_report(self, report: dict, note: str) -> None:
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
@@ -544,7 +542,7 @@ class DetectScam(Cog):
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report)
 
-        await self.db.scam_reports.update_one(
+        await self.bot.db.scam_reports.update_one(
             {"channel_id": thread.id, "message_id": None},
             {"$set": {"warning_id": warning_msg.id if warning_msg else None, "report_id": report_msg.id}}
         )
@@ -575,9 +573,9 @@ class DetectScam(Cog):
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
         async with self._update_lock:
             db_filter = {"type": "thread", "channel_id": event.thread_id, "removed": False}
-            if report := await self.db.scam_reports.find_one(db_filter):                
+            if report := await self.bot.db.scam_reports.find_one(db_filter):                
                 await self._update_report(report, "Thread has been deleted.")
-                await self.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
+                await self.bot.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
             
     @command()
     @guilds(cfg["rocketpool.support.server_id"])
@@ -603,7 +601,7 @@ class DetectScam(Cog):
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report)
 
-        await self.db.scam_reports.update_one(
+        await self.bot.db.scam_reports.update_one(
             {"guild_id": user.guild.id, "user_id": user.id, "channel_id": None, "message_id": None},
             {"$set": {"report_id": report_msg.id}}
         )
@@ -614,7 +612,7 @@ class DetectScam(Cog):
             return None
                
         async with self._report_lock:
-            if await self.db.scam_reports.find_one(
+            if await self.bot.db.scam_reports.find_one(
                 {"type": "user", "guild_id": user.guild.id, "user_id": user.id}
             ):
                 log.info(f"Found existing report for user {user.id} in database")
@@ -633,7 +631,7 @@ class DetectScam(Cog):
             )
             report.set_thumbnail(url=user.display_avatar.url)
             
-            await self.db.scam_reports.insert_one({
+            await self.bot.db.scam_reports.insert_one({
                 "type"       : "user",
                 "guild_id"   : user.guild.id,
                 "user_id"    : user.id,

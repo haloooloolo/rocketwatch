@@ -3,10 +3,8 @@ import pickle
 import asyncio
 import logging
 
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from enum import Enum
-from functools import partial
 from typing import Optional, Any
 
 import pymongo
@@ -14,7 +12,6 @@ from cronitor import Monitor
 import discord
 from discord.ext import commands, tasks
 from eth_typing import BlockIdentifier, BlockNumber
-from pymongo import AsyncMongoClient
 from web3.datastructures import MutableAttributeDict
 
 from rocketwatch import RocketWatch
@@ -23,7 +20,7 @@ from utils.status import StatusPlugin
 from utils.cfg import cfg
 from utils.embeds import assemble, Embed
 from utils.event import EventPlugin
-from utils.shared_w3 import w3
+from utils.shared_w3 import w3_async
 
 log = logging.getLogger("event_core")
 log.setLevel(cfg["log_level"])
@@ -41,7 +38,6 @@ class EventCore(commands.Cog):
         self.bot = bot
         self.state = self.State.OK
         self.channels = cfg["discord.channels"]
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.head_block: BlockIdentifier = cfg["events.genesis"]
         self.block_batch_size = cfg["events.block_batch_size"]
         self.monitor = Monitor("gather-new-events", api_key=cfg["other.secrets.cronitor"])
@@ -89,7 +85,7 @@ class EventCore(commands.Cog):
         log.info("Gathering messages from submodules")
         log.debug(f"{self.head_block = }")
 
-        latest_block = w3.eth.get_block_number()
+        latest_block = await w3_async.eth.get_block_number()
         submodules = [cog for cog in self.bot.cogs.values() if isinstance(cog, EventPlugin)]
         log.debug(f"Running {len(submodules)} submodules")
 
@@ -97,18 +93,18 @@ class EventCore(commands.Cog):
             # already caught up to head, just fetch new events
             target_block = "latest"
             to_block = latest_block
-            gather_fns = [sm.get_new_events for sm in submodules]
+            coroutines = [sm.get_new_events() for sm in submodules]
             # prevent losing state if process is interrupted before updating db
             self.head_block = cfg["events.genesis"]
         else:
             # behind chain head, let's see how far
-            last_event_entry = await self.db.event_queue.find().sort(
+            last_event_entry = await self.bot.db.event_queue.find().sort(
                 "block_number", pymongo.DESCENDING
             ).limit(1).to_list(None)
             if last_event_entry:
                 self.head_block = max(self.head_block, last_event_entry[0]["block_number"])
 
-            last_checked_entry = await self.db.last_checked_block.find_one({"_id": "events"})
+            last_checked_entry = await self.bot.db.last_checked_block.find_one({"_id": "events"})
             if last_checked_entry:
                 self.head_block = max(self.head_block, last_checked_entry["block"])
 
@@ -128,26 +124,22 @@ class EventCore(commands.Cog):
 
             log.info(f"Checking block range [{from_block}, {to_block}]")
 
-            gather_fns = []
+            coroutines = []
             for sm in submodules:
-                fn = partial(sm.get_past_events, from_block=from_block, to_block=to_block)
-                gather_fns.append(fn)
+                coroutines.append(sm.get_past_events(from_block=from_block, to_block=to_block))
                 if target_block == "latest":
                     sm.start_tracking(to_block + 1)
 
         log.debug(f"{target_block = }")
 
-        with ThreadPoolExecutor() as executor:
-            loop = asyncio.get_running_loop()
-            futures = [loop.run_in_executor(executor, gather_fn) for gather_fn in gather_fns]
-            results = await asyncio.gather(*futures)
+        results = await asyncio.gather(*coroutines)
 
         channels = cfg["discord.channels"]
         events: list[dict[str, Any]] = []
 
         for result in results:
             for event in result:
-                if await self.db.event_queue.find_one({"_id": event.unique_id}):
+                if await self.bot.db.event_queue.find_one({"_id": event.unique_id}):
                     log.debug(f"Event {event} already exists, skipping")
                     continue
 
@@ -170,10 +162,10 @@ class EventCore(commands.Cog):
 
         log.info(f"{len(events)} new events gathered, updating DB")
         if events:
-            await self.db.event_queue.insert_many(events)
+            await self.bot.db.event_queue.insert_many(events)
 
         self.head_block = target_block
-        await self.db.last_checked_block.replace_one(
+        await self.bot.db.last_checked_block.replace_one(
             {"_id": "events"},
             {"_id": "events", "block": to_block},
             upsert=True
@@ -182,7 +174,7 @@ class EventCore(commands.Cog):
     async def process_event_queue(self) -> None:
         log.debug("Processing events in queue")
         # get all channels with unprocessed events
-        channels = await self.db.event_queue.distinct("channel_id", {"message_id": None})
+        channels = await self.bot.db.event_queue.distinct("channel_id", {"message_id": None})
         if not channels:
             log.debug("No pending events in queue")
             return
@@ -196,17 +188,17 @@ class EventCore(commands.Cog):
                 return None
 
         for channel_id in channels:
-            db_events: list[dict] = await self.db.event_queue.find(
+            db_events: list[dict] = await self.bot.db.event_queue.find(
                 {"channel_id": channel_id, "message_id": None}
             ).sort("score", pymongo.ASCENDING).to_list(None)
 
             log.debug(f"Found {len(db_events)} events for channel {channel_id}.")
             channel = await self.bot.get_or_fetch_channel(channel_id)
 
-            for state_message in await self.db.state_messages.find({"channel_id": channel_id}).to_list(None):
+            for state_message in await self.bot.db.state_messages.find({"channel_id": channel_id}).to_list(None):
                 msg = await channel.fetch_message(state_message["message_id"])
                 await msg.delete()
-                await self.db.state_messages.delete_one({"channel_id": channel_id})
+                await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
 
             for event_entry in db_events:
                 embed: Optional[Embed] = try_load(event_entry, "embed")
@@ -225,7 +217,7 @@ class EventCore(commands.Cog):
                 # post event message
                 msg = await channel.send(embed=embed, files=files)
                 # add message id to event
-                await self.db.event_queue.update_one(
+                await self.bot.db.event_queue.update_one(
                     {"_id": event_entry["_id"]},
                     {"$set": {"message_id": msg.id}}
                 )
@@ -234,7 +226,7 @@ class EventCore(commands.Cog):
 
     async def update_status_messages(self) -> None:
         configs = cfg.get("events.status_message", {})
-        for state_message in (await self.db.state_messages.find().to_list()):
+        for state_message in (await self.bot.db.state_messages.find().to_list()):
             if state_message["_id"] not in configs:
                 log.debug(f"No config for state message ID {state_message['_id']}, removing message")
                 await self._replace_or_add_status("", None, state_message)
@@ -244,7 +236,7 @@ class EventCore(commands.Cog):
             await self._update_status_message(channel_name, config)
 
     async def _update_status_message(self, channel_name: str, config: dict) -> None:
-        state_message = await self.db.state_messages.find_one({"_id": channel_name})
+        state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
         if state_message:
             age = datetime.now() - state_message["sent_at"]
             cooldown = timedelta(seconds=config["cooldown"])
@@ -252,7 +244,7 @@ class EventCore(commands.Cog):
                 log.debug(f"State message for {channel_name} not past cooldown: {age} < {cooldown}")
                 return
 
-        if not (embed := await generate_template_embed(self.db, "announcement")):
+        if not (embed := await generate_template_embed(self.bot.db, "announcement")):
             try:
                 plugin: StatusPlugin = self.bot.cogs.get(config["plugin"])
                 embed = await plugin.get_status()
@@ -270,7 +262,7 @@ class EventCore(commands.Cog):
     async def show_service_interrupt(self) -> None:
         embed = assemble(MutableAttributeDict({"event_name": "service_interrupted"}))
         for channel_name in cfg.get("events.status_message", {}).keys():
-            state_message = await self.db.state_messages.find_one({"_id": channel_name})
+            state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
             if (not state_message) or (state_message["state"] != str(self.state.ERROR)):
                 await self._replace_or_add_status(channel_name, embed, state_message)
 
@@ -288,14 +280,14 @@ class EventCore(commands.Cog):
             try:
                 msg = await channel.fetch_message(prev_status["message_id"])
                 await msg.edit(embed=embed)
-                await self.db.state_messages.update_one(
+                await self.bot.db.state_messages.update_one(
                     prev_status,
                     {"$set": {"sent_at": datetime.now(), "state": str(self.state)}}
                 )
                 return
             except discord.errors.NotFound:
                 log.warning("Could not fetch status, removing DB entry")
-                await self.db.state_messages.delete_one(prev_status)
+                await self.bot.db.state_messages.delete_one(prev_status)
                 prev_status = None
 
         if prev_status:
@@ -303,13 +295,13 @@ class EventCore(commands.Cog):
             channel = await self.bot.get_or_fetch_channel(prev_status["channel_id"])
             msg = await channel.fetch_message(prev_status["message_id"])
             await msg.delete()
-            await self.db.state_messages.delete_one(prev_status)
+            await self.bot.db.state_messages.delete_one(prev_status)
 
         if embed:
             log.debug(f"Creating new status message for channel {target_channel}")
             channel = await self.bot.get_or_fetch_channel(target_channel_id)
             msg = await channel.send(embed=embed, silent=True)
-            await self.db.state_messages.insert_one({
+            await self.bot.db.state_messages.insert_one({
                 "_id"       : target_channel,
                 "channel_id": target_channel_id,
                 "message_id": msg.id,

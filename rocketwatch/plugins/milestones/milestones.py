@@ -1,7 +1,6 @@
 import json
 import logging
 
-import pymongo
 from web3.datastructures import MutableAttributeDict as aDict
 
 from rocketwatch import RocketWatch
@@ -18,32 +17,31 @@ log.setLevel(cfg["log_level"])
 class Milestones(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
-        self.db = pymongo.MongoClient(cfg["mongodb.uri"]).rocketwatch
-        self.collection = self.db.milestones
+        self.collection = bot.db.milestones
         self.state = "OK"
 
         with open("./plugins/milestones/milestones.json") as f:
             self.milestones = json.load(f)
 
-    def _get_new_events(self) -> list[Event]:
+    async def _get_new_events(self) -> list[Event]:
         if self.state == "RUNNING":
             log.error("Milestones plugin was interrupted while running. Re-initializing...")
             self.__init__(self.bot)
 
         self.state = "RUNNING"
-        result = self.check_for_new_events()
+        result = await self.check_for_new_events()
         self.state = "OK"
         return result
 
     # noinspection PyTypeChecker
-    def check_for_new_events(self):
+    async def check_for_new_events(self):
         log.info("Checking Milestones")
         payload = []
 
         for milestone in self.milestones:
             milestone = aDict(milestone)
 
-            state = self.collection.find_one({"_id": milestone["id"]})
+            state = await self.collection.find_one({"_id": milestone["id"]})
 
             value = getattr(rp, milestone.function)(*milestone.args)
             if milestone.formatter:
@@ -60,7 +58,7 @@ class Milestones(EventPlugin):
             else:
                 log.debug(
                     f"First time we have processed Milestones for milestone {milestone.id}. Adding it to the Database.")
-                self.collection.insert_one({"_id": milestone["id"], "current_goal": latest_goal})
+                await self.collection.insert_one({"_id": milestone["id"], "current_goal": latest_goal})
                 previous_milestone = milestone.min
             if previous_milestone < latest_goal:
                 log.info(f"Goal for milestone {milestone.id} has increased. Triggering Milestone!")
@@ -76,7 +74,7 @@ class Milestones(EventPlugin):
                     unique_id=f"{milestone.id}:{latest_goal}",
                 ))
                 # update the current goal in collection
-                self.collection.update_one({"_id": milestone["id"]}, {"$set": {"current_goal": latest_goal}})
+                await self.collection.update_one({"_id": milestone["id"]}, {"$set": {"current_goal": latest_goal}})
 
         log.debug("Finished Checking Milestones")
         return payload

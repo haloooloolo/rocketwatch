@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 
-import pymongo
 import requests
 from datetime import timezone
 from web3.datastructures import MutableAttributeDict as aDict
@@ -26,14 +25,8 @@ class CowOrders(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot, timedelta(minutes=5))
         self.state = "OK"
-        self.db = pymongo.MongoClient(cfg["mongodb.uri"]).rocketwatch
-        # create the cow_orders collection if it doesn't exist
-        # limit the collection to 10000 entries
-        # create an index on order_uid
-        if "cow_orders" not in self.db.list_collection_names():
-            self.db.create_collection("cow_orders", capped=True, size=10_000)
-        self.collection = self.db.cow_orders
-        self.collection.create_index("order_uid", unique=True)
+        self.collection = bot.db.cow_orders
+        self._did_setup = False
 
         self.tokens = [
             str(rp.get_address_by_name("rocketTokenRPL")).lower(),
@@ -52,13 +45,22 @@ class CowOrders(EventPlugin):
         embed = Embed(description = f"[cow explorer]({url})")
         await interaction.followup.send(embed=embed)
 
-    def _get_new_events(self) -> list[Event]:
+    async def _setup_collection(self):
+        if self._did_setup:
+            return
+        if "cow_orders" not in await self.bot.db.list_collection_names():
+            await self.bot.db.create_collection("cow_orders", capped=True, size=10_000)
+        await self.collection.create_index("order_uid", unique=True)
+        self._did_setup = True
+
+    async def _get_new_events(self) -> list[Event]:
+        await self._setup_collection()
         if self.state == "RUNNING":
             log.error("Cow Orders plugin was interrupted while running. Re-initializing...")
             self.__init__(self.bot)
         self.state = "RUNNING"
         try:
-            result = self.check_for_new_events()
+            result = await self.check_for_new_events()
             self.state = "OK"
         except Exception as e:
             log.error(f"Error while checking for new Cow Orders: {e}")
@@ -67,7 +69,7 @@ class CowOrders(EventPlugin):
         return result
 
     # noinspection PyTypeChecker
-    def check_for_new_events(self):
+    async def check_for_new_events(self):
         log.info("Checking Cow Orders")
         payload = []
 
@@ -131,7 +133,7 @@ class CowOrders(EventPlugin):
         # efficiently check if the orders are already in the database
         order_uids = [order["uid"] for order in cow_orders]
         existing_orders = self.collection.find({"order_uid": {"$in": order_uids}})
-        existing_order_uids = [order["order_uid"] for order in existing_orders]
+        existing_order_uids = [order["order_uid"] async for order in existing_orders]
 
         # filter all orders that are already in the database
         cow_orders = [order for order in cow_orders if order["uid"] not in existing_order_uids]
@@ -221,11 +223,11 @@ class CowOrders(EventPlugin):
                 unique_id=f"cow_order_found_{order['uid']}"
             ))
         # don't emit if the db collection is empty - this is to prevent the bot from spamming the channel with stale data
-        if not self.collection.count_documents({}):
+        if not await self.collection.count_documents({}):
             payload = []
 
         # insert all new orders into the database
-        self.collection.insert_many([{"order_uid": order["uid"]} for order in cow_orders])
+        await self.collection.insert_many([{"order_uid": order["uid"]} for order in cow_orders])
 
         log.debug("Finished Checking Cow Orders")
         return payload

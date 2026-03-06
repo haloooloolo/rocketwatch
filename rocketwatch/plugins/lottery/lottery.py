@@ -2,7 +2,7 @@ import logging
 
 from discord.ext import commands
 from discord.ext.commands import hybrid_command, Context
-from pymongo import AsyncMongoClient, InsertOne
+from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -17,11 +17,9 @@ log = logging.getLogger("lottery")
 log.setLevel(cfg["log_level"])
 
 
-class LotteryBase:
-    def __init__(self):
-        # connect to local mongodb
-        self.client = AsyncMongoClient(cfg["mongodb.uri"])
-        self.db = self.client.get_database("rocketwatch")
+class Lottery(commands.Cog):
+    def __init__(self, bot: RocketWatch):
+        self.bot = bot
         self.did_check = False
 
     async def _check_indexes(self):
@@ -29,7 +27,7 @@ class LotteryBase:
             return
         log.debug("Checking indexes")
         for period in ["latest", "next"]:
-            col = self.db[f"sync_committee_{period}"]
+            col = self.bot.db[f"sync_committee_{period}"]
             await col.create_index("validator", unique=True)
             await col.create_index("index", unique=True)
         self.did_check = True
@@ -44,14 +42,14 @@ class LotteryBase:
         if period == "next":
             sync_period += 1
         data = (await bacon.get_sync_committee_async(sync_period * 256))["data"]
-        await self.db.sync_committee_stats.replace_one({"period": period},
+        await self.bot.db.sync_committee_stats.replace_one({"period": period},
                                                  {"period"     : period,
                                                   "start_epoch": sync_period * 256,
                                                   "end_epoch"  : (sync_period + 1) * 256,
                                                   "sync_period": sync_period * 256,
                                                   }, upsert=True)
         validators = data["validators"]
-        col = self.db[f"sync_committee_{period}"]
+        col = self.bot.db[f"sync_committee_{period}"]
         # get unique validators from collection
         validators_in_db = await col.distinct("validator")
         if set(validators) == set(validators_in_db):
@@ -60,13 +58,13 @@ class LotteryBase:
             InsertOne({"index": i, "validator": int(validator)})
             for i, validator in enumerate(validators)
         ]
-        async with self.client.start_session() as session:
+        async with self.bot.db.client.start_session() as session:
             async with await session.start_transaction():
                 await col.delete_many({})
                 await col.bulk_write(payload)
 
     async def get_validators_for_sync_committee_period(self, period):
-        data = await self.db[f"sync_committee_{period}"].aggregate([
+        data = await self.bot.db[f"sync_committee_{period}"].aggregate([
             {
                 '$lookup': {
                     'from'        : 'minipools',
@@ -106,7 +104,7 @@ class LotteryBase:
         await self.load_sync_committee(period)
         validators = await self.get_validators_for_sync_committee_period(period)
         # get stats about the current period
-        stats = await self.db.sync_committee_stats.find_one({"period": period})
+        stats = await self.bot.db.sync_committee_stats.find_one({"period": period})
         perc = len(validators) / 512
         description = f"_Rocket Pool Participation:_ {len(validators)}/512 ({perc:.2%})\n"
         start_timestamp = BEACON_START_DATE + (stats['start_epoch'] * BEACON_EPOCH_LENGTH)
@@ -131,14 +129,6 @@ class LotteryBase:
                                   node_operators])
         return description
 
-
-lottery = LotteryBase()
-
-
-class Lottery(commands.Cog):
-    def __init__(self, bot: RocketWatch):
-        self.bot = bot
-
     @hybrid_command()
     async def lottery(self, ctx: Context):
         """
@@ -146,8 +136,8 @@ class Lottery(commands.Cog):
         """
         await ctx.defer(ephemeral=is_hidden(ctx))
         embeds = [
-            Embed(title="Current sync committee:", description=await lottery.generate_sync_committee_description("latest")),
-            Embed(title="Next sync committee:", description=await lottery.generate_sync_committee_description("next"))
+            Embed(title="Current sync committee:", description=await self.generate_sync_committee_description("latest")),
+            Embed(title="Next sync committee:", description=await self.generate_sync_committee_description("next"))
         ]
         await ctx.send(embeds=embeds)
 

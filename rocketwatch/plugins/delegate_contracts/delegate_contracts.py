@@ -1,6 +1,5 @@
 import logging
 
-from pymongo import AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
 
 from discord import Interaction
@@ -21,7 +20,6 @@ log.setLevel(cfg["log_level"])
 class DelegateContracts(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     async def _delegate_stats(
         self,
@@ -73,7 +71,7 @@ class DelegateContracts(commands.Cog):
         """Show stats for minipool delegate contract adoption"""
         await interaction.response.defer()
         e = await self._delegate_stats(
-            collection=self.db.minipools,
+            collection=self.bot.db.minipools,
             match_filter={"beacon.status": {"$in": ["pending_initialized", "pending_queued", "active_ongoing"]}},
             delegate_field="effective_delegate",
             use_latest_field="use_latest_delegate",
@@ -87,7 +85,7 @@ class DelegateContracts(commands.Cog):
         """Show stats for megapool delegate contract adoption"""
         await interaction.response.defer()
         e = await self._delegate_stats(
-            collection=self.db.node_operators,
+            collection=self.bot.db.node_operators,
             match_filter={"megapool.active_validator_count": {"$gt": 0}},
             delegate_field="megapool.effective_delegate",
             use_latest_field="megapool.use_latest_delegate",

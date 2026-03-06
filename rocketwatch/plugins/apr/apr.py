@@ -9,7 +9,6 @@ from discord.ext import commands, tasks
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib.dates import DateFormatter
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -43,7 +42,6 @@ def get_duration(d1, d2):
 class APR(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.task.start()
     
     async def cog_unload(self):
@@ -52,7 +50,7 @@ class APR(commands.Cog):
     @tasks.loop(seconds=60)
     async def task(self):
         # get latest block update from the db
-        latest_db_block = await self.db.reth_apr.find_one(sort=[("block", -1)])
+        latest_db_block = await self.bot.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
         cursor_block = historical_w3.eth.get_block("latest")["number"]
         while True:
@@ -68,7 +66,7 @@ class APR(commands.Cog):
             reth_ratio = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block))
             effectiveness = solidity.to_float(
                 rp.call("rocketNetworkBalances.getETHUtilizationRate", block=cursor_block, address=address))
-            await self.db.reth_apr.insert_one({
+            await self.bot.db.reth_apr.insert_one({
                 "block"        : balance_block,
                 "time"         : block_time,
                 "value"        : reth_ratio,
@@ -93,13 +91,13 @@ class APR(commands.Cog):
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
 
         # get the last 30 datapoints
-        datapoints = await self.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
+        datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
         if len(datapoints) == 0:
             e.description = "No data available yet."
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.db.minipools.aggregate([
+        tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',
@@ -264,13 +262,13 @@ class APR(commands.Cog):
                         "The solid line is the protocol average."
 
         # get the last 30 datapoints
-        datapoints = await self.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
+        datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
         if len(datapoints) == 0:
             e.description = "No data available yet."
             return await ctx.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.db.minipools.aggregate([
+        tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status'       : 'active_ongoing',

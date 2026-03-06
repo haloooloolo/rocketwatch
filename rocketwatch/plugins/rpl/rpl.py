@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from discord import File, Interaction
 from discord.ext import commands
 from discord.app_commands import command
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -21,7 +20,6 @@ log.setLevel(cfg["log_level"])
 class RPL(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @command()
     async def staked_rpl(self, interaction: Interaction):
@@ -34,7 +32,7 @@ class RPL(commands.Cog):
         legacy_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
         megapool_staked_rpl = solidity.to_float(rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
         staked_rpl = legacy_staked_rpl + megapool_staked_rpl
-        unstaking_rpl = (await (await self.db.node_operators.aggregate([
+        unstaking_rpl = (await (await self.bot.db.node_operators.aggregate([
             {
                 '$group': {
                     '_id'                 : 'out',
@@ -92,7 +90,7 @@ class RPL(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))        
 
-        data = await (await self.db.node_operators.aggregate([
+        data = await (await self.bot.db.node_operators.aggregate([
             {
                 '$match': {
                     'staking_minipool_count': {

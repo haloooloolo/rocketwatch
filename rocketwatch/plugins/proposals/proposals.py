@@ -12,7 +12,7 @@ from discord.ext import commands
 from discord.app_commands import command, describe
 from discord.utils import as_chunks
 from matplotlib import pyplot as plt
-from pymongo import AsyncMongoClient, ASCENDING, DESCENDING
+from pymongo import ASCENDING, DESCENDING
 from cronitor import Monitor
 
 from rocketwatch import RocketWatch
@@ -114,7 +114,6 @@ def parse_proposal(beacon_block: dict) -> dict:
 class Proposals(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("proposals-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 100
         self.cooldown = timedelta(minutes=5)
@@ -141,14 +140,14 @@ class Proposals(commands.Cog):
     async def check_indexes(self):
         await self.bot.wait_until_ready()
         try:
-            await self.db.proposals.create_index("validator")
-            await self.db.proposals.create_index("slot", unique=True)
-            await self.db.proposals.create_index([("validator", ASCENDING), ("slot", DESCENDING)])
+            await self.bot.db.proposals.create_index("validator")
+            await self.bot.db.proposals.create_index("slot", unique=True)
+            await self.bot.db.proposals.create_index([("validator", ASCENDING), ("slot", DESCENDING)])
         except Exception as e:
             log.warning(f"Could not create indexes: {e}")
 
     async def fetch_proposals(self):
-        if db_entry := (await self.db.last_checked_block.find_one({"_id": cog_id})):
+        if db_entry := (await self.bot.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_slot = db_entry["slot"]
         else:
             last_checked_slot = 4700012 # last slot before merge
@@ -157,7 +156,7 @@ class Proposals(commands.Cog):
         for slots in as_chunks(range(last_checked_slot + 1, latest_slot + 1), self.batch_size):
             log.info(f"Fetching proposals for slots {slots[0]} to {slots[-1]}")
             await asyncio.gather(*[self.fetch_proposal(s) for s in slots])
-            await self.db.last_checked_block.replace_one({"_id": cog_id}, {"_id": cog_id, "slot": slots[-1]}, upsert=True)
+            await self.bot.db.last_checked_block.replace_one({"_id": cog_id}, {"_id": cog_id, "slot": slots[-1]}, upsert=True)
             
     async def fetch_proposal(self, slot: int) -> None:
         try:
@@ -169,12 +168,12 @@ class Proposals(commands.Cog):
                 raise e
             
         validator_index = int(beacon_header["proposer_index"])
-        if not (minipool := (await self.db.minipools.find_one({"validator_index": validator_index}))):
+        if not (minipool := (await self.bot.db.minipools.find_one({"validator_index": validator_index}))):
             return None
                 
         beacon_block = (await bacon.get_block_async(slot))["data"]["message"]
         proposal_data = parse_proposal(beacon_block)
-        await self.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
+        await self.bot.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
             
     async def create_minipool_proposal_view(self):        
         log.info("creating minipool proposal view")
@@ -222,8 +221,8 @@ class Proposals(commands.Cog):
                 }
             }
         ]
-        await self.db.minipool_proposals.drop()
-        await self.db.create_collection("minipool_proposals", viewOn="minipools", pipeline=pipeline)
+        await self.bot.db.minipool_proposals.drop()
+        await self.bot.db.create_collection("minipool_proposals", viewOn="minipools", pipeline=pipeline)
 
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
@@ -253,7 +252,7 @@ class Proposals(commands.Cog):
         if remove_allnodes:
             pipeline.insert(0, match_stage)
         
-        distribution = await (await self.db.minipool_proposals.aggregate(pipeline)).to_list()
+        distribution = await (await self.bot.db.minipool_proposals.aggregate(pipeline)).to_list()
         
         if remove_allnodes:
             d = {'remove_from_total': {'count': 0, 'validator_count': 0}}
@@ -286,7 +285,7 @@ class Proposals(commands.Cog):
         )
         # get proposals
         # limit to 6 months
-        proposals = await self.db.proposals.find(
+        proposals = await self.bot.db.proposals.find(
             {
                 "version": {"$exists": 1},
                 "slot"   : {"$gt": date_to_beacon_block((datetime.now() - timedelta(days=days)).timestamp())}
@@ -296,7 +295,7 @@ class Proposals(commands.Cog):
         # get version used after max_slot - look_back
         # and have at least 10 occurrences
         start_slot = max_slot - look_back
-        recent_versions = await (await self.db.proposals.aggregate([
+        recent_versions = await (await self.bot.db.proposals.aggregate([
             {
                 '$match': {
                     'slot'   : {
@@ -396,7 +395,7 @@ class Proposals(commands.Cog):
         minipools = sorted(minipools, key=lambda x: x[1])
 
         # get total minipool count from rocketpool
-        unobserved_minipools = len(await self.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("_id")) - sum(d[1] for d in minipools)
+        unobserved_minipools = len(await self.bot.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("_id")) - sum(d[1] for d in minipools)
         if "remove_from_total" in data:
             unobserved_minipools -= data["remove_from_total"]["validator_count"]
         minipools.insert(0, ("No proposals yet", unobserved_minipools))
@@ -412,7 +411,7 @@ class Proposals(commands.Cog):
         node_operators = sorted(node_operators, key=lambda x: x[1])
 
         # get total node operator count from rp
-        unobserved_node_operators = len(await self.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("node_operator")) - sum(d[1] for d in node_operators)
+        unobserved_node_operators = len(await self.bot.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("node_operator")) - sum(d[1] for d in node_operators)
         if "remove_from_total" in data:
             unobserved_node_operators -= data["remove_from_total"]["count"]
         node_operators.insert(0, ("No proposals yet", unobserved_node_operators))
@@ -512,7 +511,7 @@ class Proposals(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         # aggregate [consensus, execution] pair counts
-        client_pairs = await (await self.db.minipool_proposals.aggregate([
+        client_pairs = await (await self.bot.db.minipool_proposals.aggregate([
             {
                 "$match": {
                     "latest_proposal.consensus_client": {"$ne": "Unknown"},

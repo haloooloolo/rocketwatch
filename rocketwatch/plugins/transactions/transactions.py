@@ -3,7 +3,6 @@ import logging
 import warnings
 
 import web3.exceptions
-from datetime import timedelta
 from discord import Interaction
 from discord.app_commands import command, guilds
 from discord.ext.commands import is_owner
@@ -17,7 +16,7 @@ from utils.dao import DefaultDAO, ProtocolDAO
 from utils.embeds import assemble, prepare_args, el_explorer_url, Embed
 from utils.event import EventPlugin, Event
 from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from utils.shared_w3 import w3_async
 
 log = logging.getLogger("transactions")
 log.setLevel(cfg["log_level"])
@@ -71,7 +70,7 @@ class Transactions(EventPlugin):
             return
 
         event_name = self.function_map[contract][function]
-        if embeds := self.create_embeds(event_name, event_obj):
+        if embeds := await self.create_embeds(event_name, event_obj):
             await interaction.followup.send(embeds=embeds)
         else:
             await interaction.followup.send(content="No events triggered.")
@@ -81,35 +80,35 @@ class Transactions(EventPlugin):
     @is_owner()
     async def replay_tx(self, interaction: Interaction, tx_hash: str):
         await interaction.response.defer()
-        tnx = w3.eth.get_transaction(tx_hash)
-        block = w3.eth.get_block(tnx.blockHash)
+        tnx = await w3_async.eth.get_transaction(tx_hash)
+        block = await w3_async.eth.get_block(tnx.blockHash)
 
-        responses: list[Event] = self.process_transaction(block, tnx, tnx.to, tnx.input)
+        responses: list[Event] = await self.process_transaction(block, tnx, tnx.to, tnx.input)
         if responses:
             await interaction.followup.send(embeds=[response.embed for response in responses])          
         else:
             await interaction.followup.send(content="No events found.")
 
-    def _get_new_events(self) -> list[Event]:
+    async def _get_new_events(self) -> list[Event]:
         old_addresses = self.addresses
         try:
             from_block = self.last_served_block + 1 - self.lookback_distance
-            return self.get_past_events(from_block, self._pending_block)
+            return await self.get_past_events(from_block, self._pending_block)
         except Exception as err:
             # rollback in case of contract upgrade
             self.addresses = old_addresses
             raise err
 
-    def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
+    async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
         events = []
         for block in range(from_block, to_block):
-            events.extend(self.get_events_for_block(block))
+            events.extend(await self.get_events_for_block(block))
         return events
 
-    def get_events_for_block(self, block_number: BlockIdentifier) -> list[Event]:
+    async def get_events_for_block(self, block_number: BlockIdentifier) -> list[Event]:
         log.debug(f"Checking block {block_number}")
         try:
-            block = w3.eth.get_block(block_number, full_transactions=True)
+            block = await w3_async.eth.get_block(block_number, full_transactions=True)
         except web3.exceptions.BlockNotFound:
             log.error(f"Skipping block {block_number} as it can't be found")
             return []
@@ -117,7 +116,7 @@ class Transactions(EventPlugin):
         events = []
         for tnx in block.transactions:
             if "to" in tnx:
-                events.extend(self.process_transaction(block, tnx, tnx.to, tnx.input))
+                events.extend(await self.process_transaction(block, tnx, tnx.to, tnx.input))
             else:
                 log.debug((
                     f"Skipping transaction {tnx.hash.hex()} as it has no `to` parameter. "
@@ -126,8 +125,7 @@ class Transactions(EventPlugin):
 
         return events
 
-    @staticmethod
-    def create_embeds(event_name: str, event: aDict) -> list[Embed]:
+    async def create_embeds(self, event_name: str, event: aDict) -> list[Embed]:
         # prepare args
         args = aDict(event.args)
 
@@ -143,18 +141,18 @@ class Transactions(EventPlugin):
         if "odao_disable" in event_name and not args.confirmDisableBootstrapMode:
             return []
         elif event_name == "pdao_set_delegate":
-            receipt = w3.eth.get_transaction_receipt(args.transactionHash)
+            receipt = await w3_async.eth.get_transaction_receipt(args.transactionHash)
             args.delegator = receipt["from"]
             args.delegate = args.get("delegate") or args.get("newDelegate")
             args.votingPower = solidity.to_float(rp.call("rocketNetworkVoting.getVotingPower", args.delegator, args.blockNumber))
             if (args.votingPower < 50) or (args.delegate == args.delegator):
                 return []
         elif "failed_deposit" in event_name:
-            receipt = w3.eth.get_transaction_receipt(args.transactionHash)
+            receipt = await w3_async.eth.get_transaction_receipt(args.transactionHash)
             args.node = receipt["from"]
             args.burnedValue = solidity.to_float(event.gasPrice * receipt.gasUsed)
         elif "deposit_pool_queue" in event_name:
-            receipt = w3.eth.get_transaction_receipt(args.transactionHash)
+            receipt = await w3_async.eth.get_transaction_receipt(args.transactionHash)
             args.node = receipt["from"]
             event = rp.get_contract_by_name("rocketMinipoolQueue").events.MinipoolDequeued()
             # get the amount of dequeues that happened in this transaction using the event logs
@@ -191,13 +189,13 @@ class Transactions(EventPlugin):
                 match args.types[i]:
                     case 0:
                         # SettingType.UINT256
-                        value = w3.to_int(value_raw)
+                        value = w3_async.to_int(value_raw)
                     case 1:
                         # SettingType.BOOL
                         value = bool(value_raw)
                     case 2:
                         # SettingType.ADDRESS
-                        value = w3.to_checksum_address(value_raw)
+                        value = w3_async.to_checksum_address(value_raw)
                     case _:
                         value = "???"
                 description_parts.append(
@@ -255,13 +253,13 @@ class Transactions(EventPlugin):
         args = prepare_args(args)
         return [assemble(args)]
 
-    def process_transaction(self, block, tnx, contract_address, fn_input) -> list[Event]:
+    async def process_transaction(self, block, tnx, contract_address, fn_input) -> list[Event]:
         if contract_address not in self.addresses:
             return []
 
         contract_name = rp.get_name_by_address(contract_address)
         # get receipt and check if the transaction reverted using status attribute
-        receipt = w3.eth.get_transaction_receipt(tnx.hash)
+        receipt = await w3_async.eth.get_transaction_receipt(tnx.hash)
         if contract_name == "rocketNodeDeposit" and receipt.status:
             log.info(f"Skipping successful node deposit {tnx.hash.hex()}")
             return []
@@ -319,9 +317,9 @@ class Transactions(EventPlugin):
             event.args["proposal_body"] = dao.build_proposal_body(proposal, include_proposer=False)
 
             dao_address = dao.contract.address
-            responses = self.process_transaction(block, tnx, dao_address, payload)
+            responses = await self.process_transaction(block, tnx, dao_address, payload)
 
-        embeds = self.create_embeds(event_name, event)
+        embeds = await self.create_embeds(event_name, event)
         new_responses = []
 
         for embed in embeds:

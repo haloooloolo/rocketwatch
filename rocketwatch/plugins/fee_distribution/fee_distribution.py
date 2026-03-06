@@ -5,7 +5,6 @@ from typing import Literal
 from discord import Interaction, File
 from discord.ext import commands
 from discord.app_commands import command
-from pymongo import AsyncMongoClient
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
@@ -21,7 +20,6 @@ log.setLevel(cfg["log_level"])
 class FeeDistribution(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
 
     @command()
     async def fee_distribution(self, interaction: Interaction, mode: Literal["tree", "pie"]):
@@ -37,7 +35,7 @@ class FeeDistribution(commands.Cog):
         fig, axs = plt.subplots(1, 2)
 
         for i, bond in enumerate([8, 16]):            
-            result = await self.db.minipools.aggregate([
+            result = await self.bot.db.minipools.aggregate([
                 { 
                     "$match": { 
                         "node_deposit_balance": bond,

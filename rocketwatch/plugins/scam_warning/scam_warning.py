@@ -3,7 +3,6 @@ from datetime import timedelta, datetime
 
 from discord import errors
 from discord.ext import commands
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -17,7 +16,6 @@ log.setLevel(cfg["log_level"])
 class ScamWarning(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
         self.channel_ids = set(cfg["rocketpool.dm_warning.channels"])
         self.inactivity_cooldown = timedelta(days=90)
         self.failure_cooldown = timedelta(days=1)
@@ -80,7 +78,7 @@ class ScamWarning(commands.Cog):
             return
 
         msg_time = message.created_at.replace(tzinfo=None)
-        db_entry = (await self.db.scam_warning.find_one({"_id": message.author.id})) or {}
+        db_entry = (await self.bot.db.scam_warning.find_one({"_id": message.author.id})) or {}
 
         cooldown_end = datetime.fromtimestamp(0)
         if last_failure_time := db_entry.get("last_failure"):
@@ -97,7 +95,7 @@ class ScamWarning(commands.Cog):
                 log.info(f"Unable to DM {message.author}, skipping warning.")
                 last_failure_time = msg_time
 
-        await self.db.scam_warning.replace_one(
+        await self.bot.db.scam_warning.replace_one(
             {"_id": message.author.id},
             {"_id": message.author.id, "last_message": msg_time, "last_failure": last_failure_time},
             upsert=True

@@ -10,7 +10,6 @@ from discord import File
 from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,7 +28,6 @@ log.setLevel(cfg["log_level"])
 class Random(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @hybrid_command()
     async def dice(self, ctx: Context, dice_string: str = "1d6"):
@@ -168,7 +166,7 @@ class Random(commands.Cog):
 
         e = Embed(title="Smoothing Pool")
         smoothie_eth = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
-        data = await (await self.db.minipools.aggregate([
+        data = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
                     'beacon.status': {

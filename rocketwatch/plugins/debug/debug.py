@@ -10,7 +10,6 @@ from colorama import Fore, Style
 from discord import File, Interaction
 from discord.app_commands import Choice, command, guilds, describe
 from discord.ext.commands import Cog, is_owner
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,7 +28,6 @@ log.setLevel(cfg["log_level"])
 class Debug(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.contract_names = []
         self.function_names = []
 
@@ -167,7 +165,7 @@ class Debug(Cog):
         if not confirm:
             await interaction.followup.send("Not running. Set `confirm` to `true` to run.")
             return
-        await self.db.minipools.drop()
+        await self.bot.db.minipools.drop()
         await interaction.followup.send(content="Done")
 
     @command()
@@ -230,7 +228,7 @@ class Debug(Cog):
         
         user = await self.bot.get_or_fetch_user(user_id)
         
-        await self.db.support_bot_dumps.insert_one(
+        await self.bot.db.support_bot_dumps.insert_one(
             {
                 "ts"      : datetime.fromtimestamp(ts, tz=timezone.utc),
                 "template": template_name,
@@ -245,7 +243,7 @@ class Debug(Cog):
                 }
             }
         )
-        await self.db.support_bot.insert_one(
+        await self.bot.db.support_bot.insert_one(
             {"_id": template_name, "title": template_title, "description": template_description}
         )
              
@@ -273,7 +271,7 @@ class Debug(Cog):
         for event in events:
             channel_candidates = [value for key, value in channels.items() if event.event_name.startswith(key)]
             channel_id = channel_candidates[0] if channel_candidates else channels["default"]
-            await self.db.event_queue.insert_one({
+            await self.bot.db.event_queue.insert_one({
                 "_id": event.unique_id,
                 "embed": pickle.dumps(event.embed),
                 "topic": event.topic,

@@ -8,7 +8,6 @@ from discord.ext import commands
 from discord.ext.commands import Context
 from discord.ext.commands import hybrid_command
 from matplotlib import pyplot as plt
-from pymongo import AsyncMongoClient
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
@@ -22,8 +21,6 @@ log.setLevel(cfg["log_level"])
 class Commissions(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        # connect to local mongodb
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).get_database("rocketwatch")
 
     @hybrid_command()
     async def commission_history(self, ctx: Context):
@@ -34,7 +31,7 @@ class Commissions(commands.Cog):
 
         e = Embed(title='Commission History')
 
-        minipools = await self.db.minipools.find().sort("validator_index", 1).to_list(None)
+        minipools = await self.bot.db.minipools.find().sort("validator_index", 1).to_list(None)
         # create dot chart of minipools
         # x-axis: validator
         # y-axis: node_fee
