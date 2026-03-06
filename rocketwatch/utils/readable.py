@@ -71,10 +71,8 @@ def render_tree_legacy(data: dict, name: str) -> str:
         _values = []
         count = 0
         
-        for i, (state, sub_data) in enumerate(_data.items()):
-            if not sub_data:
-                continue
-            
+        _data = {k: v for k, v in _data.items() if v}
+        for i, (state, sub_data) in enumerate(_data.items()):            
             link = "├" if (i != len(_data) - 1) else "└"
             _strings.append(f" {link}{state.title()}: ")
             
