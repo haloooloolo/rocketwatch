@@ -1,9 +1,8 @@
 import logging
-import requests
-from typing import Optional, Any
 
+import aiohttp
+from aiocache import cached
 from bs4 import BeautifulSoup
-from cachetools.func import ttl_cache
 
 from discord import Interaction
 from discord.ext.commands import Cog
@@ -12,7 +11,7 @@ from discord.app_commands import Choice, command, describe
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
 from utils.embeds import Embed
-from utils.retry import retry
+from utils.retry import retry_async
 
 log = logging.getLogger("rpips")
 log.setLevel(cfg["log_level"])
@@ -30,38 +29,31 @@ class RPIPs(Cog):
         embed = Embed()
         embed.set_author(name="🔗 Data from rpips.rocketpool.net", url="https://rpips.rocketpool.net")
 
-        rpips_by_name: dict[str, RPIPs.RPIP] = {rpip.full_title: rpip for rpip in self.get_all_rpips()}
+        rpips_by_name: dict[str, RPIPs.RPIP] = {rpip.full_title: rpip for rpip in await self.get_all_rpips()}
         if rpip := rpips_by_name.get(name):
+            details = await rpip.fetch_details()
             embed.title = name
             embed.url = rpip.url
-            embed.description = rpip.description
+            embed.description = details["description"]
 
-            if len(rpip.authors) == 1:
-                embed.add_field(name="Author", value=rpip.authors[0])
+            authors = details["authors"]
+            if len(authors) == 1:
+                embed.add_field(name="Author", value=authors[0])
             else:
-                embed.add_field(name="Authors", value=", ".join(rpip.authors))
+                embed.add_field(name="Authors", value=", ".join(authors))
 
             embed.add_field(name="Status", value=rpip.status)
-            embed.add_field(name="Created", value=rpip.created)
-            embed.add_field(name="Discussion Link", value=rpip.discussion, inline=False)
+            embed.add_field(name="Created", value=details["created"])
+            embed.add_field(name="Discussion Link", value=details["discussion"], inline=False)
         else:
             embed.description = "No matching RPIPs."
 
         await interaction.followup.send(embed=embed)
 
     class RPIP:
-        __slots__ = (
-            "title",
-            "number",
-            "status",
-            "type",
-            "authors",
-            "created",
-            "discussion",
-            "description"
-        )
+        __slots__ = ("title", "number", "status")
 
-        def __init__(self, title: str, number: int, status:str):
+        def __init__(self, title: str, number: int, status: str):
             self.title = title
             self.number = number
             self.status = status
@@ -69,10 +61,14 @@ class RPIPs(Cog):
         def __str__(self) -> str:
             return self.full_title
 
-        @ttl_cache(ttl=300)
-        @retry(tries=3, delay=1)
-        def __fetch_data(self) -> dict[str, Optional[str | list[str]]]:
-            soup = BeautifulSoup(requests.get(self.url).text, "html.parser")
+        @cached(ttl=300, key_builder=lambda _, rpip: rpip.number)
+        @retry_async(tries=3, delay=1)
+        async def fetch_details(self) -> dict:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url) as resp:
+                    html = await resp.text()
+
+            soup = BeautifulSoup(html, "html.parser")
             metadata = {}
 
             for field in soup.main.find("table", {"class": "rpip-preamble"}).find_all("tr"):
@@ -100,26 +96,23 @@ class RPIPs(Cog):
         def url(self) -> str:
             return f"https://rpips.rocketpool.net/RPIPs/RPIP-{self.number}"
 
-        def __getattr__(self, key: str) -> Any:
-            try:
-                return self.__fetch_data()[key] or "N/A"
-            except KeyError:
-                raise AttributeError(f"RPIP has no attribute '{key}'")
-
     @rpip.autocomplete("name")
     async def _get_rpip_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
         choices = []
-        for rpip in self.get_all_rpips():
+        for rpip in await self.get_all_rpips():
             if current.lower() in (name := rpip.full_title).lower():
                 choices.append(Choice(name=name, value=name))
         return choices[:-26:-1]
 
     @staticmethod
-    @ttl_cache(ttl=60)
-    @retry(tries=3, delay=1)
-    def get_all_rpips() -> list['RPIPs.RPIP']:
-        html_doc = requests.get("https://rpips.rocketpool.net/all").text
-        soup = BeautifulSoup(html_doc, "html.parser")
+    @cached(ttl=60)
+    @retry_async(tries=3, delay=1)
+    async def get_all_rpips() -> list['RPIPs.RPIP']:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://rpips.rocketpool.net/all") as resp:
+                html = await resp.text()
+
+        soup = BeautifulSoup(html, "html.parser")
         rpips: list['RPIPs.RPIP'] = []
 
         for row in soup.table.find_all("tr", recursive=False):

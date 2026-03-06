@@ -25,6 +25,7 @@ pymongo==4.16.0
 graphql_query==1.4.0
 pillow==12.1.1
 aiohttp==3.13.3
+aiocache==0.12.3
 numpy==2.4.2
 beautifulsoup4==4.14.3
 eth-typing==5.2.1

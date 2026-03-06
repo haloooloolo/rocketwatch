@@ -51,7 +51,7 @@ class Governance(StatusPlugin):
 
     async def _get_active_snapshot_proposals(self) -> list[Snapshot.Proposal]:
         try:
-            return Snapshot.fetch_proposals("active", reverse=True)
+            return await Snapshot.fetch_proposals("active", reverse=True)
         except Exception as e:
             await self.bot.report_error(e)
             return []
@@ -59,7 +59,7 @@ class Governance(StatusPlugin):
     async def _get_draft_rpips(self) -> list[RPIPs.RPIP]:
         try:
             statuses = {"Draft", "Review"}
-            return [rpip for rpip in RPIPs.get_all_rpips() if (rpip.status in statuses)][::-1]
+            return [rpip for rpip in await RPIPs.get_all_rpips() if (rpip.status in statuses)][::-1]
         except Exception as e:
             await self.bot.report_error(e)
             return []
