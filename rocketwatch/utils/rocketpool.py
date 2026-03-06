@@ -1,20 +1,19 @@
+import eth_abi
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from bidict import bidict
 from eth_typing import BlockIdentifier, ChecksumAddress
 from cachetools import cached, FIFOCache
 from cachetools.func import ttl_cache
-from multicall import Call, Multicall
-from multicall.constants import MULTICALL3_ADDRESSES
 from web3.exceptions import ContractLogicError
 
 from utils import solidity
 from utils.cfg import cfg
 from utils.readable import decode_abi
-from utils.shared_w3 import w3, mainnet_w3, historical_w3
-from utils.time_debug import timerun_async
+from utils.shared_w3 import w3, w3_async, mainnet_w3, historical_w3
 
 log = logging.getLogger("rocketpool")
 log.setLevel(cfg["log_level"])
@@ -22,6 +21,7 @@ log.setLevel(cfg["log_level"])
 
 class NoAddressFound(Exception):
     pass
+
 
 class RocketPool:
     ADDRESS_CACHE = FIFOCache(maxsize=2048)
@@ -46,8 +46,11 @@ class RocketPool:
         for name, address in manual_addresses.items():
             self.addresses[name] = address
 
-        self.addresses["multicall3"] = w3.to_checksum_address(MULTICALL3_ADDRESSES[w3.eth.chain_id])
         self._multicall = self.get_contract_by_name("multicall3")
+        self._multicall_async = w3_async.eth.contract(
+            address=self._multicall.address,
+            abi=self._multicall.abi
+        )
 
         log.info("Indexing Rocket Pool contracts...")
         # generate list of all file names with the .sol extension from the rocketpool submodule
@@ -75,57 +78,58 @@ class RocketPool:
             log.warning("Failed to find address for Constellation contracts")
 
     @staticmethod
-    def seth_sig(abi, function_name):
-        # also handle tuple outputs, so `example(unit256)((unit256,unit256))` for example
-        for item in abi:
-            if item.get("name") == function_name:
-                inputs = ','.join([i['type'] for i in item['inputs']])
-                outputs = []
-                for o in item['outputs']:
-                    if o['type'] == 'tuple':
-                        outputs.append(f"({','.join([i['type'] for i in o['components']])})")
-                    else:
-                        outputs.append(o['type'])
-                outputs = ','.join(outputs)
-                return f"{function_name}({inputs})({outputs})"
-        raise Exception(f"Function {function_name} not found in ABI")
+    def _abi_type_str(output: dict) -> str:
+        """Convert a single ABI output entry to an eth_abi type string, handling tuples."""
+        t = output["type"]
+        if "tuple" in t:
+            inner = ",".join(RocketPool._abi_type_str(c) for c in output["components"])
+            suffix = t[5:]  # captures "", "[]", "[N]", etc.
+            return f"({inner}){suffix}"
+        return t
 
     @staticmethod
-    def _fn_to_call(fn, key):
-        """Convert a web3 ContractFunction to a multicall Call with integer key."""
-        sig = RocketPool.seth_sig(fn.contract_abi, fn.function_identifier)
-        return Call(fn.address, [sig, *fn.args], [(key, None)])
+    def _decode_fn_output(fn, data: bytes) -> Any:
+        """Decode raw ABI output bytes for a ContractFunction."""
+        outputs = fn.abi["outputs"]
+        if not outputs:
+            return None
+        types = [RocketPool._abi_type_str(o) for o in outputs]
+        decoded = eth_abi.decode(types, data)
+        return decoded[0] if len(decoded) == 1 else decoded
 
     @staticmethod
-    def build_call(abi_source, function_name, *args, target=None, key=None, transform=None):
-        """Build a multicall Call object.
+    def _normalize_calls(calls, default_require_success):
+        """Normalize calls to (fn, allow_failure) pairs. Each call may be a
+        plain ContractFunction or a (ContractFunction, require_success) tuple."""
+        fns, flags = [], []
+        for call in calls:
+            if isinstance(call, tuple):
+                fn, req = call
+            else:
+                fn, req = call, default_require_success
+            fns.append(fn)
+            flags.append(not req)
+        return fns, flags
 
-        Args:
-            abi_source: Contract object with .abi attribute
-            function_name: Function name to call
-            *args: Function arguments
-            target: Target address (defaults to abi_source.address)
-            key: Result key (defaults to function_name)
-            transform: Optional result transform function
-        """
-        abi = abi_source.abi if hasattr(abi_source, 'abi') else abi_source
-        address = target if target is not None else abi_source.address
-        sig = RocketPool.seth_sig(abi, function_name)
-        return Call(address, [sig, *args], [(key if key is not None else function_name, transform)])
-
-    def multicall_sync(self, calls, require_success=True):
-        """Sync multicall accepting ContractFunction objects. Returns list of results."""
-        mc_calls = [self._fn_to_call(fn, i) for i, fn in enumerate(calls)]
-        encoded = [(call.target, not require_success, call.data) for call in mc_calls]
+    def multicall(self, calls, require_success=True) -> list:
+        """Sync multicall accepting ContractFunction objects or (fn, require_success) tuples."""
+        fns, flags = self._normalize_calls(calls, require_success)
+        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags)]
         results = self._multicall.functions.aggregate3(encoded).call()
         return [
-            Call.decode_output(data, mc_calls[i].signature, success=success)
+            RocketPool._decode_fn_output(fns[i], data) if success else None
             for i, (success, data) in enumerate(results)
         ]
 
-    async def multicall(self, calls: list[Call], require_success=True):
-        """Async multicall accepting Call objects. Returns dict of keyed results."""
-        return await Multicall(calls, _w3=w3, gas_limit=50_000_000, require_success=require_success)
+    async def multicall_async(self, calls, require_success=True) -> list:
+        """Async multicall accepting ContractFunction objects or (fn, require_success) tuples."""
+        fns, flags = self._normalize_calls(calls, require_success)
+        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags)]
+        results = await self._multicall_async.functions.aggregate3(encoded).call()
+        return [
+            RocketPool._decode_fn_output(fns[i], data) if success else None
+            for i, (success, data) in enumerate(results)
+        ]
 
     @cached(cache=ADDRESS_CACHE)
     def get_address_by_name(self, name):
@@ -138,7 +142,7 @@ class RocketPool:
         log.debug(f"Retrieving address for {name} Contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
         address = self.get_contract_by_name("rocketStorage", historical=block != "latest").functions.getAddress(sha3).call(block_identifier=block)
-        if not w3.toInt(hexstr=address):
+        if not w3.to_int(hexstr=address):
             raise NoAddressFound(f"No address found for {name} Contract")
         self.addresses[name] = address
         log.debug(f"Retrieved address for {name} Contract: {address}")
@@ -241,6 +245,7 @@ class RocketPool:
         if not address:
             address = self.get_address_by_name(name)
         contract = self.assemble_contract(name, address, historical, mainnet)
+        args = tuple(w3.to_checksum_address(a) if isinstance(a, str) and w3.is_address(a) else a for a in args)
         return contract.functions[function](*args)
 
     def call(self, path, *args, block: BlockIdentifier = "latest", address=None, mainnet=False):

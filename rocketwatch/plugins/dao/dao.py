@@ -214,7 +214,7 @@ class OnchainDAO(Cog):
         else:
             suggestions = list(range(1, num_proposals + 1))[:-26:-1]
                     
-        titles: list[str] = rp.multicall_sync([
+        titles: list[str] = rp.multicall([
             dao.proposal_contract.functions.getMessage(proposal_id) for proposal_id in suggestions
         ])
         return [Choice(name=f"#{pid}: {title}", value=pid) for pid, title in zip(suggestions, titles)]

@@ -117,6 +117,7 @@ class Proposals(commands.Cog):
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
         self.monitor = Monitor("proposals-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 100
+        self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
         
     async def loop(self):
@@ -135,7 +136,7 @@ class Proposals(commands.Cog):
                 await self.bot.report_error(err)
                 self.monitor.ping(state="fail", series=p_id)
             finally:
-                await asyncio.sleep(300)
+                await asyncio.sleep(self.cooldown.total_seconds())
                 
     async def check_indexes(self):
         await self.bot.wait_until_ready()

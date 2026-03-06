@@ -54,14 +54,14 @@ class APR(commands.Cog):
         # get latest block update from the db
         latest_db_block = await self.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
-        cursor_block = historical_w3.eth.getBlock("latest")["number"]
+        cursor_block = historical_w3.eth.get_block("latest")["number"]
         while True:
             # get address of rocketNetworkBalances contract at cursor block
             address = rp.uncached_get_address_by_name("rocketNetworkBalances", block=cursor_block)
             balance_block = rp.call("rocketNetworkBalances.getBalancesBlock", block=cursor_block, address=address)
             if balance_block == latest_db_block:
                 break
-            block_time = w3.eth.getBlock(balance_block)["timestamp"]
+            block_time = w3.eth.get_block(balance_block)["timestamp"]
             # abort if the blocktime is older than 120 days
             if block_time < (datetime.now().timestamp() - 120 * 24 * 60 * 60):
                 break

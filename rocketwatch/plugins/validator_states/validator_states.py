@@ -108,10 +108,6 @@ def _collapse_tree(data: dict) -> dict:
     return collapsed_data
 
 
-def _get_node_operator(doc):
-    return doc.get("node_operator", "")
-
-
 class ValidatorStates(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
@@ -170,7 +166,7 @@ class ValidatorStates(commands.Cog):
             for valis in (exiting_valis, withdrawn_valis):
                 valis_no = {}
                 for v in valis:
-                    no = _get_node_operator(v)
+                    no = v["node_operator"]
                     valis_no[no] = valis_no.get(no, 0) + 1
                 valis_no = sorted(valis_no.items(), key=lambda x: x[1], reverse=True)
                 node_operators.append(valis_no)

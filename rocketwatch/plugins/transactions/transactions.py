@@ -3,7 +3,6 @@ import logging
 import warnings
 
 import web3.exceptions
-import humanize
 from datetime import timedelta
 from discord import Interaction
 from discord.app_commands import command, guilds
@@ -192,7 +191,7 @@ class Transactions(EventPlugin):
                 match args.types[i]:
                     case 0:
                         # SettingType.UINT256
-                        value = w3.toInt(value_raw)
+                        value = w3.to_int(value_raw)
                     case 1:
                         # SettingType.BOOL
                         value = bool(value_raw)

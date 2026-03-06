@@ -51,13 +51,13 @@ def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]
 
     nodes = rp.call("rocketNodeManager.getNodeAddresses", 0, 10_000)
     for node_batch in as_chunks(nodes, 500):
-        eb16s += rp.multicall_sync([
+        eb16s += rp.multicall([
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 16 * 10**18) for node in node_batch
         ])
-        eb8s += rp.multicall_sync([
+        eb8s += rp.multicall([
             minipool_manager.functions.getNodeStakingMinipoolCountBySize(node, 8 * 10**18) for node in node_batch
         ])
-        rpl_stakes += rp.multicall_sync([
+        rpl_stakes += rp.multicall([
             node_staking.functions.getNodeStakedRPL(node) for node in node_batch
         ])
 

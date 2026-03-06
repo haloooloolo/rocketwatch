@@ -9,10 +9,9 @@ from discord.ext.commands import is_owner
 from discord.app_commands import command, guilds
 from eth_typing.evm import ChecksumAddress, BlockNumber
 from hexbytes import HexBytes
-from web3._utils.filters import Filter
 from web3.datastructures import MutableAttributeDict as aDict
-from web3.exceptions import ABIEventFunctionNotFound
-from web3.types import LogReceipt, EventData, FilterParams
+from web3.logs import DISCARD
+from web3.types import LogReceipt, EventData
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -29,7 +28,7 @@ log = logging.getLogger("events")
 log.setLevel(cfg["log_level"])
 
 
-PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Filter]
+PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], list[LogReceipt | EventData]]
 
 class Events(EventPlugin):
     def __init__(self, bot: RocketWatch):
@@ -63,8 +62,10 @@ class Events(EventPlugin):
                 event_name = event["event_name"]
                 try:
                     log.info(f"Adding filter for {contract_name}.{event_name}")
-                    topic = contract.events[event_name].build_filter().topics[0]
-                except ABIEventFunctionNotFound as e:
+                    event_abi = contract.events[event_name].abi
+                    input_types = ','.join(i['type'] for i in event_abi['inputs'])
+                    topic = w3.keccak(text=f"{event_name}({input_types})").hex()
+                except Exception as e:
                     log.exception(e)
                     log.warning(f"Couldn't find event {event_name} ({event['name']}) in the contract")
                     continue
@@ -74,20 +75,19 @@ class Events(EventPlugin):
                 topic_map[topic] = event_name
 
         if addresses:
-            def build_direct_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> Filter:
-                filter_params: FilterParams = {
+            def build_direct_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[LogReceipt]:
+                return w3.eth.get_logs({
                     "address"  : list(addresses),
                     "topics"   : [list(aggregated_topics)],
                     "fromBlock": _from,
                     "toBlock"  : _to
-                }
-                return w3.eth.filter(filter_params)
+                })
             partial_filters.append(build_direct_filter)
 
         # generate filters for global events
         for group in config["global"]:
             try:
-                contract = rp.assemble_contract(name=group["contract_name"])
+                contract = rp.get_contract_by_name(name=group["contract_name"])
             except Exception as e:
                 log.warning(f"Failed to get contract {group['contract_name']}: {e}")
                 continue
@@ -96,12 +96,17 @@ class Events(EventPlugin):
                 event_map[event["event_name"]] = event["name"]
                 def super_builder(_contract, _event) -> PartialFilter:
                     # this is needed to pin nonlocal variables
-                    def build_topic_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> Filter:
-                        return _contract.events[_event["event_name"]].createFilter(
-                            fromBlock=_from,
-                            toBlock=_to,
-                            argument_filters=_event.get("filter", {})
-                        )
+                    def build_topic_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[EventData]:
+                        event_cls = _contract.events[_event["event_name"]]
+                        event_abi = event_cls.abi
+                        input_types = ','.join(i['type'] for i in event_abi['inputs'])
+                        topic0 = w3.keccak(text=f"{_event['event_name']}({input_types})").hex()
+                        raw_logs = w3.eth.get_logs({
+                            "topics"   : [topic0],
+                            "fromBlock": _from,
+                            "toBlock"  : _to,
+                        })
+                        return [event_cls().process_log(raw_log) for raw_log in raw_logs]
                     return build_topic_filter
                 partial_filters.append(super_builder(contract, event))
 
@@ -126,7 +131,7 @@ class Events(EventPlugin):
             }
             event_obj = aDict({
                 "event": event,
-                "transactionHash": aDict({"hex": lambda: '0x0000000000000000000000000000000000000000'}),
+                "transactionHash": aDict({"hex": lambda: '0' * 64}),
                 "blockNumber": block_number,
                 "args": aDict(default_args | json.loads(json_args))
             })
@@ -153,7 +158,8 @@ class Events(EventPlugin):
 
         # get direct events
         for event_log in logs:
-            if ("topics" in event_log) and (event_log["topics"][0].hex() in self.topic_map):
+            topics = event_log.get("topics", [])
+            if topics and (topics[0].hex() in self.topic_map):
                 filtered_events.append(event_log)
 
         # get global events
@@ -164,7 +170,7 @@ class Events(EventPlugin):
             contract = rp.assemble_contract(name=group["contract_name"])
             for event in group["events"]:
                 event = contract.events[event["event_name"]]()
-                rich_logs = event.process_receipt(receipt)
+                rich_logs = event.process_receipt(receipt, errors=DISCARD)
                 filtered_events.extend(rich_logs)
 
         responses, _ = self.process_events(filtered_events)
@@ -183,7 +189,7 @@ class Events(EventPlugin):
         
         events = []
         for pf in self._partial_filters:
-            events.extend(pf(from_block, to_block).get_all_entries())
+            events.extend(pf(from_block, to_block))
 
         messages, contract_upgrade_block = self.process_events(events)
         if not contract_upgrade_block:
@@ -228,7 +234,7 @@ class Events(EventPlugin):
                 # default event path
                 contract = rp.get_contract_by_address(event.address)
                 contract_event = self.topic_map[event.topics[0].hex()]
-                topics = [w3.toHex(t) for t in event.topics]
+                topics = [w3.to_hex(t) for t in event.topics]
                 _event = aDict(contract.events[contract_event]().process_log(event))
                 _event.topics = topics
                 _event.args = aDict(_event.args)
@@ -323,7 +329,7 @@ class Events(EventPlugin):
 
                 if full_event_name == "unstETH.WithdrawalRequested":
                     contract = rp.get_contract_by_address(event["address"])
-                    _event = aDict(contract.events[event_name]().processLog(event))
+                    _event = aDict(contract.events[event_name]().process_log(event))
                     # sum up the amount of stETH withdrawn in this transaction
                     if amount := tx_aggregates.get(full_event_name, 0):
                         events.remove(event)
@@ -336,8 +342,8 @@ class Events(EventPlugin):
                     if prev_event := tx_aggregates.get(full_event_name, None):
                         # only keep largest rETH transfer
                         contract = rp.get_contract_by_address(event["address"])
-                        _event = aDict(contract.events[event_name]().processLog(event))
-                        _prev_event = aDict(contract.events[event_name]().processLog(event))
+                        _event = aDict(contract.events[event_name]().process_log(event))
+                        _prev_event = aDict(contract.events[event_name]().process_log(event))
                         if _prev_event["args"]["value"] > _event["args"]["value"]:
                             events.remove(event)
                             event = prev_event
@@ -471,7 +477,7 @@ class Events(EventPlugin):
                 match args.types[i]:
                     case 0:
                         # SettingType.UINT256
-                        value = w3.toInt(value_raw)
+                        value = w3.to_int(value_raw)
                     case 1:
                         # SettingType.BOOL
                         value = bool(value_raw)
@@ -585,7 +591,7 @@ class Events(EventPlugin):
             args.caller = receipt["from"]
 
         # add transaction hash and block number to args
-        args.transactionHash = event.transactionHash.hex()
+        args.transactionHash = "0x" + event.transactionHash.hex()
         args.blockNumber = event.blockNumber
 
         # add proposal message manually if the event contains a proposal

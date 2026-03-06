@@ -3,8 +3,9 @@ import logging
 import aiohttp
 from web3.beacon import Beacon as Bacon
 from aiohttp.web import HTTPError
-from web3 import Web3, HTTPProvider
-from web3.middleware import geth_poa_middleware
+from web3 import Web3, AsyncWeb3, HTTPProvider
+from web3.providers import AsyncHTTPProvider
+from web3.middleware import ExtraDataToPOAMiddleware
 
 from utils.cfg import cfg
 from utils.retry import retry_async
@@ -13,11 +14,13 @@ log = logging.getLogger("shared_w3")
 log.setLevel(cfg["log_level"])
 
 w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
+w3_async = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
 mainnet_w3 = w3
 
 if cfg['rocketpool.chain'] != "mainnet":
     mainnet_w3 = Web3(HTTPProvider(cfg['execution_layer.endpoint.mainnet']))
-    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
+    w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
+    w3_async.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
 
 historical_w3 = None
 if "archive" in cfg['execution_layer.endpoint'].keys():

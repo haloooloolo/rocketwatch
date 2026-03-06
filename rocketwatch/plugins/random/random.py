@@ -287,10 +287,8 @@ class Random(commands.Cog):
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
         c = rp.get_contract_by_name("rocketDAONodeTrustedActions")
         # get challenges made
-        events = c.events["ActionChallengeMade"].createFilter(
-            fromBlock=w3.eth.get_block("latest").number - 7 * 24 * 60 * 60 // 12)
-        # get all events
-        events = events.get_all_entries()
+        events = list(c.events["ActionChallengeMade"].get_logs(
+            from_block=w3.eth.get_block("latest").number - 7 * 24 * 60 * 60 // 12))
         # remove all events of nodes that aren't challenged anymore
         for event in events:
             if not rp.call("rocketDAONodeTrusted.getMemberIsChallenged", event.args.nodeChallengedAddress):
@@ -298,7 +296,7 @@ class Random(commands.Cog):
         # sort by block number
         events.sort(key=lambda x: x.blockNumber)
         if not events:
-            await ctx.send("no active challenges found")
+            await ctx.send("No active challenges found")
             return
         e = Embed(title="Active oDAO Challenges")
         e.description = ""

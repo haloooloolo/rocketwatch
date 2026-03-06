@@ -1,8 +1,9 @@
 import logging
 from typing import Optional, Any
 
-from eth_typing import BlockNumber 
-from web3.contract import ContractEvent, LogReceipt
+from eth_typing import BlockNumber
+from web3.contract.contract import ContractEvent
+from web3.types import LogReceipt
 
 from utils.cfg import cfg
 
@@ -11,7 +12,7 @@ log.setLevel(cfg["log_level"])
 
 
 def get_logs(
-    event: ContractEvent, 
+    event: ContractEvent,
     from_block: BlockNumber, 
     to_block: BlockNumber, 
     arg_filters: Optional[dict[str, Any]] = None
@@ -28,11 +29,11 @@ def get_logs(
     logs = []
     
     while from_block <= end_block:
-        logs += event.create_filter(
-            fromBlock=from_block, 
-            toBlock=min(to_block, end_block), 
+        logs += event.get_logs(
+            from_block=from_block,
+            to_block=min(to_block, end_block),
             argument_filters=arg_filters
-        ).get_all_entries()
+        )
         
         from_block = to_block + 1
         to_block = from_block + chunk_size

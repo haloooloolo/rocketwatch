@@ -61,8 +61,8 @@ class EventCore(commands.Cog):
             await self.on_success()
             self.monitor.ping(state="complete", series=p_id)
         except Exception as error:
-            await self.on_error(error)
             self.monitor.ping(state="fail", series=p_id)
+            await self.on_error(error)
 
     @task.before_loop
     async def before_loop(self) -> None:

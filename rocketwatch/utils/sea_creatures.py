@@ -50,16 +50,16 @@ def get_sea_creature_for_holdings(holdings):
 def get_holding_for_address(address):
     if cfg["rocketpool.chain"] != "mainnet":
         return 0
-    if price_cache["block"] != (b := w3.eth.blockNumber):
+    if price_cache["block"] != (b := w3.eth.block_number):
         price_cache["rpl_price"] = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice"))
         price_cache["reth_price"] = solidity.to_float(rp.call("rocketTokenRETH.getExchangeRate"))
         price_cache["block"] = b
 
     # get their eth balance
-    eth_balance = solidity.to_float(w3.eth.getBalance(address))
+    eth_balance = solidity.to_float(w3.eth.get_balance(address))
     # get ERC-20 token balance for this address
     with contextlib.suppress(Exception):
-        rpl_balance, rplfs_balance, reth_balance = rp.multicall_sync([
+        rpl_balance, rplfs_balance, reth_balance = rp.multicall([
             rp.get_contract_by_name("rocketTokenRPL").functions.balanceOf(address),
             rp.get_contract_by_name("rocketTokenRPLFixedSupply").functions.balanceOf(address),
             rp.get_contract_by_name("rocketTokenRETH").functions.balanceOf(address),

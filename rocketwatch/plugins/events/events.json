@@ -235,23 +235,6 @@
             ]
         },
         {
-            "contract_name": "rocketMinipoolBondReducer",
-            "events": [
-                {
-                    "event_name": "CancelReductionVoted",
-                    "name": "minipool_vote_against_bond_reduction_event"
-                },
-                {
-                    "event_name": "ReductionCancelled",
-                    "name": "minipool_bond_reduction_cancelled_event"
-                },
-                {
-                    "event_name": "BeginBondReduction",
-                    "name": "minipool_bond_reduction_started_event"
-                }
-            ]
-        },
-        {
             "contract_name": "rocketDAOProtocol",
             "events": [
                 {

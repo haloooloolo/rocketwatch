@@ -97,7 +97,7 @@ def el_explorer_url(
         name_fmt: Optional[Callable[[str], str]] = None,
         block="latest"
 ):
-    if w3.isAddress(target):
+    if w3.is_address(target):
         # sanitize address
         target = w3.to_checksum_address(target)
         url = f"{cfg['execution_layer.explorer']}/address/{target}"
@@ -180,7 +180,7 @@ def el_explorer_url(
                     else:
                         name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
     else:
-        # transaction_hash
+        # transaction hash
         url = f"{cfg['execution_layer.explorer']}/tx/{target}"
 
     if not name:
@@ -215,7 +215,7 @@ def prepare_args(args):
         if str(arg_value).startswith("0x"):
             prefix = ""
 
-            if w3.isAddress(arg_value):
+            if w3.is_address(arg_value):
                 # get rocketpool related holdings value for this address
                 address = w3.to_checksum_address(arg_value)
                 prefix = get_sea_creature_for_address(address)
@@ -227,7 +227,7 @@ def prepare_args(args):
                 args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
             else:
                 args[arg_key] = el_explorer_url(arg_value, prefix=prefix)
-                args[f'{arg_key}_clean'] = el_explorer_url(arg_value)
+                args[f"{arg_key}_clean"] = el_explorer_url(arg_value)
                 if len(arg_value) == 66:
                     args[f'{arg_key}_small'] = el_explorer_url(arg_value, name="[tnx]")
     if "from" in args:
@@ -468,7 +468,7 @@ def assemble(args) -> Embed:
 
     # show block number
     el_explorer = cfg["execution_layer.explorer"]
-    if "blockNumber" in args:
+    if "block_number" in args:
         e.add_field(name="Block Number",
                     value=f"[{args.blockNumber}]({el_explorer}/block/{args.blockNumber})")
 

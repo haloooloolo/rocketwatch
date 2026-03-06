@@ -150,7 +150,7 @@ class Debug(Cog):
         Try to return the revert reason of a transaction.
         """
         await interaction.response.defer(ephemeral=True)
-        transaction_receipt = w3.eth.getTransaction(tnx_hash)
+        transaction_receipt = w3.eth.get_transaction(tnx_hash)
         if revert_reason := rp.get_revert_reason(transaction_receipt):
             await interaction.followup.send(content=f"```Revert reason: {revert_reason}```")
         else:

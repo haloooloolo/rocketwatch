@@ -2,6 +2,7 @@ import logging
 import time
 import asyncio
 from collections import defaultdict
+from datetime import timedelta
 
 import pymongo
 from cronitor import Monitor
@@ -15,7 +16,7 @@ from utils import solidity
 from utils.cfg import cfg
 from utils.block_time import ts_to_block
 from utils.rocketpool import rp
-from utils.shared_w3 import bacon
+from utils.shared_w3 import w3, bacon
 from utils.time_debug import timerun, timerun_async
 from utils.event_logs import get_logs
 
@@ -23,38 +24,34 @@ from utils.event_logs import get_logs
 log = logging.getLogger("db_upkeep_task")
 log.setLevel(cfg["log_level"])
 
-FAR_FUTURE_EPOCH = 2 ** 32
 
+def is_true(v) -> bool:
+    return v is True
 
-def safe_to_float(_, num):
+def safe_to_float(num):
     try:
         return solidity.to_float(num)
     except Exception:
         return None
 
-
-def safe_to_hex(_, b):
+def safe_to_hex(b):
     return f"0x{b.hex()}" if b else None
 
-
-def safe_state_to_str(_, state):
+def safe_state_to_str(state):
     try:
         return solidity.mp_state_to_str(state)
     except Exception:
         return None
 
-
-def safe_inv(_, num):
+def safe_inv(num):
     try:
         return 1 / solidity.to_float(num)
     except Exception:
         return None
 
-
 def _parse_epoch(value):
     epoch = int(value)
-    return epoch if epoch < FAR_FUTURE_EPOCH else None
-
+    return epoch if epoch < 2 ** 32 else None
 
 def _derive_validator_status(info):
     if info[9]:   # dissolved
@@ -73,8 +70,7 @@ def _derive_validator_status(info):
         return "staking"
     return "unknown"
 
-
-def _unpack_validator_info(_, info):
+def _unpack_validator_info(info):
     if info is None:
         return None
     return {
@@ -86,8 +82,7 @@ def _unpack_validator_info(_, info):
         "exit_balance": solidity.to_float(info[12], 9),  # gwei to ETH
     }
 
-
-def _unpack_validator_info_dynamic(_, info):
+def _unpack_validator_info_dynamic(info):
     if info is None:
         return None
     return {
@@ -99,19 +94,13 @@ def _unpack_validator_info_dynamic(_, info):
     }
 
 
-def _group_multicall_results(res):
-    data = defaultdict(dict)
-    for (key, field), value in res.items():
-        data[key][field] = value
-    return data
-
-
 class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
-        self.monitor = Monitor("node-task", api_key=cfg["other.secrets.cronitor"])
+        self.monitor = Monitor("db-task", api_key=cfg["other.secrets.cronitor"])
         self.batch_size = 250
+        self.cooldown = timedelta(minutes=10)
         self.bot.loop.create_task(self.loop())
 
     async def loop(self):
@@ -122,7 +111,7 @@ class DBUpkeepTask(commands.Cog):
             self.monitor.ping(state="run", series=p_id)
             try:
                 log.debug("starting db upkeep task")
-                # node tasks
+                # node operator tasks
                 await self.add_untracked_node_operators()
                 await self.add_static_node_operator_data()
                 await self.update_dynamic_node_operator_data()
@@ -140,10 +129,10 @@ class DBUpkeepTask(commands.Cog):
                 log.debug("finished db upkeep task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
-                await self.bot.report_error(err)
                 self.monitor.ping(state="fail", series=p_id)
+                await self.bot.report_error(err)
             finally:
-                await asyncio.sleep(600)
+                await asyncio.sleep(self.cooldown.total_seconds())
 
     async def check_indexes(self):
         log.debug("checking indexes")
@@ -161,25 +150,36 @@ class DBUpkeepTask(commands.Cog):
         await self.db.megapool_validators.create_index("beacon.status")
         log.debug("indexes checked")
 
-    async def _batch_multicall_update(self, collection, query, lambs, label=None):
-        addresses = await collection.distinct("address", query)
-        if not addresses:
+    async def _batch_multicall_update(self, collection, query, lamb, label=None, projection=None):
+        if projection is not None:
+            items = await collection.find(query, projection).to_list()
+            def get_addr(d): return d["address"]
+        else:
+            items = await collection.distinct("address", query)
+            def get_addr(a): return a
+
+        if not items:
             return
 
-        total = len(addresses)
-        batch_size = self.batch_size // len(lambs)
-        for i, batch in enumerate(as_chunks(addresses, batch_size)):
+        total = len(items)
+        batch_size = self.batch_size // len(lamb(items[0]))
+        for i, batch in enumerate(as_chunks(items, batch_size)):
             if label:
                 start = i * batch_size + 1
                 end = min((i + 1) * batch_size, total)
                 log.debug(f"Processing {label} [{start}, {end}]/{total}")
-            res = await rp.multicall(
-                [lamb(a) for a in batch for lamb in lambs],
-                require_success=False
-            )
-            data = _group_multicall_results(res)
+            # lamb(item) returns a list of (fn, require_success, transform, field)
+            expanded = [(get_addr(item), *t) for item in batch for t in lamb(item)]
+            calls = [(e[1], e[2]) for e in expanded]
+            results = await rp.multicall_async(calls)
+            updates = defaultdict(dict)
+            for e, value in zip(expanded, results):
+                addr, transform, field = e[0], e[3], e[4]
+                if transform is not None and value is not None:
+                    value = transform(value)
+                updates[addr][field] = value
             await collection.bulk_write(
-                [UpdateOne({"address": addr}, {"$set": d}) for addr, d in data.items()],
+                [UpdateOne({"address": addr}, {"$set": d}) for addr, d in updates.items()],
                 ordered=False
             )
 
@@ -197,24 +197,22 @@ class DBUpkeepTask(commands.Cog):
             return
         data = {}
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
-            data |= await rp.multicall([
-                rp.build_call(nm, "getNodeAt", i, key=i)
-                for i in index_batch
-            ])
-        await self.db.node_operators.insert_many([{"_id": i, "address": a} for i, a in data.items()])
+            results = await rp.multicall_async([nm.functions.getNodeAt(i) for i in index_batch])
+            data |= dict(zip(index_batch, results))
+        await self.db.node_operators.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()])
 
     @timerun_async
     async def add_static_node_operator_data(self):
         df = rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = rp.get_contract_by_name("rocketMegapoolFactory")
-        lambs = [
-            lambda a: rp.build_call(df, "getProxyAddress", a, key=(a, "fee_distributor.address")),
-            lambda a: rp.build_call(mf, "getExpectedAddress", a, key=(a, "megapool.address")),
+        def get_calls(a): return [
+            (df.functions.getProxyAddress(a), True, w3.to_checksum_address, "fee_distributor.address"),
+            (mf.functions.getExpectedAddress(a), True, w3.to_checksum_address, "megapool.address"),
         ]
         await self._batch_multicall_update(
             self.db.node_operators,
             {"$or": [{"fee_distributor.address": {"$exists": False}}, {"megapool.address": {"$exists": False}}]},
-            lambs
+            get_calls
         )
 
     @timerun_async
@@ -225,111 +223,51 @@ class DBUpkeepTask(commands.Cog):
         mm = rp.get_contract_by_name("rocketMinipoolManager")
         ns = rp.get_contract_by_name("rocketNodeStaking")
         mc = rp.get_contract_by_name("multicall3")
-        lambs = [
-            lambda n: rp.build_call(nm, "getNodeWithdrawalAddress", n["address"],
-                                    key=(n["address"], "withdrawal_address")),
-            lambda n: rp.build_call(nm, "getNodeTimezoneLocation", n["address"],
-                                    key=(n["address"], "timezone_location")),
-            lambda n: rp.build_call(nm, "getSmoothingPoolRegistrationState", n["address"],
-                                    key=(n["address"], "smoothing_pool_registration")),
-            lambda n: rp.build_call(nm, "getAverageNodeFee", n["address"],
-                                    key=(n["address"], "average_node_fee"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeETHCollateralisationRatio", n["address"],
-                                    key=(n["address"], "effective_node_share"), transform=safe_inv),
-            lambda n: rp.build_call(mm, "getNodeStakingMinipoolCount", n["address"],
-                                    key=(n["address"], "staking_minipool_count")),
-            lambda n: rp.build_call(nd, "getNodeDepositCredit", n["address"],
-                                    key=(n["address"], "node_credit"), transform=safe_to_float),
-            lambda n: rp.build_call(nd, "getNodeEthBalance", n["address"],
-                                    key=(n["address"], "node_eth_balance"), transform=safe_to_float),
-            lambda n: rp.build_call(nm, "getFeeDistributorInitialised", n["address"],
-                                    key=(n["address"], "fee_distributor.initialized")),
-            lambda n: rp.build_call(mc, "getEthBalance", n["fee_distributor"]["address"],
-                                    key=(n["address"], "fee_distributor.eth_balance"), transform=safe_to_float),
-            lambda n: rp.build_call(mf, "getMegapoolDeployed", n["address"],
-                                    key=(n["address"], "megapool.deployed")),
-            lambda n: rp.build_call(mc, "getEthBalance", n["megapool"]["address"],
-                                    key=(n["address"], "megapool.eth_balance"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeStakedRPL", n["address"],
-                                    key=(n["address"], "rpl.total_stake"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeLegacyStakedRPL", n["address"],
-                                    key=(n["address"], "rpl.legacy_stake"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeMegapoolStakedRPL", n["address"],
-                                    key=(n["address"], "rpl.megapool_stake"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeLockedRPL", n["address"],
-                                    key=(n["address"], "rpl.locked"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeUnstakingRPL", n["address"],
-                                    key=(n["address"], "rpl.unstaking"), transform=safe_to_float),
-            lambda n: rp.build_call(ns, "getNodeRPLStakedTime", n["address"],
-                                    key=(n["address"], "rpl.last_stake_time")),
-            lambda n: rp.build_call(ns, "getNodeLastUnstakeTime", n["address"],
-                                    key=(n["address"], "rpl.last_unstake_time")),
+        def get_calls(n): return [
+            (nm.functions.getNodeWithdrawalAddress(n["address"]),           True, w3.to_checksum_address, "withdrawal_address"),
+            (nm.functions.getNodeTimezoneLocation(n["address"]),            True, None,                   "timezone_location"),
+            (nm.functions.getSmoothingPoolRegistrationState(n["address"]),  True, None,                   "smoothing_pool_registration"),
+            (nm.functions.getAverageNodeFee(n["address"]),                  True, safe_to_float,          "average_node_fee"),
+            (ns.functions.getNodeETHCollateralisationRatio(n["address"]),   True, safe_inv,               "effective_node_share"),
+            (mm.functions.getNodeStakingMinipoolCount(n["address"]),        True, None,                   "staking_minipool_count"),
+            (nd.functions.getNodeDepositCredit(n["address"]),               True, safe_to_float,          "node_credit"),
+            (nd.functions.getNodeEthBalance(n["address"]),                  True, safe_to_float,          "node_eth_balance"),
+            (nm.functions.getFeeDistributorInitialised(n["address"]),       True, None,                   "fee_distributor.initialized"),
+            (mc.functions.getEthBalance(n["fee_distributor"]["address"]),   True, safe_to_float,          "fee_distributor.eth_balance"),
+            (mf.functions.getMegapoolDeployed(n["address"]),                True, None,                   "megapool.deployed"),
+            (mc.functions.getEthBalance(n["megapool"]["address"]),          True, safe_to_float,          "megapool.eth_balance"),
+            (ns.functions.getNodeStakedRPL(n["address"]),                   True, safe_to_float,          "rpl.total_stake"),
+            (ns.functions.getNodeLegacyStakedRPL(n["address"]),             True, safe_to_float,          "rpl.legacy_stake"),
+            (ns.functions.getNodeMegapoolStakedRPL(n["address"]),           True, safe_to_float,          "rpl.megapool_stake"),
+            (ns.functions.getNodeLockedRPL(n["address"]),                   True, safe_to_float,          "rpl.locked"),
+            (ns.functions.getNodeUnstakingRPL(n["address"]),                True, safe_to_float,          "rpl.unstaking"),
+            (ns.functions.getNodeRPLStakedTime(n["address"]),               True, None,                   "rpl.last_stake_time"),
+            (ns.functions.getNodeLastUnstakeTime(n["address"]),             True, None,                   "rpl.last_unstake_time"),
         ]
-        nodes = await self.db.node_operators.find(
-            {}, {"address": 1, "fee_distributor.address": 1, "megapool.address": 1}
-        ).to_list()
-        total = len(nodes)
-        batch_size = self.batch_size // len(lambs)
-        for i, node_batch in enumerate(as_chunks(nodes, batch_size)):
-            start = i * batch_size + 1
-            end = min((i + 1) * batch_size, total)
-            log.debug(f"Processing node operators [{start}, {end}]/{total}")
-            res = await rp.multicall(
-                [lamb(n) for n in node_batch for lamb in lambs],
-                require_success=False
-            )
-            data = _group_multicall_results(res)
-            await self.db.node_operators.bulk_write(
-                [UpdateOne({"address": addr}, {"$set": d}) for addr, d in data.items()],
-                ordered=False
-            )
+        await self._batch_multicall_update(
+            self.db.node_operators, {}, get_calls, label="node operators",
+            projection={"address": 1, "fee_distributor.address": 1, "megapool.address": 1}
+        )
 
     @timerun_async
     async def update_dynamic_megapool_data(self):
-        mp = rp.assemble_contract("rocketMegapoolDelegate")
-        lambs = [
-            lambda n: rp.build_call(mp, "getValidatorCount",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.validator_count")),
-            lambda n: rp.build_call(mp, "getActiveValidatorCount",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.active_validator_count")),
-            lambda n: rp.build_call(mp, "getExitingValidatorCount",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.exiting_validator_count")),
-            lambda n: rp.build_call(mp, "getLockedValidatorCount",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.locked_validator_count")),
-            lambda n: rp.build_call(mp, "getNodeBond",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.node_bond"), transform=safe_to_float),
-            lambda n: rp.build_call(mp, "getUserCapital",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.user_capital"), transform=safe_to_float),
-            lambda n: rp.build_call(mp, "getDebt",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.debt"), transform=safe_to_float),
-            lambda n: rp.build_call(mp, "getRefundValue",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.refund_value"), transform=safe_to_float),
-            lambda n: rp.build_call(mp, "getPendingRewards",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.pending_rewards"), transform=safe_to_float),
-            lambda n: rp.build_call(mp, "getLastDistributionTime",
-                                    target=n["megapool"]["address"], key=(n["address"], "megapool.last_distribution_time")),
+        def mp_at(addr): return rp.assemble_contract("rocketMegapoolDelegate", address=addr)
+        def lamb(n): return [
+            (mp_at(n["megapool"]["address"]).functions.getValidatorCount(),        True, None,          "megapool.validator_count"),
+            (mp_at(n["megapool"]["address"]).functions.getActiveValidatorCount(),  True, None,          "megapool.active_validator_count"),
+            (mp_at(n["megapool"]["address"]).functions.getExitingValidatorCount(), True, None,          "megapool.exiting_validator_count"),
+            (mp_at(n["megapool"]["address"]).functions.getLockedValidatorCount(),  True, None,          "megapool.locked_validator_count"),
+            (mp_at(n["megapool"]["address"]).functions.getNodeBond(),              True, safe_to_float, "megapool.node_bond"),
+            (mp_at(n["megapool"]["address"]).functions.getUserCapital(),           True, safe_to_float, "megapool.user_capital"),
+            (mp_at(n["megapool"]["address"]).functions.getDebt(),                  True, safe_to_float, "megapool.debt"),
+            (mp_at(n["megapool"]["address"]).functions.getRefundValue(),           True, safe_to_float, "megapool.refund_value"),
+            (mp_at(n["megapool"]["address"]).functions.getPendingRewards(),        True, safe_to_float, "megapool.pending_rewards"),
+            (mp_at(n["megapool"]["address"]).functions.getLastDistributionTime(),  True, None,          "megapool.last_distribution_time"),
         ]
-        nodes = await self.db.node_operators.find(
-            {"megapool.deployed": True}, {"address": 1, "megapool.address": 1}
-        ).to_list()
-        if not nodes:
-            return
-        
-        total = len(nodes)
-        batch_size = self.batch_size // len(lambs)
-        for i, node_batch in enumerate(as_chunks(nodes, batch_size)):
-            start = i * batch_size + 1
-            end = min((i + 1) * batch_size, total)
-            log.debug(f"Processing megapools [{start}, {end}]/{total}")
-            res = await rp.multicall(
-                [lamb(n) for n in node_batch for lamb in lambs],
-                require_success=False
-            )
-            data = _group_multicall_results(res)
-            await self.db.node_operators.bulk_write(
-                [UpdateOne({"address": addr}, {"$set": d}) for addr, d in data.items()],
-                ordered=False
-            )
+        await self._batch_multicall_update(
+            self.db.node_operators, {"megapool.deployed": True}, lamb, label="megapools",
+            projection={"address": 1, "megapool.address": 1}
+        )
 
     # -- Minipool tasks --
 
@@ -345,24 +283,20 @@ class DBUpkeepTask(commands.Cog):
             return
         log.debug(f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}")
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
-            data = await rp.multicall([
-                rp.build_call(mm, "getMinipoolAt", i, key=i)
-                for i in index_batch
-            ])
-            await self.db.minipools.insert_many([{"_id": i, "address": a} for i, a in data.items()])
+            results = await rp.multicall_async([mm.functions.getMinipoolAt(i) for i in index_batch])
+            await self.db.minipools.insert_many([{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results)])
 
     @timerun_async
     async def add_static_minipool_data(self):
-        m = rp.assemble_contract("rocketMinipool")
         mm = rp.get_contract_by_name("rocketMinipoolManager")
-        lambs = [
-            lambda a: rp.build_call(m, "getNodeAddress", target=a, key=(a, "node_operator")),
-            lambda a: rp.build_call(mm, "getMinipoolPubkey", a, key=(a, "pubkey"), transform=safe_to_hex),
+        def lamb(a): return [
+            (rp.assemble_contract("rocketMinipool", address=a).functions.getNodeAddress(), True, w3.to_checksum_address, "node_operator"),
+            (mm.functions.getMinipoolPubkey(a),                                            True, safe_to_hex,            "pubkey"),
         ]
         await self._batch_multicall_update(
             self.db.minipools,
             {"node_operator": {"$exists": False}},
-            lambs
+            lamb
         )
 
     @timerun
@@ -418,23 +352,24 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_minipool_data(self):
-        m = rp.assemble_contract("rocketMinipool")
         mc = rp.get_contract_by_name("multicall3")
-        lambs = [
-            lambda a: rp.build_call(m, "getStatus", target=a, key=(a, "status"), transform=safe_state_to_str),
-            lambda a: rp.build_call(m, "getStatusTime", target=a, key=(a, "status_time")),
-            lambda a: rp.build_call(m, "getVacant", target=a, key=(a, "vacant")),
-            lambda a: rp.build_call(m, "getFinalised", target=a, key=(a, "finalized")),
-            lambda a: rp.build_call(m, "getNodeDepositBalance", target=a, key=(a, "node_deposit_balance"), transform=safe_to_float),
-            lambda a: rp.build_call(m, "getNodeRefundBalance", target=a, key=(a, "node_refund_balance"), transform=safe_to_float),
-            lambda a: rp.build_call(m, "getPreMigrationBalance", target=a, key=(a, "pre_migration_balance"), transform=safe_to_float),
-            lambda a: rp.build_call(m, "getNodeFee", target=a, key=(a, "node_fee"), transform=safe_to_float),
-            lambda a: rp.build_call(m, "getEffectiveDelegate", target=a, key=(a, "effective_delegate")),
-            lambda a: rp.build_call(m, "getUseLatestDelegate", target=a, key=(a, "use_latest_delegate")),
-            lambda a: rp.build_call(m, "getUserDistributed", target=a, key=(a, "user_distributed")),
-            lambda a: rp.build_call(mc, "getEthBalance", a, key=(a, "execution_balance"), transform=safe_to_float),
-        ]
-        await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, lambs, label="minipools")
+        def get_calls(addr): 
+            minipool_contract = rp.assemble_contract("rocketMinipool", address=addr)
+            return [
+                (minipool_contract.functions.getStatus(),              True,  safe_state_to_str,      "status"),
+                (minipool_contract.functions.getStatusTime(),          True,  None,                   "status_time"),
+                (minipool_contract.functions.getVacant(),              False, is_true,                "vacant"),
+                (minipool_contract.functions.getFinalised(),           True,  is_true,                "finalized"),
+                (minipool_contract.functions.getNodeDepositBalance(),  True,  safe_to_float,          "node_deposit_balance"),
+                (minipool_contract.functions.getNodeRefundBalance(),   True,  safe_to_float,          "node_refund_balance"),
+                (minipool_contract.functions.getPreMigrationBalance(), False, safe_to_float,          "pre_migration_balance"),
+                (minipool_contract.functions.getNodeFee(),             True,  safe_to_float,          "node_fee"),
+                (minipool_contract.functions.getEffectiveDelegate(),   True,  w3.to_checksum_address, "effective_delegate"),
+                (minipool_contract.functions.getUseLatestDelegate(),   True,  is_true,                "use_latest_delegate"),
+                (minipool_contract.functions.getUserDistributed(),     False, is_true,                "user_distributed"),
+                (mc.functions.getEthBalance(addr),               True,  safe_to_float,          "execution_balance"),
+            ]
+        await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, get_calls, label="minipools")
 
     @timerun
     async def update_dynamic_minipool_beacon_data(self):
@@ -475,7 +410,6 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def add_untracked_megapool_validators(self):
-        mp = rp.assemble_contract("rocketMegapoolDelegate")
         # get deployed megapools with their on-chain validator count
         nodes = await self.db.node_operators.find(
             {"megapool.deployed": True, "megapool.validator_count": {"$gt": 0}},
@@ -494,26 +428,29 @@ class DBUpkeepTask(commands.Cog):
             new_ids = list(range(db_count, on_chain_count))
             log.debug(f"Adding {len(new_ids)} new validators for megapool {megapool_addr}")
 
+            megapool_contract = rp.assemble_contract("rocketMegapoolDelegate", address=megapool_addr)
             for id_batch in as_chunks(new_ids, self.batch_size // 2):
-                # fetch pubkey + validator info for each new validator
-                calls = []
-                for vid in id_batch:
-                    calls.append(rp.build_call(mp, "getValidatorPubkey", vid,
-                                               target=megapool_addr, key=(vid, "pubkey"), transform=safe_to_hex))
-                    calls.append(rp.build_call(mp, "getValidatorInfo", vid,
-                                               target=megapool_addr, key=(vid, "info"), transform=_unpack_validator_info))
-                res = await rp.multicall(calls, require_success=False)
-                grouped = _group_multicall_results(res)
+                fns = [
+                    fn
+                    for vid in id_batch
+                    for fn in [
+                        megapool_contract.functions.getValidatorPubkey(vid),
+                        megapool_contract.functions.getValidatorInfo(vid),
+                    ]
+                ]
+                results = await rp.multicall_async(fns)
 
                 docs = []
-                for vid, data in grouped.items():
+                for i, vid in enumerate(id_batch):
+                    pubkey_raw = results[i * 2]
+                    info_raw = results[i * 2 + 1]
                     doc = {
                         "megapool": megapool_addr,
                         "node_operator": node["address"],
                         "validator_id": vid,
-                        "pubkey": data.get("pubkey"),
+                        "pubkey": safe_to_hex(pubkey_raw) if pubkey_raw is not None else None,
                     }
-                    info = data.get("info")
+                    info = _unpack_validator_info(info_raw)
                     if info:
                         doc.update(info)
                     docs.append(doc)
@@ -522,7 +459,6 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_megapool_validator_data(self):
-        mp = rp.assemble_contract("rocketMegapoolDelegate")
         validators = await self.db.megapool_validators.find(
             {"status": {"$nin": ["exited", "dissolved"]}},
             {"megapool": 1, "validator_id": 1}
@@ -535,15 +471,14 @@ class DBUpkeepTask(commands.Cog):
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
-            calls = [
-                rp.build_call(mp, "getValidatorInfo", v["validator_id"],
-                              target=v["megapool"], key=j, transform=_unpack_validator_info_dynamic)
-                for j, v in enumerate(batch)
+            fns = [
+                rp.assemble_contract("rocketMegapoolDelegate", address=v["megapool"]).functions.getValidatorInfo(v["validator_id"])
+                for v in batch
             ]
-            res = await rp.multicall(calls, require_success=False)
+            results = await rp.multicall_async(fns)
             ops = []
-            for j, v in enumerate(batch):
-                info = res.get(j)
+            for v, info_raw in zip(batch, results):
+                info = _unpack_validator_info_dynamic(info_raw) if info_raw is not None else None
                 if info is not None:
                     ops.append(UpdateOne({"_id": v["_id"]}, {"$set": info}))
             if ops:

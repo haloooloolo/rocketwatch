@@ -267,10 +267,10 @@ class TVL(Cog):
         # Extra Collateral: This is ETH stored in the rETH contract from Minipools that have been withdrawn from.
         # This value has a cap - read the above comment for more information about that.
         data["Total ETH Locked"]["rETH Collateral"]["Extra Collateral"]["_val"] = solidity.to_float(
-            w3.eth.getBalance(rp.get_address_by_name("rocketTokenRETH")))
+            w3.eth.get_balance(rp.get_address_by_name("rocketTokenRETH")))
 
         # Smoothing Pool Balance: This is ETH from Proposals by minipools that have joined the Smoothing Pool.
-        smoothie_balance = solidity.to_float(w3.eth.getBalance(rp.get_address_by_name("rocketSmoothingPool")))
+        smoothie_balance = solidity.to_float(w3.eth.get_balance(rp.get_address_by_name("rocketSmoothingPool")))
         tmp = await (await self.db.node_operators.aggregate([
             {
                 '$match': {

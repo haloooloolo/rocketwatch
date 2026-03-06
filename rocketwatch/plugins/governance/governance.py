@@ -42,7 +42,7 @@ class Governance(StatusPlugin):
         to_block = ts_to_block(proposal.created) + 1
 
         log.info(f"Looking for proposal {proposal} in [{from_block},{to_block}]")
-        for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(fromBlock=from_block, toBlock=to_block):
+        for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(from_block=from_block, to_block=to_block):
             log.info(f"Found receipt {receipt}")
             if receipt.args.proposalID == proposal.id:
                 return receipt.transactionHash.hex()
