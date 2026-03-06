@@ -34,20 +34,7 @@ class Random(commands.Cog):
     @hybrid_command()
     async def dice(self, ctx: Context, dice_string: str = "1d6"):
         await ctx.defer(ephemeral=is_hidden_weak(ctx))
-        try:
-            result = dice.roll(dice_string)
-        except dice.exceptions.DiceException as e:
-            await ctx.send(f"Dice Error:\n```{e}```")
-            return
-        except dice.exceptions.DiceFatalException as e:
-            await ctx.send(f"Dice Fatal Error:\n```{e}```")
-            return
-        except dice.exceptions.ParseException as e:
-            await ctx.send(f"Dice Parse Error:\n```{e}```")
-            return
-        except dice.exceptions.ParseFatalException as e:
-            await ctx.send(f"Dice Parse Fatal Error:\n```{e}```")
-            return
+        result = dice.roll(dice_string)
         e = Embed()
         e.title = f"🎲 {dice_string}"
         if len(str(result)) >= 2000:

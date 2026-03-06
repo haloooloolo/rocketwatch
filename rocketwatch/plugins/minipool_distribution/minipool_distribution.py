@@ -23,7 +23,7 @@ p = inflect.engine()
 
 def get_percentiles(percentiles, counts):
     for p in percentiles:
-        yield p, np.percentile(counts, p, interpolation='nearest')
+        yield p, np.percentile(counts, p, method='nearest')
 
 
 async def minipool_distribution_raw(ctx: Context, distribution):
