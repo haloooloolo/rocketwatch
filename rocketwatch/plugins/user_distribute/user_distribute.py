@@ -110,7 +110,7 @@ class UserDistribute(commands.Cog):
         await self.bot.report_error(err)
 
     async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:
-        head = await bacon.get_block_header_async("head")
+        head = await bacon.get_block_header("head")
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
         threshold_epoch = current_epoch - 5000
 

@@ -10,7 +10,6 @@ import pymongo
 from cronitor import Monitor
 from pymongo import UpdateOne, UpdateMany
 from pymongo.asynchronous.collection import AsyncCollection
-from web3.contract.contract import ContractFunction
 
 from discord.ext import commands
 from discord.utils import as_chunks
@@ -393,7 +392,7 @@ class DBUpkeepTask(commands.Cog):
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.info(f"Updating beacon chain data for minipools [{start}, {end}]/{total}")
-            beacon_data = (await bacon.get_validators_async("head", ids=pubkey_batch))["data"]
+            beacon_data = (await bacon.get_validators_by_ids("head", ids=pubkey_batch))["data"]
             data = {}
             for d in beacon_data:
                 v = d["validator"]
@@ -508,7 +507,7 @@ class DBUpkeepTask(commands.Cog):
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.debug(f"Updating beacon data for megapool validators [{start}, {end}]/{total}")
-            beacon_data = (await bacon.get_validators_async("head", ids=pubkey_batch))["data"]
+            beacon_data = (await bacon.get_validators_by_ids("head", ids=pubkey_batch))["data"]
             data = {}
             for d in beacon_data:
                 v = d["validator"]

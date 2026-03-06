@@ -49,7 +49,7 @@ class BeaconEvents(EventPlugin):
     async def _get_events_for_slot(self, slot_number: int, *, check_finality: bool) -> list[Event]:
         try:
             log.debug(f"Checking slot {slot_number}")
-            beacon_block = (await bacon.get_block_async(slot_number))["data"]["message"]
+            beacon_block = (await bacon.get_block(str(slot_number)))["data"]["message"]
         except aiohttp.ClientResponseError as e:
             if e.status == 404:
                 log.error(f"Beacon block {slot_number} not found, skipping.")
@@ -103,12 +103,12 @@ class BeaconEvents(EventPlugin):
                 f":slashing-type-{slash['slashing_type']}"
                 f":{timestamp}"
             )
-            slash["validator"] = cl_explorer_url(slash["validator"])
-            slash["slasher"] = cl_explorer_url(slash["slasher"])
+            slash["validator"] = await cl_explorer_url(slash["validator"])
+            slash["slasher"] = await cl_explorer_url(slash["slasher"])
             slash["node_operator"] = (minipool or megapool)["node_operator"]
             slash["event_name"] = "validator_slash_event"
 
-            args = prepare_args(aDict(slash))
+            args = await prepare_args(aDict(slash))
             if embed := assemble(args):
                 events.append(Event(
                     topic="beacon_events",
@@ -182,7 +182,7 @@ class BeaconEvents(EventPlugin):
         else:
             args["event_name"] = "mev_proposal_event"
 
-        args = prepare_args(aDict(args))
+        args = await prepare_args(aDict(args))
         if not (embed := assemble(args)):
             return None
 
@@ -201,7 +201,7 @@ class BeaconEvents(EventPlugin):
 
         try:
             # calculate finality delay
-            finality_checkpoint = await bacon.get_finality_checkpoint_async(state_id=str(slot_number))
+            finality_checkpoint = await bacon.get_finality_checkpoint(str(slot_number))
             last_finalized_epoch = int(finality_checkpoint["data"]["finalized"]["epoch"])
             finality_delay = epoch_number - last_finalized_epoch
         except aiohttp.ClientResponseError:
@@ -228,7 +228,7 @@ class BeaconEvents(EventPlugin):
                 "timestamp": timestamp,
                 "epoch": epoch_number
             }
-            args = prepare_args(aDict(args))
+            args = await prepare_args(aDict(args))
             if not (embed := assemble(args)):
                 return None
 
@@ -250,7 +250,7 @@ class BeaconEvents(EventPlugin):
                 "timestamp"     : timestamp,
                 "epoch"         : epoch_number
             }
-            args = prepare_args(aDict(args))
+            args = await prepare_args(aDict(args))
             if not (embed := assemble(args)):
                 return None
 

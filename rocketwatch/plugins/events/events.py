@@ -830,7 +830,7 @@ class Events(EventPlugin):
                 # 4. the migration could have timed out, the oDAO will scrub minipools after they have passed half of the migration window
                 # get pubkey from minipool contract
                 pubkey = rp.call("rocketMinipoolManager.getMinipoolPubkey", args.minipool).hex()
-                vali_info = bacon.get_validator(f"0x{pubkey}")["data"]
+                vali_info = (await bacon.get_validator(f"0x{pubkey}"))["data"]
                 reason = "joe fucking up (unknown reason)"
                 if vali_info:
                     # check for #1
@@ -863,7 +863,7 @@ class Events(EventPlugin):
                 args.timestamp = block_to_ts(receipt["blockNumber"])
 
         args.event_name = event_name
-        args = prepare_args(args)
+        args = await prepare_args(args)
         event.args = args
         return assemble(args)
 

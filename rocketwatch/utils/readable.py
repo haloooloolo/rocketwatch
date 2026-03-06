@@ -47,11 +47,11 @@ def s_hex(string):
     return string[:10]
 
 
-def cl_explorer_url(target, name=None):
+async def cl_explorer_url(target, name=None):
     # if name is none, and it has the correct length for a validator pubkey, try to lookup the validator index
     if not name and isinstance(target, str) and len(target) == 98:
         with contextlib.suppress(Exception):
-            if v := bacon.get_validator(target)["data"]["index"]:
+            if v := (await bacon.get_validator(target))["data"]["index"]:
                 name = f"#{v}"
     if not name and isinstance(target, str):
         name = s_hex(target)

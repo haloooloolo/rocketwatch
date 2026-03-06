@@ -197,7 +197,7 @@ def el_explorer_url(
         prefix = ""
     return f"{prefix}[{name}]({url})"
 
-def prepare_args(args):
+async def prepare_args(args):
     for arg_key, arg_value in list(args.items()):
         # store raw value
         args[f"{arg_key}_raw"] = arg_value
@@ -227,7 +227,7 @@ def prepare_args(args):
 
             # handle validators
             if arg_key == "pubkey":
-                args[arg_key] = cl_explorer_url(arg_value)
+                args[arg_key] = await cl_explorer_url(arg_value)
             elif arg_key == "cow_uid":
                 args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
             else:

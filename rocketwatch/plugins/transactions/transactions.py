@@ -245,12 +245,12 @@ class Transactions(EventPlugin):
                 else:
                     args.contract_validity = f"The contract is valid for {periods_left} more periods."
 
-                embed = assemble(prepare_args(args))
+                embed = assemble(await prepare_args(args))
                 embeds.append(embed)
 
             return embeds
 
-        args = prepare_args(args)
+        args = await prepare_args(args)
         return [assemble(args)]
 
     async def process_transaction(self, block, tnx, contract_address, fn_input) -> list[Event]:

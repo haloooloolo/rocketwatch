@@ -152,7 +152,7 @@ class Proposals(commands.Cog):
         else:
             last_checked_slot = 4700012 # last slot before merge
         
-        latest_slot = int((await bacon.get_block_header_async("finalized"))["data"]["header"]["message"]["slot"])
+        latest_slot = int((await bacon.get_block_header("finalized"))["data"]["header"]["message"]["slot"])
         for slots in as_chunks(range(last_checked_slot + 1, latest_slot + 1), self.batch_size):
             log.info(f"Fetching proposals for slots {slots[0]} to {slots[-1]}")
             await asyncio.gather(*[self.fetch_proposal(s) for s in slots])
@@ -160,7 +160,7 @@ class Proposals(commands.Cog):
             
     async def fetch_proposal(self, slot: int) -> None:
         try:
-            beacon_header = (await bacon.get_block_header_async(slot))["data"]["header"]["message"]
+            beacon_header = (await bacon.get_block_header(str(slot)))["data"]["header"]["message"]
         except ClientResponseError as e:
             if e.status == 404:
                 return None
@@ -171,7 +171,7 @@ class Proposals(commands.Cog):
         if not (minipool := (await self.bot.db.minipools.find_one({"validator_index": validator_index}))):
             return None
                 
-        beacon_block = (await bacon.get_block_async(slot))["data"]["message"]
+        beacon_block = (await bacon.get_block(str(slot)))["data"]["message"]
         proposal_data = parse_proposal(beacon_block)
         await self.bot.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
             

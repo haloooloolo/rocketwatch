@@ -213,7 +213,7 @@ class CowOrders(EventPlugin):
                 data["timestamp"] = int(created.timestamp())
 
 
-            data = prepare_args(data)
+            data = await prepare_args(data)
             embed = assemble(data)
             payload.append(Event(
                 embed=embed,
