@@ -13,4 +13,4 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/ruff-action@v3
         with:
-          args: "check --select E,W --ignore E501,E203,E231,W503,W504"
+          args: "check --select E,W --ignore E501,E203,E231"
