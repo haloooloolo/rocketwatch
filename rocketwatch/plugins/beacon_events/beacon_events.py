@@ -125,10 +125,16 @@ class BeaconEvents(EventPlugin):
         if not (payload := beacon_block["body"].get("execution_payload")):
             # no proposed block
             return None
+        
+        if not (api_key := cfg["consensus_layer.beaconcha_secret"]):
+            log.warning("Missing beaconcha.in API key")
+            return None
 
         validator_index = int(beacon_block["proposer_index"])
-        if not (minipool := await self.bot.db.minipools.find_one({"validator_index": validator_index})):
-            # not proposed by a minipool
+        minipool = await self.bot.db.minipools.find_one({"validator_index": validator_index})
+        megapool = await self.bot.db.megapool_validators.find_one({"validator_index": validator_index})
+        if not (minipool or megapool):
+            # not proposed by RP validator
             return None
 
         log.info(f"Validator {validator_index} proposed a block")
@@ -136,21 +142,13 @@ class BeaconEvents(EventPlugin):
         timestamp = int(payload["timestamp"])
         block_number = cast(BlockNumber, int(payload["block_number"]))
 
-        if not (api_key := cfg["consensus_layer.beaconcha_secret"]):
-            log.warning("Missing beaconcha.in API key")
-            return None
-
         # fetch from beaconcha.in because beacon node is unaware of MEV bribes
         endpoint = f"https://beaconcha.in/api/v1/execution/block/{block_number}"
         async with aiohttp.ClientSession() as session:
             async with session.get(endpoint, headers={"apikey": api_key}) as resp:
-                if resp.status != 200:
-                    log.warning(f"Error code {resp.status} from {endpoint}")
-                    return None
                 response_body = await resp.json()
 
         log.debug(f"{response_body = }")
-
         proposal_data = response_body["data"][0]
         log.debug(f"{proposal_data = }")
 
@@ -167,8 +165,8 @@ class BeaconEvents(EventPlugin):
             fee_recipient = proposal_data["feeRecipient"]
 
         args = {
-            "node_operator": minipool["node_operator"],
-            "minipool": minipool["address"],
+            "node_operator": (minipool or megapool)["node_operator"],
+            "validator": await cl_explorer_url(validator_index),
             "slot": int(beacon_block["slot"]),
             "reward_amount": block_reward_eth,
             "timestamp": timestamp

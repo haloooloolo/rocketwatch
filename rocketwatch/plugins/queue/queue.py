@@ -17,7 +17,7 @@ from utils.embeds import Embed
 from utils.embeds import el_explorer_url
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
-from utils.shared_w3 import w3
+from utils.shared_w3 import w3_async
 from utils.views import PageView
 
 log = logging.getLogger("queue")
@@ -51,8 +51,8 @@ class Queue(Cog):
         def _title(self) -> str:
             return self.queue_name
         
-        async def _load_content(self, from_idx: int, to_idx: int) -> tuple[int, str]:              
-            queue_length, queue_content = self.content_loader(
+        async def _load_content(self, from_idx: int, to_idx: int) -> tuple[int, str]:
+            queue_length, queue_content = await self.content_loader(
                 limit=(to_idx - from_idx + 1), start=from_idx
             )
             return queue_length, queue_content
@@ -74,14 +74,14 @@ class Queue(Cog):
         return f"{node_label} #`{entry.validator_id}`"
     
     @staticmethod
-    def get_standard_queue(limit: int, start: int = 0) -> tuple[int, str]:
+    async def get_standard_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the standard queue"""
-        return Queue._get_queue("deposit.queue.standard", limit, start)
-        
+        return await Queue._get_queue("deposit.queue.standard", limit, start)
+
     @staticmethod
-    def get_express_queue(limit: int, start: int = 0) -> tuple[int, str]:
+    async def get_express_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the express queue"""
-        return Queue._get_queue("deposit.queue.express", limit, start)
+        return await Queue._get_queue("deposit.queue.express", limit, start)
     
     @staticmethod
     def _scan_list(namespace: bytes, start: int, limit: int, block_identifier: BlockIdentifier) -> list['Queue.Entry']:
@@ -90,15 +90,15 @@ class Queue(Cog):
         return [Queue.Entry(*entry) for entry in raw_entries][start:]
         
     @staticmethod
-    def _get_queue(namespace: str, limit: int, start: int = 0) -> tuple[int, str]:
+    async def _get_queue(namespace: str, limit: int, start: int = 0) -> tuple[int, str]:
         if limit <= 0:
             return 0, ""
-        
+
         list_contract = rp.get_contract_by_name("linkedListStorage")
-        queue_namespace = bytes(w3.solidity_keccak(["string"], [namespace]))
-        
+        queue_namespace = bytes(w3_async.solidity_keccak(["string"], [namespace]))
+
         start = max(start, 0)
-        latest_block = w3.eth.get_block_number()
+        latest_block = await w3_async.eth.get_block_number()
         q_len = list_contract.functions.getLength(queue_namespace).call(block_identifier=latest_block)
         
         if start >= q_len:
@@ -134,16 +134,16 @@ class Queue(Cog):
         return num_express, num_standard            
     
     @staticmethod
-    def get_combined_queue(limit: int, start: int = 0) -> tuple[int, str]:
+    async def get_combined_queue(limit: int, start: int = 0) -> tuple[int, str]:
         """Get the next {limit} validators in the combined queue (express + standard)"""
-        
-        latest_block = w3.eth.get_block_number()
+
+        latest_block = await w3_async.eth.get_block_number()
         express_queue_rate = rp.call("rocketDAOProtocolSettingsDeposit.getExpressQueueRate", block=latest_block)
         queue_index = rp.call("rocketDepositPool.getQueueIndex", block=latest_block)
-        
+
         list_contract = rp.get_contract_by_name("linkedListStorage")
-        exp_namespace = bytes(w3.solidity_keccak(["string"], ["deposit.queue.express"]))
-        std_namespace = bytes(w3.solidity_keccak(["string"], ["deposit.queue.standard"]))
+        exp_namespace = bytes(w3_async.solidity_keccak(["string"], ["deposit.queue.express"]))
+        std_namespace = bytes(w3_async.solidity_keccak(["string"], ["deposit.queue.standard"]))
         
         express_queue_length = list_contract.functions.getLength(exp_namespace).call(block_identifier=latest_block)
         standard_queue_length = list_contract.functions.getLength(std_namespace).call(block_identifier=latest_block)

@@ -30,9 +30,8 @@ log.setLevel(cfg["log_level"])
 class RocketWatch(Bot):
     class RWCommandTree(CommandTree):
         async def on_error(self, interaction: Interaction, error: AppCommandError) -> None:
-            bot: RocketWatch = self.client
             ctx = await Context.from_interaction(interaction)
-            await bot.on_command_error(ctx, error)
+            await self.client.on_command_error(ctx, error)
     
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=self.RWCommandTree, intents=intents)

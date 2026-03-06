@@ -1,7 +1,7 @@
 import logging
 
-from discord.ext.commands import Context
-from discord.ext.commands import hybrid_command
+from discord import Interaction
+from discord.app_commands import command
 
 from rocketwatch import RocketWatch
 from plugins.queue.queue import Queue
@@ -21,7 +21,7 @@ class DepositPool(StatusPlugin):
         super().__init__(bot)
 
     @staticmethod
-    def get_deposit_pool_stats() -> Embed:
+    async def get_deposit_pool_stats() -> Embed:
         balance_raw, max_size_raw, max_amount_raw = rp.multicall([
             rp.get_contract_by_name("rocketDepositPool").functions.getBalance(),
             rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit").functions.getMaximumDepositPoolSize(),
@@ -43,8 +43,8 @@ class DepositPool(StatusPlugin):
         embed.add_field(name="Status", value=dp_status, inline=False)
 
         display_limit = 2
-        exp_queue_length, exp_queue_content = Queue.get_express_queue(display_limit)
-        std_queue_length, std_queue_content = Queue.get_standard_queue(display_limit)
+        exp_queue_length, exp_queue_content = await Queue.get_express_queue(display_limit)
+        std_queue_length, std_queue_content = await Queue.get_standard_queue(display_limit)
         total_queue_length = exp_queue_length + std_queue_length
         if (total_queue_length) > 0:
             embed.description = ""
@@ -78,7 +78,7 @@ class DepositPool(StatusPlugin):
         return embed
     
     @staticmethod
-    def get_contract_collateral_stats() -> Embed:
+    async def get_contract_collateral_stats() -> Embed:
         exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = rp.multicall([
             rp.get_contract_by_name("rocketTokenRETH").functions.getExchangeRate(),
             rp.get_contract_by_name("rocketTokenRETH").functions.totalSupply(),
@@ -108,22 +108,22 @@ class DepositPool(StatusPlugin):
 
         return Embed(title="rETH Extra Collateral", description=description)
     
-    @hybrid_command()
-    async def deposit_pool(self, ctx: Context) -> None:
+    @command()
+    async def deposit_pool(self, interaction: Interaction) -> None:
         """Show the current deposit pool status"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
-        await ctx.send(embed=self.get_deposit_pool_stats())
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.followup.send(embed=await self.get_deposit_pool_stats())
 
-    @hybrid_command()
-    async def reth_extra_collateral(self, ctx: Context) -> None:
+    @command()
+    async def reth_extra_collateral(self, interaction: Interaction) -> None:
         """Show the amount of tokens held in the rETH contract for exit liquidity"""
-        await ctx.defer(ephemeral=is_hidden_weak(ctx))
-        await ctx.send(embed=self.get_contract_collateral_stats())
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.followup.send(embed=await self.get_contract_collateral_stats())
         
     async def get_status(self) -> Embed:
         embed = Embed(title=":rocket: Live Protocol Status")
 
-        dp_embed = self.get_deposit_pool_stats()
+        dp_embed = await self.get_deposit_pool_stats()
         embed.description = dp_embed.description
         dp_fields = {field.name: field for field in dp_embed.fields}
 
@@ -136,7 +136,7 @@ class DepositPool(StatusPlugin):
         if field := dp_fields.get("Status"):
             embed.add_field(name="Deposits", value=field.value, inline=False)
 
-        collateral_embed = self.get_contract_collateral_stats()
+        collateral_embed = await self.get_contract_collateral_stats()
         embed.add_field(name="Withdrawals", value=collateral_embed.description, inline=False)
         
         if cfg["rocketpool.chain"] != "mainnet":
