@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, cast
 
-import requests
+import aiohttp
 import eth_utils
 from eth_typing import BlockNumber
 from web3.datastructures import MutableAttributeDict as aDict
@@ -50,9 +50,13 @@ class BeaconEvents(EventPlugin):
         try:
             log.debug(f"Checking slot {slot_number}")
             beacon_block = (await bacon.get_block_async(slot_number))["data"]["message"]
-        except requests.exceptions.HTTPError:
-            log.error(f"Beacon block {slot_number} not found, skipping.")
-            return []
+        except aiohttp.ClientResponseError as e:
+            if e.status == 404:
+                log.error(f"Beacon block {slot_number} not found, skipping.")
+                return []
+            else:
+                raise e
+            
 
         events = await self._get_slashings(beacon_block)
         if proposal_event := await self._get_proposal(beacon_block):
@@ -138,16 +142,16 @@ class BeaconEvents(EventPlugin):
 
         # fetch from beaconcha.in because beacon node is unaware of MEV bribes
         endpoint = f"https://beaconcha.in/api/v1/execution/block/{block_number}"
-        response = requests.get(endpoint, headers={"apikey": api_key})
+        async with aiohttp.ClientSession() as session:
+            async with session.get(endpoint, headers={"apikey": api_key}) as resp:
+                if resp.status != 200:
+                    log.warning(f"Error code {resp.status} from {endpoint}")
+                    return None
+                response_body = await resp.json()
 
-        if response.status_code != 200:
-            log.warning(f"Error code {response.status_code} from {endpoint}")
-            return None
-
-        response_body = response.json()
         log.debug(f"{response_body = }")
 
-        proposal_data = response.json()["data"][0]
+        proposal_data = response_body["data"][0]
         log.debug(f"{proposal_data = }")
 
         block_reward_eth = solidity.to_float(proposal_data["producerReward"])
@@ -200,7 +204,7 @@ class BeaconEvents(EventPlugin):
             finality_checkpoint = await bacon.get_finality_checkpoint_async(state_id=str(slot_number))
             last_finalized_epoch = int(finality_checkpoint["data"]["finalized"]["epoch"])
             finality_delay = epoch_number - last_finalized_epoch
-        except requests.exceptions.HTTPError:
+        except aiohttp.ClientResponseError:
             log.exception("Failed to get finality checkpoints")
             return None
 

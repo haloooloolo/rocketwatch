@@ -2,7 +2,7 @@ import logging
 
 import aiohttp
 from web3.beacon import Beacon as Bacon
-from aiohttp.web import HTTPError
+from aiohttp import ClientResponseError
 from web3 import Web3, AsyncWeb3, HTTPProvider
 from web3.providers import AsyncHTTPProvider
 from web3.middleware import ExtraDataToPOAMiddleware
@@ -34,7 +34,7 @@ class SuperBacon(Bacon):
             timeout=aiohttp.ClientTimeout(sock_connect=3.05, total=20)
         )
 
-    @retry_async(tries=3, exceptions=HTTPError, delay=0.5)
+    @retry_async(tries=3, exceptions=ClientResponseError, delay=0.5)
     async def _make_get_request_async(self, path: str):
         async with self.async_session.get(self.base_url + path) as response:
             return await response.json()
