@@ -76,18 +76,23 @@ async def resolve_ens(ctx, node_address):
         return None, None
 
 
+_pdao_delegates: dict[str, str] = {}
+
 @ttl_cache(ttl=900)
 def get_pdao_delegates() -> dict[str, str]:
+    global _pdao_delegates
+
     @retry(tries=3, delay=1)
     def _get_delegates() -> dict[str, str]:
         response = requests.get("https://delegates.rocketpool.net/api/delegates")
         return {delegate["nodeAddress"]: delegate["name"] for delegate in response.json()}
 
     try:
-        return _get_delegates()
+        _pdao_delegates = _get_delegates()
     except Exception:
         log.warning("Failed to fetch pDAO delegates.")
-        return {}
+
+    return _pdao_delegates
 
 
 def el_explorer_url(
