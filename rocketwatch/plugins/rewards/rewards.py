@@ -151,9 +151,8 @@ class Rewards(commands.Cog):
         data_block: int = rewards.data_block
         reward_start_block = ts_to_block(rewards.start_time)
 
-        rpl_min: float = solidity.to_float(rp.call("rocketDAOProtocolSettingsNode.getMinimumPerMinipoolStake", block=data_block))
         rpl_ratio = solidity.to_float(rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
-        actual_borrowed_eth = solidity.to_float(rp.call("rocketNodeStaking.getNodeETHMatched", address, block=data_block))
+        actual_borrowed_eth = solidity.to_float(rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block))
         actual_rpl_stake = solidity.to_float(rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
 
         inflation_rate: int = rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)
@@ -169,9 +168,7 @@ class Rewards(commands.Cog):
         def node_weight(_stake: float, _borrowed_eth: float) -> float:
             rpl_value = _stake * rpl_ratio
             collateral_ratio = (rpl_value / _borrowed_eth) if _borrowed_eth > 0 else 0
-            if collateral_ratio < rpl_min:
-                return 0.0
-            elif collateral_ratio <= 0.15:
+            if collateral_ratio <= 0.15:
                 return 100 * rpl_value
             else:
                 return (13.6137 + 2 * np.log(100 * collateral_ratio - 13)) * _borrowed_eth
