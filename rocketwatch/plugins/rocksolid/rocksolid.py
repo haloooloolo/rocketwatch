@@ -42,19 +42,19 @@ class RockSolid(Cog):
 
         b_from = last_checked_block + 1
         b_to = await w3.eth.get_block_number()
-        
+
         updates = []
-        
+
         async for doc in self.bot.db.rocksolid.find({}):
             updates.append((doc["time"], doc["assets"]))
-        
+
         db_operations = []
         for event_log in get_logs(vault_contract.events.TotalAssetsUpdated, b_from, b_to):
             ts = await block_to_ts(event_log.blockNumber)
             assets = solidity.to_float(event_log.args.totalAssets)
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
-        
+
         async with self.bot.db.client.start_session() as session:
             async with await session.start_transaction():
                 if db_operations:
@@ -73,10 +73,10 @@ class RockSolid(Cog):
         Summary of RockSolid rETH vault stats.
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        
+
         current_block = await w3.eth.get_block_number()
         now = await block_to_ts(current_block)
-                
+
         async def get_eth_rate(block_number: int) -> int:
             block_number = max(block_number, self.deployment_block)
             reth_value = await rp.call("RockSolidVault.convertToAssets", 10**18, block=block_number)
@@ -96,7 +96,7 @@ class RockSolid(Cog):
 
         tvl_reth = solidity.to_float(await rp.call("RockSolidVault.totalAssets"))
         tvl_rock_reth = solidity.to_float(await rp.call("RockSolidVault.totalSupply"))
-        
+
         asset_updates: list[tuple[int, float]] = await self._fetch_asset_updates()
         current_date = datetime.fromtimestamp(asset_updates[0][0]).date() - timedelta(days=1)
         current_assets = 0.0
@@ -123,16 +123,16 @@ class RockSolid(Cog):
         ax.set_ylabel("AUM (rETH)")
         ax.set_xlim((x[0], x[-1]))
         ax.set_ylim((y[0], y[-1] * 1.01))
-        
+
         img = BytesIO()
         fig.tight_layout()
         fig.savefig(img, format='png')
         img.seek(0)
         plt.clf()
-        
+
         ca_reth = await rp.get_address_by_name("rocketTokenRETH")
         ca_rock_reth = await rp.get_address_by_name("RockSolidVault")
-        
+
         embed = Embed(title="<:rocksolid:1425091714267480158> RockSolid rETH Vault")
         embed.add_field(name="7d APY", value=f"{apy_7d:.2f}%" if apy_7d else "-")
         embed.add_field(name="30d APY", value=f"{apy_30d:.2f}%" if apy_30d else "-")

@@ -152,7 +152,9 @@ class Rewards(commands.Cog):
         reward_start_block = await ts_to_block(rewards.start_time)
 
         rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
-        actual_borrowed_eth = solidity.to_float(await rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block))
+        actual_borrowed_eth = solidity.to_float(
+            await rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block)
+        )
         actual_rpl_stake = solidity.to_float(await rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
 
         inflation_rate: int = await rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)

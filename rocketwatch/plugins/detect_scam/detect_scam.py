@@ -46,7 +46,7 @@ class DetectScam(Cog):
         ALERT = Color.from_rgb(255, 0, 0)
         WARN = Color.from_rgb(255, 165, 0)
         OK = Color.from_rgb(0, 255, 0)
-        
+
     @staticmethod
     def is_reputable(user: Member) -> bool:
         return any((
@@ -55,20 +55,20 @@ class DetectScam(Cog):
             {role.id for role in user.roles} & set(cfg["rocketpool.support.role_ids"]),
             user.guild_permissions.moderate_members
         ))
-        
+
     class RemovalVoteView(ui.View):
         THRESHOLD = 5
-        
+
         def __init__(self, plugin: 'DetectScam', reportable: Message | Thread):
             super().__init__(timeout=None)
             self.plugin = plugin
             self.reportable = reportable
             self.safu_votes = set()
-        
+
         @ui.button(label="Mark Safu", style=ButtonStyle.blurple)
         async def mark_safe(self, interaction: Interaction, button: ui.Button) -> None:
             log.info(f"User {interaction.user.id} marked message {interaction.message.id} as safe")
-            
+
             reportable_repr = type(self.reportable).__name__.lower()
             if interaction.user.id in self.safu_votes:
                 log.debug(f"User {interaction.user.id} already voted on {reportable_repr}")
@@ -87,7 +87,7 @@ class DetectScam(Cog):
             else:
                 log.warning(f"Unknown reportable type {type(self.reportable)}")
                 return None
-                
+
             if interaction.user == reported_user:
                 log.debug(f"User {interaction.user.id} tried to mark their own {reportable_repr} as safe")
                 return await interaction.response.send_message(
@@ -96,14 +96,14 @@ class DetectScam(Cog):
                 )
 
             self.safu_votes.add(interaction.user.id)
-            
+
             if DetectScam.is_reputable(interaction.user):
                 user_repr = interaction.user.mention
             elif len(self.safu_votes) >= self.THRESHOLD:
                 user_repr = "the community"
             else:
                 button.label = f"Mark Safu ({len(self.safu_votes)}/{self.THRESHOLD})"
-                return await interaction.response.edit_message(view=self)                
+                return await interaction.response.edit_message(view=self)
 
             await interaction.message.delete()
             async with self.plugin._update_lock:
@@ -114,14 +114,15 @@ class DetectScam(Cog):
 
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        
+
         self._report_lock = asyncio.Lock()
         self._update_lock = asyncio.Lock()
-        
+
         self._message_react_cache = TTLCache(maxsize=1000, ttl=300)
         self.markdown_link_pattern = re.compile(r"(?<=\[)([^/\] ]*).+?(?<=\(https?:\/\/)([^/\)]*)")
         self.basic_url_pattern = re.compile(r"https?:\/\/?([/\\@\-_0-9a-zA-Z]+\.)+[\\@\-_0-9a-zA-Z]+")
-        self.invite_pattern = re.compile(r"((discord(app)?\.com\/(invite|oauth2))|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
+        self.invite_pattern = re.compile(
+            r"((discord(app)?\.com\/(invite|oauth2))|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
 
         self.message_report_menu = ContextMenu(
             name="Report Message",
@@ -153,13 +154,13 @@ class DetectScam(Cog):
         if message.embeds:
             for embed in message.embeds:
                 text += f"---\n Embed: {embed.title}\n{embed.description}\n---\n"
-                
+
         if not preserve_formatting:
             text = parse.unquote(text)
             text = anyascii(text)
             text = text.lower()
 
-        return text 
+        return text
 
     async def _generate_message_report(self, message: Message, reason: str) -> Optional[tuple[Embed, Embed, File]]:
         try:
@@ -215,7 +216,7 @@ class DetectScam(Cog):
             thread = await thread.guild.fetch_channel(thread.id)
         except (errors.NotFound, errors.Forbidden):
             return None
-        
+
         async with self._report_lock:
             if await self.bot.db.scam_reports.find_one({"type": "thread", "channel_id": thread.id}):
                 log.info(f"Found existing report for thread {thread.id} in database")
@@ -224,7 +225,7 @@ class DetectScam(Cog):
             warning = Embed(title="🚨 Possible Scam Detected")
             warning.color = self.Color.ALERT
             warning.description = f"**Reason**: {reason}\n"
-            
+
             report = warning.copy()
             warning.set_footer(text=(
                 "There is no ticket system for support on this server.\n"
@@ -256,7 +257,7 @@ class DetectScam(Cog):
     async def report_message(self, message: Message, reason: str) -> None:
         if not (components := await self._generate_message_report(message, reason)):
             return None
-        
+
         warning, report, contents = components
 
         try:
@@ -273,11 +274,11 @@ class DetectScam(Cog):
             {"message_id": message.id},
             {"$set": {"warning_id": warning_msg.id if warning_msg else None, "report_id": report_msg.id}}
         )
-        return None  
+        return None
 
     async def manual_message_report(self, interaction: Interaction, message: Message) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
         if message.author.bot:
             return await interaction.followup.send(content="Bot messages can't be reported.")
 
@@ -291,11 +292,11 @@ class DetectScam(Cog):
             )
 
         warning, report, contents = components
-        
+
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report, file=contents)
         await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"report_id": report_msg.id}})
-        
+
         moderator = await self.bot.get_or_fetch_user(cfg["rocketpool.support.moderator_id"])
         view = self.RemovalVoteView(self, message)
         warning_msg = await message.reply(
@@ -319,13 +320,13 @@ class DetectScam(Cog):
         if match := self.invite_pattern.search(txt):
             link = match.group(0)
             trusted_domains = [
-                "youtu.be", "youtube.com", "tenor.com", "giphy.com", 
+                "youtu.be", "youtube.com", "tenor.com", "giphy.com",
                 "imgur.com", "bluesky.app"
             ]
             if not any(domain in link for domain in trusted_domains):
                 return "Invite to external server"
         return None
-    
+
     def _tap_on_this(self, message: Message) -> Optional[str]:
         txt = self._get_message_content(message)
         keywords = (
@@ -364,7 +365,7 @@ class DetectScam(Cog):
         )
 
         return "There is no ticket system in this server." if self.__txt_contains(txt, keywords) else None
-    
+
     @staticmethod
     def __txt_contains(txt: str, kw: list | tuple | str) -> bool:
         match kw:
@@ -381,14 +382,14 @@ class DetectScam(Cog):
         txt = self._get_message_content(message)
         if "http" not in txt:
             return None
-        
+
         reason = "The linked website is most likely a wallet drainer"
         if any(x in txt for x in ["paperhand", "paper hand", "paperhold", "pages.dev", "web.app"]):
             return reason
-        
+
         if any(x in txt for x in ["mint", "opensea"]) and any(x in txt for x in ["vercel.app"]):
             return reason
-        
+
         return None
 
     # contains @here or @everyone but doesn't actually have the permission to do so
@@ -398,7 +399,7 @@ class DetectScam(Cog):
             return "Mentioned @here or @everyone without permission"
         return None
 
-    async def _reaction_spam(self, reaction: Reaction, user: User) -> Optional[str]:    
+    async def _reaction_spam(self, reaction: Reaction, user: User) -> Optional[str]:
         # user reacts to their own message multiple times in quick succession to draw attention
         # check if user is a bot
         if user.bot:
@@ -431,22 +432,24 @@ class DetectScam(Cog):
         log.debug(f"{reaction_count} reactions on message {reaction.message.id}")
         # if there are 8 reactions done by the author of the message, report it
         return "Reaction spam by message author" if (reaction_count >= 8) else None
-            
+
     @Cog.listener()
     async def on_message(self, message: Message) -> None:
-        log.debug(f"Message(id={message.id}, author={message.author}, channel={message.channel}, content=\"{message.content}\", embeds={message.embeds})")
-           
+        log.debug(
+            f"Message(id={message.id}, author={message.author}, channel={message.channel},"
+            f" content=\"{message.content}\", embeds={message.embeds})")
+
         if message.author.bot:
             log.warning("Ignoring message sent by bot")
             return
-        
+
         if self.is_reputable(message.author):
             log.warning(f"Ignoring message sent by trusted user ({message.author})")
             return
-        
+
         if message.guild is None:
             return
-        
+
         if message.guild.id != cfg["rocketpool.support.server_id"]:
             log.warning(f"Ignoring message in {message.guild.id})")
             return
@@ -467,13 +470,13 @@ class DetectScam(Cog):
     @Cog.listener()
     async def on_message_edit(self, before: Message, after: Message) -> None:
         await self.on_message(after)
-        
+
     @Cog.listener()
     async def on_reaction_add(self, reaction: Reaction, user: User) -> None:
         if reaction.message.guild.id != cfg["rocketpool.support.server_id"]:
             log.warning(f"Ignoring reaction in {reaction.message.guild.id}")
             return
-        
+
         checks = [
             self._reaction_spam(reaction, user)
         ]
@@ -529,9 +532,9 @@ class DetectScam(Cog):
     async def report_thread(self, thread: Thread, reason: str) -> None:
         if not (components := await self._generate_thread_report(thread, reason)):
             return None
-        
+
         warning, report = components
-        
+
         try:
             view = self.RemovalVoteView(self, thread)
             warning_msg = await thread.send(embed=warning, view=view)
@@ -561,43 +564,43 @@ class DetectScam(Cog):
         if thread.name.strip().lower() in names:
             await self.report_thread(thread, "Illegitimate support thread")
             return
-        
+
         log.debug(f"Ignoring thread creation (id: {thread.id}, name: {thread.name})")
-        
+
     @Cog.listener()
     async def on_raw_thread_update(self, event: RawThreadUpdateEvent) -> None:
         thread: Thread = await self.bot.get_or_fetch_channel(event.thread_id)
         await self.on_thread_create(thread)
-    
+
     @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
         async with self._update_lock:
             db_filter = {"type": "thread", "channel_id": event.thread_id, "removed": False}
-            if report := await self.bot.db.scam_reports.find_one(db_filter):                
+            if report := await self.bot.db.scam_reports.find_one(db_filter):
                 await self._update_report(report, "Thread has been deleted.")
                 await self.bot.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
-            
+
     @command()
     @guilds(cfg["rocketpool.support.server_id"])
     async def report_user(self, interaction: Interaction, user: Member) -> None:
         """Generate a suspicious user report and send it to the report channel"""
         await self.manual_user_report(interaction, user)
-    
+
     async def manual_user_report(self, interaction: Interaction, user: Member) -> None:
         await interaction.response.defer(ephemeral=True)
-        
+
         if user.bot:
             return await interaction.followup.send(content="Bots can't be reported.")
 
         if user == interaction.user:
             return await interaction.followup.send(content="Did you just report yourself?")
 
-        reason = f"Manual report by {interaction.user.mention}"        
+        reason = f"Manual report by {interaction.user.mention}"
         if not (report := await self._generate_user_report(user, reason)):
             return await interaction.followup.send(
                 content="Failed to report user. They may have already been reported or banned."
             )
-        
+
         report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
         report_msg = await report_channel.send(embed=report)
 
@@ -606,11 +609,11 @@ class DetectScam(Cog):
             {"$set": {"report_id": report_msg.id}}
         )
         await interaction.followup.send(content="Thanks for reporting!")
-        
-    async def _generate_user_report(self, user: Member, reason: str) -> Optional[Embed]: 
+
+    async def _generate_user_report(self, user: Member, reason: str) -> Optional[Embed]:
         if not isinstance(user, Member):
             return None
-               
+
         async with self._report_lock:
             if await self.bot.db.scam_reports.find_one(
                 {"type": "user", "guild_id": user.guild.id, "user_id": user.id}
@@ -630,7 +633,7 @@ class DetectScam(Cog):
                 "Please review and take appropriate action."
             )
             report.set_thumbnail(url=user.display_avatar.url)
-            
+
             await self.bot.db.scam_reports.insert_one({
                 "type"       : "user",
                 "guild_id"   : user.guild.id,

@@ -30,33 +30,33 @@ class FeeDistribution(commands.Cog):
 
         e = Embed()
         e.title = "Minipool Fee Distribution"
-        
+
         tree = {}
         fig, axs = plt.subplots(1, 2)
 
-        for i, bond in enumerate([8, 16]):            
+        for i, bond in enumerate([8, 16]):
             result = await self.bot.db.minipools.aggregate([
-                { 
-                    "$match": { 
+                {
+                    "$match": {
                         "node_deposit_balance": bond,
                         "beacon.status": "active_ongoing"
                     }
                 },
-                { 
-                    "$group": { 
-                        "_id" : { "$round": ["$node_fee", 2] }, 
-                        "count": { "$sum": 1 } 
+                {
+                    "$group": {
+                        "_id" : {"$round": ["$node_fee", 2]},
+                        "count": {"$sum": 1}
                     }
-                }, 
-                { 
-                    "$sort": { "_id": 1 } 
+                },
+                {
+                    "$sort": {"_id": 1}
                 }
-            ])  
-            
+            ])
+
             labels = []
             sizes = []
             subtree = {}
-            
+
             for entry in await result.to_list():
                 fee_percentage = entry['_id'] * 100
                 labels.append(f"{fee_percentage:.0f}%")
@@ -66,12 +66,12 @@ class FeeDistribution(commands.Cog):
             ax = axs[i]
             total = sum(sizes)
             tree[f"{bond} ETH"] = subtree
-            
+
             # avoid overlapping labels for small slices
             for i in range(len(sizes)):
                 if sizes[i] < 0.05 * total:
                     labels[i] = ""
-            
+
             ax.set_title(f"{bond} ETH")
             ax.pie(sizes, labels=labels, autopct=lambda p: f"{p * total / 100:.0f}" if (p >= 5) else "")
 
@@ -89,7 +89,6 @@ class FeeDistribution(commands.Cog):
             file_name = "fee_distribution.png"
             e.set_image(url=f"attachment://{file_name}")
             await interaction.followup.send(embed=e, file=File(img, filename=file_name))
-
 
 
 async def setup(bot):

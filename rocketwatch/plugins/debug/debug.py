@@ -110,7 +110,7 @@ class Debug(Cog):
         msg = await channel.fetch_message(int(message_id))
         await msg.delete()
         await interaction.followup.send(content="Done")
-        
+
     @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
@@ -212,22 +212,22 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
-        
-        msg = await channel.fetch_message(int(message_id))  
+
+        msg = await channel.fetch_message(int(message_id))
         template_embed = msg.embeds[0]
         template_title = template_embed.title
         template_description = "\n".join(template_embed.description.splitlines()[:-2])
-        
+
         import re
         from datetime import datetime, timezone
-        
+
         edit_line = template_embed.description.splitlines()[-1]
         match = re.search(r"Last Edited by <@(?P<user>[0-9]+)> <t:(?P<ts>[0-9]+):R>", edit_line)
         user_id = int(match.group("user"))
         ts = int(match.group("ts"))
-        
+
         user = await self.bot.get_or_fetch_user(user_id)
-        
+
         await self.bot.db.support_bot_dumps.insert_one(
             {
                 "ts"      : datetime.fromtimestamp(ts, tz=timezone.utc),
@@ -246,7 +246,7 @@ class Debug(Cog):
         await self.bot.db.support_bot.insert_one(
             {"_id": template_name, "title": template_title, "description": template_description}
         )
-             
+
         await interaction.followup.send(content="Done")
 
     @command()
@@ -361,9 +361,13 @@ class Debug(Cog):
             await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
             if "No address found for" in repr(err):
                 # private response as a tip
-                m = "It may be that you are requesting the address of a contract that does not get deployed (`rocketBase` for example), " \
-                    " is deployed multiple times (i.e node operator related contracts, like `rocketNodeDistributor`)," \
-                    " or is not yet deployed on the current chain.\n... Or you simply messed up the name :P"
+                m = (
+                    "It may be that you are requesting the address of a contract that does not"
+                    " get deployed (e.g. `rocketBase`), is deployed multiple times"
+                    " (e.g. `rocketNodeDistributor`),"
+                    " or is not yet deployed on the current chain.\n"
+                    "... or you messed up the name"
+                )
                 await interaction.followup.send(content=m)
 
     @command()

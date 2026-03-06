@@ -149,6 +149,5 @@ class Metrics(commands.Cog):
         await interaction.followup.send(embed=e, file=File(file, filename="metrics.png"))
 
 
-
 async def setup(bot):
     await bot.add_cog(Metrics(bot))

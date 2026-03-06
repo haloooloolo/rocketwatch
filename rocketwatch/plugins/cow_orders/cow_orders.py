@@ -35,10 +35,10 @@ class CowOrders(EventPlugin):
         if "etherscan.io/tx/" not in tnx:
             await interaction.response.send_message("nop", ephemeral=True)
             return
-            
+
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         url = tnx.replace("etherscan.io", "explorer.cow.fi")
-        embed = Embed(description = f"[cow explorer]({url})")
+        embed = Embed(description=f"[cow explorer]({url})")
         await interaction.followup.send(embed=embed)
 
     async def _setup_collection(self):
@@ -92,7 +92,7 @@ class CowOrders(EventPlugin):
         {
           "creationDate": "2023-01-25T04:48:02.751347Z",
           "owner": "0x40586600a136652f6d0a6cc6a62b6bd1bef7ae9a",
-          "uid": "0x2f3750251ab20018addd59c7a9e57845782cdf21b9c53516dcdb9e3627ebb7e840586600a136652f6d0a6cc6a62b6bd1bef7ae9a63d9eef8",
+          "uid": "0x...",
           "availableBalance": "108475037",
           "executedBuyAmount": "0",
           "executedSellAmount": "0",
@@ -120,10 +120,9 @@ class CowOrders(EventPlugin):
           "sellTokenBalance": "erc20",
           "buyTokenBalance": "erc20",
           "signingScheme": "eip712",
-          "signature": "0x894e427c681f1b4d24604039966321ed59993ce2a1e17fffc742c8af954aa0b10cca77ce750ce60e3d7591b60c90417d333c1d83493abafb8a36d7778e6519a51c",
+          "signature": "0x...",
           "interactions": {
             "pre": [
-              
             ]
           }
         },
@@ -170,7 +169,7 @@ class CowOrders(EventPlugin):
                 s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["buyToken"]))
                 try:
                     decimals = await s.functions.decimals().call()
-                except:
+                except Exception:
                     pass
                 data["otherAmount"] = solidity.to_float(int(order["buyAmount"]), decimals)
             else:
@@ -181,14 +180,14 @@ class CowOrders(EventPlugin):
                 s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["sellToken"]))
                 try:
                     decimals = await s.functions.decimals().call()
-                except:
+                except Exception:
                     pass
                 data["otherAmount"] = solidity.to_float(int(order["sellAmount"]), decimals)
             # our/other ratio
             data["ratioAmount"] = data["otherAmount"] / data["ourAmount"]
             try:
                 data["otherToken"] = await s.functions.symbol().call()
-            except:
+            except Exception:
                 data["otherToken"] = "UNKWN"
                 if s.address == w3.to_checksum_address("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"):
                     data["otherToken"] = "ETH"
@@ -218,7 +217,6 @@ class CowOrders(EventPlugin):
                     log.info(f"Order {order['uid']} is older than 15 minutes, skipping")
                     continue
                 data["timestamp"] = int(created.timestamp())
-
 
             data = await prepare_args(data)
             embed = await assemble(data)

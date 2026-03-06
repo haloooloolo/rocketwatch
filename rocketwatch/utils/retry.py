@@ -15,6 +15,7 @@ def retry(
 ) -> Callable[..., Any]:
     return __retry(exceptions, is_async=False, tries=tries, delay=delay, max_delay=max_delay, backoff=backoff)
 
+
 def retry_async(
     exceptions: EXCEPTIONS = Exception,
     *,

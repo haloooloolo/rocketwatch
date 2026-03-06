@@ -17,6 +17,7 @@ log.setLevel(cfg["log_level"])
 
 _BEACON_PENDING = {"in_queue": "unassigned", "prestaked": "prestaked", "staking": "staked"}
 
+
 def _classify_beacon_validator(beacon, contract_status):
     """Classify a validator by beacon status. Returns (status, sub_status)."""
     match beacon["status"]:
@@ -54,6 +55,7 @@ def _empty_state_tree():
         "withdrawn": {},
         "closed": {}
     }
+
 
 def _classify_collection(docs, done_fn):
     """Classify docs into state tree.
@@ -130,7 +132,7 @@ class ValidatorStates(commands.Cog):
         mg_data, mg_exiting, mg_withdrawn = _classify_collection(
             megapool_vals, lambda d: d.get("status") == "exited"
         )
-        
+
         tree = {
             "minipools": _collapse_tree(mp_data),
             "megapools": _collapse_tree(mg_data),
@@ -184,14 +186,20 @@ class ValidatorStates(commands.Cog):
 
             if num_exiting > 0:
                 description += "\n**Exiting Node Operators**\n"
-                description += ", ".join([f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})" for v, c in exiting_node_operators[:num_exiting]])
+                description += ", ".join([
+                    f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
+                    for v, c in exiting_node_operators[:num_exiting]
+                ])
                 if remaining_no := exiting_node_operators[num_exiting:]:
                     num_remaining_valis = sum([c for _, c in remaining_no])
                     description += f", and {len(remaining_no)} more ({num_remaining_valis})"
                 description += "\n"
             if num_withdrawn > 0:
                 description += "\n**Withdrawn Node Operators**\n"
-                description += ", ".join([f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})" for v, c in withdrawn_node_operators[:num_withdrawn]])
+                description += ", ".join([
+                    f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
+                    for v, c in withdrawn_node_operators[:num_withdrawn]
+                ])
                 if remaining_no := withdrawn_node_operators[num_withdrawn:]:
                     num_remaining_valis = sum([c for _, c in remaining_no])
                     description += f", and {len(remaining_no)} more ({num_remaining_valis})"

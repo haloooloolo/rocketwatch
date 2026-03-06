@@ -72,6 +72,7 @@ PROPOSAL_TEMPLATE = {
 # noinspection RegExpUnnecessaryNonCapturingGroup
 SMARTNODE_REGEX = re.compile(r"^RP(?:(?:-)([A-Z])([A-Z])?)? (?:v)?(\d+\.\d+\.\d+(?:-\w+)?)(?:(?:(?: \()|(?: gw:))(.+)(?:\)))?")
 
+
 def parse_proposal(beacon_block: dict) -> dict:
     graffiti = bytes.fromhex(beacon_block["body"]["graffiti"][2:]).decode("utf-8").rstrip('\x00')
     data = {
@@ -118,12 +119,12 @@ class Proposals(commands.Cog):
         self.batch_size = 100
         self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
-        
+
     async def loop(self):
         await self.bot.wait_until_ready()
         await self.check_indexes()
         while not self.bot.is_closed():
-            p_id = time.time() 
+            p_id = time.time()
             self.monitor.ping(state="run", series=p_id)
             try:
                 log.debug("starting proposal task")
@@ -136,7 +137,7 @@ class Proposals(commands.Cog):
                 self.monitor.ping(state="fail", series=p_id)
             finally:
                 await asyncio.sleep(self.cooldown.total_seconds())
-                
+
     async def check_indexes(self):
         await self.bot.wait_until_ready()
         try:
@@ -150,14 +151,14 @@ class Proposals(commands.Cog):
         if db_entry := (await self.bot.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_slot = db_entry["slot"]
         else:
-            last_checked_slot = 4700012 # last slot before merge
-        
+            last_checked_slot = 4700012  # last slot before merge
+
         latest_slot = int((await bacon.get_block_header("finalized"))["data"]["header"]["message"]["slot"])
         for slots in as_chunks(range(last_checked_slot + 1, latest_slot + 1), self.batch_size):
             log.info(f"Fetching proposals for slots {slots[0]} to {slots[-1]}")
             await asyncio.gather(*[self.fetch_proposal(s) for s in slots])
             await self.bot.db.last_checked_block.replace_one({"_id": cog_id}, {"_id": cog_id, "slot": slots[-1]}, upsert=True)
-            
+
     async def fetch_proposal(self, slot: int) -> None:
         try:
             beacon_header = (await bacon.get_block_header(str(slot)))["data"]["header"]["message"]
@@ -166,16 +167,16 @@ class Proposals(commands.Cog):
                 return None
             else:
                 raise e
-            
+
         validator_index = int(beacon_header["proposer_index"])
         if not (minipool := (await self.bot.db.minipools.find_one({"validator_index": validator_index}))):
             return None
-                
+
         beacon_block = (await bacon.get_block(str(slot)))["data"]["message"]
         proposal_data = parse_proposal(beacon_block)
         await self.bot.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
-            
-    async def create_minipool_proposal_view(self):        
+
+    async def create_minipool_proposal_view(self):
         log.info("creating minipool proposal view")
         pipeline = [
             {
@@ -230,7 +231,7 @@ class Proposals(commands.Cog):
         match_stage = {}
         if remove_allnodes:
             match_stage['$match'] = {'latest_proposal.type': {'$ne': 'Allnodes'}}
-        
+
         pipeline = [
             {
                 '$project': {
@@ -247,13 +248,13 @@ class Proposals(commands.Cog):
                 }
             }
         ]
-        
+
         # Add match stage at the beginning if filtering Allnodes
         if remove_allnodes:
             pipeline.insert(0, match_stage)
-        
+
         distribution = await (await self.bot.db.minipool_proposals.aggregate(pipeline)).to_list()
-        
+
         if remove_allnodes:
             d = {'remove_from_total': {'count': 0, 'validator_count': 0}}
             for entry in distribution:
@@ -395,7 +396,10 @@ class Proposals(commands.Cog):
         minipools = sorted(minipools, key=lambda x: x[1])
 
         # get total minipool count from rocketpool
-        unobserved_minipools = len(await self.bot.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("_id")) - sum(d[1] for d in minipools)
+        distinct_ids = await self.bot.db.minipools.find(
+            {"beacon.status": "active_ongoing", "status": "staking"}
+        ).distinct("_id")
+        unobserved_minipools = len(distinct_ids) - sum(d[1] for d in minipools)
         if "remove_from_total" in data:
             unobserved_minipools -= data["remove_from_total"]["validator_count"]
         minipools.insert(0, ("No proposals yet", unobserved_minipools))
@@ -411,7 +415,10 @@ class Proposals(commands.Cog):
         node_operators = sorted(node_operators, key=lambda x: x[1])
 
         # get total node operator count from rp
-        unobserved_node_operators = len(await self.bot.db.minipools.find({"beacon.status": "active_ongoing", "status": "staking"}).distinct("node_operator")) - sum(d[1] for d in node_operators)
+        distinct_nos = await self.bot.db.minipools.find(
+            {"beacon.status": "active_ongoing", "status": "staking"}
+        ).distinct("node_operator")
+        unobserved_node_operators = len(distinct_nos) - sum(d[1] for d in node_operators)
         if "remove_from_total" in data:
             unobserved_node_operators -= data["remove_from_total"]["count"]
         node_operators.insert(0, ("No proposals yet", unobserved_node_operators))
@@ -505,7 +512,9 @@ class Proposals(commands.Cog):
         await interaction.followup.send(embed=embed, file=file)
 
     @command()
-    async def client_combo_ranking(self, interaction: Interaction, remove_allnodes: bool = False, group_by_node_operators: bool = False):
+    async def client_combo_ranking(
+            self, interaction: Interaction, remove_allnodes: bool = False, group_by_node_operators: bool = False
+    ):
         """
         Generate a ranking of most used execution and consensus clients.
         """

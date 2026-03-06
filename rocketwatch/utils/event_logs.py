@@ -13,29 +13,29 @@ log.setLevel(cfg["log_level"])
 
 def get_logs(
     event: ContractEvent,
-    from_block: BlockNumber, 
-    to_block: BlockNumber, 
+    from_block: BlockNumber,
+    to_block: BlockNumber,
     arg_filters: Optional[dict[str, Any]] = None
 ) -> list[LogReceipt]:
     start_block = from_block
     end_block = to_block
-    
+
     log.debug(f"Fetching event logs in [{start_block}, {end_block}]")
 
     chunk_size = 50_000
     from_block = start_block
     to_block = from_block + chunk_size
-    
+
     logs = []
-    
+
     while from_block <= end_block:
         logs += event.get_logs(
             from_block=from_block,
             to_block=min(to_block, end_block),
             argument_filters=arg_filters
         )
-        
+
         from_block = to_block + 1
         to_block = from_block + chunk_size
-    
+
     return logs

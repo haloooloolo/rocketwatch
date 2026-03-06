@@ -101,10 +101,10 @@ class Snapshot(EventPlugin):
             label_font_variant = FontVariant.BOLD
 
             def render_choice(_choice: str, _score: float, _x_offset: int, _y_offset: int) -> int:
-                color: Color = (128, 128, 128) # slate gray
+                color: Color = (128, 128, 128)  # slate gray
                 choice_colors = {
                     "for": (4, 99, 7),       # green
-                    "against": (156, 0, 47), # red
+                    "against": (156, 0, 47),  # red
                     "abstain": (114, 121, 138)
                 }
                 for k, v in choice_colors.items():
@@ -607,7 +607,7 @@ class Snapshot(EventPlugin):
         total_height = v_spacing * (num_rows - 1)
         proposal_grid: list[list[Snapshot.Proposal]] = []
         for row_idx in range(num_rows):
-            row = proposals[row_idx*num_cols:(row_idx+1)*num_cols]
+            row = proposals[row_idx * num_cols:(row_idx + 1) * num_cols]
             proposal_grid.append(row)
             # row height is equal to height of its tallest proposal
             total_height += max(p.predict_render_height() for p in row)

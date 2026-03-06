@@ -19,11 +19,14 @@ class EightBall(commands.Cog):
     async def eight_ball(self, interaction: Interaction, question: str):
         e = Embed(title="🎱 Magic 8 Ball")
         if not question.endswith("?"):
-            e.description = "You must ask a yes or no question to the magic 8 ball (hint: add a `?` at the end of your question)"
+            e.description = (
+                "You must ask a yes or no question to the magic 8 ball"
+                " (hint: add a `?` at the end of your question)"
+            )
             await interaction.response.send_message(embed=e, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        await asyncio.sleep(random.randint(2,5))
+        await asyncio.sleep(random.randint(2, 5))
         res = pyrandom.choice([
             "As I see it, yes",
             "It is certain",

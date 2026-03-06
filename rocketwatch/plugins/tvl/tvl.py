@@ -168,7 +168,8 @@ class TVL(Cog):
                 "execution_balance"]
 
         # Dissolved Minipools:
-        # Minipools that are flagged as dissolved are Pending minipools that didn't trigger the second phase within the configured
+        # Minipools that are flagged as dissolved are Pending minipools that didn't
+        # trigger the second phase within the configured
         # LaunchTimeout (14 days at the time of writing).
         # They have the following applied to them:
         # - They have 1 ETH locked on the Beacon Chain, not earning any rewards.
@@ -256,8 +257,10 @@ class TVL(Cog):
         # ETH in here has been swapped for rETH and is waiting to be matched with a minipool.
         # Fun Fact: This value can go above the configured Deposit Pool Cap in 2 scenarios:
         #  - A Minipool gets dissolved, moving 16 ETH from its address back to the Deposit Pool.
-        #  - ETH from withdrawn Minipools, which gets stored in the rETH contract, surpasses the configured targetCollateralRate,
-        #    which is 10% at the time of writing. Once this occurs the ETH gets moved from the rETH contract to the Deposit Pool.
+        #  - ETH from withdrawn Minipools, which gets stored in the rETH contract,
+        #    surpasses the configured targetCollateralRate,
+        #    which is 10% at the time of writing. Once this occurs the ETH gets moved
+        #    from the rETH contract to the Deposit Pool.
         data["Total ETH Locked"]["rETH Collateral"]["Deposit Pool"]["_val"] = solidity.to_float(
             await rp.call("rocketDepositPool.getBalance"))
 
@@ -446,7 +449,8 @@ class TVL(Cog):
         test = render_tree(data, "Total Locked Value", max_depth=0 if show_all else 2)
         # send embed with tvl
         e = Embed()
-        closer = f"or about {Style.BRIGHT}{humanize.intword(usdc_total_tvl, format='%.3f')} USDC{Style.RESET_ALL}".rjust(max([len(line) for line in test.split("\n")])-1)
+        closer = f"or about {Style.BRIGHT}{humanize.intword(usdc_total_tvl, format='%.3f')} USDC{Style.RESET_ALL}".rjust(
+            max([len(line) for line in test.split("\n")]) - 1)
         e.description = f"```ansi\n{test}\n{closer}```"
         e.set_footer(text="\"that looks good to me\" - invis 2023")
         await interaction.followup.send(embed=e)

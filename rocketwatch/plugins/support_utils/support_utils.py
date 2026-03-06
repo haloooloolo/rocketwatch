@@ -17,7 +17,7 @@ log.setLevel(cfg["log_level"])
 
 async def generate_template_embed(db, template_name: str):
     template = await db.support_bot.find_one({"_id": template_name})
-    if not template: 
+    if not template:
         return None
     # get the last log entry from the db
     dumps_col = db.support_bot_dumps.with_options(codec_options=CodecOptions(tz_aware=True))
@@ -42,17 +42,19 @@ class AdminView(ui.View):
     async def edit(self, interaction: Interaction, button: ui.Button):
         template = await self.db.support_bot.find_one({'_id': self.template_name})
         # Make sure to update the message with our update
-        await interaction.response.send_modal(AdminModal(template["title"], template["description"], self.db, self.template_name))
+        await interaction.response.send_modal(
+            AdminModal(template["title"], template["description"], self.db, self.template_name)
+        )
 
 
 class DeletableView(ui.View):
     def __init__(self, user: User):
         super().__init__(timeout=None)
         self.user = user
-        
+
     @ui.button(emoji="<:delete:1364953621191721002>", style=ButtonStyle.gray)
     async def delete(self, interaction: Interaction, button: ui.Button):
-        if (interaction.user == self.user) or has_perms(interaction):        
+        if (interaction.user == self.user) or has_perms(interaction):
             await interaction.message.delete()
             log.warning(f"Support template message deleted by {interaction.user} in {interaction.channel}")
 
@@ -150,7 +152,7 @@ async def _use(db, interaction: Interaction, name: str, mention: User | None):
             ephemeral=True
         )
         return
-    
+
     # respond with the template embed
     if e := (await generate_template_embed(db, name)):
         await interaction.response.send_message(
@@ -308,7 +310,10 @@ class SupportUtils(GroupCog, name="support"):
         templates.sort(key=lambda x: x[order_by])
         # create the embed
         embed = Embed(title="Templates")
-        embed.description = "".join(f"\n`{template['_id']}` - <t:{template.get('last_edited_date', datetime.now()).timestamp():.0f}:R>" for template in templates) + ""
+        embed.description = "".join(
+            f"\n`{template['_id']}` - <t:{template.get('last_edited_date', datetime.now()).timestamp():.0f}:R>"
+            for template in templates
+        ) + ""
         # split the embed into multiple embeds if it is too long
         embeds = [embed]
         while len(embeds[-1]) > 6000:
@@ -317,7 +322,6 @@ class SupportUtils(GroupCog, name="support"):
             embeds[-1].description = embed.description[6000:]
             embed.description = embed.description[:6000]
         await interaction.edit_original_response(embeds=embeds)
-
 
     @subgroup.command()
     async def use(self, interaction: Interaction, name: str, mention: User | None):

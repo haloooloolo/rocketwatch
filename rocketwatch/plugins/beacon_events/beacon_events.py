@@ -37,7 +37,7 @@ class BeaconEvents(EventPlugin):
         log.info(f"Checking for new beacon chain events in slot range [{from_slot}, {to_slot}]")
 
         events: list[Event] = []
-        for slot_number in range(from_slot, to_slot-1):
+        for slot_number in range(from_slot, to_slot - 1):
             events.extend(await self._get_events_for_slot(slot_number, check_finality=False))
 
         # quite expensive and only really makes sense to check toward the head of the chain
@@ -56,7 +56,6 @@ class BeaconEvents(EventPlugin):
                 return []
             else:
                 raise e
-            
 
         events = await self._get_slashings(beacon_block)
         if proposal_event := await self._get_proposal(beacon_block):
@@ -96,7 +95,7 @@ class BeaconEvents(EventPlugin):
             if not (minipool or megapool):
                 log.info(f"Skipping slashing of unknown validator {slash['validator']}")
                 continue
-            
+
             unique_id = (
                 f"slash-{slash['validator']}"
                 f":slasher-{slash['slasher']}"
@@ -125,7 +124,7 @@ class BeaconEvents(EventPlugin):
         if not (payload := beacon_block["body"].get("execution_payload")):
             # no proposed block
             return None
-        
+
         if not (api_key := cfg["consensus_layer.beaconcha_secret"]):
             log.warning("Missing beaconcha.in API key")
             return None

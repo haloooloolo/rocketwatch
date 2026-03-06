@@ -124,7 +124,7 @@ class DefaultDAO(DAO):
             proposal_contract.functions.getDAO(proposal_id) for proposal_id in range(1, num_proposals + 1)
         ])
 
-        relevant_proposals = [(i+1) for (i, dao_name) in enumerate(proposal_dao_names) if (dao_name == self.contract_name)]
+        relevant_proposals = [(i + 1) for (i, dao_name) in enumerate(proposal_dao_names) if (dao_name == self.contract_name)]
         proposal_states = await rp.multicall([
             proposal_contract.functions.getState(proposal_id) for proposal_id in relevant_proposals
         ])
@@ -139,17 +139,17 @@ class DefaultDAO(DAO):
         proposal_contract = await self._get_proposal_contract()
         (proposer, message, payload, created, start, end, expires,
          votes_for_raw, votes_against_raw, votes_required_raw) = await rp.multicall([
-            proposal_contract.functions.getProposer(proposal_id),
-            proposal_contract.functions.getMessage(proposal_id),
-            proposal_contract.functions.getPayload(proposal_id),
-            proposal_contract.functions.getCreated(proposal_id),
-            proposal_contract.functions.getStart(proposal_id),
-            proposal_contract.functions.getEnd(proposal_id),
-            proposal_contract.functions.getExpires(proposal_id),
-            proposal_contract.functions.getVotesFor(proposal_id),
-            proposal_contract.functions.getVotesAgainst(proposal_id),
-            proposal_contract.functions.getVotesRequired(proposal_id)
-        ])
+             proposal_contract.functions.getProposer(proposal_id),
+             proposal_contract.functions.getMessage(proposal_id),
+             proposal_contract.functions.getPayload(proposal_id),
+             proposal_contract.functions.getCreated(proposal_id),
+             proposal_contract.functions.getStart(proposal_id),
+             proposal_contract.functions.getEnd(proposal_id),
+             proposal_contract.functions.getExpires(proposal_id),
+             proposal_contract.functions.getVotesFor(proposal_id),
+             proposal_contract.functions.getVotesAgainst(proposal_id),
+             proposal_contract.functions.getVotesRequired(proposal_id)
+         ])
         return DefaultDAO.Proposal(
             id=proposal_id,
             proposer=cast(ChecksumAddress, proposer),
@@ -183,13 +183,16 @@ class DefaultDAO(DAO):
             f"Quorum: {quorum_perc:.0%}{' ✔' if (quorum_perc >= 1) else ''}"
         )
 
+
 class OracleDAO(DefaultDAO):
     def __init__(self):
         super().__init__("rocketDAONodeTrustedProposals")
 
+
 class SecurityCouncil(DefaultDAO):
     def __init__(self):
         super().__init__("rocketDAOSecurityProposals")
+
 
 class ProtocolDAO(DAO):
     def __init__(self):
@@ -243,21 +246,21 @@ class ProtocolDAO(DAO):
         (proposer, message, payload, created, start, phase1_end, phase2_end,
          expires, vp_for_raw, vp_against_raw, vp_veto_raw, vp_abstain_raw,
          vp_required_raw, veto_quorum_raw) = await rp.multicall([
-            proposal_contract.functions.getProposer(proposal_id),
-            proposal_contract.functions.getMessage(proposal_id),
-            proposal_contract.functions.getPayload(proposal_id),
-            proposal_contract.functions.getCreated(proposal_id),
-            proposal_contract.functions.getStart(proposal_id),
-            proposal_contract.functions.getPhase1End(proposal_id),
-            proposal_contract.functions.getPhase2End(proposal_id),
-            proposal_contract.functions.getExpires(proposal_id),
-            proposal_contract.functions.getVotingPowerFor(proposal_id),
-            proposal_contract.functions.getVotingPowerAgainst(proposal_id),
-            proposal_contract.functions.getVotingPowerVeto(proposal_id),
-            proposal_contract.functions.getVotingPowerAbstained(proposal_id),
-            proposal_contract.functions.getVotingPowerRequired(proposal_id),
-            proposal_contract.functions.getVetoQuorum(proposal_id)
-        ])
+             proposal_contract.functions.getProposer(proposal_id),
+             proposal_contract.functions.getMessage(proposal_id),
+             proposal_contract.functions.getPayload(proposal_id),
+             proposal_contract.functions.getCreated(proposal_id),
+             proposal_contract.functions.getStart(proposal_id),
+             proposal_contract.functions.getPhase1End(proposal_id),
+             proposal_contract.functions.getPhase2End(proposal_id),
+             proposal_contract.functions.getExpires(proposal_id),
+             proposal_contract.functions.getVotingPowerFor(proposal_id),
+             proposal_contract.functions.getVotingPowerAgainst(proposal_id),
+             proposal_contract.functions.getVotingPowerVeto(proposal_id),
+             proposal_contract.functions.getVotingPowerAbstained(proposal_id),
+             proposal_contract.functions.getVotingPowerRequired(proposal_id),
+             proposal_contract.functions.getVetoQuorum(proposal_id)
+         ])
         return ProtocolDAO.Proposal(
             id=proposal_id,
             proposer=cast(ChecksumAddress, proposer),

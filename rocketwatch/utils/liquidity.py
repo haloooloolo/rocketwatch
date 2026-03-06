@@ -487,6 +487,7 @@ class HTX(CEX):
     def _get_asks(self, api_response: dict) -> dict[float, float]:
         return {float(entry[0]): float(entry[1]) for entry in api_response["tick"]["asks"]}
 
+
 class BitMart(CEX):
     @property
     def color(self) -> str:
@@ -697,7 +698,8 @@ class UniswapV3(DEX):
         return math.log(price, 1.0001)
 
     class Pool(DEX.LiquidityPool):
-        def __init__(self, pool_address: ChecksumAddress, contract, tick_spacing: int, token_0: ERC20Token, token_1: ERC20Token):
+        def __init__(self, pool_address: ChecksumAddress, contract, tick_spacing: int,
+                     token_0: ERC20Token, token_1: ERC20Token):
             self.pool_address = pool_address
             self.contract = contract
             self.tick_spacing = tick_spacing

@@ -22,7 +22,7 @@ def decode_abi(compressed_string):
     return inflated.decode("ascii")
 
 
-def uptime(time, highres= False):
+def uptime(time, highres=False):
     parts = []
 
     days, time = time // units.days, time % units.days
@@ -70,40 +70,40 @@ def render_tree_legacy(data: dict, name: str) -> str:
         _strings = []
         _values = []
         count = 0
-        
+
         _data = {k: v for k, v in _data.items() if v}
-        for i, (state, sub_data) in enumerate(_data.items()):            
+        for i, (state, sub_data) in enumerate(_data.items()):
             link = "├" if (i != len(_data) - 1) else "└"
             _strings.append(f" {link}{state.title()}: ")
-            
+
             if isinstance(sub_data, dict):
                 sub_strings, sub_values, sub_count = render_branch(sub_data)
                 sub_link = " │" if (i != len(_data) - 1) else "  "
                 _strings.extend([sub_link + s for s in sub_strings])
                 _values.append(sub_count)
                 _values.extend(sub_values)
-                count += sub_count                   
+                count += sub_count
             elif isinstance(sub_data, int):
                 _values.append(sub_data)
                 count += sub_data
-        
+
         return _strings, _values, count
 
     strings, values, tree_sum = render_branch(data)
     strings.insert(0, f"{name}:")
     values.insert(0, tree_sum)
-    
+
     fmt_values = [f"{v:,}" for v in values]
-            
+
     # longest string offset
     max_left_len = max(len(s) for s in strings)
     max_right_len = max(len(v) for v in fmt_values)
-    
+
     lines = []
     for s, v in zip(strings, fmt_values):
         # right align all values
         lines.append(s.ljust(max_left_len) + v.rjust(max_right_len))
-    
+
     return "\n".join(lines)
 
 
@@ -149,5 +149,5 @@ def render_tree(data: dict, name: str, max_depth: int = 0) -> str:
         _v = f"{COLORS[d]}{v}{Style.RESET_ALL}"
         lines[i] = f"{lines[i].ljust(max_left_len, ' ')}{' ' * (max_right_len - len(str(v)))}{_v}"
     # replace all spaces with non-breaking spaces
-    lines = [l.replace(" ", " ") for l in lines]
+    lines = [line.replace(" ", " ") for line in lines]
     return "\n".join(lines)

@@ -44,11 +44,11 @@ class Lottery(commands.Cog):
             sync_period += 1
         data = (await bacon.get_sync_committee(sync_period * 256))["data"]
         await self.bot.db.sync_committee_stats.replace_one({"period": period},
-                                                 {"period"     : period,
-                                                  "start_epoch": sync_period * 256,
-                                                  "end_epoch"  : (sync_period + 1) * 256,
-                                                  "sync_period": sync_period * 256,
-                                                  }, upsert=True)
+                                                           {"period"     : period,
+                                                            "start_epoch": sync_period * 256,
+                                                            "end_epoch"  : (sync_period + 1) * 256,
+                                                            "sync_period": sync_period * 256,
+                                                            }, upsert=True)
         validators = data["validators"]
         col = self.bot.db[f"sync_committee_{period}"]
         # get unique validators from collection

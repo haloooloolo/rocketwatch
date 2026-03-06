@@ -25,7 +25,7 @@ from utils.visibility import is_hidden_weak
 from utils.rocketpool import rp
 from utils.liquidity import (
     Exchange, CEX, DEX, Market, Liquidity,
-    Binance, Coinbase, GateIO, OKX, Bitget, MEXC, Bybit, CryptoDotCom, 
+    Binance, Coinbase, GateIO, OKX, Bitget, MEXC, Bybit, CryptoDotCom,
     Kraken, Kucoin, Bithumb, BingX, Bitvavo, HTX, BitMart, Bitrue, CoinTR,
     BalancerV2, UniswapV3
 )
@@ -63,7 +63,9 @@ class Wall(commands.Cog):
         if self.dex is None:
             self.dex = {
                 BalancerV2([
-                    await BalancerV2.WeightedPool.create(HexStr("0x9f9d900462492d4c21e9523ca95a7cd86142f298000200000000000000000462"))
+                    await BalancerV2.WeightedPool.create(
+                        HexStr("0x9f9d900462492d4c21e9523ca95a7cd86142f298000200000000000000000462")
+                    )
                 ]),
                 await UniswapV3.create([
                     cast(ChecksumAddress, "0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45"),

@@ -11,6 +11,7 @@ from PIL.ImageDraw import ImageDraw
 
 Color = tuple[int, int, int]
 
+
 class Image:
     def __init__(self, image: PillowImage.Image):
         self.__img = image

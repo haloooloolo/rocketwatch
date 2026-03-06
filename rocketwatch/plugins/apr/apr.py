@@ -43,7 +43,7 @@ class APR(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.task.start()
-    
+
     async def cog_unload(self):
         self.task.cancel()
 
@@ -73,11 +73,11 @@ class APR(commands.Cog):
                 "effectiveness": effectiveness
             })
             cursor_block = balance_block - 1
-            
+
     @task.before_loop
     async def before_loop(self):
         await self.bot.wait_until_ready()
-        
+
     @task.error
     async def on_error(self, err: Exception):
         await self.bot.report_error(err)
@@ -388,11 +388,14 @@ class APR(commands.Cog):
         ax1 = plt.gca()
 
         # solo apr
-        ax1.plot(x, y_7d_node_operators_leb8_14, linestyle="-.", label=f"{y_7d_claim:.1f} Day Average (leb8 14%)", color="red", alpha=0.5)
+        ax1.plot(x, y_7d_node_operators_leb8_14, linestyle="-.",
+                 label=f"{y_7d_claim:.1f} Day Average (leb8 14%)", color="red", alpha=0.5)
         # use area to show region between leb16 20% and leb16 5%. use a spare dotted fill to show the region between
-        ax1.fill_between(x, y_7d_node_operators_leb16_20, y_7d_node_operators_leb16_05, alpha=0.2, color="red", label=f"{y_7d_claim:.1f} Day Average (leb16 5-20%)")
+        ax1.fill_between(x, y_7d_node_operators_leb16_20, y_7d_node_operators_leb16_05, alpha=0.2,
+                         color="red", label=f"{y_7d_claim:.1f} Day Average (leb16 5-20%)")
         # plot the leb16 14% line
-        ax1.plot(x, y_7d_node_operators_leb16_14, linestyle="--", label=f"{y_7d_claim:.1f} Day Average (leb16 14%)", color="red", alpha=0.5)
+        ax1.plot(x, y_7d_node_operators_leb16_14, linestyle="--",
+                 label=f"{y_7d_claim:.1f} Day Average (leb16 14%)", color="red", alpha=0.5)
         ax1.plot(x, y_7d_solo, linestyle=":", label=f"{y_7d_claim:.1f} Day Average (solo)", color="black", alpha=0.5)
 
         plt.title("Observed NO APR values")
@@ -423,6 +426,7 @@ class APR(commands.Cog):
         e.set_image(url="attachment://no_apr.png")
 
         await interaction.followup.send(embed=e, file=File(img, "no_apr.png"))
+
 
 async def setup(bot):
     await bot.add_cog(APR(bot))

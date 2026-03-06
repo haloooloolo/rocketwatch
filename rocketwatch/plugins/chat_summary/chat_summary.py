@@ -30,7 +30,10 @@ class ChatSummary(commands.Cog):
 
     @classmethod
     def message_to_text(cls, message, index):
-        text = f"{message.author.global_name or message.author.name} on {message.created_at.strftime('%a at %H:%M')}:\n {message.content}"
+        text = (
+            f"{message.author.global_name or message.author.name}"
+            f" on {message.created_at.strftime('%a at %H:%M')}:\n {message.content}"
+        )
 
         # if there is an image attached, add it to the text as a note
         metadata = []
@@ -61,25 +64,29 @@ class ChatSummary(commands.Cog):
         last_ts = await self.bot.db["last_summary"].find_one({"channel_id": interaction.channel.id})
         # ratelimit
         if last_ts and (datetime.now(timezone.utc) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
-             await interaction.followup.send("You can only summarize once every 6 hours.", ephemeral=True)
-             return
+            await interaction.followup.send("You can only summarize once every 6 hours.", ephemeral=True)
+            return
         if interaction.channel.id not in [405163713063288832]:
             await interaction.followup.send("You can't summarize here.", ephemeral=True)
             return
         msg = await interaction.channel.send("Summarizing chat…")
-        last_ts = last_ts["timestamp"].replace(tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(timezone.utc) - timedelta(days=365)
+        last_ts = last_ts["timestamp"].replace(
+            tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(timezone.utc) - timedelta(days=365)
         prompt = (
             "Task Description:\n"
             "I need a summary of the entire chat log. This summary should be presented in the form of a bullet list.\n\n"
             "Format and Length Requirements:\n"
-            "- The bullet list must be kept short and concise, but the list has to cover the entire chat log. Make at most around 5 bullet points.\n"
+            "- The bullet list must be kept short and concise, but the list has to cover the entire chat log."
+            " Make at most around 5 bullet points.\n"
             "- Each bullet point should represent a distinct topic discussed in the chat log.\n\n"
             "Content Constraints:\n"
             "- Limit each topic to a single bullet point in the list.\n"
             "- Omit any topics that are uninteresting or not crucial to the overall understanding of the chat log.\n"
-            "- If any content in the chat log goes against guidelines, refer to it in a safe and compliant manner, without detailing the specific content.\n\n"
+            "- If any content in the chat log goes against guidelines, refer to it in a safe and compliant manner,"
+            " without detailing the specific content.\n\n"
             "Response Instruction:\n"
-            "- Respond only with the bullet list summary as specified. Do not include any additional commentary or response outside of this list.\n\n"
+            "- Respond only with the bullet list summary as specified."
+            " Do not include any additional commentary or response outside of this list.\n\n"
             "Truncated Example Output:\n"
             "----------------\n"
             "- Discussions between invis, langers, knoshua and more about the meaning of life.\n"
@@ -113,9 +120,14 @@ class ChatSummary(commands.Cog):
             else:
                 es[-1].description = res
                 res = ""
-        token_usage = response.usage.input_tokens + (response.usage.output_tokens * 5) # completion tokens are 3x more expensive
+        # completion tokens are 3x more expensive
+        token_usage = response.usage.input_tokens + (response.usage.output_tokens * 5)
         es[-1].set_footer(
-            text=f"Request cost: ${token_usage / 1000000 * 3:.2f} | Tokens: {response.usage.input_tokens + response.usage.output_tokens} | /donate if you like this command")
+            text=(
+                f"Request cost: ${token_usage / 1000000 * 3:.2f}"
+                f" | Tokens: {response.usage.input_tokens + response.usage.output_tokens}"
+                " | /donate if you like this command"
+            ))
         # attach the prompt as a file
         f = BytesIO(prompt.encode("utf-8"))
         f.name = "prompt._log"
@@ -124,7 +136,11 @@ class ChatSummary(commands.Cog):
         await interaction.followup.send("done", ephemeral=True)
         await msg.edit(embeds=es, attachments=[f])
         # save the timestamp of the last summary
-        await self.bot.db["last_summary"].update_one({"channel_id": interaction.channel.id}, {"$set": {"timestamp": datetime.now(timezone.utc)}}, upsert=True)
+        await self.bot.db["last_summary"].update_one(
+            {"channel_id": interaction.channel.id},
+            {"$set": {"timestamp": datetime.now(timezone.utc)}},
+            upsert=True
+        )
 
     # a function that generates the prompt for the model by taking an array of messages, a prefix and a suffix
     def generate_prompt(self, messages, prefix, suffix):
@@ -132,7 +148,9 @@ class ChatSummary(commands.Cog):
         prompt = "\n".join([self.message_to_text(message, i) for i, message in enumerate(messages)]).replace("\n\n", "\n")
         return f"{prefix}\n\n{prompt}\n\n{suffix}"
 
-    async def prompt_model(self, channel: TextChannel, prompt: str, cut_off_ts: int) -> tuple[anthropic.types.Message, str, int]:
+    async def prompt_model(
+            self, channel: TextChannel, prompt: str, cut_off_ts: int
+    ) -> tuple[anthropic.types.Message, str, int]:
         messages = [message async for message in channel.history(limit=4096) if message.content != ""]
         messages = [message for message in messages if message.author.id != self.bot.user.id]
         messages = [message for message in messages if message.created_at > cut_off_ts]

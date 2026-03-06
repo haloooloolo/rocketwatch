@@ -78,6 +78,7 @@ async def resolve_ens(interaction, node_address):
 
 _pdao_delegates: dict[str, str] = {}
 
+
 @cached(ttl=900)
 @retry_async(tries=3, delay=1)
 async def get_pdao_delegates() -> dict[str, str]:
@@ -115,7 +116,7 @@ async def el_explorer_url(
             url = f"https://saturn-1.net/megapool/{target}{dashboard_network}"
 
         if await rp.is_minipool(target):
-            pass # TODO add explorer url once supported
+            pass  # TODO add explorer url once supported
 
         n_key = f"addresses.{target}"
         if not name and (n := _(n_key)) != n_key:
@@ -145,7 +146,10 @@ async def el_explorer_url(
         if not name:
             a = Addresses.get(target)
             # don't apply name if it has  label is one with the id "take-action", as these don't show up on the explorer
-            if (not a.labels or len(a.labels) != 1 or a.labels[0].id != "take-action") and a.name and "alert" not in a.name.lower():
+            if all((
+                (not a.labels or len(a.labels) != 1 or a.labels[0].id != "take-action"),
+                a.name and ("alert" not in a.name.lower())
+            )):
                 name = a.name
         if not name:
             # not an odao member, try to get their ens
@@ -154,21 +158,17 @@ async def el_explorer_url(
         if code := await w3.eth.get_code(target):
             if prefix != -1:
                 prefix += "📄"
-            if (
-                    not name
-                    and w3.keccak(text=code.hex()).hex()
-                    in cfg["other.mev_hashes"]
-            ):
+            if ((not name) and (w3.keccak(text=code.hex()).hex() in cfg["other.mev_hashes"])):
                 name = "MEV Bot Contract"
             if not name:
                 with contextlib.suppress(Exception):
                     c = w3.eth.contract(address=target, abi=[{"inputs"         : [],
-                                                                    "name"           : "name",
-                                                                    "outputs"        : [{"internalType": "string",
-                                                                                         "name"        : "",
-                                                                                         "type"        : "string"}],
-                                                                    "stateMutability": "view",
-                                                                    "type"           : "function"}])
+                                                              "name"           : "name",
+                                                              "outputs"        : [{"internalType": "string",
+                                                                                   "name"        : "",
+                                                                                   "type"        : "string"}],
+                                                              "stateMutability": "view",
+                                                              "type"           : "function"}])
                     n = await c.functions.name().call()
                     # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
                     # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
@@ -193,13 +193,15 @@ async def el_explorer_url(
         prefix = ""
     return f"{prefix}[{name}]({url})"
 
+
 async def prepare_args(args):
     for arg_key, arg_value in list(args.items()):
         # store raw value
         args[f"{arg_key}_raw"] = arg_value
 
         # handle numbers
-        if any(keyword in arg_key.lower() for keyword in ["amount", "value", "rate", "totaleth", "stakingeth", "rethsupply", "rplprice", "profit"]) and isinstance(arg_value, int):
+        numeric_keywords = ["amount", "value", "rate", "totaleth", "stakingeth", "rethsupply", "rplprice", "profit"]
+        if any(keyword in arg_key.lower() for keyword in numeric_keywords) and isinstance(arg_value, int):
             args[arg_key] = arg_value / 10 ** 18
 
         # handle timestamps
@@ -267,15 +269,20 @@ async def assemble(args) -> Embed:
         case "cs_max_validator_increase_event":
             e.set_image(url="https://media1.tenor.com/m/Yp6Yeiufb04AAAAd/piranhas-feeding.gif")
         case "redstone_upgrade_triggered":
-            e.set_image(url="https://cdn.dribbble.com/users/187497/screenshots/2284528/media/123903807d334c15aa105b44f2bd9252.gif")
+            url = "https://cdn.dribbble.com/users/187497/screenshots/2284528/media/123903807d334c15aa105b44f2bd9252.gif"
+            e.set_image(url=url)
         case "atlas_upgrade_triggered":
-            e.set_image(url="https://cdn.discordapp.com/attachments/912434217118498876/1097528472567558227/DALLE_2023-04-17_16.25.46_-_an_expresive_oil_painting_of_the_atlas_2_rocket_taking_off_moon_colorfull.png")
+            url = (
+                "https://cdn.discordapp.com/attachments/912434217118498876/1097528472567558227/"
+                "DALLE_2023-04-17_16.25.46_-_an_expresive_oil_painting_of_the_atlas_2_rocket_taking_off_moon_colorfull.png"
+            )
+            e.set_image(url=url)
         case "houston_upgrade_triggered":
             e.set_image(url="https://i.imgur.com/XT5qPWf.png")
         case "houston_hotfix_upgrade_triggered":
             e.set_image(url="https://i.imgur.com/JcQS3Sh.png")
         case "saturn_one_upgrade_triggered":
-            e.set_image(url="https://i.imgur.com/n3wMCOA.png")            
+            e.set_image(url="https://i.imgur.com/n3wMCOA.png")
 
     match args.event_name:
         case "pdao_set_delegate":
@@ -334,9 +341,10 @@ async def assemble(args) -> Embed:
 
     if "exchangeRate" in args:
         e.add_field(name="Exchange Rate",
-                    value=f"`{args.exchangeRate} RPL/{args.otherToken}`" +
-                          (
-                              f" (`{args.discountAmount}%` Discount, oDAO: `{args.marketExchangeRate} RPL/ETH`)" if "discountAmount" in args else ""),
+                    value=f"`{args.exchangeRate} RPL/{args.otherToken}`" + (
+                        f" (`{args.discountAmount}%` Discount, oDAO: `{args.marketExchangeRate} RPL/ETH`)"
+                        if "discountAmount" in args else ""
+                    ),
                     inline=False)
 
     """
@@ -511,8 +519,8 @@ async def assemble(args) -> Embed:
             tnx_fee_gwei = round(tnx_fee_wei / 10**9)
             value = f"{tnx_fee_gwei:,} Gwei ({args.tnx_fee_usd} USDC)"
         else:
-           value = f"{tnx_fee_wei:,} Wei ({args.tnx_fee_usd} USDC)"
-           
+            value = f"{tnx_fee_wei:,} Wei ({args.tnx_fee_usd} USDC)"
+
         e.add_field(name="Transaction Fee", value=value, inline=False)
-  
+
     return e

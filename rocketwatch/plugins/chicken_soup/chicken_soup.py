@@ -11,7 +11,7 @@ class ChickenSoup(commands.Cog):
         self.bot = bot
         self.duration = timedelta(minutes=5)
         self.dispense_end = {}
-        
+
     @command()
     async def chicken_soup(self, interaction: Interaction):
         self.dispense_end[interaction.channel_id] = datetime.now() + self.duration

@@ -58,7 +58,7 @@ class DepositPool(StatusPlugin):
                 embed.description += std_queue_content
                 if std_queue_length > display_limit:
                     embed.description += f"{display_limit + 1}. `...`\n"
-                    
+
             queue_capacity = max(free_capacity - deposit_cap, 0.0)
             possible_assignments = min(int(dp_balance // 32), total_queue_length)
 
@@ -76,7 +76,7 @@ class DepositPool(StatusPlugin):
                 embed.add_field(name="Enough For", value="\n".join(lines), inline=False)
 
         return embed
-    
+
     @staticmethod
     async def get_contract_collateral_stats() -> Embed:
         exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = await rp.multicall([
@@ -107,7 +107,7 @@ class DepositPool(StatusPlugin):
             )
 
         return Embed(title="rETH Extra Collateral", description=description)
-    
+
     @command()
     async def deposit_pool(self, interaction: Interaction) -> None:
         """Show the current deposit pool status"""
@@ -119,7 +119,7 @@ class DepositPool(StatusPlugin):
         """Show the amount of tokens held in the rETH contract for exit liquidity"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         await interaction.followup.send(embed=await self.get_contract_collateral_stats())
-        
+
     async def get_status(self) -> Embed:
         embed = Embed(title=":rocket: Live Protocol Status")
 
@@ -138,7 +138,7 @@ class DepositPool(StatusPlugin):
 
         collateral_embed = await self.get_contract_collateral_stats()
         embed.add_field(name="Withdrawals", value=collateral_embed.description, inline=False)
-        
+
         if cfg["rocketpool.chain"] != "mainnet":
             return embed
 

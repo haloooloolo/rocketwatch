@@ -1,3 +1,4 @@
+from collections.abc import Coroutine
 import json
 import hashlib
 import logging
@@ -28,8 +29,8 @@ log = logging.getLogger("events")
 log.setLevel(cfg["log_level"])
 
 
-from collections.abc import Coroutine
 PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Coroutine[None, None, list[LogReceipt | EventData]]]
+
 
 class Events(EventPlugin):
     def __init__(self, bot: RocketWatch):
@@ -97,9 +98,10 @@ class Events(EventPlugin):
             except Exception as e:
                 log.warning(f"Failed to get contract {group['contract_name']}: {e}")
                 continue
-            
+
             for event in group["events"]:
                 event_map[event["event_name"]] = event["name"]
+
                 def super_builder(_contract, _event) -> PartialFilter:
                     # this is needed to pin nonlocal variables
                     async def build_topic_filter(_from: BlockNumber, _to: BlockNumber | Literal["latest"]) -> list[EventData]:
@@ -192,7 +194,7 @@ class Events(EventPlugin):
     async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
         log.debug(f"Fetching events in [{from_block}, {to_block}]")
         log.debug(f"Using {len(self._partial_filters)} filters")
-        
+
         events = []
         for pf in self._partial_filters:
             events.extend(await pf(from_block, to_block))
@@ -230,6 +232,7 @@ class Events(EventPlugin):
             log.debug(f"Checking event {event}")
 
             args_hash = hashlib.md5()
+
             def hash_args(_args: aDict) -> None:
                 for k, v in sorted(_args.items()):
                     if not ("time" in k.lower() or "block" in k.lower()):
@@ -402,10 +405,10 @@ class Events(EventPlugin):
 
     async def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
         receipt = await w3.eth.get_transaction_receipt(event.transactionHash)
-        
+
         is_minipool_event = await rp.is_minipool(event.address) or await rp.is_minipool(receipt.to)
         is_megapool_event = await rp.is_megapool(event.address) or await rp.is_megapool(receipt.to)
-        
+
         if not any([
             is_minipool_event,
             is_megapool_event,
@@ -446,7 +449,7 @@ class Events(EventPlugin):
         if (n := rp.get_name_by_address(receipt["to"])) is None or not n.startswith("rocket"):
             event.args["from"] = receipt["to"]
             event.args["caller"] = receipt["from"]
-            
+
         if is_minipool_event:
             # and add the minipool address, which is the origin of the event
             event.args.minipool = event.address
@@ -460,16 +463,19 @@ class Events(EventPlugin):
         args = aDict(event.args)
 
         if "negative_rETH_ratio_update_event" in event_name:
-            args.currRETHRate = solidity.to_float(args.totalEth) / solidity.to_float(args.rethSupply) if args.rethSupply > 0 else 1
+            args.currRETHRate = solidity.to_float(
+                args.totalEth) / solidity.to_float(args.rethSupply) if args.rethSupply > 0 else 1
             args.prevRETHRate = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate", block=event.blockNumber - 1))
             d = args.currRETHRate - args.prevRETHRate
             if d > 0 or abs(d) < 0.00001:
                 return None
         elif "price_update_event" in event_name:
             args.value = args.rplPrice
-            next_period = await rp.call("rocketRewardsPool.getClaimIntervalTimeStart", block=event.blockNumber) + await rp.call("rocketRewardsPool.getClaimIntervalTime", block=event.blockNumber)
-            args.rewardPeriodEnd = next_period
-            update_rate = await rp.call("rocketDAOProtocolSettingsNetwork.getSubmitPricesFrequency", block=event.blockNumber) # in seconds
+            period_start = await rp.call("rocketRewardsPool.getClaimIntervalTimeStart", block=event.blockNumber)
+            period_length = await rp.call("rocketRewardsPool.getClaimIntervalTime", block=event.blockNumber)
+            args.rewardPeriodEnd = period_start + period_length
+            # in seconds
+            update_rate = await rp.call("rocketDAOProtocolSettingsNetwork.getSubmitPricesFrequency", block=event.blockNumber)
             # get timestamp of event block
             ts = await block_to_ts(event.blockNumber)
             # check if the next update is after the next period ts
@@ -524,7 +530,11 @@ class Events(EventPlugin):
             "sdao_member_request_leave_event"
         ]:
             args.nodeAddress = await el_explorer_url(args.nodeAddress, block=(event.blockNumber - 1))
-        elif event_name.startswith("cs_deposit") or event_name.startswith("cs_withdraw") or event_name.startswith("rocksolid_deposit"):
+        elif any([
+            event_name.startswith("cs_deposit"),
+            event_name.startswith("cs_withdraw"),
+            event_name.startswith("rocksolid_deposit")
+        ]):
             args.assets = solidity.to_float(args.assets)
             args.shares = solidity.to_float(args.shares)
         elif event_name.startswith("rocksolid_withdraw"):
@@ -608,7 +618,9 @@ class Events(EventPlugin):
             if "root" in event_name:
                 # not interesting if the root wasn't submitted in response to a challenge
                 # ChallengeState.Challenged = 1
-                challenge_state = await rp.call("rocketDAOProtocolVerifier.getChallengeState", proposal_id, args.index, block=event.blockNumber)
+                challenge_state = await rp.call(
+                    "rocketDAOProtocolVerifier.getChallengeState", proposal_id, args.index, block=event.blockNumber
+                )
                 if challenge_state != 1:
                     return None
 
@@ -630,7 +642,9 @@ class Events(EventPlugin):
                     return None
             elif "vote_override" in event_name:
                 proposal_block = await rp.call("rocketDAOProtocolProposal.getProposalBlock", proposal_id)
-                args.votingPower = solidity.to_float(await rp.call("rocketNetworkVoting.getVotingPower", args.voter, proposal_block))
+                args.votingPower = solidity.to_float(
+                    await rp.call("rocketNetworkVoting.getVotingPower", args.voter, proposal_block)
+                )
                 if args.votingPower < 100:
                     # not interesting
                     return None
@@ -680,7 +694,7 @@ class Events(EventPlugin):
             args.amount = solidity.to_float(args.amount)
             args.ethAmount = args.amount * rpl_ratio
         elif event_name in ["node_merkle_rewards_claimed"]:
-            return None # TODO
+            return None  # TODO
         elif "transfer_event" in event_name:
             token_prefix = event_name.split("_", 1)[0]
             args.amount = args.value / 10**18
@@ -762,7 +776,9 @@ class Events(EventPlugin):
             contract = await rp.assemble_contract("rocketMinipoolDelegate", args.minipool)
             args.commission = solidity.to_float(await contract.functions.getNodeFee().call())
             # get the transaction receipt
-            args.depositAmount = await rp.call("rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber)
+            args.depositAmount = await rp.call(
+                "rocketMinipool.getNodeDepositBalance", address=args.minipool, block=args.blockNumber
+            )
             user_deposit = args.depositAmount
             receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
             args.node = receipt["from"]
@@ -804,7 +820,7 @@ class Events(EventPlugin):
                     event_name = "minipool_dissolve_event"
                 case _:
                     return None
-            
+
             args.operator = await rp.call("rocketMinipoolDelegate.getNodeAddress", address=args.minipool)
 
         if event_name in ["minipool_bond_reduce_event", "minipool_vacancy_prepared_event",
@@ -830,10 +846,12 @@ class Events(EventPlugin):
             event_name = f"vacant_{event_name}"
             if event_name == "vacant_minipool_scrub_event":
                 # let's try to determine the reason. there are 4 reasons a vacant minipool can get scrubbed:
-                # 1. the validator does not have the withdrawal credentials set to the minipool address, but to some other address
+                # 1. the validator does not have the withdrawal credentials set to the minipool address,
+                #    but to some other address
                 # 2. the validator balance on the beacon chain is lower than configured in the minipool contract
                 # 3. the validator does not have the active_ongoing validator status
-                # 4. the migration could have timed out, the oDAO will scrub minipools after they have passed half of the migration window
+                # 4. the migration could have timed out, the oDAO will scrub minipools
+                #    after they have passed half of the migration window
                 # get pubkey from minipool contract
                 pubkey = (await rp.call("rocketMinipoolManager.getMinipoolPubkey", args.minipool)).hex()
                 vali_info = (await bacon.get_validator(f"0x{pubkey}"))["data"]
@@ -846,7 +864,7 @@ class Events(EventPlugin):
                     # check for #2
                     configured_balance = solidity.to_float(
                         await rp.call("rocketMinipoolDelegate.getPreMigrationBalance", address=args.minipool,
-                                block=args.blockNumber - 1))
+                                      block=args.blockNumber - 1))
                     if (solidity.to_float(vali_info["balance"], 9) - configured_balance) < -0.01:
                         reason = "having a balance lower than configured in the minipool contract on the beacon chain"
                     # check for #3
@@ -854,9 +872,9 @@ class Events(EventPlugin):
                         reason = "not being active on the beacon chain"
                     # check for #4
                     scrub_period = await rp.call("rocketDAONodeTrustedSettingsMinipool.getPromotionScrubPeriod",
-                                           block=args.blockNumber - 1)
+                                                 block=args.blockNumber - 1)
                     minipool_creation = await rp.call("rocketMinipoolDelegate.getStatusTime", address=args.minipool,
-                                                block=args.blockNumber - 1)
+                                                      block=args.blockNumber - 1)
                     block_time = await block_to_ts(args.blockNumber - 1)
                     if block_time - minipool_creation > scrub_period // 2:
                         reason = "taking too long to migrate their withdrawal credentials on the beacon chain"
@@ -872,6 +890,7 @@ class Events(EventPlugin):
         args = await prepare_args(args)
         event.args = args
         return await assemble(args)
+
 
 async def setup(bot):
     cog = Events(bot)

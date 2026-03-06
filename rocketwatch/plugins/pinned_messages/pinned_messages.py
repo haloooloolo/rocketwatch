@@ -61,7 +61,11 @@ class PinnedMessages(commands.Cog):
                     e = Embed()
                     e.title = message["title"]
                     e.description = message["content"]
-                    e.set_footer(text="This message has been pinned by Invis. Will be automatically removed if not updated within 6 hours.")
+                    e.set_footer(
+                        text=(
+                            "This message has been pinned by Invis."
+                            " Will be automatically removed if not updated within 6 hours."
+                        ))
                     m = await channel.send(embed=e)
                     await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"message_id": m.id}})
             except Exception as err:
@@ -70,10 +74,10 @@ class PinnedMessages(commands.Cog):
     @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
-    async def pin(self, interaction, channel_id, title, description):
+    async def pin(self, interaction: Interaction, channel_id: int, title: str, description: str):
         await interaction.response.defer()
         # check if channel exists
-        channel = self.bot.get_channel(int(channel_id))
+        channel = self.bot.get_channel(channel_id)
         if not channel:
             await interaction.followup.send("Channel not found")
             return
@@ -97,7 +101,7 @@ class PinnedMessages(commands.Cog):
     @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
-    async def unpin(self, interaction, channel_id):
+    async def unpin(self, interaction: Interaction, channel_id: str):
         await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(int(channel_id))

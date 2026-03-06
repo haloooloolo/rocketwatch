@@ -27,7 +27,7 @@ class RPL(commands.Cog):
         Show the amount of RPL staked
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        
+
         rpl_supply = solidity.to_float(await rp.call("rocketTokenRPL.totalSupply"))
         legacy_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
         megapool_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
@@ -56,6 +56,7 @@ class RPL(commands.Cog):
         colors = ["#CC4400", "#FF6B00", "#D2B48C", "#808080"]
 
         total = sum(sizes)
+
         def autopct(pct):
             return f"{fmt(pct / 100 * total)} ({pct:.1f}%)"
 
@@ -88,7 +89,7 @@ class RPL(commands.Cog):
         """
         Show the available liquidity at different RPL/ETH prices
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))        
+        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         data = await (await self.bot.db.node_operators.aggregate([
             {
@@ -152,7 +153,7 @@ class RPL(commands.Cog):
         x, y = zip(*list(free_rpl_liquidity.values()))
 
         embed = Embed()
-        
+
         # plot the data
         plt.plot(x, y, color=str(embed.color))
         plt.plot(rpl_eth_price, current_withdrawable_rpl, 'bo')

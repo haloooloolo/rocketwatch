@@ -63,7 +63,7 @@ class Random(commands.Cog):
         description += "```\n"
         description += "**Burn Ranking (last 5 minutes)**\n"
         ranking = data["leaderboards"]["leaderboard5m"][:5]
-        
+
         for i, entry in enumerate(ranking):
             # use a number emoji as rank (:one:, :two:, ...)
             # first of convert the number to a word
@@ -78,10 +78,10 @@ class Random(commands.Cog):
                 description += f" {target}"
             if entry.get("category"):
                 description += f" `[{entry['category'].upper()}]`"
-            
+
             description += "\n\u00a0\u00a0\u00a0\u00a0\u00a0\u00a0"
             description += f"`{solidity.to_float(entry['fees']):,.2f} ETH` :fire:\n"
-            
+
         e.add_field(
             name="Current Base Fee",
             value=f"`{solidity.to_float(data['latestBlockFees'][0]['baseFeePerGas'], 9):,.2f} GWEI`"
@@ -106,7 +106,8 @@ class Random(commands.Cog):
         e.add_field(name="Coordinated Universal Time",
                     value=f"{dev_time.strftime(time_format)}\n"
                           f"`{binary_day} (0x{uint_day:04x})`")
-        b = solidity.slot_to_beacon_day_epoch_slot(int((await bacon.get_block_header("head"))["data"]["header"]["message"]["slot"]))
+        head_slot = int((await bacon.get_block_header("head"))["data"]["header"]["message"]["slot"])
+        b = solidity.slot_to_beacon_day_epoch_slot(head_slot)
         e.add_field(name="Beacon Time", value=f"Day {b[0]}, {b[1]}:{b[2]}")
 
         dev_time = datetime.now(tz=pytz.timezone("Australia/Lindeman"))

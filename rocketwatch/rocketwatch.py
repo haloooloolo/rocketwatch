@@ -32,7 +32,7 @@ class RocketWatch(Bot):
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
         self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
-    
+
     async def _load_plugins(self):
         chain = cfg["rocketpool.chain"]
         storage = cfg["rocketpool.manual_addresses.rocketStorage"]
@@ -75,13 +75,13 @@ class RocketWatch(Bot):
     async def setup_hook(self) -> None:
         await rp.async_init()
         await self._load_plugins()
-        
+
     async def sync_commands(self) -> None:
         log.info("Syncing command tree...")
         await self.tree.sync()
         for guild in self.guilds:
             await self.tree.sync(guild=guild)
-        
+
     def clear_commands(self) -> None:
         self.tree.clear_commands(guild=None)
         for guild in self.guilds:

@@ -58,7 +58,10 @@ class RWCommandTree(CommandTree):
                 await self.client.report_error(e)
             raise
 
-        log.info(f"/{cmd_name} called by {interaction.user} in #{interaction.channel.name} ({interaction.guild}) completed successfully")
+        log.info(
+            f"/{cmd_name} called by {interaction.user} in"
+            f" #{interaction.channel.name} ({interaction.guild}) completed successfully"
+        )
         try:
             await self.client.db.command_metrics.update_one(
                 {'_id': interaction.id},

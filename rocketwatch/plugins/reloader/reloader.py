@@ -16,7 +16,7 @@ from utils.cfg import cfg
 class Reloader(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        
+
     async def _get_loaded_extensions(self, interaction: Interaction, current: str) -> list[Choice[str]]:
         loaded = {ext.split(".")[-1] for ext in self.bot.extensions.keys()}
         return [Choice(name=plugin, value=plugin) for plugin in loaded if current.lower() in plugin.lower()][:25]
@@ -41,7 +41,7 @@ class Reloader(Cog):
             await interaction.followup.send(content=f"Plugin `{module}` already loaded!")
         except ExtensionNotFound:
             await interaction.followup.send(content=f"Plugin `{module}` not found!")
-            
+
     @command()
     @guilds(cfg["discord.owner.server_id"])
     @is_owner()
@@ -69,7 +69,7 @@ class Reloader(Cog):
             await self.bot.sync_commands()
         except ExtensionNotLoaded:
             await interaction.followup.send(content=f"Plugin {module} not loaded!")
-    
+
 
 async def setup(bot):
     await bot.add_cog(Reloader(bot))

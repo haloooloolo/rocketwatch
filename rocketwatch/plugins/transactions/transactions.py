@@ -89,7 +89,7 @@ class Transactions(EventPlugin):
 
         responses: list[Event] = await self.process_transaction(block, tnx, tnx.to, tnx.input)
         if responses:
-            await interaction.followup.send(embeds=[response.embed for response in responses])          
+            await interaction.followup.send(embeds=[response.embed for response in responses])
         else:
             await interaction.followup.send(content="No events found.")
 
@@ -142,7 +142,6 @@ class Transactions(EventPlugin):
         args.transactionHash = event.hash.hex()
         args.blockNumber = event.blockNumber
 
-
         # oDAO bootstrap doesn't emit an event
         if "odao_disable" in event_name and not args.confirmDisableBootstrapMode:
             return []
@@ -150,7 +149,9 @@ class Transactions(EventPlugin):
             receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
             args.delegator = receipt["from"]
             args.delegate = args.get("delegate") or args.get("newDelegate")
-            args.votingPower = solidity.to_float(await rp.call("rocketNetworkVoting.getVotingPower", args.delegator, args.blockNumber))
+            args.votingPower = solidity.to_float(
+                await rp.call("rocketNetworkVoting.getVotingPower", args.delegator, args.blockNumber)
+            )
             if (args.votingPower < 50) or (args.delegate == args.delegator):
                 return []
         elif "failed_deposit" in event_name:
@@ -238,7 +239,7 @@ class Transactions(EventPlugin):
 
                 args.contract_name = contract_name
                 args.periodLength = contract_post[2]
-                
+
                 args.recipient_address = contract_post[0]
                 periods_claimed = contract_post[5] - contract_pre[5]
                 args.amount = periods_claimed * contract_post[1]
@@ -346,6 +347,7 @@ class Transactions(EventPlugin):
             self.__init__(self.bot)
 
         return new_responses + responses
+
 
 async def setup(bot):
     await bot.add_cog(Transactions(bot))

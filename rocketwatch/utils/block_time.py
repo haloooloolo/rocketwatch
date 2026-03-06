@@ -9,9 +9,11 @@ from utils.shared_w3 import w3
 log = logging.getLogger("block_time")
 log.setLevel(cfg["log_level"])
 
+
 @cached()
 async def block_to_ts(block_number: int) -> int:
     return (await w3.eth.get_block(block_number)).timestamp
+
 
 async def ts_to_block(target_ts: int) -> int:
     log.debug(f"Looking for block at timestamp {target_ts}")

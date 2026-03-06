@@ -28,6 +28,7 @@ class Event:
     def get_score(self):
         return (10**9 * self.block_number) + (10**5 * self.transaction_index) + self.event_index
 
+
 class EventPlugin(commands.Cog):
     def __init__(self, bot: RocketWatch, rate_limit=timedelta(seconds=5)):
         self.bot = bot

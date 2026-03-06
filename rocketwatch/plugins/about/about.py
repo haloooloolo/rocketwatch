@@ -1,7 +1,6 @@
 import os
 import time
 import logging
-from urllib.parse import urlencode
 
 import humanize
 import psutil
@@ -23,6 +22,7 @@ BOOT_TIME = time.time()
 
 log = logging.getLogger("about")
 log.setLevel(cfg["log_level"])
+
 
 class About(commands.Cog):
     def __init__(self, bot: RocketWatch):
@@ -73,7 +73,7 @@ class About(commands.Cog):
         e.add_field(name="Bot Memory", value=f"{humanize.naturalsize(self.process.memory_info().rss)} used")
 
         load = [x / psutil.cpu_count() for x in psutil.getloadavg()]
-        e.add_field(name="Host Load", value=' / '.join(f"{l:.0%}" for l in load))
+        e.add_field(name="Host Load", value=' / '.join(f"{pct:.0%}" for pct in load))
 
         system_uptime = uptime.uptime()
         e.add_field(name="Host Uptime", value=f"{readable.uptime(system_uptime)}")
@@ -101,7 +101,6 @@ class About(commands.Cog):
             await self.bot.report_error(err)
 
         await interaction.followup.send(embed=e)
-
 
 
 async def setup(bot):

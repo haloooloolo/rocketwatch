@@ -74,8 +74,8 @@ async def get_average_collateral_percentage_per_node(collateral_cap: Optional[in
     # get stakes for each node
     stakes = list((await get_node_minipools_and_collateral()).values())
     # get the current rpl price
-    rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))        
-    
+    rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
+
     node_collaterals = []
     for node in stakes:
         # get the minipool eth value
@@ -91,14 +91,14 @@ async def get_average_collateral_percentage_per_node(collateral_cap: Optional[in
             collateral = min(collateral, collateral_cap)
         # calculate percentage
         node_collaterals.append((rpl_stake, collateral))
-    
+
     effective_bound = max(perc for rpl, perc in node_collaterals)
     possible_step_sizes = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]
     step_size = possible_step_sizes[np.argmin([abs(effective_bound / 30 - s) for s in possible_step_sizes])]
-    
+
     result = {}
     for rpl_stake, percentage in node_collaterals:
-        percentage = step_size * (percentage * 10 // (step_size * 10))      
+        percentage = step_size * (percentage * 10 // (step_size * 10))
         if percentage not in result:
             result[percentage] = []
         result[percentage].append(rpl_stake)
@@ -176,12 +176,12 @@ class Collateral(commands.Cog):
         formatToInt = "{x:.0f}"
         cb = plt.colorbar(mappable=paths, ax=ax, format=formatToInt)
         cb.set_label('Minipools')
-        cb.set_ticks([1,10,100,max_minipools])
+        cb.set_ticks([1, 10, 100, max_minipools])
 
         # Add a legend for the color-coding on the hex distribution
         cb = plt.colorbar(mappable=polys, ax=ax2, format=formatToInt)
         cb.set_label('Nodes')
-        cb.set_ticks([1,10,100,max_nodes - 1])
+        cb.set_ticks([1, 10, 100, max_nodes - 1])
 
         # Add labels and units
         ylabel = f"Collateral (percent {'bonded' if bonded else 'borrowed'})"

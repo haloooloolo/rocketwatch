@@ -40,7 +40,8 @@ def get_sea_creature_for_holdings(holdings):
     :param holdings: The holdings to get the sea creature for.
     :return: The sea creature for the given holdings.
     """
-    # if the holdings are more than 2 times the highest sea creature, return the highest sea creature with a multiplier next to it
+    # if the holdings are more than 2 times the highest sea creature,
+    # return the highest sea creature with a multiplier next to it
     highest_possible_holdings = max(sea_creatures.keys())
     if holdings >= 2 * highest_possible_holdings:
         return sea_creatures[highest_possible_holdings] * int(holdings / highest_possible_holdings)

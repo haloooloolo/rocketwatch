@@ -33,4 +33,5 @@ class Bacon(AsyncBeacon):
             f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
         )
 
+
 bacon = Bacon(cfg["consensus_layer.endpoint"])

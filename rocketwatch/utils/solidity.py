@@ -22,8 +22,10 @@ def to_int(n, decimals=18):
 def beacon_block_to_date(block_num: int) -> int:
     return BEACON_START_DATE + (block_num * 12)
 
+
 def date_to_beacon_block(date: int) -> int:
     return (date - BEACON_START_DATE) // 12
+
 
 def slot_to_beacon_day_epoch_slot(slot: int) -> tuple[int, int, int]:
     return slot // 32 // 225, slot // 32 % 225, slot % 32

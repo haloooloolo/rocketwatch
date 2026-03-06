@@ -97,7 +97,7 @@ class Governance(StatusPlugin):
                 _url = f"{cfg['execution_layer.explorer']}/tx/{_tx_hash}"
                 text += f"  {_i}. [{_title}]({_url}) (#{_proposal.id})\n"
             return text
-        
+
         # --------- SECURITY COUNCIL --------- #
 
         dao = SecurityCouncil()
@@ -105,7 +105,7 @@ class Governance(StatusPlugin):
             embed.description += "### Security Council\n"
             embed.description += "- **Active on-chain proposals**\n"
             embed.description += await print_proposals(dao, proposals)
-            
+
         # --------- ORACLE DAO --------- #
 
         dao = OracleDAO()

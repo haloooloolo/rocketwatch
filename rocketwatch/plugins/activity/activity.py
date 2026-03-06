@@ -42,7 +42,7 @@ class RichActivity(commands.Cog):
     @task.before_loop
     async def before_loop(self):
         await self.bot.wait_until_ready()
-        
+
     @task.error
     async def on_error(self, err: Exception):
         await self.bot.report_error(err)
