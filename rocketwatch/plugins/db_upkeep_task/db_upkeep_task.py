@@ -2,11 +2,15 @@ import logging
 import time
 import asyncio
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import timedelta
+from typing import Any, Optional
 
 import pymongo
 from cronitor import Monitor
 from pymongo import AsyncMongoClient, UpdateOne, UpdateMany
+from pymongo.asynchronous.collection import AsyncCollection
+from web3.contract.contract import ContractFunction
 
 from discord.ext import commands
 from discord.utils import as_chunks
@@ -150,26 +154,27 @@ class DBUpkeepTask(commands.Cog):
         await self.db.megapool_validators.create_index("beacon.status")
         log.debug("indexes checked")
 
-    async def _batch_multicall_update(self, collection, query, lamb, label=None, projection=None):
-        if projection is not None:
-            items = await collection.find(query, projection).to_list()
-            def get_addr(d): return d["address"]
-        else:
-            items = await collection.distinct("address", query)
-            def get_addr(a): return a
-
+    async def _batch_multicall_update(
+        self,
+        collection: AsyncCollection,
+        query: dict[str, Any],
+        call_fn: Callable[[dict[str, Any]], list[tuple]],
+        projection: dict[str, Any],
+        label: Optional[str],
+    ) -> None:
+        items = await collection.find(query, projection).to_list()
         if not items:
             return
 
         total = len(items)
-        batch_size = self.batch_size // len(lamb(items[0]))
+        batch_size = self.batch_size // len(call_fn(items[0]))
         for i, batch in enumerate(as_chunks(items, batch_size)):
             if label:
                 start = i * batch_size + 1
                 end = min((i + 1) * batch_size, total)
                 log.debug(f"Processing {label} [{start}, {end}]/{total}")
-            # lamb(item) returns a list of (fn, require_success, transform, field)
-            expanded = [(get_addr(item), *t) for item in batch for t in lamb(item)]
+            # call_fn(item) returns a list of (fn, require_success, transform, field)
+            expanded = [(item["address"], *t) for item in batch for t in call_fn(item)]
             calls = [(e[1], e[2]) for e in expanded]
             results = await rp.multicall_async(calls)
             updates = defaultdict(dict)
@@ -205,14 +210,14 @@ class DBUpkeepTask(commands.Cog):
     async def add_static_node_operator_data(self):
         df = rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = rp.get_contract_by_name("rocketMegapoolFactory")
-        def get_calls(a): return [
-            (df.functions.getProxyAddress(a), True, w3.to_checksum_address, "fee_distributor.address"),
-            (mf.functions.getExpectedAddress(a), True, w3.to_checksum_address, "megapool.address"),
+        def get_calls(n): return [
+            (df.functions.getProxyAddress(n["address"]), True, w3.to_checksum_address, "fee_distributor.address"),
+            (mf.functions.getExpectedAddress(n["address"]), True, w3.to_checksum_address, "megapool.address"),
         ]
         await self._batch_multicall_update(
             self.db.node_operators,
             {"$or": [{"fee_distributor.address": {"$exists": False}}, {"megapool.address": {"$exists": False}}]},
-            get_calls
+            get_calls, {"address": 1}, label="node operators"
         )
 
     @timerun_async
@@ -252,7 +257,7 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def update_dynamic_megapool_data(self):
         def mp_at(addr): return rp.assemble_contract("rocketMegapoolDelegate", address=addr)
-        def lamb(n): return [
+        def get_calls(n): return [
             (mp_at(n["megapool"]["address"]).functions.getValidatorCount(),        True, None,          "megapool.validator_count"),
             (mp_at(n["megapool"]["address"]).functions.getActiveValidatorCount(),  True, None,          "megapool.active_validator_count"),
             (mp_at(n["megapool"]["address"]).functions.getExitingValidatorCount(), True, None,          "megapool.exiting_validator_count"),
@@ -265,8 +270,9 @@ class DBUpkeepTask(commands.Cog):
             (mp_at(n["megapool"]["address"]).functions.getLastDistributionTime(),  True, None,          "megapool.last_distribution_time"),
         ]
         await self._batch_multicall_update(
-            self.db.node_operators, {"megapool.deployed": True}, lamb, label="megapools",
-            projection={"address": 1, "megapool.address": 1}
+            self.db.node_operators, {"megapool.deployed": True}, 
+            get_calls, {"address": 1, "megapool.address": 1}, 
+            label="megapools"
         )
 
     # -- Minipool tasks --
@@ -289,14 +295,14 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def add_static_minipool_data(self):
         mm = rp.get_contract_by_name("rocketMinipoolManager")
-        def lamb(a): return [
-            (rp.assemble_contract("rocketMinipool", address=a).functions.getNodeAddress(), True, w3.to_checksum_address, "node_operator"),
-            (mm.functions.getMinipoolPubkey(a),                                            True, safe_to_hex,            "pubkey"),
+        def lamb(n): return [
+            (rp.assemble_contract("rocketMinipool", address=n["address"]).functions.getNodeAddress(), True, w3.to_checksum_address, "node_operator"),
+            (mm.functions.getMinipoolPubkey(n["address"]),                                            True, safe_to_hex,            "pubkey"),
         ]
         await self._batch_multicall_update(
             self.db.minipools,
             {"node_operator": {"$exists": False}},
-            lamb
+            lamb, {"address": 1}, label="minipools"
         )
 
     @timerun
@@ -353,23 +359,23 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def update_dynamic_minipool_data(self):
         mc = rp.get_contract_by_name("multicall3")
-        def get_calls(addr): 
-            minipool_contract = rp.assemble_contract("rocketMinipool", address=addr)
+        def get_calls(n):
+            minipool_contract = rp.assemble_contract("rocketMinipool", address=n["address"])
             return [
-                (minipool_contract.functions.getStatus(),              True,  safe_state_to_str,      "status"),
-                (minipool_contract.functions.getStatusTime(),          True,  None,                   "status_time"),
-                (minipool_contract.functions.getVacant(),              False, is_true,                "vacant"),
-                (minipool_contract.functions.getFinalised(),           True,  is_true,                "finalized"),
-                (minipool_contract.functions.getNodeDepositBalance(),  True,  safe_to_float,          "node_deposit_balance"),
-                (minipool_contract.functions.getNodeRefundBalance(),   True,  safe_to_float,          "node_refund_balance"),
-                (minipool_contract.functions.getPreMigrationBalance(), False, safe_to_float,          "pre_migration_balance"),
-                (minipool_contract.functions.getNodeFee(),             True,  safe_to_float,          "node_fee"),
-                (minipool_contract.functions.getEffectiveDelegate(),   True,  w3.to_checksum_address, "effective_delegate"),
-                (minipool_contract.functions.getUseLatestDelegate(),   True,  is_true,                "use_latest_delegate"),
-                (minipool_contract.functions.getUserDistributed(),     False, is_true,                "user_distributed"),
-                (mc.functions.getEthBalance(addr),               True,  safe_to_float,          "execution_balance"),
+                (minipool_contract.functions.getStatus(),                True,  safe_state_to_str,      "status"),
+                (minipool_contract.functions.getStatusTime(),            True,  None,                   "status_time"),
+                (minipool_contract.functions.getVacant(),                False, is_true,                "vacant"),
+                (minipool_contract.functions.getFinalised(),             True,  is_true,                "finalized"),
+                (minipool_contract.functions.getNodeDepositBalance(),    True,  safe_to_float,          "node_deposit_balance"),
+                (minipool_contract.functions.getNodeRefundBalance(),     True,  safe_to_float,          "node_refund_balance"),
+                (minipool_contract.functions.getPreMigrationBalance(),   False, safe_to_float,          "pre_migration_balance"),
+                (minipool_contract.functions.getNodeFee(),               True,  safe_to_float,          "node_fee"),
+                (minipool_contract.functions.getEffectiveDelegate(),     True,  w3.to_checksum_address, "effective_delegate"),
+                (minipool_contract.functions.getUseLatestDelegate(),     True,  is_true,                "use_latest_delegate"),
+                (minipool_contract.functions.getUserDistributed(),       False, is_true,                "user_distributed"),
+                (mc.functions.getEthBalance(n["address"]),              True,  safe_to_float,          "execution_balance"),
             ]
-        await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, get_calls, label="minipools")
+        await self._batch_multicall_update(self.db.minipools, {"finalized": {"$ne": True}}, get_calls, {"address": 1}, label="minipools")
 
     @timerun
     async def update_dynamic_minipool_beacon_data(self):
