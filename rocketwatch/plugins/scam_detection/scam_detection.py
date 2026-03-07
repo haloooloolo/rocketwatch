@@ -35,7 +35,7 @@ from rocketwatch import RocketWatch
 from utils.config import cfg
 from utils.embeds import Embed
 
-log = logging.getLogger("rocketwatch.detect_scam")
+log = logging.getLogger("rocketwatch.scam_detection")
 
 
 class DetectScam(Cog):
@@ -120,6 +120,25 @@ class DetectScam(Cog):
         self.basic_url_pattern = re.compile(r"https?:\/\/?([/\\@\-_0-9a-zA-Z]+\.)+[\\@\-_0-9a-zA-Z]+")
         self.invite_pattern = re.compile(
             r"((discord(app)?\.com\/(invite|oauth2))|((dsc|dcd|discord)\.gg))(\\|\/)(?P<code>[a-zA-Z0-9]+)")
+        # Detects URLs broken across lines (with optional blockquote "> " prefixes) to evade filters
+        _brk = r"(?:[\s>\u2060\u200b\ufeff]*\n[\s>\u2060\u200b\ufeff]*)"  # newline with optional blockquote/zero-width chars
+        _ws = r"[\s>]*"
+        self.obfuscated_url_pattern = re.compile(
+            rf"<{_ws}ht{_brk}tp|"                                     # <ht\n> tp
+            rf"<{_ws}ma{_ws}i{_brk}l{_ws}t{_ws}o|"                   # <ma\n> i\n> L\n> To (mailto)
+            rf"<d\w{_brk}s{_brk}co{_brk}r|"                          # <dI\n> S\n> Co\n> R (discord:)
+            rf"di{_brk}sco{_brk}rd(?!\.(?:com|gg|py|js|net|org))",   # di\nsco\nrd (not discord.com etc)
+            re.IGNORECASE
+        )
+        # Detects fullwidth/homoglyph dots used to disguise domains
+        self.homoglyph_url_pattern = re.compile(
+            r"https?://[^\s]*[\uff61\u3002\uff0e]",  # ｡ 。 ．
+        )
+        # Extracts username from X/Twitter URL variants
+        _x_domains = r"(?:x|twitter|fxtwitter|fixvx|xcancel|vxtwitter)\.com"
+        self.x_url_pattern = re.compile(
+            rf"https?://(?:www\.)?{_x_domains}/(\w+)", re.IGNORECASE
+        )
 
         self.message_report_menu = ContextMenu(
             name="Report Message",
@@ -305,16 +324,15 @@ class DetectScam(Cog):
         await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"warning_id": warning_msg.id}})
         await interaction.followup.send(content="Thanks for reporting!")
 
-    def _markdown_link_trick(self, message: Message) -> str | None:
-        txt = self._get_message_content(message)
-        for m in self.markdown_link_pattern.findall(txt):
-            if "." in m[0] and m[0] != m[1]:
-                return "Markdown link with possible domain in visible portion that does not match the actual domain"
-        return None
-
     def _discord_invite(self, message: Message) -> str | None:
-        txt = self._get_message_content(message)
-        if match := self.invite_pattern.search(txt):
+        # Only check message content, not embeds (legit videos/links have discord invites in embeds)
+        if not message.content:
+            return None
+        content = message.content
+        content = parse.unquote(content)
+        content = anyascii(content)
+        content = content.lower()
+        if match := self.invite_pattern.search(content):
             link = match.group(0)
             trusted_domains = [
                 "youtu.be", "youtube.com", "tenor.com", "giphy.com",
@@ -331,26 +349,34 @@ class DetectScam(Cog):
         )
         return "Tap on deez nuts nerd" if self.__txt_contains(txt, keywords) else None
 
+    def _obfuscated_url(self, message: Message) -> str | None:
+        if not message.content:
+            return None
+        # Line-broken protocol/scheme
+        if self.obfuscated_url_pattern.search(message.content):
+            return "Message contains an obfuscated URL"
+        # Fullwidth/homoglyph dots in domain
+        if self.homoglyph_url_pattern.search(message.content):
+            return "Message contains an obfuscated URL"
+        # Heavily percent-encoded domain
+        if re.search(r"https?://[^\s]*(?:%[0-9a-fA-F]{2}){5}", message.content):
+            return "Message contains an obfuscated URL"
+        # Markdown link where visible text looks like a different domain than the actual URL
+        content = parse.unquote(message.content)
+        content = anyascii(content).lower()
+        for m in self.markdown_link_pattern.findall(content):
+            if "." in m[0] and m[0].rstrip(".") != m[1].rstrip("."):
+                return "Message contains an obfuscated URL"
+        return None
+
     def _ticket_system(self, message: Message) -> str | None:
-        # message contains one of the relevant keyword combinations and a link
         txt = self._get_message_content(message)
         if not self.basic_url_pattern.search(txt):
             return None
 
-        keywords = (
-            [
-                ("support", "open", "create", "raise", "raisse"),
-                "ticket"
-            ],
-            [
-                ("contact", "reach out", "report", [("talk", "speak"), ("to", "with")], "ask"),
-                ("admin", "mod", "administrator", "moderator")
-            ],
-            ("support team", "supp0rt", "🎫", "🎟️", "m0d", "tlcket"),
-            [
-                ("get", "ask", "seek", "request", "contact"),
-                ("help", "assistance", "service", "support")
-            ],
+        # High-confidence scam indicators (don't need URL trust check)
+        strong_keywords = (
+            ("support team", "supp0rt", "🎫", ":ticket:", "🎟️", ":tickets:", "m0d", "tlcket"),
             [
                 ("relay"),
                 ("query", "question", "inquiry")
@@ -358,10 +384,53 @@ class DetectScam(Cog):
             [
                 ("instant", "live"),
                 "chat"
+            ],
+            [
+                ("submit"),
+                ("question", "issue", "query")
             ]
         )
+        if self.__txt_contains(txt, strong_keywords):
+            return "There is no ticket system in this server."
 
-        return "There is no ticket system in this server." if self.__txt_contains(txt, keywords) else None
+        # Short directive messages with a URL ("ask here", "get help here")
+        content_only = txt.split("---")[0].strip()  # exclude embeds
+        if len(content_only) < 120 and self.basic_url_pattern.search(txt):
+            directives = ("ask here", "get help", "help here", "click here", "go here")
+            if any(d in content_only for d in directives):
+                return "There is no ticket system in this server."
+
+        # Weaker keywords: only check short messages (long technical discussions cause false positives)
+        content_txt = self._get_message_content(message)
+        content_only_txt = content_txt.split("---")[0]  # strip embed text
+        if len(content_only_txt) > 500:
+            return None
+        trusted_url_domains = (
+            "youtu.be", "youtube.com", "twitter.com", "x.com", "fxtwitter.com",
+            "fixvx.com", "fxbsky.app", "reddit.com", "github.com", "etherscan.io",
+            "beaconcha.in", "rocketpool.net", "docs.rocketpool.net", "rocketpool.support",
+            "xcancel.com", "steely-test.org", "validatorqueue.com", "checkpointz",
+            "discord.com", "forms.gle", "google.com",
+        )
+        content_urls = list(self.basic_url_pattern.finditer(content_only_txt))
+        if not content_urls or all(
+            any(domain in m.group(0) for domain in trusted_url_domains)
+            for m in content_urls
+        ):
+            return None
+
+        weak_keywords = (
+            [
+                ("support", "open", "create", "raise", "raisse"),
+                "ticket"
+            ],
+            [
+                ("contact", "reach out", "report", [("talk", "speak"), ("to", "with")], "ask"),
+                ("admin", "mod", "administrator", "moderator", "team")
+            ],
+        )
+
+        return "There is no ticket system in this server." if self.__txt_contains(content_only_txt, weak_keywords) else None
 
     @staticmethod
     def __txt_contains(txt: str, kw: list | tuple | str) -> bool:
@@ -374,26 +443,48 @@ class DetectScam(Cog):
                 return all(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
         return False
 
-    def _paperhands(self, message: Message) -> str | None:
-        # message contains the word "paperhand" and a link
+    def _suspicious_link(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         if "http" not in txt:
             return None
-
-        reason = "The linked website is most likely a wallet drainer"
-        if any(x in txt for x in ["paperhand", "paper hand", "paperhold", "pages.dev", "web.app"]):
-            return reason
-
-        if any(x in txt for x in ["mint", "opensea"]) and any(x in txt for x in ["vercel.app"]):
-            return reason
-
+        hosting_domains = ("pages.dev", "web.app", "vercel.app")
+        if any(d in txt for d in hosting_domains) and re.search(
+            r"\b(?:mint|opensea|airdrop|claim|reward|free)\b", txt
+        ):
+            return "The linked website is most likely a wallet drainer"
         return None
 
-    # contains @here or @everyone but doesn't actually have the permission to do so
-    def _mention_everyone(self, message: Message) -> str | None:
+    def _suspicious_x_account(self, message: Message) -> str | None:
+        if not message.content:
+            return None
+        suspicious_keywords = ("support", "ticket", "helpdesk", "assist")
+        for m in self.x_url_pattern.finditer(message.content):
+            username = m.group(1).lower()
+            if any(kw in username for kw in suspicious_keywords):
+                return "Link to suspicious X account"
+        return None
+
+    def _bio_redirect(self, message: Message) -> str | None:
+        if not message.content or len(message.content) > 300:
+            return None
         txt = self._get_message_content(message)
-        if ("@here" in txt or "@everyone" in txt) and not message.author.guild_permissions.mention_everyone:
-            return "Mentioned @here or @everyone without permission"
+        if any(kw in txt for kw in ("my bio", "my icon", "my profile", "my pfp")):
+            return "Redirecting users to a malicious profile link"
+        return None
+
+    def _spam_wall(self, message: Message) -> str | None:
+        if not message.content or len(message.content) < 100:
+            return None
+        content = message.content
+        # Spoiler wall: many spoiler tags with minimal visible content
+        if content.count("||") >= 20:
+            stripped = re.sub(r"\|\||[\s\u200b_]|https?://\S+", "", content).strip()
+            if len(stripped) < 10:
+                return "Spoiler wall spam"
+        # Invisible character wall: mostly blank/invisible characters
+        visible = re.sub(r"[\s\u2800\u200b\u200c\u200d\u2060\ufeff\U000e0000-\U000e007f]", "", content)
+        if len(visible) < 10 and len(content) > 200:
+            return "Invisible character spam"
         return None
 
     async def _reaction_spam(self, reaction: Reaction, user: User) -> str | None:
@@ -452,12 +543,14 @@ class DetectScam(Cog):
             return
 
         checks = [
+            self._obfuscated_url,
             self._ticket_system,
-            self._markdown_link_trick,
-            self._paperhands,
+            self._suspicious_x_account,
+            self._suspicious_link,
             self._discord_invite,
             self._tap_on_this,
-            self._mention_everyone,
+            self._bio_redirect,
+            self._spam_wall,
         ]
         for check in checks:
             if reason := check(message):

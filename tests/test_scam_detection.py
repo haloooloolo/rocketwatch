@@ -77,7 +77,7 @@ def _make_detector():
     bot = MagicMock()
     bot.tree = MagicMock()
     with patch.object(bot.tree, "add_command"):
-        from plugins.detect_scam.detect_scam import DetectScam
+        from plugins.scam_detection.scam_detection import DetectScam
         return DetectScam(bot)
 
 
@@ -89,12 +89,14 @@ def detector():
 def _check_message(detector, case: dict) -> list[str]:
     msg = _make_message(case)
     checks = [
+        detector._obfuscated_url,
         detector._ticket_system,
-        detector._markdown_link_trick,
-        detector._paperhands,
+        detector._suspicious_x_account,
+        detector._suspicious_link,
         detector._discord_invite,
         detector._tap_on_this,
-        detector._mention_everyone,
+        detector._bio_redirect,
+        detector._spam_wall,
     ]
     return [r for check in checks if (r := check(msg))]
 
