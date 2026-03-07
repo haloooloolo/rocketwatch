@@ -13,5 +13,5 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v6
       - run: uv python install 3.14
-      - run: uv pip install --system -r pyproject.toml --extra test
-      - run: pytest
+      - run: uv pip install --python 3.14 -r pyproject.toml --extra test
+      - run: uv run pytest
