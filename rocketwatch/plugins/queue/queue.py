@@ -8,15 +8,13 @@ from discord.ext.commands import Cog
 from eth_typing import BlockIdentifier, ChecksumAddress
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import el_explorer_url
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.views import PageView
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("queue")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.queue")
 
 
 class Queue(Cog):

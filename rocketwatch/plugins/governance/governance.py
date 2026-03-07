@@ -11,14 +11,13 @@ from plugins.forum.forum import Forum
 from plugins.rpips.rpips import RPIPs
 from plugins.snapshot.snapshot import Snapshot
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.dao import DAO, DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
 from utils.embeds import Embed
 from utils.status import StatusPlugin
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("governance")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.governance")
 
 
 class Governance(StatusPlugin):

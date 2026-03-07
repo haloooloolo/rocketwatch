@@ -8,15 +8,13 @@ from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.readable import render_tree
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.visibility import is_hidden
 
-log = logging.getLogger("tvl")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.tvl")
 
 
 def split_rewards_logic(balance, node_share, commission, force_base=False):

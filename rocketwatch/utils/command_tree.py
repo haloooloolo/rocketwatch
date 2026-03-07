@@ -4,10 +4,7 @@ from datetime import datetime
 from discord import Interaction
 from discord.app_commands import AppCommandError, CommandTree
 
-from utils.cfg import cfg
-
-log = logging.getLogger("command_tree")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.command_tree")
 
 
 class RWCommandTree(CommandTree):

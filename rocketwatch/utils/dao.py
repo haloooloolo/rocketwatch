@@ -9,11 +9,9 @@ import termplotlib as tpl
 from eth_typing import ChecksumAddress
 
 from utils import solidity
-from utils.cfg import cfg
 from utils.rocketpool import rp
 
-log = logging.getLogger("dao")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.dao")
 
 
 class DAO(ABC):

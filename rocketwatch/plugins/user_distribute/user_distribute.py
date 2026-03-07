@@ -10,14 +10,13 @@ from discord.ext import commands, tasks
 from pymongo import ASCENDING
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("user_distribute")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.user_distribute")
 
 
 class InstructionsView(ui.View):

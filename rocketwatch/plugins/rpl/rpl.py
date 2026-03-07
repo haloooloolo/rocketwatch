@@ -8,13 +8,11 @@ from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("rpl")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.rpl")
 
 
 class RPL(commands.Cog):

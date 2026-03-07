@@ -16,7 +16,6 @@ from web3.constants import ADDRESS_ZERO
 
 from rocketwatch import RocketWatch
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.event import Event, EventPlugin
 from utils.image import Color, FontVariant, Image, ImageCanvas
@@ -25,8 +24,7 @@ from utils.retry import retry_async
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("snapshot")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.snapshot")
 
 
 class Snapshot(EventPlugin):

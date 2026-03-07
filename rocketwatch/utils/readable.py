@@ -6,7 +6,7 @@ import zlib
 from colorama import Fore, Style
 
 import utils.solidity as units
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.shared_w3 import bacon
 
 

@@ -8,11 +8,10 @@ from discord.app_commands import Choice, Group, choices
 from discord.ext.commands import Cog, GroupCog
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 
-log = logging.getLogger("support_utils")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.support_utils")
 
 
 async def generate_template_embed(db, template_name: str):

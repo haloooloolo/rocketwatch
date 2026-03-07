@@ -9,13 +9,11 @@ import aiohttp
 import numpy as np
 from eth_typing import ChecksumAddress, HexStr
 
-from utils.cfg import cfg
 from utils.retry import retry_async
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
-log = logging.getLogger("liquidity")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.liquidity")
 
 
 class Liquidity:

@@ -11,7 +11,7 @@ from discord.ext.commands import (
 )
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 
 
 class Reloader(Cog):

@@ -32,11 +32,10 @@ from discord.app_commands import ContextMenu, command, guilds
 from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 
-log = logging.getLogger("detect_scam")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.detect_scam")
 
 
 class DetectScam(Cog):

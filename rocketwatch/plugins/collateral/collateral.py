@@ -16,13 +16,11 @@ from matplotlib.ticker import FuncFormatter
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import Embed, resolve_ens
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("collateral")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.collateral")
 
 p = inflect.engine()
 

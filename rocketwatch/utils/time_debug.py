@@ -2,10 +2,7 @@ import functools
 import logging
 import time
 
-from utils.cfg import cfg
-
-log = logging.getLogger("time_debug")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.time_debug")
 
 
 def timerun(func):

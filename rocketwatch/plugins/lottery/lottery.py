@@ -6,15 +6,13 @@ from discord.ext import commands
 from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.shared_w3 import bacon
 from utils.solidity import BEACON_EPOCH_LENGTH, BEACON_START_DATE
 from utils.time_debug import timerun_async
 from utils.visibility import is_hidden
 
-log = logging.getLogger("lottery")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.lottery")
 
 
 class Lottery(commands.Cog):

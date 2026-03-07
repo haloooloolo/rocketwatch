@@ -21,7 +21,6 @@ sdist/
 var/
 wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 MANIFEST
 
@@ -118,7 +117,6 @@ dmypy.json
 
 # state
 state.db
-*/main.cfg
 */config.toml
 mongodb/
 

@@ -8,12 +8,10 @@ from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.retry import retry_async
 
-log = logging.getLogger("rpips")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.rpips")
 
 
 class RPIPs(Cog):

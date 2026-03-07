@@ -3,14 +3,13 @@ import logging
 from discord import Intents
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 
 logging.basicConfig(format="%(levelname)5s %(asctime)s [%(name)s] %(filename)s:%(lineno)d|%(funcName)s(): %(message)s")
 logging.getLogger().setLevel("INFO")
-logging.getLogger("discord.client").setLevel(cfg.log_level)
+logging.getLogger("rocketwatch").setLevel(cfg.log_level)
 
-log = logging.getLogger("discord_bot")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.main")
 
 
 def main() -> None:

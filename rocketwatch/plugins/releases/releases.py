@@ -6,12 +6,10 @@ from discord.app_commands import command
 from discord.ext import commands
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.visibility import is_hidden
 
-log = logging.getLogger("releases")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.releases")
 
 
 class Releases(commands.Cog):

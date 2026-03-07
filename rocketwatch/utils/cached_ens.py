@@ -4,11 +4,9 @@ from aiocache import cached
 from ens import AsyncENS
 from eth_typing import ChecksumAddress
 
-from utils.cfg import cfg
 from utils.shared_w3 import w3_mainnet
 
-log = logging.getLogger("cached_ens")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.cached_ens")
 
 
 class CachedEns:

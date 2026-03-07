@@ -9,15 +9,13 @@ from web3.datastructures import MutableAttributeDict as aDict
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import Embed, assemble, prepare_args
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("cow_orders")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.cow_orders")
 
 
 class CowOrders(EventPlugin):

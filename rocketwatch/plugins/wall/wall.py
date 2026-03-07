@@ -15,7 +15,6 @@ from matplotlib import font_manager as fm
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.liquidity import (
     CEX,
@@ -47,8 +46,7 @@ from utils.rocketpool import rp
 from utils.time_debug import timerun, timerun_async
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("wall")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.wall")
 
 
 class Wall(commands.Cog):

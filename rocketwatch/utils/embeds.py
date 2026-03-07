@@ -17,7 +17,7 @@ from strings import _
 from utils import solidity
 from utils.block_time import block_to_ts
 from utils.cached_ens import CachedEns
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.readable import advanced_tnx_url, cl_explorer_url, s_hex
 from utils.retry import retry_async
 from utils.rocketpool import rp
@@ -26,8 +26,7 @@ from utils.shared_w3 import w3
 
 ens = CachedEns()
 
-log = logging.getLogger("embeds")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.embeds")
 
 
 class Embed(discord.Embed):

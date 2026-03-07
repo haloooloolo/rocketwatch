@@ -12,7 +12,6 @@ from tabulate import tabulate
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
 from utils.dao import DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
 from utils.embeds import Embed, el_explorer_url
 from utils.event_logs import get_logs
@@ -20,8 +19,7 @@ from utils.rocketpool import rp
 from utils.views import PageView
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("dao")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.dao")
 
 
 class OnchainDAO(Cog):

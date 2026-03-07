@@ -17,13 +17,12 @@ from discord.ext import commands
 from discord.ext.commands import Bot
 from pymongo import AsyncMongoClient
 
-from utils.cfg import cfg
 from utils.command_tree import RWCommandTree
+from utils.config import cfg
 from utils.retry import retry_async
 from utils.rocketpool import rp
 
-log = logging.getLogger("rocketwatch")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.bot")
 
 
 class RocketWatch(Bot):

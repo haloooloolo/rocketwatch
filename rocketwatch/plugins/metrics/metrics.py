@@ -9,12 +9,10 @@ from discord.ext import commands
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.visibility import is_hidden
 
-log = logging.getLogger("metrics")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.metrics")
 
 
 class Metrics(commands.Cog):

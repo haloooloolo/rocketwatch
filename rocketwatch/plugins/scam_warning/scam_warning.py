@@ -5,11 +5,10 @@ from discord import errors
 from discord.ext import commands
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 
-log = logging.getLogger("scam_warning")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.scam_warning")
 
 
 class ScamWarning(commands.Cog):

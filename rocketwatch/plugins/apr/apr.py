@@ -11,14 +11,12 @@ from matplotlib.dates import DateFormatter
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import w3, w3_archive
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("apr")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.apr")
 
 
 def to_apr(d1, d2, effective=True):

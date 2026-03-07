@@ -12,15 +12,14 @@ from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import readable
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.visibility import is_hidden_weak
 
 psutil.getloadavg()
 BOOT_TIME = time.time()
 
-log = logging.getLogger("about")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.about")
 
 
 class About(commands.Cog):

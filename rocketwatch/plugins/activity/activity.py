@@ -5,10 +5,9 @@ from discord import Activity, ActivityType
 from discord.ext import commands, tasks
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 
-log = logging.getLogger("rich_activity")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.rich_activity")
 
 
 class RichActivity(commands.Cog):

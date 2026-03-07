@@ -17,7 +17,7 @@ from web3.types import EventData, LogReceipt
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import block_to_ts
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.dao import DefaultDAO, ProtocolDAO
 from utils.embeds import Embed, assemble, el_explorer_url, prepare_args
 from utils.event import Event, EventPlugin
@@ -25,8 +25,7 @@ from utils.rocketpool import NoAddressFound, rp
 from utils.shared_w3 import bacon, w3
 from utils.solidity import SUBMISSION_KEYS
 
-log = logging.getLogger("events")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.events")
 
 
 PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Coroutine[None, None, list[LogReceipt | EventData]]]

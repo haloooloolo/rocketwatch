@@ -98,10 +98,21 @@ class Config(BaseModel):
     other: OtherConfig = OtherConfig()
 
 
-def load_config(path: str = "config.toml") -> Config:
-    with open(path, "rb") as f:
-        data = tomllib.load(f)
-    return Config(**data)
+class _ConfigProxy:
+    _instance: Config | None = None
+
+    def __init__(self, path: str = "config.toml") -> None:
+        self.__path = path
+
+    def __load_config(self) -> None:
+        with open(self.__path, "rb") as f:
+            data = tomllib.load(f)
+        cfg._instance = Config(**data)
+
+    def __getattr__(self, name: str):
+        if self._instance is None:
+            self.__load_config()
+        return getattr(self._instance, name)
 
 
-cfg = load_config()
+cfg = _ConfigProxy()

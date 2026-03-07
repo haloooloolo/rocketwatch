@@ -16,14 +16,13 @@ from pymongo.asynchronous.collection import AsyncCollection
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.event_logs import get_logs
 from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
 from utils.time_debug import timerun, timerun_async
 
-log = logging.getLogger("db_upkeep_task")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.db_upkeep_task")
 
 
 def is_true(v) -> bool:

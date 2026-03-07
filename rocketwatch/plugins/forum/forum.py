@@ -9,13 +9,11 @@ from discord.app_commands import Choice, command
 from discord.ext import commands
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.retry import retry_async
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("forum")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.forum")
 
 
 class Forum(commands.Cog):

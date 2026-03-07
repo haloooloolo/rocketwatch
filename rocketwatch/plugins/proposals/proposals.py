@@ -16,7 +16,7 @@ from matplotlib import pyplot as plt
 from pymongo import ASCENDING, DESCENDING
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 from utils.shared_w3 import bacon
 from utils.solidity import beacon_block_to_date, date_to_beacon_block
@@ -24,8 +24,7 @@ from utils.time_debug import timerun_async
 from utils.visibility import is_hidden_weak
 
 cog_id = "proposals"
-log = logging.getLogger(cog_id)
-log.setLevel(cfg.log_level)
+log = logging.getLogger(f"rocketwatch.{cog_id}")
 
 LOOKUP = {
     "consensus": {

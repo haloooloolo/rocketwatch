@@ -6,14 +6,12 @@ from discord.ext import commands
 from pymongo.asynchronous.collection import AsyncCollection
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.readable import s_hex
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
-log = logging.getLogger("delegate_contracts")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.delegate_contracts")
 
 
 class DelegateContracts(commands.Cog):

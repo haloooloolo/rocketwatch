@@ -2,11 +2,10 @@ import logging
 
 import aiohttp
 
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.shared_w3 import w3
 
-log = logging.getLogger("etherscan")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.etherscan")
 
 
 async def get_recent_account_transactions(address, block_count=44800):

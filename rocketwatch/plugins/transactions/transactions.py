@@ -11,15 +11,14 @@ from web3.datastructures import MutableAttributeDict as aDict
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.dao import DefaultDAO, ProtocolDAO
 from utils.embeds import Embed, assemble, el_explorer_url, prepare_args
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
-log = logging.getLogger("transactions")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.transactions")
 
 
 class Transactions(EventPlugin):

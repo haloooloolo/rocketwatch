@@ -9,7 +9,7 @@ from web3.datastructures import MutableAttributeDict as aDict
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import assemble, prepare_args
 from utils.event import Event, EventPlugin
 from utils.readable import cl_explorer_url
@@ -18,8 +18,7 @@ from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
 from utils.solidity import beacon_block_to_date, date_to_beacon_block
 
-log = logging.getLogger("beacon_events")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.beacon_events")
 
 
 class BeaconEvents(EventPlugin):

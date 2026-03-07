@@ -10,12 +10,11 @@ from eth_typing import BlockIdentifier, ChecksumAddress
 from web3.exceptions import ContractLogicError
 
 from utils import solidity
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.readable import decode_abi
 from utils.shared_w3 import w3, w3_archive, w3_mainnet
 
-log = logging.getLogger("rocketpool")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.rocketpool")
 
 
 class NoAddressFound(Exception):

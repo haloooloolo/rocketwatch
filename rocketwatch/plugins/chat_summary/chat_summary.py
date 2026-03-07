@@ -13,11 +13,10 @@ from discord.ext import commands
 from discord.ext.commands import is_owner
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 
-log = logging.getLogger("chat_summary")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.chat_summary")
 
 
 class ChatSummary(commands.Cog):

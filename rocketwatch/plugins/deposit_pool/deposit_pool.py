@@ -6,14 +6,13 @@ from discord.app_commands import command
 from plugins.queue.queue import Queue
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.status import StatusPlugin
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("deposit_pool")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.deposit_pool")
 
 
 class DepositPool(StatusPlugin):

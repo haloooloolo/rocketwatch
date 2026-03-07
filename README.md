@@ -1,35 +1,137 @@
 # Rocket Watch
 
-A Discord bot that tracks Rocket Pool Events
+A Discord bot that monitors and reports on [Rocket Pool](https://rocketpool.net) protocol activity across the Ethereum execution and consensus layers.
 
-[![wakatime](https://wakatime.com/badge/github/InvisibleSymbol/rocketwatch.svg)](https://wakatime.com/badge/github/InvisibleSymbol/rocketwatch)
-<a href="https://codeclimate.com/github/InvisibleSymbol/rocketwatch/maintainability"><img src="https://api.codeclimate.com/v1/badges/1d046cb1c9da1d667c9c/maintainability" /></a>
-- Ability to track Proposals (Description/Vote Count read from Contract)
-- Ability to track oDAO Member Activity (uses Nicknames of oDAO Members if available)
-- Ability to track Deposit Poll Activity
-- Ability to track Minipool Activity (Provides Link to Validator if feasible)
-- Supports ENS Addresses
-- Automatically retrieves Addresses from Storage Contract at start-up. (Easy support for Upgrades)
-- Supports dual-channel setup to separate oDAO Events from the rest.
-- Deduplication-Logic (prevents duplicated Messages caused by Chain-Reorgs).
-- Easy Extendability (Almost no hard-coded Events, most are loaded from a `.json` File)
-<!--
-## Instructions:
+## Features
 
-- Python 3.8 Recommended
-- `pip install -r requirements.txt`
-- Copy `.env.sample` to `.env` and fill everything out. You can get the channel IDs by enabling Developer Mode in your
-  Discord Settings and Right-Clicking a Channel.
-- Run `python main.py`
+- **On-chain event tracking** — monitors Rocket Pool smart contract events (deposits, minipools, rewards, governance votes, etc.) and posts formatted embeds to Discord
+- **Beacon chain integration** — tracks validator proposals, sync committees, and consensus layer activity
+- **Governance monitoring** — follows on-chain DAO votes (pDAO, oDAO, Security Council) and Snapshot proposals
+- **Data visualization** — generates APR charts, collateral distributions, fee breakdowns, and TVL calculations using matplotlib
+- **ENS resolution** — resolves and caches ENS names for readable address display
+- **Multi-channel support** — split event tracking and status messages across multiple channels
+- **Deduplication** — prevents duplicate messages caused by chain reorgs or bot restarts
+- **Dynamic contract loading** — retrieves contract addresses from the Rocket Pool storage contract at startup, automatically supporting protocol upgrades
+- **Plugin system** — 40+ plugins that can be individually enabled or disabled
 
-## How to add new Events:
+## Architecture
 
-- Open `./data/rocketpool.json` and add a new Entry to `sources`. Map the Contract Events to new Bot Events.
-- Add the required ABI in `./contracts/`. (The Path should look like this: `./contracts/rocketMinipoolManager.abi`).
-- Open `./strings/rocketpool.en.json` and add both `title` and `description` for each new Bot Event. You can access
-  Event Arguments directly using their Names: `%(amount)`. If you want to mention an Address, you can append `_fancy` to
-  get a shorter Version that also automatically links to etherscan.io.
+```
+rocketwatch/
+├── __main__.py              # Entry point
+├── rocketwatch.py           # Bot class, plugin loader, error handling
+├── config.toml.sample       # Configuration template
+├── Dockerfile
+├── plugins/                 # 40+ plugin modules
+│   ├── event_core/          # Main event tracking logic
+│   ├── dao/                 # On-chain governance
+│   ├── snapshot/            # Off-chain governance
+│   ├── apr/                 # APR calculations & charts
+│   ├── rewards/             # Reward estimation
+│   ├── tvl/                 # Total Value Locked
+│   ├── proposals/           # Block proposals
+│   └── ...
+└── utils/
+    ├── config.py            # Pydantic config models
+    ├── rocketpool.py        # Contract interface with caching
+    ├── shared_w3.py         # Web3 client instances
+    ├── embeds.py            # Discord embed formatting
+    ├── solidity.py          # Unit conversions
+    ├── readable.py          # Human-readable formatting
+    └── ...
+```
 
--->
-## Donate:
-[<kbd>0xinvis.eth</kbd>](https://etherscan.io/address/0xf0138d2e4037957d7b37de312a16a88a7f83a32a)
+## Prerequisites
+
+- Python 3.14+
+- MongoDB 8.x
+- Ethereum execution and consensus layer RPC endpoints
+- Discord bot token
+
+## Setup
+
+### Configuration
+
+Copy the sample config and fill in your values:
+
+```sh
+cp rocketwatch/config.toml.sample rocketwatch/config.toml
+```
+
+Key configuration sections:
+
+| Section | Purpose |
+|---|---|
+| `discord` | Bot token, owner/server IDs, channel mappings |
+| `execution_layer` | RPC endpoints (current, mainnet, archive) and Etherscan API key |
+| `consensus_layer` | Beacon API endpoint and beaconcha.in API key |
+| `mongodb` | Database connection URI |
+| `rocketpool` | Chain, contract addresses, DAO multisigs, support settings |
+| `modules` | Plugin include/exclude lists |
+| `events` | Event tracking setup |
+
+### Docker (recommended)
+
+```sh
+docker compose up -d
+```
+
+This starts the bot, MongoDB, and [Watchtower](https://containrrr.dev/watchtower/) for automatic updates.
+
+### Manual
+
+```sh
+# Install uv (https://docs.astral.sh/uv/)
+uv python install 3.14
+uv pip install --python 3.14 -r pyproject.toml
+cd rocketwatch
+uv run python .
+```
+
+## Development
+
+### Linting
+
+```sh
+uv run ruff check rocketwatch/
+```
+
+Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort), `RUF`, `SIM`, `UP` (pyupgrade), `W` (warnings).
+
+### Testing
+
+```sh
+uv pip install -r pyproject.toml --extra test
+uv run pytest
+```
+
+### Plugin structure
+
+Each plugin lives in `rocketwatch/plugins/<name>/` and follows this pattern:
+
+```python
+from discord.ext import commands
+
+class MyPlugin(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    # slash commands, event listeners, background tasks, etc.
+
+async def setup(bot):
+    await bot.add_cog(MyPlugin(bot))
+```
+
+Plugins that track on-chain events extend `EventPlugin` from `utils/event.py`. Plugins can be selectively loaded via the `modules.include` / `modules.exclude` config fields.
+
+## CI/CD
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| [Lint](.github/workflows/lint.yml) | Push & PR to main | Ruff linting |
+| [Test](.github/workflows/test.yml) | Push & PR to main | pytest suite |
+| [Docker CI](.github/workflows/docker-ci.yml) | Push to main | Build & push image to DockerHub |
+
+## License
+
+[GNU General Public License v3](LICENSE)

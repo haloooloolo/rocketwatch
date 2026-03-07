@@ -5,10 +5,7 @@ from eth_typing import BlockNumber
 from web3.contract.contract import ContractEvent
 from web3.types import LogReceipt
 
-from utils.cfg import cfg
-
-log = logging.getLogger("event_logs")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.event_logs")
 
 
 def get_logs(

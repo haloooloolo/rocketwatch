@@ -8,13 +8,11 @@ from discord.ext import commands
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.readable import render_tree_legacy
 from utils.visibility import is_hidden_weak
 
-log = logging.getLogger("fee_distribution")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.fee_distribution")
 
 
 class FeeDistribution(commands.Cog):

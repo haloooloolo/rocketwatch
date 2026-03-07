@@ -12,13 +12,11 @@ from discord.ext import commands
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import ts_to_block
-from utils.cfg import cfg
 from utils.embeds import Embed, resolve_ens
 from utils.retry import retry_async
 from utils.rocketpool import rp
 
-log = logging.getLogger("rewards")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.rewards")
 
 
 class Rewards(commands.Cog):

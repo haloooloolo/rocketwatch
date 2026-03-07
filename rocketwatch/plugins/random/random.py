@@ -12,7 +12,7 @@ from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url, ens
 from utils.readable import s_hex, uptime
 from utils.rocketpool import rp
@@ -24,8 +24,7 @@ from utils.sea_creatures import (
 from utils.shared_w3 import bacon, w3
 from utils.visibility import is_hidden, is_hidden_weak
 
-log = logging.getLogger("random")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.random")
 
 
 class Random(commands.Cog):

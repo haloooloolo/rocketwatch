@@ -15,14 +15,13 @@ from web3.datastructures import MutableAttributeDict
 
 from plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch import RocketWatch
-from utils.cfg import cfg
+from utils.config import cfg
 from utils.embeds import Embed, assemble
 from utils.event import EventPlugin
 from utils.shared_w3 import w3
 from utils.status import StatusPlugin
 
-log = logging.getLogger("event_core")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.event_core")
 
 
 class EventCore(commands.Cog):

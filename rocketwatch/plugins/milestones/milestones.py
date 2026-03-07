@@ -5,13 +5,11 @@ from web3.datastructures import MutableAttributeDict as aDict
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.embeds import assemble
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 
-log = logging.getLogger("milestones")
-log.setLevel(cfg.log_level)
+log = logging.getLogger("rocketwatch.milestones")
 
 
 class Milestones(EventPlugin):
