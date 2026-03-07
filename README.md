@@ -43,7 +43,7 @@ rocketwatch/
 
 ## Prerequisites
 
-- Python 3.14+
+- Python 3.12+
 - MongoDB 8.x
 - Ethereum execution and consensus layer RPC endpoints
 - Discord bot token
