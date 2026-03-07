@@ -122,3 +122,5 @@ mongodb/
 
 # helper scripts
 *.sh
+
+.claude

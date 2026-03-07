@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python3 -m pip install pytest pytest-asyncio)",
-      "Bash(ruff check rocketwatch/ --fix)"
-    ]
-  }
-}
