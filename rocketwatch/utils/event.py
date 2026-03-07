@@ -33,21 +33,14 @@ class EventPlugin(commands.Cog):
         self.bot = bot
         self.rate_limit = rate_limit
         self.lookback_distance: int = cfg.events.lookback_distance
-        self.last_served_block: int | None = None
-        self._pending_block: int | None = None
+        self.last_served_block: int = cfg.events.genesis - 1
+        self._pending_block: int = self.last_served_block
         self._last_run = datetime.now() - rate_limit
-
-    async def _ensure_genesis_block(self):
-        if self.last_served_block is None:
-            block = await w3.eth.get_block(cfg.events.genesis)
-            self.last_served_block = block.number - 1
-            self._pending_block = self.last_served_block
 
     def start_tracking(self, block: BlockNumber) -> None:
         self.last_served_block = block - 1
 
     async def get_new_events(self) -> list[Event]:
-        await self._ensure_genesis_block()
         now = datetime.now()
         if (now - self._last_run) < self.rate_limit:
             return []

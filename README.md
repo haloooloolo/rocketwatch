@@ -119,7 +119,41 @@ async def setup(bot):
     await bot.add_cog(MyPlugin(bot))
 ```
 
-Plugins that track on-chain events extend `EventPlugin` from `utils/event.py`. Plugins can be selectively loaded via the `modules.include` / `modules.exclude` config fields.
+Plugins that track events extend `EventPlugin` from [`utils/event.py`](rocketwatch/utils/event.py) and implement the `_get_new_events()` method, which is called periodically to check for new events. They may also override `get_past_events()` to support querying historical events for a given block range:
+
+```python
+from utils.event import Event, EventPlugin
+from utils.embeds import Embed
+
+class MyEventPlugin(EventPlugin):
+    async def _get_new_events(self) -> list[Event]:
+        events = []
+        # query contracts, APIs, etc.
+        embed = Embed(title="My Event")
+        events.append(Event(
+            embed=embed,
+            topic="my_topic",
+            event_name="my_event",
+            unique_id="some_unique_id",
+            block_number=block_number,
+        ))
+        return events
+```
+
+Plugins that provide a rotating status embed (displayed by the bot when idle) extend `StatusPlugin` from [`utils/status.py`](rocketwatch/utils/status.py) and implement the `get_status()` method:
+
+```python
+from utils.status import StatusPlugin
+from utils.embeds import Embed
+
+class MyStatusPlugin(StatusPlugin):
+    async def get_status(self) -> Embed:
+        embed = Embed(title="My Status")
+        embed.add_field(name="Info", value="...")
+        return embed
+```
+
+Plugins can be selectively loaded via the `modules.include` / `modules.exclude` config fields.
 
 ## CI/CD
 
