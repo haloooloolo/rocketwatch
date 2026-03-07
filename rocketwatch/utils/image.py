@@ -1,13 +1,13 @@
 import math
 from enum import Enum
-from io import BytesIO
 from functools import cache
+from io import BytesIO
 from typing import Optional
 
 from discord import File
-from PIL import ImageFont, Image as PillowImage
+from PIL import Image as PillowImage
+from PIL import ImageFont
 from PIL.ImageDraw import ImageDraw
-
 
 Color = tuple[int, int, int]
 

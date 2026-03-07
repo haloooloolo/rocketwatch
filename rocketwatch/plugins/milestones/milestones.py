@@ -7,8 +7,8 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.cfg import cfg
 from utils.embeds import assemble
+from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
-from utils.event import EventPlugin, Event
 
 log = logging.getLogger("milestones")
 log.setLevel(cfg.log_level)

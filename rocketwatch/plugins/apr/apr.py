@@ -4,10 +4,9 @@ from decimal import Decimal
 from io import BytesIO
 
 import matplotlib.pyplot as plt
-from discord import File
-from discord.ext import commands, tasks
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command
+from discord.ext import commands, tasks
 from matplotlib.dates import DateFormatter
 
 from rocketwatch import RocketWatch

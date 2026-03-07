@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 
 from discord import Interaction
-from discord.app_commands import CommandTree, AppCommandError
+from discord.app_commands import AppCommandError, CommandTree
 
 from utils.cfg import cfg
 

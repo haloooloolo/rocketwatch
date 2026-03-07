@@ -3,8 +3,8 @@ import logging
 import humanize
 from colorama import Style
 from discord import Interaction
-from discord.ext.commands import Cog
 from discord.app_commands import command, describe
+from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
 from utils import solidity

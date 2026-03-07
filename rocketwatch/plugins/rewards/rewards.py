@@ -1,25 +1,22 @@
 import logging
-import aiohttp
-import numpy as np
-import matplotlib.pyplot as plt
-
+from dataclasses import dataclass
 from io import BytesIO
-from discord import File
+from typing import Optional
+
+import aiohttp
+import matplotlib.pyplot as plt
+import numpy as np
+from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
-from discord import Interaction
-
-
-from typing import Optional
-from dataclasses import dataclass
 
 from rocketwatch import RocketWatch
 from utils import solidity
+from utils.block_time import ts_to_block
 from utils.cfg import cfg
 from utils.embeds import Embed, resolve_ens
-from utils.rocketpool import rp
 from utils.retry import retry_async
-from utils.block_time import ts_to_block
+from utils.rocketpool import rp
 
 log = logging.getLogger("rewards")
 log.setLevel(cfg.log_level)

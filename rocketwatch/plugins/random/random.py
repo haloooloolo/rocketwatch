@@ -6,19 +6,22 @@ import aiohttp
 import dice
 import humanize
 import pytz
-from discord import File
-from discord.ext import commands
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command
+from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.cfg import cfg
-from utils.embeds import Embed, ens, el_explorer_url
+from utils.embeds import Embed, el_explorer_url, ens
 from utils.readable import s_hex, uptime
 from utils.rocketpool import rp
-from utils.sea_creatures import sea_creatures, get_sea_creature_for_address, get_holding_for_address
-from utils.shared_w3 import w3, bacon
+from utils.sea_creatures import (
+    get_holding_for_address,
+    get_sea_creature_for_address,
+    sea_creatures,
+)
+from utils.shared_w3 import bacon, w3
 from utils.visibility import is_hidden, is_hidden_weak
 
 log = logging.getLogger("random")

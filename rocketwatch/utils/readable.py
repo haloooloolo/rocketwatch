@@ -3,7 +3,7 @@ import contextlib
 import json
 import zlib
 
-from colorama import Style, Fore
+from colorama import Fore, Style
 
 import utils.solidity as units
 from utils.cfg import cfg

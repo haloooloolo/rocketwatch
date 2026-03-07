@@ -1,8 +1,8 @@
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
-from web3.beacon import AsyncBeacon
 from web3 import AsyncWeb3
+from web3.beacon import AsyncBeacon
 from web3.providers import AsyncHTTPProvider
 
 from utils.cfg import cfg

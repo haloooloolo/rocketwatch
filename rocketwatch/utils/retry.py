@@ -1,8 +1,7 @@
-from retry_async.api import (
-    retry as __retry,
-    EXCEPTIONS
-)
-from typing import Callable, Any
+from typing import Any, Callable
+
+from retry_async.api import EXCEPTIONS
+from retry_async.api import retry as __retry
 
 
 def retry(

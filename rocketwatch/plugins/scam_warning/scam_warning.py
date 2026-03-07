@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta, datetime
+from datetime import datetime, timedelta
 
 from discord import errors
 from discord.ext import commands
@@ -7,7 +7,6 @@ from discord.ext import commands
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
 from utils.embeds import Embed
-
 
 log = logging.getLogger("scam_warning")
 log.setLevel(cfg.log_level)

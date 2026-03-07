@@ -4,22 +4,22 @@ import logging
 import random
 import time
 
-import humanize
 import aiohttp
+import humanize
 from colorama import Fore, Style
 from discord import File, Interaction
-from discord.app_commands import Choice, command, guilds, describe
+from discord.app_commands import Choice, command, describe, guilds
 from discord.ext.commands import Cog, is_owner
 
 from rocketwatch import RocketWatch
 from utils import solidity
+from utils.block_time import block_to_ts, ts_to_block
 from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
-from utils.block_time import ts_to_block, block_to_ts
 from utils.readable import prettify_json_string
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden, is_hidden_weak, is_hidden_role_controlled
+from utils.visibility import is_hidden, is_hidden_role_controlled, is_hidden_weak
 
 log = logging.getLogger("debug")
 log.setLevel(cfg.log_level)
@@ -255,6 +255,7 @@ class Debug(Cog):
     async def restore_missed_events(self, interaction: Interaction, tx_hash: str):
         import pickle
         from datetime import datetime
+
         from plugins.events.events import Events
 
         await interaction.response.defer(ephemeral=True)

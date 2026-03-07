@@ -1,6 +1,6 @@
+import asyncio
 import logging
 import time
-import asyncio
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import timedelta
@@ -8,21 +8,19 @@ from typing import Any, Optional
 
 import pymongo
 from cronitor import Monitor
-from pymongo import UpdateOne, UpdateMany
-from pymongo.asynchronous.collection import AsyncCollection
-
 from discord.ext import commands
 from discord.utils import as_chunks
+from pymongo import UpdateMany, UpdateOne
+from pymongo.asynchronous.collection import AsyncCollection
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
 from utils.block_time import ts_to_block
-from utils.rocketpool import rp
-from utils.shared_w3 import w3, bacon
-from utils.time_debug import timerun, timerun_async
+from utils.cfg import cfg
 from utils.event_logs import get_logs
-
+from utils.rocketpool import rp
+from utils.shared_w3 import bacon, w3
+from utils.time_debug import timerun, timerun_async
 
 log = logging.getLogger("db_upkeep_task")
 log.setLevel(cfg.log_level)

@@ -1,13 +1,12 @@
-import math
 import logging
-from collections import OrderedDict
+import math
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 import aiohttp
 import numpy as np
-
 from eth_typing import ChecksumAddress, HexStr
 
 from utils.cfg import cfg

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Any
+from typing import Any, Optional
 
 from eth_typing import BlockNumber
 from web3.contract.contract import ContractEvent

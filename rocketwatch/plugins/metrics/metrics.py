@@ -3,10 +3,9 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 from bson import SON
-from discord import File
-from discord.ext import commands
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command
+from discord.ext import commands
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch

@@ -1,18 +1,18 @@
-import eth_abi
 import logging
 import os
 from pathlib import Path
 from typing import Any
 
+import eth_abi
 from bidict import bidict
-from eth_typing import BlockIdentifier, ChecksumAddress
 from cachetools import FIFOCache
+from eth_typing import BlockIdentifier, ChecksumAddress
 from web3.exceptions import ContractLogicError
 
 from utils import solidity
 from utils.cfg import cfg
 from utils.readable import decode_abi
-from utils.shared_w3 import w3, w3_mainnet, w3_archive
+from utils.shared_w3 import w3, w3_archive, w3_mainnet
 
 log = logging.getLogger("rocketpool")
 log.setLevel(cfg.log_level)

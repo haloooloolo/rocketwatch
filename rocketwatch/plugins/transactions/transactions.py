@@ -6,15 +6,15 @@ import web3.exceptions
 from discord import Interaction
 from discord.app_commands import command, guilds
 from discord.ext.commands import is_owner
-from eth_typing import ChecksumAddress, BlockNumber, BlockIdentifier
+from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress
 from web3.datastructures import MutableAttributeDict as aDict
 
 from rocketwatch import RocketWatch
 from utils import solidity
 from utils.cfg import cfg
 from utils.dao import DefaultDAO, ProtocolDAO
-from utils.embeds import assemble, prepare_args, el_explorer_url, Embed
-from utils.event import EventPlugin, Event
+from utils.embeds import Embed, assemble, el_explorer_url, prepare_args
+from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 

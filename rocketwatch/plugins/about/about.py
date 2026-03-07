@@ -1,20 +1,19 @@
+import logging
 import os
 import time
-import logging
 
+import aiohttp
 import humanize
 import psutil
-import aiohttp
 import uptime
-from discord.ext import commands
 from discord import Interaction
 from discord.app_commands import command
+from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import readable
 from utils.cfg import cfg
-from utils.embeds import Embed
-from utils.embeds import el_explorer_url
+from utils.embeds import Embed, el_explorer_url
 from utils.visibility import is_hidden_weak
 
 psutil.getloadavg()

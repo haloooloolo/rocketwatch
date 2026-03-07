@@ -6,13 +6,12 @@ import inflect
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from discord import File
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
 from discord.utils import as_chunks
-from matplotlib.ticker import FuncFormatter
 from eth_typing import ChecksumAddress
+from matplotlib.ticker import FuncFormatter
 
 from rocketwatch import RocketWatch
 from utils import solidity

@@ -1,28 +1,24 @@
 import logging
-
 from dataclasses import dataclass
-from typing import Literal
 from operator import attrgetter
+from typing import Literal
 
+from discord import Interaction
+from discord.app_commands import Choice, autocomplete, command, describe
+from discord.ext.commands import Cog
 from eth_typing import ChecksumAddress
 from tabulate import tabulate
 
-from discord import Interaction
-from discord.app_commands import Choice, command, describe, autocomplete
-from discord.ext.commands import Cog
-
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
-from utils.embeds import Embed
-from utils.visibility import is_hidden_weak
-from utils.dao import DefaultDAO, OracleDAO, SecurityCouncil, ProtocolDAO
-from utils.views import PageView
-from utils.embeds import el_explorer_url
-from utils.event_logs import get_logs
 from utils.block_time import ts_to_block
+from utils.cfg import cfg
+from utils.dao import DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
+from utils.embeds import Embed, el_explorer_url
+from utils.event_logs import get_logs
 from utils.rocketpool import rp
-
+from utils.views import PageView
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("dao")
 log.setLevel(cfg.log_level)

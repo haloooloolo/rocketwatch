@@ -6,11 +6,11 @@ from typing import Optional
 from discord.ext import commands
 from eth_typing import BlockNumber
 
-from utils.shared_w3 import w3
+from rocketwatch import RocketWatch
 from utils.cfg import cfg
 from utils.embeds import Embed
 from utils.image import Image
-from rocketwatch import RocketWatch
+from utils.shared_w3 import w3
 
 
 @dataclass(frozen=True, slots=True)

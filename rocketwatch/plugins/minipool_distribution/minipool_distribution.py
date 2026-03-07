@@ -5,8 +5,7 @@ from io import BytesIO
 import inflect
 import matplotlib.pyplot as plt
 import numpy as np
-from discord import File
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
 

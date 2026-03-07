@@ -3,10 +3,9 @@ from io import BytesIO
 
 import numpy as np
 import seaborn as sns
-from discord import File
-from discord.ext import commands
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command
+from discord.ext import commands
 from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch

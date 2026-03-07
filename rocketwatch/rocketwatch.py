@@ -5,18 +5,17 @@ from pathlib import Path
 from typing import Optional
 
 from discord import (
-    app_commands,
-    Interaction,
-    Intents,
-    Thread,
     File,
     Guild,
+    Intents,
+    Interaction,
+    Thread,
     User,
+    app_commands,
 )
 from discord.abc import GuildChannel, PrivateChannel
 from discord.ext import commands
 from discord.ext.commands import Bot
-
 from pymongo import AsyncMongoClient
 
 from utils.cfg import cfg

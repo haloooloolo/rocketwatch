@@ -1,35 +1,51 @@
 import asyncio
 import logging
-from io import BytesIO
-from typing import cast, Literal, Optional
 from collections import OrderedDict
+from io import BytesIO
+from typing import Literal, Optional, cast
 
 import aiohttp
 import numpy as np
-from discord import File
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
-from matplotlib import (
-    pyplot as plt,
-    font_manager as fm,
-    ticker,
-    figure
-)
 from eth_typing import ChecksumAddress, HexStr
+from matplotlib import figure, ticker
+from matplotlib import font_manager as fm
+from matplotlib import pyplot as plt
 
 from rocketwatch import RocketWatch
-from utils.time_debug import timerun, timerun_async
-from utils.embeds import Embed
-from utils.visibility import is_hidden_weak
-from utils.rocketpool import rp
-from utils.liquidity import (
-    Exchange, CEX, DEX, Market, Liquidity,
-    Binance, Coinbase, GateIO, OKX, Bitget, MEXC, Bybit, CryptoDotCom,
-    Kraken, Kucoin, Bithumb, BingX, Bitvavo, HTX, BitMart, Bitrue, CoinTR,
-    BalancerV2, UniswapV3
-)
 from utils.cfg import cfg
+from utils.embeds import Embed
+from utils.liquidity import (
+    CEX,
+    DEX,
+    HTX,
+    MEXC,
+    OKX,
+    BalancerV2,
+    Binance,
+    BingX,
+    Bitget,
+    Bithumb,
+    BitMart,
+    Bitrue,
+    Bitvavo,
+    Bybit,
+    Coinbase,
+    CoinTR,
+    CryptoDotCom,
+    Exchange,
+    GateIO,
+    Kraken,
+    Kucoin,
+    Liquidity,
+    Market,
+    UniswapV3,
+)
+from utils.rocketpool import rp
+from utils.time_debug import timerun, timerun_async
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("wall")
 log.setLevel(cfg.log_level)

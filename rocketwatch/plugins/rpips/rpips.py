@@ -3,10 +3,9 @@ import logging
 import aiohttp
 from aiocache import cached
 from bs4 import BeautifulSoup
-
 from discord import Interaction
-from discord.ext.commands import Cog
 from discord.app_commands import Choice, command, describe
+from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg

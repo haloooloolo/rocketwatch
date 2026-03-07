@@ -1,37 +1,36 @@
-import io
 import asyncio
-import logging
 import contextlib
-import regex as re
-
-from urllib import parse
-from anyascii import anyascii
+import io
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+from urllib import parse
 
+import regex as re
+from anyascii import anyascii
 from cachetools import TTLCache
 from discord import (
-    ui,
     AppCommandType,
     ButtonStyle,
-    errors,
-    File,
     Color,
-    User,
+    DeletedReferencedMessage,
+    File,
+    Guild,
+    Interaction,
     Member,
     Message,
-    Reaction,
-    Guild,
-    Thread,
-    DeletedReferencedMessage,
-    Interaction,
-    RawMessageDeleteEvent,
     RawBulkMessageDeleteEvent,
+    RawMessageDeleteEvent,
+    RawThreadDeleteEvent,
     RawThreadUpdateEvent,
-    RawThreadDeleteEvent
+    Reaction,
+    Thread,
+    User,
+    errors,
+    ui,
 )
+from discord.app_commands import ContextMenu, command, guilds
 from discord.ext.commands import Cog
-from discord.app_commands import command, guilds, ContextMenu
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg

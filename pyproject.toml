@@ -43,5 +43,8 @@ dependencies = [
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W"]
+select = ["E", "F", "I", "W"]
 ignore = ["E501", "E203", "E231"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["utils", "plugins", "strings", "rocketwatch"]

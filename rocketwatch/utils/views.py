@@ -1,6 +1,7 @@
 from abc import abstractmethod
 
-from discord import ui, ButtonStyle, Interaction
+from discord import ButtonStyle, Interaction, ui
+
 from utils.embeds import Embed
 
 

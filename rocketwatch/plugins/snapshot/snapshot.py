@@ -1,29 +1,29 @@
-import math
 import logging
+import math
 from dataclasses import dataclass
-from typing import Optional, Literal
 from datetime import datetime, timedelta
+from typing import Literal, Optional
 
-import regex
 import aiohttp
+import regex
 import termplotlib as tpl
 from discord import Interaction
 from discord.app_commands import command
+from eth_typing import BlockNumber, ChecksumAddress
+from graphql_query import Argument, Operation, Query
+from pymongo import DESCENDING, DeleteOne, InsertOne, UpdateOne
 from web3.constants import ADDRESS_ZERO
-from eth_typing import ChecksumAddress, BlockNumber
-from graphql_query import Operation, Query, Argument
-from pymongo import InsertOne, UpdateOne, DeleteOne, DESCENDING
 
 from rocketwatch import RocketWatch
+from utils.block_time import ts_to_block
 from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
-from utils.image import Image, ImageCanvas, Color, FontVariant
+from utils.event import Event, EventPlugin
+from utils.image import Color, FontVariant, Image, ImageCanvas
 from utils.readable import uptime
-from utils.rocketpool import rp
-from utils.event import EventPlugin, Event
-from utils.visibility import is_hidden_weak
-from utils.block_time import ts_to_block
 from utils.retry import retry_async
+from utils.rocketpool import rp
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("snapshot")
 log.setLevel(cfg.log_level)

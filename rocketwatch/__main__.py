@@ -2,8 +2,8 @@ import logging
 
 from discord import Intents
 
-from utils.cfg import cfg
 from rocketwatch import RocketWatch
+from utils.cfg import cfg
 
 logging.basicConfig(format="%(levelname)5s %(asctime)s [%(name)s] %(filename)s:%(lineno)d|%(funcName)s(): %(message)s")
 logging.getLogger().setLevel("INFO")

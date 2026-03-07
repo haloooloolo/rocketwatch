@@ -1,18 +1,18 @@
 import logging
-from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, Literal, cast
+from datetime import datetime
+from typing import Literal, Optional, cast
 
 import aiohttp
 from discord import Interaction
+from discord.app_commands import Choice, command
 from discord.ext import commands
-from discord.app_commands import command, Choice
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg
 from utils.embeds import Embed
-from utils.visibility import is_hidden_weak
 from utils.retry import retry_async
+from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("forum")
 log.setLevel(cfg.log_level)

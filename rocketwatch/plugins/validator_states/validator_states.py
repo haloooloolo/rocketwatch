@@ -1,8 +1,8 @@
 import logging
 
 from discord import Interaction
-from discord.ext import commands
 from discord.app_commands import command
+from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils.cfg import cfg

@@ -4,23 +4,21 @@ from io import BytesIO
 from typing import Optional
 
 import matplotlib.pyplot as plt
-from matplotlib.dates import DateFormatter
-from discord import File
-from discord import Interaction
+from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
+from matplotlib.dates import DateFormatter
 from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.cfg import cfg
-from utils.shared_w3 import w3
-from utils.rocketpool import rp
-from utils.visibility import is_hidden_weak
 from utils.block_time import block_to_ts, ts_to_block
+from utils.cfg import cfg
 from utils.embeds import Embed, el_explorer_url
 from utils.event_logs import get_logs
-
+from utils.rocketpool import rp
+from utils.shared_w3 import w3
+from utils.visibility import is_hidden_weak
 
 cog_id = "rocksolid"
 log = logging.getLogger(cog_id)
