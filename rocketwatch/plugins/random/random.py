@@ -112,15 +112,13 @@ class Random(commands.Cog):
         e.add_field(name="Beacon Time", value=f"Day {b[0]}, {b[1]}:{b[2]}")
 
         dev_time = datetime.now(tz=pytz.timezone("Australia/Lindeman"))
-        e.add_field(name="Time for most of the Dev Team", value=dev_time.strftime(time_format), inline=False)
-
-        joe_time = datetime.now(tz=pytz.timezone("America/New_York"))
-        e.add_field(name="Joe's Time", value=joe_time.strftime(time_format), inline=False)
+        e.add_field(name="Most of the core team", value=dev_time.strftime(time_format), inline=False)
 
         fornax_time = datetime.now(tz=pytz.timezone("America/Sao_Paulo"))
-        e.add_field(name="Fornax's Time", value=fornax_time.strftime(time_format), inline=False)
+        e.add_field(name="Fornax", value=fornax_time.strftime(time_format), inline=False)
+        e.add_field(name="Mav", value="Who even knows", inline=False)
 
-        await interaction.followup.send(embed=e)
+        await interaction.response.send_message(embed=e)
 
     @command()
     async def sea_creatures(self, interaction: Interaction, address: str | None = None):
