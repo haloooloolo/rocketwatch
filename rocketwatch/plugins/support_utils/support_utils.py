@@ -1,6 +1,6 @@
 import io
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from bson import CodecOptions
 from discord import ButtonStyle, File, Interaction, TextStyle, User, app_commands, ui
@@ -104,7 +104,7 @@ class AdminModal(ui.Modal, title="Change Template Message"):
         try:
             await self.db.support_bot_dumps.insert_one(
                 {
-                    "ts"      : datetime.now(timezone.utc),
+                    "ts"      : datetime.now(UTC),
                     "template": self.template_name,
                     "prev"    : template,
                     "new"     : {

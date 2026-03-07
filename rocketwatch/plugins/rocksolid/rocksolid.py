@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import Optional
 
 import matplotlib.pyplot as plt
 from discord import File, Interaction
@@ -53,7 +52,7 @@ class RockSolid(Cog):
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
 
-        async with self.bot.db.client.start_session() as session:
+        async with self.bot.db.client.start_session() as session:  # noqa: SIM117
             async with await session.start_transaction():
                 if db_operations:
                     await self.bot.db.rocksolid.bulk_write(db_operations)
@@ -82,7 +81,7 @@ class RockSolid(Cog):
 
         current_eth_rate = await get_eth_rate(current_block)
 
-        async def get_apy(days: int) -> Optional[float]:
+        async def get_apy(days: int) -> float | None:
             reference_block = await ts_to_block(now - timedelta(days=days).total_seconds())
             if reference_block < self.deployment_block:
                 return None

@@ -50,7 +50,7 @@ class RPIPs(Cog):
         await interaction.followup.send(embed=embed)
 
     class RPIP:
-        __slots__ = ("title", "number", "status")
+        __slots__ = ("number", "status", "title")
 
         def __init__(self, title: str, number: int, status: str):
             self.title = title
@@ -63,9 +63,8 @@ class RPIPs(Cog):
         @cached(ttl=300, key_builder=lambda _, rpip: rpip.number)
         @retry_async(tries=3, delay=1)
         async def fetch_details(self) -> dict:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.url) as resp:
-                    html = await resp.text()
+            async with aiohttp.ClientSession() as session, session.get(self.url) as resp:
+                html = await resp.text()
 
             soup = BeautifulSoup(html, "html.parser")
             metadata = {}
@@ -107,12 +106,11 @@ class RPIPs(Cog):
     @cached(ttl=60)
     @retry_async(tries=3, delay=1)
     async def get_all_rpips() -> list['RPIPs.RPIP']:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://rpips.rocketpool.net/all") as resp:
-                html = await resp.text()
+        async with aiohttp.ClientSession() as session, session.get("https://rpips.rocketpool.net/all") as resp:
+            html = await resp.text()
 
         soup = BeautifulSoup(html, "html.parser")
-        rpips: list['RPIPs.RPIP'] = []
+        rpips: list[RPIPs.RPIP] = []
 
         for row in soup.table.find_all("tr", recursive=False):
             title = row.find("td", {"class": "title"}).text.strip()

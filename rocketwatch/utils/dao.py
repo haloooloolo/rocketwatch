@@ -129,7 +129,7 @@ class DefaultDAO(DAO):
         ])
 
         proposals = {state: [] for state in DefaultDAO.ProposalState}
-        for proposal_id, state in zip(relevant_proposals, proposal_states):
+        for proposal_id, state in zip(relevant_proposals, proposal_states, strict=False):
             proposals[state].append(proposal_id)
 
         return proposals

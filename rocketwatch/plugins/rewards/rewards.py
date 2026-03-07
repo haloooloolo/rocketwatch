@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -44,7 +43,7 @@ class Rewards(commands.Cog):
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
             return await response.json()
 
-    async def get_estimated_rewards(self, interaction: Interaction, address: str) -> Optional[RewardEstimate]:
+    async def get_estimated_rewards(self, interaction: Interaction, address: str) -> RewardEstimate | None:
         if not await rp.call("rocketNodeManager.getNodeExists", address):
             await interaction.followup.send(f"{address} is not a registered node.")
             return None
@@ -160,7 +159,7 @@ class Rewards(commands.Cog):
         total_supply: int = await rp.call("rocketTokenRPL.totalSupply", block=reward_start_block)
 
         period_inflation: int = total_supply
-        for i in range(num_inflation_intervals):
+        for _i in range(num_inflation_intervals):
             period_inflation = solidity.to_int(period_inflation * inflation_rate)
         period_inflation -= total_supply
 
@@ -190,7 +189,7 @@ class Rewards(commands.Cog):
         cur_color, cur_label, cur_ls = "#eb8e55", "current", "solid"
         sim_color, sim_label, sim_ls = "darkred", "simulated", "dashed"
 
-        def draw_reward_curve(_color: str, _label: Optional[str], _line_style: str, _borrowed_eth: float) -> None:
+        def draw_reward_curve(_color: str, _label: str | None, _line_style: str, _borrowed_eth: float) -> None:
             step_size = max(1, (x_max - x_min) // 1000)
             x = np.arange(x_min, x_max, step_size, dtype=int)
             y = np.array([rewards_at(x, _borrowed_eth) for x in x])
@@ -242,7 +241,7 @@ class Rewards(commands.Cog):
         ax.set_ylim((y_min, y_max))
 
         handles, labels = ax.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
+        by_label = dict(zip(labels, handles, strict=False))
         plt.legend(by_label.values(), by_label.keys(), loc="lower right")
         fig.tight_layout()
 

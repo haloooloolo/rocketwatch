@@ -26,23 +26,21 @@ async def get_recent_account_transactions(address, block_count=44800):
                                                         "startblock": lowest_block,
                                                         "endblock"  : highest_block})
 
-        if not resp.status == 200:
+        if resp.status != 200:
             log.debug(
-                f"Error querying etherscan, unexpected HTTP {str(resp.status)}")
+                f"Error querying etherscan, unexpected HTTP {resp.status!s}")
             return
 
         parsed = await resp.json()
-        if "message" not in parsed or not parsed["message"].lower() == "ok":
-            error = parsed["message"] if "message" in parsed else ""
-            r = parsed["result"] if "result" in parsed else ""
+        if "message" not in parsed or parsed["message"].lower() != "ok":
+            error = parsed.get("message", "")
+            r = parsed.get("result", "")
             log.debug(f"Error querying {resp.url} - {error} - {r}")
             return
 
         def valid_tx(tx):
-            if not tx["to"] == address.lower():
+            if tx["to"] != address.lower():
                 return False
-            if not int(tx["isError"]) == 0:
-                return False
-            return True
+            return int(tx["isError"]) == 0
 
         return {result["hash"]: result for result in parsed["result"] if valid_tx(result)}

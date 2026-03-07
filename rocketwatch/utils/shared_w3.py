@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from web3 import AsyncWeb3
 from web3.beacon import AsyncBeacon
@@ -22,13 +22,13 @@ if cfg.execution_layer.endpoint.archive is not None:
 
 
 class Bacon(AsyncBeacon):
-    async def get_validators_by_ids(self, state_id: str, ids: list[int]) -> Dict[str, Any]:
+    async def get_validators_by_ids(self, state_id: str, ids: list[int]) -> dict[str, Any]:
         id_str = ','.join(map(str, ids))
         return await self._async_make_get_request(
             f"/eth/v1/beacon/states/{state_id}/validators?id={id_str}"
         )
 
-    async def get_sync_committee(self, epoch: int) -> Dict[str, Any]:
+    async def get_sync_committee(self, epoch: int) -> dict[str, Any]:
         return await self._async_make_get_request(
             f"/eth/v1/beacon/states/head/sync_committees?epoch={epoch}"
         )

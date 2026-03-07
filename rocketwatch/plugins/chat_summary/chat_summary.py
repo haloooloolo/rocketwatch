@@ -1,6 +1,6 @@
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 import anthropic
@@ -62,7 +62,7 @@ class ChatSummary(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         last_ts = await self.bot.db["last_summary"].find_one({"channel_id": interaction.channel.id})
         # ratelimit
-        if last_ts and (datetime.now(timezone.utc) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
+        if last_ts and (datetime.now(UTC) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
             await interaction.followup.send("You can only summarize once every 6 hours.", ephemeral=True)
             return
         if interaction.channel.id not in [405163713063288832]:
@@ -70,7 +70,7 @@ class ChatSummary(commands.Cog):
             return
         msg = await interaction.channel.send("Summarizing chat…")
         last_ts = last_ts["timestamp"].replace(
-            tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(timezone.utc) - timedelta(days=365)
+            tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(UTC) - timedelta(days=365)
         prompt = (
             "Task Description:\n"
             "I need a summary of the entire chat log. This summary should be presented in the form of a bullet list.\n\n"
@@ -137,7 +137,7 @@ class ChatSummary(commands.Cog):
         # save the timestamp of the last summary
         await self.bot.db["last_summary"].update_one(
             {"channel_id": interaction.channel.id},
-            {"$set": {"timestamp": datetime.now(timezone.utc)}},
+            {"$set": {"timestamp": datetime.now(UTC)}},
             upsert=True
         )
 

@@ -3,6 +3,7 @@ import json
 import logging
 import random
 import time
+from datetime import UTC
 
 import aiohttp
 import humanize
@@ -76,7 +77,7 @@ class Debug(Cog):
             file = File(io.StringIO(content), "members.txt")
             await interaction.followup.send(file=file)
         except Exception as err:
-            await interaction.followup.send(content=f"```{repr(err)}```")
+            await interaction.followup.send(content=f"```{err!r}```")
 
     # list all roles of a guild with name and id
     @command()
@@ -95,7 +96,7 @@ class Debug(Cog):
             file = File(io.StringIO(content), filename="roles.txt")
             await interaction.followup.send(file=file)
         except Exception as err:
-            await interaction.followup.send(content=f"```{repr(err)}```")
+            await interaction.followup.send(content=f"```{err!r}```")
 
     @command()
     @guilds(cfg.discord.owner.server_id)
@@ -127,7 +128,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str = None):
+    async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None):
         """
         Decode transaction calldata
         """
@@ -219,7 +220,7 @@ class Debug(Cog):
         template_description = "\n".join(template_embed.description.splitlines()[:-2])
 
         import re
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         edit_line = template_embed.description.splitlines()[-1]
         match = re.search(r"Last Edited by <@(?P<user>[0-9]+)> <t:(?P<ts>[0-9]+):R>", edit_line)
@@ -230,7 +231,7 @@ class Debug(Cog):
 
         await self.bot.db.support_bot_dumps.insert_one(
             {
-                "ts"      : datetime.fromtimestamp(ts, tz=timezone.utc),
+                "ts"      : datetime.fromtimestamp(ts, tz=UTC),
                 "template": template_name,
                 "prev"    : None,
                 "new"     : {
@@ -309,9 +310,8 @@ class Debug(Cog):
         Randomly generated Asian restaurant names
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
-                a = (await resp.json())["name"]
+        async with aiohttp.ClientSession() as session, session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
+            a = (await resp.json())["name"]
         await interaction.followup.send(a)
 
     @command()
@@ -347,7 +347,7 @@ class Debug(Cog):
             file = File(io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
             await interaction.followup.send(file=file)
         except Exception as err:
-            await interaction.followup.send(content=f"```Exception: {repr(err)}```")
+            await interaction.followup.send(content=f"```Exception: {err!r}```")
 
     @command()
     async def get_address_of_contract(self, interaction: Interaction, contract: str):
@@ -359,7 +359,7 @@ class Debug(Cog):
                 address = await rp.uncached_get_address_by_name(contract)
             await interaction.followup.send(content=await el_explorer_url(address))
         except Exception as err:
-            await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
+            await interaction.followup.send(content=f"Exception: ```{err!r}```")
             if "No address found for" in repr(err):
                 # private response as a tip
                 m = (
@@ -382,7 +382,7 @@ class Debug(Cog):
         function: str,
         json_args: str = "[]",
         block: str = "latest",
-        address: str = None,
+        address: str | None = None,
         raw_output: bool = False
     ):
         """Call Function of Contract"""
@@ -396,7 +396,7 @@ class Debug(Cog):
                 args = [args]
             v = await rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
         except Exception as err:
-            await interaction.followup.send(content=f"Exception: ```{repr(err)}```")
+            await interaction.followup.send(content=f"Exception: ```{err!r}```")
             return
         try:
             g = await rp.estimate_gas_for_call(function, *args, block=block)
@@ -413,7 +413,7 @@ class Debug(Cog):
             text += "too long, attached as file`"
             await interaction.followup.send(text, file=File(io.StringIO(str(v)), "exception.txt"))
         else:
-            text += f"{str(v)}`"
+            text += f"{v!s}`"
             await interaction.followup.send(content=text)
 
     # --------- OTHERS --------- #

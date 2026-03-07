@@ -100,9 +100,9 @@ def _classify_collection(docs, done_fn):
 
 def _collapse_tree(data: dict) -> dict:
     collapsed_data = {}
-    for status in data.keys():
+    for status in data:
         if isinstance(data[status], dict) and len(data[status]) == 1:
-            sub_status = list(data[status].keys())[0]
+            sub_status = next(iter(data[status].keys()))
             collapsed_data[status] = data[status][sub_status]
         else:
             collapsed_data[status] = data[status]

@@ -347,7 +347,7 @@ class Proposals(commands.Cog):
         # use plt.stackplot to stack the data
         x = list(data.keys())
         y = {v: [] for v in versions}
-        for date, value_ in data.items():
+        for _date, value_ in data.items():
             for version in versions:
                 y[version].append(value_.get(version, 0))
 
@@ -407,11 +407,11 @@ class Proposals(commands.Cog):
             unobserved_minipools -= data["remove_from_total"]["validator_count"]
         minipools.insert(0, ("No proposals yet", unobserved_minipools))
         # move "Unknown" to be before "No proposals yet"
-        minipools.insert(1, minipools.pop([i for i, (x, y) in enumerate(minipools) if x == "Unknown"][0]))
+        minipools.insert(1, minipools.pop(next(i for i, (x, y) in enumerate(minipools) if x == "Unknown")))
         # move "External (if it exists) to be before "Unknown"
         # minipools is a list of tuples (name, count)
         if "External" in [x for x, y in minipools]:
-            minipools.insert(2, minipools.pop([i for i, (x, y) in enumerate(minipools) if x == "External"][0]))
+            minipools.insert(2, minipools.pop(next(i for i, (x, y) in enumerate(minipools) if x == "External")))
 
         # get node operators
         node_operators = [(x, y["count"]) for x, y in data.items() if x != "remove_from_total"]
@@ -426,17 +426,17 @@ class Proposals(commands.Cog):
             unobserved_node_operators -= data["remove_from_total"]["count"]
         node_operators.insert(0, ("No proposals yet", unobserved_node_operators))
         # move "Unknown" to be before "No proposals yet"
-        node_operators.insert(1, node_operators.pop([i for i, (x, y) in enumerate(node_operators) if x == "Unknown"][0]))
+        node_operators.insert(1, node_operators.pop(next(i for i, (x, y) in enumerate(node_operators) if x == "Unknown")))
         # move "External (if it exists) to be before "Unknown"
         # node_operators is a list of tuples (name, count)
         if "External" in [x for x, y in node_operators]:
-            node_operators.insert(2, node_operators.pop([i for i, (x, y) in enumerate(node_operators) if x == "External"][0]))
+            node_operators.insert(2, node_operators.pop(next(i for i, (x, y) in enumerate(node_operators) if x == "External")))
 
         # sort data
         ax1.pie(
             [x[1] for x in minipools],
             colors=[COLORS.get(x[0], "red") for x in minipools],
-            autopct=lambda pct: ('%.1f%%' % pct) if pct > 5 else '',
+            autopct=lambda pct: (f'{pct:.1f}%') if pct > 5 else '',
             startangle=90,
             textprops={'fontsize': '12'},
         )
@@ -454,7 +454,7 @@ class Proposals(commands.Cog):
         ax2.pie(
             [x[1] for x in node_operators],
             colors=[COLORS.get(x[0], "red") for x in node_operators],
-            autopct=lambda pct: ('%.1f%%' % pct) if pct > 5 else '',
+            autopct=lambda pct: (f'{pct:.1f}%') if pct > 5 else '',
             startangle=90,
             textprops={'fontsize': '12'},
         )

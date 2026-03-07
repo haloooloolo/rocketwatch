@@ -73,7 +73,7 @@ class FeeDistribution(commands.Cog):
                     labels[i] = ""
 
             ax.set_title(f"{bond} ETH")
-            ax.pie(sizes, labels=labels, autopct=lambda p: f"{p * total / 100:.0f}" if (p >= 5) else "")
+            ax.pie(sizes, labels=labels, autopct=lambda p, _total=total: f"{p * _total / 100:.0f}" if (p >= 5) else "")
 
         if mode == "tree":
             e.description = f"```\n{render_tree_legacy(tree, 'Minipools')}\n```"

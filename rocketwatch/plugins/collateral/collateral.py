@@ -1,6 +1,7 @@
+import functools
 import logging
+import operator
 from io import BytesIO
-from typing import Optional
 
 import inflect
 import matplotlib as mpl
@@ -69,7 +70,7 @@ async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str,
     }
 
 
-async def get_average_collateral_percentage_per_node(collateral_cap: Optional[int], bonded: bool):
+async def get_average_collateral_percentage_per_node(collateral_cap: int | None, bonded: bool):
     # get stakes for each node
     stakes = list((await get_node_minipools_and_collateral()).values())
     # get the current rpl price
@@ -114,7 +115,7 @@ class Collateral(commands.Cog):
               bonded="Calculate collateral as a percent of bonded eth instead of borrowed")
     async def node_tvl_vs_collateral(self,
                                      interaction: Interaction,
-                                     node_address: str = None,
+                                     node_address: str | None = None,
                                      bonded: bool = False):
         """
         Show a scatter plot of collateral ratios for given node TVLs
@@ -237,7 +238,7 @@ class Collateral(commands.Cog):
 
         data = await get_average_collateral_percentage_per_node(collateral_cap, bonded)
         distribution = [(collateral, len(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])]
-        counts = sum(([collateral] * num_nodes for collateral, num_nodes in distribution), [])
+        counts = functools.reduce(operator.iadd, ([collateral] * num_nodes for collateral, num_nodes in distribution), [])
 
         # If the raw data were requested, print them and exit early
         if raw:

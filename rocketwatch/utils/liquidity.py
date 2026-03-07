@@ -2,8 +2,8 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
 import aiohttp
 import numpy as np
@@ -87,7 +87,7 @@ class CEX(Exchange, ABC):
         asks = OrderedDict(sorted(self._get_asks(data).items()))
         return bids, asks
 
-    async def _get_liquidity(self, market: Market, session: aiohttp.ClientSession) -> Optional[Liquidity]:
+    async def _get_liquidity(self, market: Market, session: aiohttp.ClientSession) -> Liquidity | None:
         bids, asks = await self._get_order_book(market, session)
         if not (bids and asks):
             log.warning("Empty order book")
@@ -361,10 +361,10 @@ class Kraken(CEX):
         return {"pair": f"{market.major}{market.minor}", "count": 500}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in list(api_response["result"].values())[0]["bids"]}
+        return {float(price): float(size) for price, size, _ in next(iter(api_response["result"].values()))["bids"]}
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in list(api_response["result"].values())[0]["asks"]}
+        return {float(price): float(size) for price, size, _ in next(iter(api_response["result"].values()))["asks"]}
 
 
 class Kucoin(CEX):
@@ -617,7 +617,7 @@ class DEX(Exchange, ABC):
             pass
 
         @abstractmethod
-        async def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Liquidity | None:
             pass
 
     def __init__(self, pools: list[LiquidityPool]):
@@ -654,7 +654,7 @@ class BalancerV2(DEX):
         async def get_normalized_price(self) -> float:
             return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
-        async def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Liquidity | None:
             balance_0, balance_1 = (await self.vault.functions.getPoolTokens(self.id).call())[1]
             if (balance_0 == 0) or (balance_1 == 0):
                 log.warning("Empty token balances")
@@ -728,7 +728,7 @@ class UniswapV3(DEX):
 
         async def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
             results = await rp.multicall([self.contract.functions.ticks(tick) for tick in ticks])
-            return dict(zip(ticks, [r[1] for r in results]))
+            return dict(zip(ticks, [r[1] for r in results], strict=False))
 
         async def get_initialized_ticks(self, current_tick: int) -> list[int]:
             ticks = []
@@ -739,7 +739,7 @@ class UniswapV3(DEX):
                 self.contract.functions.tickBitmap(word) for word in word_range
             ])
 
-            for word, tick_bitmap in zip(word_range, bitmaps):
+            for word, tick_bitmap in zip(word_range, bitmaps, strict=False):
                 if not tick_bitmap:
                     continue
 
@@ -769,7 +769,7 @@ class UniswapV3(DEX):
         async def get_normalized_price(self) -> float:
             return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
 
-        async def get_liquidity(self) -> Optional[Liquidity]:
+        async def get_liquidity(self) -> Liquidity | None:
             price = await self.get_price()
             initial_liquidity = await self.contract.functions.liquidity().call()
 

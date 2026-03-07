@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Optional, cast
+from typing import Literal, cast
 
 import aiohttp
 from discord import Interaction
@@ -46,7 +46,7 @@ class Forum(commands.Cog):
     class User:
         id: int
         username: str
-        name: Optional[str]
+        name: str | None
         topic_count: int
         post_count: int
         likes_received: int

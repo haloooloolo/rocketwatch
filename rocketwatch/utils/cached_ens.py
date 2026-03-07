@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 from aiocache import cached
 from ens import AsyncENS
@@ -17,11 +16,11 @@ class CachedEns:
         self.ens = AsyncENS.from_web3(w3_mainnet)
 
     @cached(key_builder=lambda _, _self, address: address)
-    async def get_name(self, address: ChecksumAddress) -> Optional[str]:
+    async def get_name(self, address: ChecksumAddress) -> str | None:
         log.debug(f"Retrieving ENS name for {address}")
         return await self.ens.name(address)
 
     @cached(key_builder=lambda _, _self, name: name)
-    async def resolve_name(self, name: str) -> Optional[ChecksumAddress]:
+    async def resolve_name(self, name: str) -> ChecksumAddress | None:
         log.debug(f"Resolving ENS name {name}")
         return await self.ens.address(name)

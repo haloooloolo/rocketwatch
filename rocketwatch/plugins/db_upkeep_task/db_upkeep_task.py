@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 import pymongo
 from cronitor import Monitor
@@ -164,7 +164,7 @@ class DBUpkeepTask(commands.Cog):
         query: dict[str, Any],
         call_fn: Callable[[dict[str, Any]], list[tuple]],
         projection: dict[str, Any],
-        label: Optional[str],
+        label: str | None,
     ) -> None:
         items = await collection.find(query, projection).to_list()
         if not items:
@@ -189,7 +189,7 @@ class DBUpkeepTask(commands.Cog):
             calls = [(e[1], e[2]) for e in expanded]
             results = await rp.multicall(calls)
             updates = defaultdict(dict)
-            for e, value in zip(expanded, results):
+            for e, value in zip(expanded, results, strict=False):
                 addr, transform, field = e[0], e[3], e[4]
                 if transform is not None and value is not None:
                     value = transform(value)
@@ -214,7 +214,7 @@ class DBUpkeepTask(commands.Cog):
         data = {}
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             results = await rp.multicall([nm.functions.getNodeAt(i) for i in index_batch])
-            data |= dict(zip(index_batch, results))
+            data |= dict(zip(index_batch, results, strict=False))
         await self.bot.db.node_operators.insert_many(
             [{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()]
         )
@@ -314,7 +314,7 @@ class DBUpkeepTask(commands.Cog):
         for index_batch in as_chunks(range(latest_db + 1, latest_rp + 1), self.batch_size):
             results = await rp.multicall([mm.functions.getMinipoolAt(i) for i in index_batch])
             await self.bot.db.minipools.insert_many(
-                [{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results)]
+                [{"_id": i, "address": w3.to_checksum_address(a)} for i, a in zip(index_batch, results, strict=False)]
             )
 
     @timerun_async
@@ -518,7 +518,7 @@ class DBUpkeepTask(commands.Cog):
             ]
             results = await rp.multicall(fns)
             ops = []
-            for v, info_raw in zip(batch, results):
+            for v, info_raw in zip(batch, results, strict=False):
                 info = _unpack_validator_info_dynamic(info_raw) if info_raw is not None else None
                 if info is not None:
                     ops.append(UpdateOne({"_id": v["_id"]}, {"$set": info}))

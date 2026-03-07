@@ -2,8 +2,7 @@ import asyncio
 import contextlib
 import io
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 from urllib import parse
 
 import regex as re
@@ -161,7 +160,7 @@ class DetectScam(Cog):
 
         return text
 
-    async def _generate_message_report(self, message: Message, reason: str) -> Optional[tuple[Embed, Embed, File]]:
+    async def _generate_message_report(self, message: Message, reason: str) -> tuple[Embed, Embed, File] | None:
         try:
             message = await message.channel.fetch_message(message.id)
             if isinstance(message, DeletedReferencedMessage):
@@ -210,7 +209,7 @@ class DetectScam(Cog):
             })
             return warning, report, contents
 
-    async def _generate_thread_report(self, thread: Thread, reason: str) -> Optional[tuple[Embed, Embed]]:
+    async def _generate_thread_report(self, thread: Thread, reason: str) -> tuple[Embed, Embed] | None:
         try:
             thread = await thread.guild.fetch_channel(thread.id)
         except (errors.NotFound, errors.Forbidden):
@@ -307,14 +306,14 @@ class DetectScam(Cog):
         await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"warning_id": warning_msg.id}})
         await interaction.followup.send(content="Thanks for reporting!")
 
-    def _markdown_link_trick(self, message: Message) -> Optional[str]:
+    def _markdown_link_trick(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         for m in self.markdown_link_pattern.findall(txt):
             if "." in m[0] and m[0] != m[1]:
                 return "Markdown link with possible domain in visible portion that does not match the actual domain"
         return None
 
-    def _discord_invite(self, message: Message) -> Optional[str]:
+    def _discord_invite(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         if match := self.invite_pattern.search(txt):
             link = match.group(0)
@@ -326,14 +325,14 @@ class DetectScam(Cog):
                 return "Invite to external server"
         return None
 
-    def _tap_on_this(self, message: Message) -> Optional[str]:
+    def _tap_on_this(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         keywords = (
             [("tap on", "click on"), "proper"]
         )
         return "Tap on deez nuts nerd" if self.__txt_contains(txt, keywords) else None
 
-    def _ticket_system(self, message: Message) -> Optional[str]:
+    def _ticket_system(self, message: Message) -> str | None:
         # message contains one of the relevant keyword combinations and a link
         txt = self._get_message_content(message)
         if not self.basic_url_pattern.search(txt):
@@ -376,7 +375,7 @@ class DetectScam(Cog):
                 return all(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
         return False
 
-    def _paperhands(self, message: Message) -> Optional[str]:
+    def _paperhands(self, message: Message) -> str | None:
         # message contains the word "paperhand" and a link
         txt = self._get_message_content(message)
         if "http" not in txt:
@@ -392,13 +391,13 @@ class DetectScam(Cog):
         return None
 
     # contains @here or @everyone but doesn't actually have the permission to do so
-    def _mention_everyone(self, message: Message) -> Optional[str]:
+    def _mention_everyone(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         if ("@here" in txt or "@everyone" in txt) and not message.author.guild_permissions.mention_everyone:
             return "Mentioned @here or @everyone without permission"
         return None
 
-    async def _reaction_spam(self, reaction: Reaction, user: User) -> Optional[str]:
+    async def _reaction_spam(self, reaction: Reaction, user: User) -> str | None:
         # user reacts to their own message multiple times in quick succession to draw attention
         # check if user is a bot
         if user.bot:
@@ -411,7 +410,7 @@ class DetectScam(Cog):
             return None
 
         # check if the message is new enough (we ignore any reactions on messages older than 5 minutes)
-        if (reaction.message.created_at - datetime.now(timezone.utc)) > timedelta(minutes=5):
+        if (reaction.message.created_at - datetime.now(UTC)) > timedelta(minutes=5):
             log.debug(f"Ignoring reaction on old message {reaction.message.id}")
             return None
 
@@ -556,7 +555,7 @@ class DetectScam(Cog):
             return
 
         keywords = ("support", "tick", "assistance", "error", "🎫", "🎟️")
-        if any(kw in thread.name.lower() for kw in keywords) or re.search(r"(-|–|—)\d{3,}", thread.name):
+        if any(kw in thread.name.lower() for kw in keywords) or re.search(r"(-|–|—)\d{3,}", thread.name):  # noqa: RUF001
             await self.report_thread(thread, "Illegitimate support thread")
             return
         names = (".", "!", "///")
@@ -609,7 +608,7 @@ class DetectScam(Cog):
         )
         await interaction.followup.send(content="Thanks for reporting!")
 
-    async def _generate_user_report(self, user: Member, reason: str) -> Optional[Embed]:
+    async def _generate_user_report(self, user: Member, reason: str) -> Embed | None:
         if not isinstance(user, Member):
             return None
 

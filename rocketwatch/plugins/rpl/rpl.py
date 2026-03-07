@@ -150,7 +150,7 @@ class RPL(commands.Cog):
                 current_withdrawable_rpl = liquid_rpl
 
         # break the tuples into lists to plot
-        x, y = zip(*list(free_rpl_liquidity.values()))
+        x, y = zip(*list(free_rpl_liquidity.values()), strict=False)
 
         embed = Embed()
 
@@ -169,8 +169,8 @@ class RPL(commands.Cog):
         ax = plt.gca()
         ax.set_ylabel("Withdrawable RPL")
         ax.set_xlabel("RPL / ETH ratio")
-        ax.yaxis.set_major_formatter(lambda x, _: "{:.1f}m".format(x / 1000000))
-        ax.xaxis.set_major_formatter(lambda x, _: "{:.4f}".format(x))
+        ax.yaxis.set_major_formatter(lambda x, _: f"{x / 1000000:.1f}m")
+        ax.xaxis.set_major_formatter(lambda x, _: f"{x:.4f}")
 
         img = BytesIO()
         plt.tight_layout()

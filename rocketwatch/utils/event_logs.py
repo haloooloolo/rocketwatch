@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from eth_typing import BlockNumber
 from web3.contract.contract import ContractEvent
@@ -15,7 +15,7 @@ def get_logs(
     event: ContractEvent,
     from_block: BlockNumber,
     to_block: BlockNumber,
-    arg_filters: Optional[dict[str, Any]] = None
+    arg_filters: dict[str, Any] | None = None
 ) -> list[LogReceipt]:
     start_block = from_block
     end_block = to_block

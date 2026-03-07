@@ -27,18 +27,18 @@ def uptime(time, highres=False):
 
     days, time = time // units.days, time % units.days
     if days:
-        parts.append('%d day%s' % (days, 's' if days != 1 else ''))
+        parts.append(f'{days} day{"s" if days != 1 else ""}')
 
     hours, time = time // units.hours, time % units.hours
     if hours:
-        parts.append('%d hour%s' % (hours, 's' if hours != 1 else ''))
+        parts.append(f'{hours} hour{"s" if hours != 1 else ""}')
 
     minutes, time = time // units.minutes, time % units.minutes
     if minutes:
-        parts.append('%d minute%s' % (minutes, 's' if minutes != 1 else ''))
+        parts.append(f'{minutes} minute{"s" if minutes != 1 else ""}')
 
     if time or not parts:
-        parts.append('%.0f seconds' % time)
+        parts.append(f'{time:.0f} seconds')
 
     return " ".join(parts[:2] if not highres else parts)
 
@@ -100,7 +100,7 @@ def render_tree_legacy(data: dict, name: str) -> str:
     max_right_len = max(len(v) for v in fmt_values)
 
     lines = []
-    for s, v in zip(strings, fmt_values):
+    for s, v in zip(strings, fmt_values, strict=False):
         # right align all values
         lines.append(s.ljust(max_left_len) + v.rjust(max_right_len))
 
@@ -134,20 +134,20 @@ def render_branch(k, v, prefix, current_depth=0, max_depth=0, reverse=False, m_p
 def render_tree(data: dict, name: str, max_depth: int = 0) -> str:
     # remove empty states
     data = {k: v for k, v in data.items() if v}
-    lines, values, depths = map(list, zip(*list(reversed(render_branch(name, data, "", max_depth=max_depth, reverse=True)))))
+    lines, values, depths = map(list, zip(*list(reversed(render_branch(name, data, "", max_depth=max_depth, reverse=True))), strict=False))
     max_right_len, max_left_len = [], []
     # longest string offset per depth
-    max_left_len = max(max(len(s) for s, d in zip(lines, depths) if d == depth) for depth in set(depths))
+    max_left_len = max(max(len(s) for s, d in zip(lines, depths, strict=False) if d == depth) for depth in set(depths))
 
     # same for right
-    max_right_len = max(max(len(str(v)) for v, d in zip(values, depths) if d == depth) for depth in set(depths))
+    max_right_len = max(max(len(str(v)) for v, d in zip(values, depths, strict=False) if d == depth) for depth in set(depths))
 
     max_right_len += 2
     COLORS = [Style.BRIGHT, Style.BRIGHT, Fore.RESET, Fore.BLACK, Fore.BLACK, Fore.BLACK]
-    for i, (v, d) in enumerate(zip(values, depths)):
+    for i, (v, d) in enumerate(zip(values, depths, strict=False)):
         _v = v
         _v = f"{COLORS[d]}{v}{Style.RESET_ALL}"
         lines[i] = f"{lines[i].ljust(max_left_len, ' ')}{' ' * (max_right_len - len(str(v)))}{_v}"
     # replace all spaces with non-breaking spaces
-    lines = [line.replace(" ", " ") for line in lines]
+    lines = [line.replace(" ", "\u00a0") for line in lines]
     return "\n".join(lines)

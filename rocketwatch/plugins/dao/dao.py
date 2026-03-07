@@ -209,7 +209,7 @@ class OnchainDAO(Cog):
         titles: list[str] = await rp.multicall([
             proposal_contract.functions.getMessage(proposal_id) for proposal_id in suggestions
         ])
-        return [Choice(name=f"#{pid}: {title}", value=pid) for pid, title in zip(suggestions, titles)]
+        return [Choice(name=f"#{pid}: {title}", value=pid) for pid, title in zip(suggestions, titles, strict=False)]
 
     @command()
     @describe(proposal="proposal to show voters for")

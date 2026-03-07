@@ -153,7 +153,7 @@ class MinipoolDistribution(commands.Cog):
         if raw:
             description = ""
             # count number of nodes in 5% intervals + significant thresholds
-            ticks = list(np.arange(0.05, 1, 0.05)) + [1 / 3, 2 / 3, 1.0]
+            ticks = [*list(np.arange(0.05, 1, 0.05)), 1 / 3, 2 / 3, 1.0]
             for threshold in sorted(ticks):
                 index = y.searchsorted(threshold)
                 num_nodes = x[index]

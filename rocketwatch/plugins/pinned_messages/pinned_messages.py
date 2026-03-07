@@ -51,7 +51,7 @@ class PinnedMessages(commands.Cog):
                     # delete and resend message
                     channel = self.bot.get_channel(message["channel_id"])
                     # check if we have message sent already and if its the latest message in the channel
-                    if "message_id" in message and message["message_id"]:
+                    if message.get("message_id"):
                         messages = [message async for message in channel.history(limit=5)]
                         # if it isnt within the last 5 messages, we need to resend it
                         if any(m.id == message["message_id"] for m in messages):

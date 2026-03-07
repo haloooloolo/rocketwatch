@@ -4,7 +4,7 @@ import pickle
 import time
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 import discord
 import pymongo
@@ -178,7 +178,7 @@ class EventCore(commands.Cog):
             log.debug("No pending events in queue")
             return
 
-        def try_load(_entry: dict, _key: str) -> Optional[Any]:
+        def try_load(_entry: dict, _key: str) -> Any | None:
             try:
                 serialized = _entry.get(_key)
                 return pickle.loads(serialized) if serialized else None
@@ -200,7 +200,7 @@ class EventCore(commands.Cog):
                 await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
 
             for event_entry in db_events:
-                embed: Optional[Embed] = try_load(event_entry, "embed")
+                embed: Embed | None = try_load(event_entry, "embed")
                 files = []
 
                 if embed and (image := try_load(event_entry, "image")):
@@ -268,8 +268,8 @@ class EventCore(commands.Cog):
     async def _replace_or_add_status(
             self,
             target_channel: str,
-            embed: Optional[Embed],
-            prev_status: Optional[dict]
+            embed: Embed | None,
+            prev_status: dict | None
     ) -> None:
         target_channel_id = self.channels.get(target_channel) or self.channels["default"]
 

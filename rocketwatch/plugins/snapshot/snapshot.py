@@ -37,12 +37,11 @@ class Snapshot(EventPlugin):
 
     @staticmethod
     @retry_async(tries=3, delay=1)
-    async def _query_api(query: Query) -> list[dict] | Optional[dict]:
+    async def _query_api(query: Query) -> list[dict] | dict | None:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://hub.snapshot.org/graphql", json=query_json) as resp:
-                response = await resp.json()
+        async with aiohttp.ClientSession() as session, session.get("https://hub.snapshot.org/graphql", json=query_json) as resp:
+            response = await resp.json()
         if "errors" in response:
             raise Exception(response["errors"])
         return response["data"][query.name]
@@ -162,7 +161,7 @@ class Snapshot(EventPlugin):
                 proposal_height += self._TITLE_SIZE + self._V_SPACE_LARGE
 
             # order (choice, score) pairs by score
-            choice_scores = list(zip(self.choices, self.scores))
+            choice_scores = list(zip(self.choices, self.scores, strict=False))
             choice_scores.sort(key=lambda x: x[1], reverse=True)
             for choice, score in choice_scores:
                 proposal_height += render_choice(choice, score, x_offset, y_offset + proposal_height)
@@ -266,7 +265,7 @@ class Snapshot(EventPlugin):
 
         async def create_end_event(self) -> Event:
             max_for, max_against = 0, 0
-            for choice, score in zip(self.choices, self.scores):
+            for choice, score in zip(self.choices, self.scores, strict=False):
                 if "against" in choice.lower():
                     max_against = max(max_against, score)
                 elif "abstain" not in choice.lower():
@@ -303,7 +302,7 @@ class Snapshot(EventPlugin):
         choice: Choice
         reason: str
 
-        def pretty_print(self) -> Optional[str]:
+        def pretty_print(self) -> str | None:
             match (raw_choice := self.choice):
                 case int():
                     return self._format_single_choice(raw_choice)
@@ -350,7 +349,7 @@ class Snapshot(EventPlugin):
             )
             return "```" + graph.get_string().replace("]", "%]") + "```"
 
-        async def create_event(self, prev_vote: Optional['Snapshot.Vote']) -> Optional[Event]:
+        async def create_event(self, prev_vote: Optional['Snapshot.Vote']) -> Event | None:
             node = await rp.call("rocketSignerRegistry.signerToNode", self.voter)
             signer = await el_explorer_url(self.voter)
             voter = signer if (node == ADDRESS_ZERO) else await el_explorer_url(node)
@@ -414,13 +413,13 @@ class Snapshot(EventPlugin):
             )
 
     @staticmethod
-    async def fetch_proposal(proposal_id: str) -> Optional[Proposal]:
+    async def fetch_proposal(proposal_id: str) -> Proposal | None:
         query = Query(
             name="proposal",
             arguments=[Argument(name="id", value=f"\"{proposal_id}\"")],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"]
         )
-        response: Optional[dict] = await Snapshot._query_api(query)
+        response: dict | None = await Snapshot._query_api(query)
         return Snapshot.Proposal(**response) if response else None
 
     @staticmethod
@@ -591,8 +590,8 @@ class Snapshot(EventPlugin):
             return await interaction.followup.send(embed=embed)
 
         num_proposals = len(proposals)
-        num_cols = min(int(math.ceil(math.sqrt(num_proposals))), 4)
-        num_rows = int(math.ceil(num_proposals / num_cols))
+        num_cols = min(math.ceil(math.sqrt(num_proposals)), 4)
+        num_rows = math.ceil(num_proposals / num_cols)
 
         v_spacing = 120
         h_spacing = 80

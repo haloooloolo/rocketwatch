@@ -124,9 +124,9 @@ class Transactions(EventPlugin):
             if "to" in tnx:
                 events.extend(await self.process_transaction(block, tnx, tnx.to, tnx.input))
             else:
-                log.debug((
+                log.debug(
                     f"Skipping transaction {tnx.hash.hex()} as it has no `to` parameter. "
-                    f"Possible contract creation.")
+                    f"Possible contract creation."
                 )
 
         return events

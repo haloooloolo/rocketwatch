@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections import OrderedDict
 from io import BytesIO
-from typing import Literal, Optional, cast
+from typing import Literal, cast
 
 import aiohttp
 import numpy as np
@@ -73,7 +73,7 @@ class Wall(commands.Cog):
             Bitrue("RPL", ["USDT"]),
             CoinTR("RPL", ["USDT"]),
         }
-        self.dex: Optional[set[DEX]] = None
+        self.dex: set[DEX] | None = None
 
     async def _get_dex(self) -> set[DEX]:
         if self.dex is None:
@@ -112,7 +112,7 @@ class Wall(commands.Cog):
         liquidity: dict[CEX, float] = {}
         async with aiohttp.ClientSession() as session:
             requests = [cex.get_liquidity(session) for cex in self.cex]
-            for result in zip(self.cex, await asyncio.gather(*requests, return_exceptions=True)):
+            for result in zip(self.cex, await asyncio.gather(*requests, return_exceptions=True), strict=False):
                 if not isinstance(result, Exception):
                     cex, markets = result
                     depth[cex], liquidity[cex] = self._get_market_depth_and_liquidity(markets, x, rpl_usd)
@@ -178,7 +178,7 @@ class Wall(commands.Cog):
         y_offset = 0.0
         max_label_length: int = np.max([len(t[1]) for t in (cex_data_aggr + dex_data_aggr)])
 
-        def add_data(_data: list[tuple[np.ndarray, str, str]], _name: Optional[str]) -> None:
+        def add_data(_data: list[tuple[np.ndarray, str, str]], _name: str | None) -> None:
             labels, handles = [], []
             for y_values, label, color in _data:
                 y.append(y_values)
@@ -258,7 +258,7 @@ class Wall(commands.Cog):
             self,
             interaction: Interaction,
             min_price: float = 0.0,
-            max_price: float = None,
+            max_price: float | None = None,
             sources: Literal["All", "CEX", "DEX"] = "All"
     ) -> None:
         """Show the current RPL market depth across exchanges"""
@@ -273,7 +273,7 @@ class Wall(commands.Cog):
         try:
             async with aiohttp.ClientSession() as session:
                 # use Binance as USD price oracle
-                rpl_usd = list((await Binance("RPL", ["USDT"]).get_liquidity(session)).values())[0].price
+                rpl_usd = next(iter((await Binance("RPL", ["USDT"]).get_liquidity(session)).values())).price
                 eth_usd = await rp.get_eth_usdc_price()
                 rpl_eth = rpl_usd / eth_usd
         except Exception as e:

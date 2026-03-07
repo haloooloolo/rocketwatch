@@ -222,8 +222,8 @@ class APR(commands.Cog):
         old_formatter = plt.gca().xaxis.get_major_formatter()
         plt.gca().xaxis.set_major_formatter(DateFormatter("%b %d"))
 
-        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:.1%}".format(x)))
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:.1%}".format(x)))
+        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
+        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.set_ylabel("Effectiveness")
         ax2.set_ylabel("APR")
         ax1.set_ylim(top=1)
@@ -361,7 +361,7 @@ class APR(commands.Cog):
             if i > 8:
                 y_7d.append(to_apr(datapoints[i - 9], datapoints[i]))
                 y_7d_virtual.append(to_apr(datapoints[i - 9], datapoints[i], effective=False))
-                bare_apr = y_7d_virtual[-1] / Decimal((1 - node_fee))
+                bare_apr = y_7d_virtual[-1] / Decimal(1 - node_fee)
                 y_7d_solo.append(bare_apr)
                 peth_share_leb8 = 0.75
                 y_7d_node_operators_leb8_14.append(bare_apr * Decimal(1 + (0.14 * peth_share_leb8 / (1 - peth_share_leb8))))
@@ -405,7 +405,7 @@ class APR(commands.Cog):
         old_formatter = plt.gca().xaxis.get_major_formatter()
         plt.gca().xaxis.set_major_formatter(DateFormatter("%m.%d"))
 
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: "{:.1%}".format(x)))
+        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.legend(loc="lower left")
 
         img = BytesIO()

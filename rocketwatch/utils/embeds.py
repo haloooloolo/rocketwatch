@@ -2,7 +2,8 @@ import contextlib
 import datetime
 import logging
 import math
-from typing import Callable, Literal, Optional
+from collections.abc import Callable
+from typing import Literal
 
 import aiohttp
 import discord
@@ -84,9 +85,8 @@ _pdao_delegates: dict[str, str] = {}
 async def get_pdao_delegates() -> dict[str, str]:
     global _pdao_delegates
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://delegates.rocketpool.net/api/delegates") as resp:
-                _pdao_delegates = {d["nodeAddress"]: d["name"] for d in await resp.json()}
+        async with aiohttp.ClientSession() as session, session.get("https://delegates.rocketpool.net/api/delegates") as resp:
+            _pdao_delegates = {d["nodeAddress"]: d["name"] for d in await resp.json()}
     except Exception:
         log.warning("Failed to fetch pDAO delegates.")
     return _pdao_delegates
@@ -96,7 +96,7 @@ async def el_explorer_url(
         target: str,
         name: str = "",
         prefix: str | Literal[-1] = "",
-        name_fmt: Optional[Callable[[str], str]] = None,
+        name_fmt: Callable[[str], str] | None = None,
         block="latest"
 ):
     if w3.is_address(target):
@@ -490,13 +490,13 @@ async def assemble(args) -> Embed:
         e.add_field(name="Smoothing Pool Balance",
                     value=f"||{args.smoothie_amount}|| ETH")
 
-    if "reason" in args and args["reason"]:
+    if args.get("reason"):
         e.add_field(name="Likely Revert Reason",
                     value=f"`{args.reason}`",
                     inline=False)
 
     # show timestamp
-    if "time" in args.keys():
+    if "time" in args:
         times = [args["time"]]
     else:
         times = [value for key, value in args.items() if "time" in key.lower()]

@@ -2,8 +2,8 @@ import hashlib
 import json
 import logging
 import warnings
-from collections.abc import Coroutine
-from typing import Callable, Literal, Optional
+from collections.abc import Callable, Coroutine
+from typing import Literal
 
 from discord import Interaction
 from discord.app_commands import command, guilds
@@ -216,7 +216,7 @@ class Events(EventPlugin):
             self._partial_filters, self.event_map, self.topic_map = old_config
             raise err
 
-    async def process_events(self, events: list[LogReceipt | EventData]) -> tuple[list[Event], Optional[BlockNumber]]:
+    async def process_events(self, events: list[LogReceipt | EventData]) -> tuple[list[Event], BlockNumber | None]:
         events.sort(key=lambda e: (e.blockNumber, e.logIndex))
         messages = []
         upgrade_block = None
@@ -233,10 +233,10 @@ class Events(EventPlugin):
 
             args_hash = hashlib.md5()
 
-            def hash_args(_args: aDict) -> None:
+            def hash_args(_args: aDict, _hash=args_hash) -> None:
                 for k, v in sorted(_args.items()):
                     if not ("time" in k.lower() or "block" in k.lower()):
-                        args_hash.update(f"{k}:{v}".encode())
+                        _hash.update(f"{k}:{v}".encode())
 
             event_name, embed = None, None
             if (n := rp.get_name_by_address(event.address)) and "topics" in event:
@@ -346,10 +346,10 @@ class Events(EventPlugin):
                     tx_aggregates[full_event_name] = amount + _event["args"]["amountOfStETH"]
                 elif full_event_name == "rocketTokenRETH.Transfer":
                     conflicting_events = ["rocketTokenRETH.TokensBurned", "rocketDepositPool.DepositReceived"]
-                    if any((event in events_by_name for event in conflicting_events)):
+                    if any(event in events_by_name for event in conflicting_events):
                         events.remove(event)
                         continue
-                    if prev_event := tx_aggregates.get(full_event_name, None):
+                    if prev_event := tx_aggregates.get(full_event_name):
                         # only keep largest rETH transfer
                         contract = await rp.get_contract_by_address(event["address"])
                         _event = aDict(contract.events[event_name]().process_log(event))
@@ -403,7 +403,7 @@ class Events(EventPlugin):
 
         return events
 
-    async def handle_global_event(self, event_name: str, event: aDict) -> Optional[Embed]:
+    async def handle_global_event(self, event_name: str, event: aDict) -> Embed | None:
         receipt = await w3.eth.get_transaction_receipt(event.transactionHash)
 
         is_minipool_event = await rp.is_minipool(event.address) or await rp.is_minipool(receipt.to)
@@ -459,7 +459,7 @@ class Events(EventPlugin):
 
         return await self.handle_event(event_name, event)
 
-    async def handle_event(self, event_name: str, event: aDict) -> Optional[Embed]:
+    async def handle_event(self, event_name: str, event: aDict) -> Embed | None:
         args = aDict(event.args)
 
         if "negative_rETH_ratio_update_event" in event_name:
@@ -566,7 +566,7 @@ class Events(EventPlugin):
             args.newRatio = 100 * solidity.to_float(args.newRatio)
 
         if "submission" in args:
-            args.submission = aDict(dict(zip(SUBMISSION_KEYS, args.submission)))
+            args.submission = aDict(dict(zip(SUBMISSION_KEYS, args.submission, strict=False)))
 
         if "otc_swap" in event_name:
             # signer = seller
@@ -802,8 +802,7 @@ class Events(EventPlugin):
                 for withdraw_event in processed_logs:
                     # event.logindex 44, withdraw_event.logindex 50, rough distance like that
                     # reminder order is different than the previous example
-                    if event.logIndex - 7 < withdraw_event.logIndex < event.logIndex:
-                        if withdraw_event.args["by"] == deposit_contract:
+                    if event.logIndex - 7 < withdraw_event.logIndex < event.logIndex and withdraw_event.args["by"] == deposit_contract:
                             args.balanceAmount = withdraw_event.args["amount"]
                             args.creditAmount -= args.balanceAmount
                             break

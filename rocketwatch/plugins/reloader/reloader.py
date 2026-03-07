@@ -19,11 +19,11 @@ class Reloader(Cog):
         self.bot = bot
 
     async def _get_loaded_extensions(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        loaded = {ext.split(".")[-1] for ext in self.bot.extensions.keys()}
+        loaded = {ext.split(".")[-1] for ext in self.bot.extensions}
         return [Choice(name=plugin, value=plugin) for plugin in loaded if current.lower() in plugin.lower()][:25]
 
     async def _get_unloaded_extensions(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        loaded = {ext.split(".")[-1] for ext in self.bot.extensions.keys()}
+        loaded = {ext.split(".")[-1] for ext in self.bot.extensions}
         all = {path.stem for path in Path("plugins").glob('**/*.py')}
         return [Choice(name=plugin, value=plugin) for plugin in (all - loaded) if current.lower() in plugin.lower()][:25]
 

@@ -2,7 +2,6 @@ import io
 import logging
 import traceback
 from pathlib import Path
-from typing import Optional
 
 from discord import (
     File,
@@ -123,7 +122,7 @@ class RocketWatch(Bot):
     async def get_or_fetch_user(self, user_id: int) -> User:
         return self.get_user(user_id) or await self.fetch_user(user_id)
 
-    async def report_error(self, exception: Exception, interaction: Optional[Interaction] = None, *args) -> None:
+    async def report_error(self, exception: Exception, interaction: Interaction | None = None, *args) -> None:
         err_description = f"`{repr(exception)[:150]}`"
 
         if args:

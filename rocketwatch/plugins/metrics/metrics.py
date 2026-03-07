@@ -119,7 +119,7 @@ class Metrics(commands.Cog):
         ])).to_list(None)
 
         # create a new figure
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+        _fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
         # plot the command usage as bars
         ax1.bar([f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in command_usage], [x['total'] for x in command_usage])

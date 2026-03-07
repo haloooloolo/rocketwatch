@@ -1,5 +1,6 @@
+import contextlib
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import aiohttp
 from discord import Interaction
@@ -77,13 +78,12 @@ class CowOrders(EventPlugin):
 
         # get all pending orders from the cow api (https://api.cow.fi/mainnet/api/v1/auction)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.cow.fi/mainnet/api/v1/auction") as response:
-                if response.status != 200:
-                    text = await response.text()
-                    log.error("Cow API returned non-200 status code: %s", text)
-                    raise Exception("Cow API returned non-200 status code")
-                cow_orders = (await response.json())["orders"]
+        async with aiohttp.ClientSession() as session, session.get("https://api.cow.fi/mainnet/api/v1/auction") as response:
+            if response.status != 200:
+                text = await response.text()
+                log.error("Cow API returned non-200 status code: %s", text)
+                raise Exception("Cow API returned non-200 status code")
+            cow_orders = (await response.json())["orders"]
 
         """
          entity example:
@@ -165,10 +165,8 @@ class CowOrders(EventPlugin):
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["sellAmount"]))
                 s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["buyToken"]))
-                try:
+                with contextlib.suppress(Exception):
                     decimals = await s.functions.decimals().call()
-                except Exception:
-                    pass
                 data["otherAmount"] = solidity.to_float(int(order["buyAmount"]), decimals)
             else:
                 token = "reth" if order["buyToken"] == self.tokens[1] else "rpl"
@@ -176,10 +174,8 @@ class CowOrders(EventPlugin):
                 # store rpl and other token amount
                 data["ourAmount"] = solidity.to_float(int(order["buyAmount"]))
                 s = await rp.assemble_contract(name="ERC20", address=w3.to_checksum_address(order["sellToken"]))
-                try:
+                with contextlib.suppress(Exception):
                     decimals = await s.functions.decimals().call()
-                except Exception:
-                    pass
                 data["otherAmount"] = solidity.to_float(int(order["sellAmount"]), decimals)
             # our/other ratio
             data["ratioAmount"] = data["otherAmount"] / data["ourAmount"]
@@ -196,12 +192,11 @@ class CowOrders(EventPlugin):
 
             # request more data from the api
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"https://cow-proxy.invis.workers.dev/mainnet/api/v1/orders/{order['uid']}") as t:
-                        if t.status != 200:
-                            log.error(f"Failed to get more data from the cow api for order {order['uid']}: {await t.text()}")
-                            continue
-                        extra = await t.json()
+                async with aiohttp.ClientSession() as session, session.get(f"https://cow-proxy.invis.workers.dev/mainnet/api/v1/orders/{order['uid']}") as t:
+                    if t.status != 200:
+                        log.error(f"Failed to get more data from the cow api for order {order['uid']}: {await t.text()}")
+                        continue
+                    extra = await t.json()
             except Exception as e:
                 log.error(f"Failed to get more data from the cow api for order {order['uid']}: {e}")
                 continue
@@ -211,7 +206,7 @@ class CowOrders(EventPlugin):
                     log.info(f"Order {order['uid']} is invalidated, skipping")
                     continue
                 created = datetime.fromisoformat(extra["creationDate"].replace("Z", "+00:00"))
-                if datetime.now(timezone.utc) - created > timedelta(minutes=15):
+                if datetime.now(UTC) - created > timedelta(minutes=15):
                     log.info(f"Order {order['uid']} is older than 15 minutes, skipping")
                     continue
                 data["timestamp"] = int(created.timestamp())

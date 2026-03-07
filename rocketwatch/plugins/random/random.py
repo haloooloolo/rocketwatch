@@ -52,9 +52,8 @@ class Random(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         url = "https://ultrasound.money/api/fees/grouped-analysis-1"
         # get data from url using aiohttp
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as resp:
-                data = await resp.json()
+        async with aiohttp.ClientSession() as session, session.get(url) as resp:
+            data = await resp.json()
 
         e = Embed()
         e.set_author(name="🔗 Data from ultrasound.money", url="https://ultrasound.money")
@@ -125,7 +124,7 @@ class Random(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def sea_creatures(self, interaction: Interaction, address: str = None):
+    async def sea_creatures(self, interaction: Interaction, address: str | None = None):
         """List all sea creatures with their required minimum holding."""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
@@ -143,7 +142,7 @@ class Random(commands.Cog):
                 e.description = f"No sea creature for {address}"
             else:
                 # get the required holding from the dictionary
-                required_holding = [h for h, c in sea_creatures.items() if c == creature[0]][0]
+                required_holding = next(h for h, c in sea_creatures.items() if c == creature[0])
                 e.add_field(name="Visualization", value=await el_explorer_url(address, prefix=creature), inline=False)
                 e.add_field(name="Required holding for emoji", value=f"{required_holding * len(creature)} ETH", inline=False)
                 holding = await get_holding_for_address(address)

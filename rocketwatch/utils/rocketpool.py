@@ -109,7 +109,7 @@ class RocketPool:
     async def multicall(self, calls, require_success=True) -> list:
         """Multicall accepting ContractFunction objects or (fn, require_success) tuples."""
         fns, flags = self._normalize_calls(calls, require_success)
-        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags)]
+        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags, strict=False)]
         results = await self._multicall.functions.aggregate3(encoded).call()
         return [
             RocketPool._decode_fn_output(fns[i], data) if success else None
@@ -206,7 +206,7 @@ class RocketPool:
             abi_path = f"./contracts/{name}.abi.json"
 
         if os.path.exists(abi_path):
-            with open(abi_path, "r") as f:
+            with open(abi_path) as f:
                 abi = f.read()
         else:
             abi = await self.get_abi_by_name(name)

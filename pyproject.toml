@@ -43,7 +43,7 @@ dependencies = [
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP", "W"]
 ignore = ["E501", "E203", "E231"]
 
 [tool.ruff.lint.isort]

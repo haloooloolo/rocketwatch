@@ -38,15 +38,17 @@ class About(commands.Cog):
 
         if api_key := cfg.other.secrets.wakatime:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.get(
                         "https://wakatime.com/api/v1/users/current/all_time_since_today",
                         params={
                             "project": "rocketwatch",
                             "api_key": api_key
                         }
-                    ) as resp:
-                        code_time = (await resp.json())["data"]["text"]
+                    ) as resp,
+                ):
+                    code_time = (await resp.json())["data"]["text"]
             except Exception as err:
                 await self.bot.report_error(err)
 
@@ -84,9 +86,8 @@ class About(commands.Cog):
 
         # show credits
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"https://api.github.com/repos/{repo_name}/contributors") as resp:
-                    contributors_data = await resp.json()
+            async with aiohttp.ClientSession() as session, session.get(f"https://api.github.com/repos/{repo_name}/contributors") as resp:
+                contributors_data = await resp.json()
             contributors = [
                 f"[{c['login']}]({c['html_url']}) ({c['contributions']})"
                 for c in contributors_data

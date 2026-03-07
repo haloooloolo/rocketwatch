@@ -226,8 +226,7 @@ class TVL(Cog):
                             "_val"] += contract_balance
                         contract_balance = 0
                 # if there is still a refund balance, we try to pay it off using the beacon balance
-                if refund_balance > 0:
-                    if beacon_balance > 0:
+                if refund_balance > 0 and beacon_balance > 0:
                         if beacon_balance >= refund_balance:
                             beacon_balance -= refund_balance
                             data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"][

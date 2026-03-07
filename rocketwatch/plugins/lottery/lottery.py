@@ -58,7 +58,7 @@ class Lottery(commands.Cog):
             InsertOne({"index": i, "validator": int(validator)})
             for i, validator in enumerate(validators)
         ]
-        async with self.bot.db.client.start_session() as session:
+        async with self.bot.db.client.start_session() as session:  # noqa: SIM117
             async with await session.start_transaction():
                 await col.delete_many({})
                 await col.bulk_write(payload)

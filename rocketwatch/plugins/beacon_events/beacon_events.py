@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, cast
+from typing import cast
 
 import aiohttp
 import eth_utils
@@ -120,7 +120,7 @@ class BeaconEvents(EventPlugin):
         return events
 
     @retry_async(tries=5, delay=10, backoff=2, max_delay=30)
-    async def _get_proposal(self, beacon_block: dict) -> Optional[Event]:
+    async def _get_proposal(self, beacon_block: dict) -> Event | None:
         if not (payload := beacon_block["body"].get("execution_payload")):
             # no proposed block
             return None
@@ -143,9 +143,8 @@ class BeaconEvents(EventPlugin):
 
         # fetch from beaconcha.in because beacon node is unaware of MEV bribes
         endpoint = f"https://beaconcha.in/api/v1/execution/block/{block_number}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(endpoint, headers={"apikey": api_key}) as resp:
-                response_body = await resp.json()
+        async with aiohttp.ClientSession() as session, session.get(endpoint, headers={"apikey": api_key}) as resp:
+            response_body = await resp.json()
 
         log.debug(f"{response_body = }")
         proposal_data = response_body["data"][0]
@@ -191,7 +190,7 @@ class BeaconEvents(EventPlugin):
             block_number=block_number
         )
 
-    async def _check_finality(self, beacon_block: dict) -> Optional[Event]:
+    async def _check_finality(self, beacon_block: dict) -> Event | None:
         slot_number = int(beacon_block["slot"])
         epoch_number = slot_number // 32
         timestamp = beacon_block_to_date(slot_number)

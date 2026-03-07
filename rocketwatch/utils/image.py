@@ -1,8 +1,7 @@
 import math
-from enum import Enum
+from enum import StrEnum
 from functools import cache
 from io import BytesIO
-from typing import Optional
 
 from discord import File
 from PIL import Image as PillowImage
@@ -23,11 +22,11 @@ class Image:
         return File(buffer, name)
 
 
-class Font(str, Enum):
+class Font(StrEnum):
     INTER = "Inter"
 
 
-class FontVariant(str, Enum):
+class FontVariant(StrEnum):
     REGULAR = "Regular"
     BOLD = "Bold"
 
@@ -72,8 +71,9 @@ class ImageCanvas(ImageDraw):
             angle = 90 * (2 * math.acos(fill_perc) / math.pi)
             self.chord((x + width - 2 * radius, y, x + width, y + height), angle, 360 - angle, fill_color)
 
+    @staticmethod
     @cache
-    def _get_font(self, name: str, variant: FontVariant, size: float) -> ImageFont:
+    def _get_font(name: str, variant: FontVariant, size: float) -> ImageFont.FreeTypeFont:
         return ImageFont.truetype(f"fonts/{name}-{variant}.ttf", size)
 
     def dynamic_text(
@@ -84,7 +84,7 @@ class ImageCanvas(ImageDraw):
             font_name: Font = Font.INTER,
             font_variant: FontVariant = FontVariant.REGULAR,
             color: Color = (255, 255, 255),
-            max_width: Optional[float] = None,
+            max_width: float | None = None,
             anchor: str = "lt"
     ) -> None:
         font = self._get_font(font_name, font_variant, font_size)

@@ -2,7 +2,6 @@ log_level = "INFO"
 
 [discord]
 secret = ""
-guilds = []
 
 [discord.owner]
 user_id = -1
