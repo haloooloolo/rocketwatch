@@ -11,7 +11,6 @@ class DiscordOwner(BaseModel):
 class DiscordConfig(BaseModel):
     secret: str
     owner: DiscordOwner
-    guilds: list[int]
     channels: dict[str, int]
 
 
