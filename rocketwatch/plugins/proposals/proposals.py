@@ -169,7 +169,10 @@ class Proposals(commands.Cog):
                 raise e
 
         validator_index = int(beacon_header["proposer_index"])
-        if not (minipool := (await self.bot.db.minipools.find_one({"validator_index": validator_index}))):
+        query = {"validator_index": validator_index}
+        is_megapool = await self.bot.db.minipools.count_documents(query, limit=1)
+        is_minipool = await self.bot.db.megapool_validators.count_documents(query, limit=1)
+        if not (is_minipool or is_megapool):
             return None
 
         beacon_block = (await bacon.get_block(str(slot)))["data"]["message"]

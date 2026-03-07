@@ -1,4 +1,3 @@
-import math
 from abc import abstractmethod
 
 from discord import ui, ButtonStyle, Interaction

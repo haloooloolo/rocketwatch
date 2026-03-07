@@ -26,7 +26,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: ./rocketwatch
+          context: .
+          file: rocketwatch/Dockerfile
           push: true
           tags: haloooloolo/rocketwatch:latest
           no-cache: true

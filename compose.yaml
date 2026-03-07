@@ -1,7 +1,9 @@
 services:
   rocketwatch:
     image: haloooloolo/rocketwatch
-    build: ./rocketwatch
+    build:
+      context: .
+      dockerfile: rocketwatch/Dockerfile
     volumes:
       - ./rocketwatch/contracts/rocketpool:/app/contracts/rocketpool
       - ./rocketwatch/config.toml:/app/config.toml
