@@ -93,7 +93,7 @@ class TestConfigConstruction:
 
 class TestConfigValidation:
     def test_missing_required_field(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             Config(discord=DiscordConfig(
                 secret="test",
                 owner=DiscordOwner(user_id=1, server_id=2),
@@ -101,7 +101,7 @@ class TestConfigValidation:
             ))
 
     def test_wrong_type_user_id(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             DiscordOwner(user_id="not_an_int", server_id=2)
 
     def test_int_coercion(self):

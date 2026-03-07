@@ -3,6 +3,8 @@ from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock
 
+import discord
+
 # Add rocketwatch source to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rocketwatch"))
 
@@ -16,8 +18,6 @@ sys.modules["utils.shared_w3"] = _shared_w3_stub
 
 # Stub out utils.embeds which triggers CachedEns/web3 initialization at import time.
 # Provide a minimal Embed class (discord.Embed subclass) for code that needs it.
-import discord
-
 _embeds_stub = ModuleType("utils.embeds")
 _embeds_stub.Embed = discord.Embed
 _embeds_stub.resolve_ens = MagicMock()
