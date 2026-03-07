@@ -22,10 +22,10 @@ def decode_abi(compressed_string):
     return inflated.decode("ascii")
 
 
-def pretty_time(time):
+def pretty_time(time: int | float) -> str:
     parts = []
 
-    days, time = divmod(round(time), units.days)
+    days, time = divmod(int(time), units.days)
     if days:
         parts.append(f'{days} day{"s" if days != 1 else ""}')
 

@@ -10,7 +10,7 @@ from utils.readable import (
 )
 
 
-class TestUptime:
+class TestPrettyTime:
     def test_zero_seconds(self):
         assert pretty_time(0) == "0 seconds"
 
@@ -38,6 +38,18 @@ class TestUptime:
     def test_days_and_hours(self):
         t = 86400 + 7200 + 180 + 4
         assert pretty_time(t) == "1 day 2 hours"
+
+    def test_float_seconds(self):
+        assert pretty_time(30.7) == "30 seconds"
+
+    def test_float_minutes_and_seconds(self):
+        assert pretty_time(90.3) == "1 minute 30 seconds"
+
+    def test_float_hours(self):
+        assert pretty_time(3600.9) == "1 hour"
+
+    def test_float_days(self):
+        assert pretty_time(86400.5) == "1 day"
 
 
 class TestPrettifyJsonString:
