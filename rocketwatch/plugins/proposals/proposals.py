@@ -5,7 +5,6 @@ import time
 from datetime import datetime, timedelta
 from io import BytesIO
 
-import matplotlib as mpl
 from aiohttp.client_exceptions import ClientResponseError
 from cronitor import Monitor
 from discord import File, Interaction
@@ -128,7 +127,7 @@ class Proposals(commands.Cog):
             try:
                 log.debug("starting proposal task")
                 await self.fetch_proposals()
-                await self.create_minipool_proposal_view()
+                await self.create_latest_proposal_view()
                 log.debug("finished proposal task")
                 self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
@@ -178,13 +177,26 @@ class Proposals(commands.Cog):
         proposal_data = parse_proposal(beacon_block)
         await self.bot.db.proposals.update_one({"slot": slot}, {"$set": proposal_data}, upsert=True)
 
-    async def create_minipool_proposal_view(self):
-        log.info("creating minipool proposal view")
+    async def create_latest_proposal_view(self):
+        log.info("creating latest proposals view")
         pipeline = [
             {
                 '$match': {
                     'node_operator': {'$ne': None},
                     'beacon.status' : 'active_ongoing'
+                }
+            },
+            {
+                '$unionWith': {
+                    'coll': 'minipools',
+                    'pipeline': [
+                        {
+                            '$match': {
+                                'node_operator': {'$ne': None},
+                                'beacon.status' : 'active_ongoing'
+                            }
+                        }
+                    ]
                 }
             },
             {
@@ -224,8 +236,8 @@ class Proposals(commands.Cog):
                 }
             }
         ]
-        await self.bot.db.minipool_proposals.drop()
-        await self.bot.db.create_collection("minipool_proposals", viewOn="minipools", pipeline=pipeline)
+        await self.bot.db.latest_proposals.drop()
+        await self.bot.db.create_collection("latest_proposals", viewOn="megapool_validators", pipeline=pipeline)
 
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
@@ -255,7 +267,7 @@ class Proposals(commands.Cog):
         if remove_allnodes:
             pipeline.insert(0, match_stage)
 
-        distribution = await (await self.bot.db.minipool_proposals.aggregate(pipeline)).to_list()
+        distribution = await (await self.bot.db.latest_proposals.aggregate(pipeline)).to_list()
 
         if remove_allnodes:
             d = {'remove_from_total': {'count': 0, 'validator_count': 0}}
@@ -281,23 +293,24 @@ class Proposals(commands.Cog):
         Show a historical chart of used Smart Node versions
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+
+        window_length = 5
+
         e = Embed(title="Version Chart")
         e.description = (
-            "The graph below shows proposal stats using a **5-day rolling window**. "
-            "It relies on proposal frequency to approximate adoption by active validator count."
+            f"The graph below shows proposal stats using a **{window_length}-day rolling window**. "
+            f"It relies on proposal frequency to approximate adoption by active validator count."
         )
         # get proposals
-        # limit to 6 months
+        # limit to specified number of days
         proposals = await self.bot.db.proposals.find(
             {
                 "version": {"$exists": 1},
                 "slot"   : {"$gt": date_to_beacon_block((datetime.now() - timedelta(days=days)).timestamp())}
             }).sort("slot", 1).to_list(None)
-        look_back = int(60 / 12 * 60 * 24 * 2)  # last 2 days
         max_slot = proposals[-1]["slot"]
-        # get version used after max_slot - look_back
-        # and have at least 10 occurrences
-        start_slot = max_slot - look_back
+        # get versions used after max_slot - window
+        start_slot = max_slot - int(5 * 60 * 24 * window_length)
         recent_versions = await (await self.bot.db.proposals.aggregate([
             {
                 '$match': {
@@ -323,15 +336,13 @@ class Proposals(commands.Cog):
         versions = []
         proposal_buffer = []
         tmp_data = {}
-        for i, proposal in enumerate(proposals):
+        for proposal in proposals:
             proposal_buffer.append(proposal)
             if proposal["version"] not in versions:
                 versions.append(proposal["version"])
             tmp_data[proposal["version"]] = tmp_data.get(proposal["version"], 0) + 1
             slot = proposal["slot"]
-            if i < 200:
-                continue
-            while proposal_buffer[0]["slot"] < slot - (60 / 12 * 60 * 24 * 5):
+            while proposal_buffer[0]["slot"] < slot - (5 * 60 * 24 * window_length):
                 to_remove = proposal_buffer.pop(0)
                 tmp_data[to_remove["version"]] -= 1
             date = datetime.fromtimestamp(beacon_block_to_date(slot))
@@ -350,11 +361,9 @@ class Proposals(commands.Cog):
             for version in versions:
                 y[version].append(value_.get(version, 0))
 
-        # matplotlib default color
-        matplotlib_colors = [color['color'] for color in list(mpl.rcParams['axes.prop_cycle'])]
-        # cap recent versions to available colors, but we want to prioritize the most recent versions
-        recent_versions = recent_versions[-len(matplotlib_colors):]
-        recent_colors = [matplotlib_colors[i] for i in range(len(recent_versions))]
+        # generate enough distinct colors for all recent versions
+        cmap = plt.cm.tab20
+        recent_colors = [cmap(i / max(len(recent_versions) - 1, 1)) for i in range(len(recent_versions))]
         # generate color mapping
         colors = ["darkgray"] * len(versions)
         for i, version in enumerate(versions):
@@ -369,12 +378,13 @@ class Proposals(commands.Cog):
         plt.stackplot(x, *y.values(), labels=labels, colors=colors)
         # hide y axis
         plt.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
-        ax.legend(loc="upper left")
+        plt.gcf().autofmt_xdate()
+        handles, legend_labels = ax.get_legend_handles_labels()
+        ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
         # add a thin line at current time from y=0 to y=1 with a width of 0.5
         plt.plot([max(x), max(x)], [0, 1], color="white", alpha=0.25)
         # calculate future point to make latest data more visible
-        diff = x[-1] - x[0]
-        future_point = x[-1] + (diff * 0.05)
+        future_point = x[-1] + timedelta(days=window_length)
         last_y_values = [[yy[-1]] * 2 for yy in y.values()]
         plt.stackplot([x[-1], future_point], *last_y_values, colors=colors)
         plt.tight_layout()
@@ -522,7 +532,7 @@ class Proposals(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         # aggregate [consensus, execution] pair counts
-        client_pairs = await (await self.bot.db.minipool_proposals.aggregate([
+        client_pairs = await (await self.bot.db.latest_proposals.aggregate([
             {
                 "$match": {
                     "latest_proposal.consensus_client": {"$ne": "Unknown"},
