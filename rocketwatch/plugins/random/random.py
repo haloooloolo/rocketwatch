@@ -151,17 +151,10 @@ class Random(commands.Cog):
                 e.add_field(name=f"{sea_creature}:", value=f"holds over {holding_value} ETH worth of assets",
                             inline=False)
         await interaction.followup.send(embed=e)
-        return
 
     @command()
     async def smoothie(self, interaction: Interaction):
         """Show smoothing pool information"""
-        try:
-            await rp.get_address_by_name("rocketSmoothingPool")
-        except Exception as err:
-            log.exception(err)
-            await interaction.followup.send("redstone not deployed yet", ephemeral=True)
-            return
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
 
         e = Embed(title="Smoothing Pool")
