@@ -4,49 +4,40 @@ import zlib
 from utils.readable import (
     decode_abi,
     prettify_json_string,
+    pretty_time,
     render_tree_legacy,
     s_hex,
-    uptime,
 )
 
 
 class TestUptime:
     def test_zero_seconds(self):
-        assert uptime(0) == "0 seconds"
+        assert pretty_time(0) == "0 seconds"
 
     def test_seconds_only(self):
-        assert uptime(45) == "45 seconds"
+        assert pretty_time(45) == "45 seconds"
 
     def test_one_minute(self):
-        assert uptime(60) == "1 minute"
+        assert pretty_time(60) == "1 minute"
 
     def test_minutes_and_seconds(self):
-        assert uptime(90) == "1 minute 30 seconds"
+        assert pretty_time(90) == "1 minute 30 seconds"
 
     def test_one_hour(self):
-        assert uptime(3600) == "1 hour"
+        assert pretty_time(3600) == "1 hour"
 
     def test_hours_and_minutes(self):
-        assert uptime(3660) == "1 hour 1 minute"
+        assert pretty_time(3660) == "1 hour 1 minute"
 
     def test_one_day(self):
-        assert uptime(86400) == "1 day"
+        assert pretty_time(86400) == "1 day"
 
     def test_plural_days(self):
-        assert uptime(2 * 86400) == "2 days"
+        assert pretty_time(2 * 86400) == "2 days"
 
-    def test_lowres_truncates_to_two(self):
-        # 1 day, 2 hours, 3 minutes, 4 seconds -> only "1 day 2 hours"
+    def test_days_and_hours(self):
         t = 86400 + 7200 + 180 + 4
-        assert uptime(t) == "1 day 2 hours"
-
-    def test_highres_shows_all(self):
-        t = 86400 + 7200 + 180 + 4
-        result = uptime(t, highres=True)
-        assert "1 day" in result
-        assert "2 hours" in result
-        assert "3 minutes" in result
-        assert "4 seconds" in result
+        assert pretty_time(t) == "1 day 2 hours"
 
 
 class TestPrettifyJsonString:

@@ -77,8 +77,8 @@ def _make_detector():
     bot = MagicMock()
     bot.tree = MagicMock()
     with patch.object(bot.tree, "add_command"):
-        from plugins.scam_detection.scam_detection import DetectScam
-        return DetectScam(bot)
+        from plugins.scam_detection.scam_detection import ScamDetection
+        return ScamDetection(bot)
 
 
 @pytest.fixture(scope="module")
