@@ -355,27 +355,32 @@ class ScamDetection(Cog):
     def _obfuscated_url(self, message: Message) -> str | None:
         if not message.content:
             return None
+
+        default_reason = "URL obfuscation"
         # Line-broken protocol/scheme
         if self.obfuscated_url_pattern.search(message.content):
-            return "Message contains an obfuscated URL"
+            return default_reason
         # Fullwidth/homoglyph dots in domain
         if self.homoglyph_url_pattern.search(message.content):
-            return "Message contains an obfuscated URL"
+            return default_reason
         # Heavily percent-encoded domain
         if re.search(r"https?://[^\s]*(?:%[0-9a-fA-F]{2}){5}", message.content):
-            return "Message contains an obfuscated URL"
+            return default_reason
         # Markdown link where visible text looks like a different domain than the actual URL
         content = parse.unquote(message.content)
         content = anyascii(content).lower()
         for m in self.markdown_link_pattern.findall(content):
             if "." in m[0] and m[0].rstrip(".") != m[1].rstrip("."):
-                return "Message contains an obfuscated URL"
+                return "Visible text changes link domain"
+
         return None
 
     def _ticket_system(self, message: Message) -> str | None:
         txt = self._get_message_content(message)
         if not self.basic_url_pattern.search(txt):
             return None
+
+        default_reason = "There is no ticket system in this server."
 
         # High-confidence scam indicators (don't need URL trust check)
         strong_keywords = (
@@ -394,14 +399,14 @@ class ScamDetection(Cog):
             ]
         )
         if self.__txt_contains(txt, strong_keywords):
-            return "There is no ticket system in this server."
+            return default_reason
 
         # Short directive messages with a URL ("ask here", "get help here")
         content_only = txt.split("---")[0].strip()  # exclude embeds
         if len(content_only) < 120 and self.basic_url_pattern.search(txt):
             directives = ("ask here", "get help", "help here", "click here", "go here")
             if any(d in content_only for d in directives):
-                return "There is no ticket system in this server."
+                return default_reason
 
         # Weaker keywords: only check short messages (long technical discussions cause false positives)
         content_txt = self._get_message_content(message)
@@ -432,8 +437,10 @@ class ScamDetection(Cog):
                 ("admin", "mod", "administrator", "moderator", "team")
             ],
         )
+        if self.__txt_contains(content_only_txt, weak_keywords):
+            return default_reason
 
-        return "There is no ticket system in this server." if self.__txt_contains(content_only_txt, weak_keywords) else None
+        return None
 
     @staticmethod
     def __txt_contains(txt: str, kw: list | tuple | str) -> bool:
@@ -472,7 +479,7 @@ class ScamDetection(Cog):
             return None
         txt = self._get_message_content(message)
         if any(kw in txt for kw in ("my bio", "my icon", "my profile", "my pfp")):
-            return "Redirecting users to a malicious profile link"
+            return "Redirection to malicious profile link"
         return None
 
     def _spam_wall(self, message: Message) -> str | None:
