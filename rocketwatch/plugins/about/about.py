@@ -29,7 +29,7 @@ class About(commands.Cog):
 
     @command()
     async def about(self, interaction: Interaction):
-        """Bot and Server Information"""
+        """Bot and server information"""
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed()
         g = self.bot.guilds
@@ -76,10 +76,10 @@ class About(commands.Cog):
         e.add_field(name="Host Load", value=' / '.join(f"{pct:.0%}" for pct in load))
 
         system_uptime = uptime.uptime()
-        e.add_field(name="Host Uptime", value=f"{readable.uptime(system_uptime)}")
+        e.add_field(name="Host Uptime", value=f"{readable.pretty_time(system_uptime)}")
 
         bot_uptime = time.time() - BOOT_TIME
-        e.add_field(name="Bot Uptime", value=f"{readable.uptime(bot_uptime)}")
+        e.add_field(name="Bot Uptime", value=f"{readable.pretty_time(bot_uptime)}")
 
         repo_name = "haloooloolo/rocketwatch"
 

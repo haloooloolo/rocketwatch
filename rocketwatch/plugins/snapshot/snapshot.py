@@ -19,7 +19,7 @@ from utils.block_time import ts_to_block
 from utils.embeds import Embed, el_explorer_url
 from utils.event import Event, EventPlugin
 from utils.image import Color, FontVariant, Image, ImageCanvas
-from utils.readable import uptime
+from utils.readable import pretty_time
 from utils.retry import retry_async
 from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
@@ -211,7 +211,7 @@ class Snapshot(EventPlugin):
             rem_time = self.end - datetime.now().timestamp()
             canvas.dynamic_text(
                 (x_offset + (width / 2), y_offset + proposal_height),
-                f"{uptime(rem_time)} left" if (rem_time >= 0) else "Final Result",
+                f"{pretty_time(rem_time)} left" if (rem_time >= 0) else "Final Result",
                 self._TEXT_SIZE,
                 max_width=width,
                 anchor="mt"

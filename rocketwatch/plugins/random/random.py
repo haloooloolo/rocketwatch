@@ -14,7 +14,7 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url, ens
-from utils.readable import s_hex, uptime
+from utils.readable import pretty_time, s_hex
 from utils.rocketpool import rp
 from utils.sea_creatures import (
     get_holding_for_address,
@@ -253,7 +253,7 @@ class Random(commands.Cog):
                         f" That is `{smoothie_minipool_count}/{total_minipool_count}` minipools " \
                         f"(`{smoothie_minipool_count / total_minipool_count:.2%}`).\n" \
                         f"The current (not overall) balance is **`{smoothie_eth:,.2f}` ETH.**\n" \
-                        f"This is over a span of `{uptime(d)}`.\n\n" \
+                        f"This is over a span of `{pretty_time(d)}`.\n\n" \
                         f"{min(smoothie_node_count, 5)} largest nodes:\n"
         lines = [f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}" for d in
                  data[True]["counts"][:min(smoothie_node_count, 5)]]
@@ -284,7 +284,7 @@ class Random(commands.Cog):
         for event in events:
             latest_block = await w3.eth.get_block("latest")
             time_left = challenge_period - (latest_block.timestamp - event.args.time)
-            time_left = uptime(time_left, True)
+            time_left = pretty_time(time_left)
             challenged = await el_explorer_url(event.args.nodeChallengedAddress)
             challenger = await el_explorer_url(event.args.nodeChallengerAddress)
             e.description += f"**{challenged}** was challenged by **{challenger}**\n"

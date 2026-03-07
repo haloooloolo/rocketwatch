@@ -22,25 +22,25 @@ def decode_abi(compressed_string):
     return inflated.decode("ascii")
 
 
-def uptime(time, highres=False):
+def pretty_time(time):
     parts = []
 
-    days, time = time // units.days, time % units.days
+    days, time = divmod(round(time), units.days)
     if days:
         parts.append(f'{days} day{"s" if days != 1 else ""}')
 
-    hours, time = time // units.hours, time % units.hours
+    hours, time = divmod(time, units.hours)
     if hours:
         parts.append(f'{hours} hour{"s" if hours != 1 else ""}')
 
-    minutes, time = time // units.minutes, time % units.minutes
+    minutes, time = divmod(time, units.minutes)
     if minutes:
         parts.append(f'{minutes} minute{"s" if minutes != 1 else ""}')
 
     if time or not parts:
         parts.append(f'{time:.0f} seconds')
 
-    return " ".join(parts[:2] if not highres else parts)
+    return " ".join(parts[:2])
 
 
 def s_hex(string):

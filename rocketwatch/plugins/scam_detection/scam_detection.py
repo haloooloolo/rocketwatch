@@ -38,7 +38,7 @@ from utils.embeds import Embed
 log = logging.getLogger("rocketwatch.scam_detection")
 
 
-class DetectScam(Cog):
+class ScamDetection(Cog):
     class Color:
         ALERT = Color.from_rgb(255, 0, 0)
         WARN = Color.from_rgb(255, 165, 0)
@@ -56,7 +56,7 @@ class DetectScam(Cog):
     class RemovalVoteView(ui.View):
         THRESHOLD = 5
 
-        def __init__(self, plugin: 'DetectScam', reportable: Message | Thread):
+        def __init__(self, plugin: 'ScamDetection', reportable: Message | Thread):
             super().__init__(timeout=None)
             self.plugin = plugin
             self.reportable = reportable
@@ -69,7 +69,8 @@ class DetectScam(Cog):
             reportable_repr = type(self.reportable).__name__.lower()
             if interaction.user.id in self.safu_votes:
                 log.debug(f"User {interaction.user.id} already voted on {reportable_repr}")
-                return await interaction.response.send_message(content="You already voted!", ephemeral=True)
+                await interaction.response.send_message(content="You already voted!", ephemeral=True)
+                return
 
             if interaction.user.is_timed_out():
                 log.debug(f"Timed-out user {interaction.user.id} tried to vote on {self.reportable}")
@@ -87,20 +88,22 @@ class DetectScam(Cog):
 
             if interaction.user == reported_user:
                 log.debug(f"User {interaction.user.id} tried to mark their own {reportable_repr} as safe")
-                return await interaction.response.send_message(
+                await interaction.response.send_message(
                     content=f"You can't vote on your own {reportable_repr}!",
                     ephemeral=True
                 )
+                return
 
             self.safu_votes.add(interaction.user.id)
 
-            if DetectScam.is_reputable(interaction.user):
+            if ScamDetection.is_reputable(interaction.user):
                 user_repr = interaction.user.mention
             elif len(self.safu_votes) >= self.THRESHOLD:
                 user_repr = "the community"
             else:
                 button.label = f"Mark Safu ({len(self.safu_votes)}/{self.THRESHOLD})"
-                return await interaction.response.edit_message(view=self)
+                await interaction.response.edit_message(view=self)
+                return
 
             await interaction.message.delete()
             async with self.plugin._update_lock:
@@ -438,9 +441,9 @@ class DetectScam(Cog):
             case str():
                 return kw in txt
             case tuple():
-                return any(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
+                return any(map(lambda w: ScamDetection.__txt_contains(txt, w), kw))
             case list():
-                return all(map(lambda w: DetectScam.__txt_contains(txt, w), kw))
+                return all(map(lambda w: ScamDetection.__txt_contains(txt, w), kw))
         return False
 
     def _suspicious_link(self, message: Message) -> str | None:
@@ -749,4 +752,4 @@ class DetectScam(Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(DetectScam(bot))
+    await bot.add_cog(ScamDetection(bot))
