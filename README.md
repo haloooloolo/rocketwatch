@@ -82,10 +82,8 @@ This starts the bot, MongoDB, and [Watchtower](https://containrrr.dev/watchtower
 
 ```sh
 # Install uv (https://docs.astral.sh/uv/)
-uv python install 3.14
-uv pip install --python 3.14 -r pyproject.toml
 cd rocketwatch
-uv run python .
+uv run .
 ```
 
 ## Development
@@ -101,8 +99,7 @@ Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort),
 ### Testing
 
 ```sh
-uv pip install -r pyproject.toml --extra test
-uv run pytest
+uv run --extra test pytest
 ```
 
 ### Plugin structure
