@@ -132,7 +132,7 @@ class DetectScam(Cog):
         )
         # Detects fullwidth/homoglyph dots used to disguise domains
         self.homoglyph_url_pattern = re.compile(
-            r"https?://[^\s]*[\uff61\u3002\uff0e]",  # ｡ 。 ．
+            r"https?://[^\s]*[\uff61\u3002\uff0e]",  # fullwidth/CJK dots
         )
         # Extracts username from X/Twitter URL variants
         _x_domains = r"(?:x|twitter|fxtwitter|fixvx|xcancel|vxtwitter)\.com"
@@ -646,12 +646,23 @@ class DetectScam(Cog):
             log.warning(f"Ignoring thread creation in {thread.guild.id}")
             return
 
-        keywords = ("support", "tick", "assistance", "error", "🎫", "🎟️")
-        if any(kw in thread.name.lower() for kw in keywords) or re.search(r"(-|–|—)\d{3,}", thread.name):  # noqa: RUF001
-            await self.report_thread(thread, "Illegitimate support thread")
-            return
-        names = (".", "!", "///")
-        if thread.name.strip().lower() in names:
+        lower = thread.name.strip().lower()
+        scam_thread = (
+            # Ticket emoji or "assistance" — always scam
+            any(kw in lower for kw in ("🎫", "🎟️", "assistance"))
+            # "ticket"/"tick" — no real ticket system
+            or "tick" in lower
+            # "support" — only in short names (long ones are legit discussions)
+            or ("support" in lower and len(thread.name.strip()) < 25)
+            # Dash-digits near end of name (scam: "user-0816"; skip: "RIP-1559: ...")
+            or (
+                (m := re.search(r"(-|–|—)\d{3,}", thread.name))  # noqa: RUF001
+                and (m.end() >= len(thread.name.strip()) - 2 or len(thread.name.strip()) < 30)
+            )
+            # Exact suspicious names
+            or lower in (".", "!", "///")
+        )
+        if scam_thread:
             await self.report_thread(thread, "Illegitimate support thread")
             return
 

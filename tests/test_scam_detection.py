@@ -105,17 +105,20 @@ def _case_id(case):
     return case["content"][:100]
 
 
-THREAD_KEYWORDS = ("support", "tick", "assistance", "error", "\U0001f3ab", "\U0001f39f\ufe0f")
-THREAD_NAMES = (".", "!", "///")
 THREAD_PATTERN = re.compile(r"(-|\u2013|\u2014)\d{3,}")
 
 
 def _check_thread(name: str) -> bool:
     lower = name.strip().lower()
     return (
-        any(kw in lower for kw in THREAD_KEYWORDS)
-        or bool(THREAD_PATTERN.search(name))
-        or lower in THREAD_NAMES
+        any(kw in lower for kw in ("\U0001f3ab", "\U0001f39f\ufe0f", "assistance"))
+        or "tick" in lower
+        or ("support" in lower and len(name.strip()) < 25)
+        or (
+            bool(m := THREAD_PATTERN.search(name))
+            and (m.end() >= len(name.strip()) - 2 or len(name.strip()) < 30)
+        )
+        or lower in (".", "!", "///")
     )
 
 
@@ -156,3 +159,8 @@ class TestThreadDetection:
     @pytest.mark.xfail(reason="known false positive", strict=True)
     def test_known_false_positive(self, name):
         assert not _check_thread(name), f"Falsely flagged: {name!r}"
+
+    @pytest.mark.parametrize("name", TEST_CASES["threads"]["known_false_negatives"])
+    @pytest.mark.xfail(reason="known false negative", strict=True)
+    def test_known_false_negative(self, name):
+        assert _check_thread(name), f"Scam thread not detected: {name!r}"

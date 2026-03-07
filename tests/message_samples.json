@@ -839,7 +839,24 @@
       "ETHDenver 2024",
       "Is there a way to look at past logs of",
       "Hey all I just enabled the monitoring",
-      "ok now works and my ports are closed So"
+      "ok now works and my ports are closed So",
+      "did you ever sort this error out? Im getting the same thing now",
+      "Error Grabbing Logs - Invalid Character \\x00",
+      "After updating to 1 9 4 I get this error",
+      "withdrawal error",
+      "RIP-1559: Burn RPL for higher priority in minipool queue",
+      "Get the wallets to support presigning",
+      "Error message: error: Failed to get remote head and new block ranges: EndpointError(FarBehind)",
+      "Error after updating smartnode stack",
+      "Smartnode Support for Allnodes Users",
+      "RP native mode error 127",
+      "Gas estimation error on deposit",
+      "Rpc error",
+      "Connection error",
+      "Team-supported troll thread to troll the other troll thread",
+      "```ERROR 09 14|200728 162 Dangling trie",
+      "Could Not Estimate Gas Limit Error",
+      "Error 126 running `node status`"
     ],
     "unsafe": [
       "circuitbuster.-0816",
@@ -883,25 +900,9 @@
       "Support—342"
     ],
     "known_false_positives": [
-      "did you ever sort this error out? Im getting the same thing now",
-      "Error Grabbing Logs - Invalid Character \\x00",
-      "After updating to 1 9 4 I get this error",
-      "withdrawal error",
-      "RIP-1559: Burn RPL for higher priority in minipool queue",
       "rocketpool.support",
-      "Get the wallets to support presigning",
-      "Error message: error: Failed to get remote head and new block ranges: EndpointError(FarBehind)",
-      "Reduce Express ticket RPIP",
-      "Error after updating smartnode stack",
-      "Smartnode Support for Allnodes Users",
-      "RP native mode error 127",
-      "Gas estimation error on deposit",
-      "Rpc error",
-      "Connection error",
-      "Team-supported troll thread to troll the other troll thread",
-      "```ERROR 09 14|200728 162 Dangling trie",
-      "Could Not Estimate Gas Limit Error",
-      "Error 126 running `node status`"
-    ]
+      "Reduce Express ticket RPIP"
+    ],
+    "known_false_negatives": []
   }
 }
