@@ -25,7 +25,7 @@ from utils.event_logs import get_logs
 
 
 log = logging.getLogger("db_upkeep_task")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def is_true(v) -> bool:
@@ -108,7 +108,7 @@ def _unpack_validator_info_dynamic(info):
 class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("db-task", api_key=cfg["other.secrets.cronitor"])
+        self.monitor = Monitor("db-task", api_key=cfg.other.secrets.cronitor)
         self.batch_size = 250
         self.cooldown = timedelta(minutes=10)
         self.bot.loop.create_task(self.loop())

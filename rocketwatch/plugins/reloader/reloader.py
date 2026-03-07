@@ -27,7 +27,7 @@ class Reloader(Cog):
         return [Choice(name=plugin, value=plugin) for plugin in (all - loaded) if current.lower() in plugin.lower()][:25]
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_unloaded_extensions)
     async def load(self, interaction: Interaction, module: str):
@@ -43,7 +43,7 @@ class Reloader(Cog):
             await interaction.followup.send(content=f"Plugin `{module}` not found!")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_loaded_extensions)
     async def unload(self, interaction: Interaction, module: str):
@@ -57,7 +57,7 @@ class Reloader(Cog):
             await interaction.followup.send(content=f"Plugin `{module}` not loaded!")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_loaded_extensions)
     async def reload(self, interaction: Interaction, module: str):

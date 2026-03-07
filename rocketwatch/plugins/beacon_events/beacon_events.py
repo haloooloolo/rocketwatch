@@ -19,7 +19,7 @@ from utils.block_time import ts_to_block
 from utils.retry import retry_async
 
 log = logging.getLogger("beacon_events")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class BeaconEvents(EventPlugin):
@@ -125,7 +125,7 @@ class BeaconEvents(EventPlugin):
             # no proposed block
             return None
 
-        if not (api_key := cfg["consensus_layer.beaconcha_secret"]):
+        if not (api_key := cfg.consensus_layer.beaconcha_secret):
             log.warning("Missing beaconcha.in API key")
             return None
 

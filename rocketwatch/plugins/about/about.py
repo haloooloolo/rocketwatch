@@ -21,7 +21,7 @@ psutil.getloadavg()
 BOOT_TIME = time.time()
 
 log = logging.getLogger("about")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class About(commands.Cog):
@@ -37,7 +37,7 @@ class About(commands.Cog):
         g = self.bot.guilds
         code_time = None
 
-        if api_key := cfg.get("other.secrets.wakatime"):
+        if api_key := cfg.other.secrets.wakatime:
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
@@ -61,10 +61,10 @@ class About(commands.Cog):
                           f"{humanize.intcomma(sum(guild.member_count for guild in g))} members reached!",
                     inline=False)
 
-        address = await el_explorer_url(cfg["rocketpool.manual_addresses.rocketStorage"])
+        address = await el_explorer_url(cfg.rocketpool.manual_addresses["rocketStorage"])
         e.add_field(name="Storage Contract", value=address)
 
-        e.add_field(name="Chain", value=cfg["rocketpool.chain"].capitalize())
+        e.add_field(name="Chain", value=cfg.rocketpool.chain.capitalize())
 
         e.add_field(name="Plugins loaded", value=str(len(self.bot.cogs)))
 

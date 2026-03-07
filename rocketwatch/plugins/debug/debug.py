@@ -22,7 +22,7 @@ from utils.shared_w3 import w3
 from utils.visibility import is_hidden, is_hidden_weak, is_hidden_role_controlled
 
 log = logging.getLogger("debug")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Debug(Cog):
@@ -49,7 +49,7 @@ class Debug(Cog):
     # --------- PRIVATE OWNER COMMANDS --------- #
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def raise_exception(self, interaction: Interaction):
         """
@@ -59,7 +59,7 @@ class Debug(Cog):
             raise Exception("this should never happen wtf is your filesystem")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def get_members_of_role(self, interaction: Interaction, guild_id: str, role_id: str):
         """Get members of a role"""
@@ -80,7 +80,7 @@ class Debug(Cog):
 
     # list all roles of a guild with name and id
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def get_roles(self, interaction: Interaction, guild_id: str):
         """Get roles of a guild"""
@@ -98,7 +98,7 @@ class Debug(Cog):
             await interaction.followup.send(content=f"```{repr(err)}```")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def delete_msg(self, interaction: Interaction, message_url: str):
         """
@@ -112,7 +112,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def edit_embed(self, interaction: Interaction, message_url: str, new_description: str):
         await interaction.response.defer(ephemeral=True)
@@ -125,7 +125,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str = None):
         """
@@ -141,7 +141,7 @@ class Debug(Cog):
         await interaction.followup.send(content=f"```Input:\n{data}```")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def debug_transaction(self, interaction: Interaction, tnx_hash: str):
         """
@@ -155,7 +155,7 @@ class Debug(Cog):
             await interaction.followup.send(content="```No revert reason Available```")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def purge_minipools(self, interaction: Interaction, confirm: bool = False):
         """
@@ -169,7 +169,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def sync_commands(self, interaction: Interaction):
         """
@@ -180,7 +180,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def talk(self, interaction: Interaction, channel: str, message: str):
         """
@@ -192,7 +192,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def announce(self, interaction: Interaction, channel: str, message: str):
         """
@@ -206,7 +206,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def restore_support_template(self, interaction: Interaction, template_name: str, message_url: str):
         await interaction.response.defer(ephemeral=True)
@@ -250,7 +250,7 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def restore_missed_events(self, interaction: Interaction, tx_hash: str):
         import pickle
@@ -266,7 +266,7 @@ class Debug(Cog):
             if ("topics" in event_log) and (event_log["topics"][0].hex() in events_plugin.topic_map):
                 filtered_events.append(event_log)
 
-        channels = cfg["discord.channels"]
+        channels = cfg.discord.channels
         events, _ = events_plugin.process_events(filtered_events)
         for event in events:
             channel_candidates = [value for key, value in channels.items() if event.event_name.startswith(key)]
@@ -343,7 +343,7 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
         try:
             abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
-            file = File(io.StringIO(abi), f"{contract}.{cfg['rocketpool.chain'].lower()}.abi.json")
+            file = File(io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
             await interaction.followup.send(file=file)
         except Exception as err:
             await interaction.followup.send(content=f"```Exception: {repr(err)}```")
@@ -353,7 +353,7 @@ class Debug(Cog):
         """Retrieve the latest address for a contract"""
         await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
         try:
-            address = cfg["rocketpool.manual_addresses"].get(contract)
+            address = cfg.rocketpool.manual_addresses.get(contract)
             if not address:
                 address = await rp.uncached_get_address_by_name(contract)
             await interaction.followup.send(content=await el_explorer_url(address))

@@ -5,7 +5,7 @@ import time
 from utils.cfg import cfg
 
 log = logging.getLogger("time_debug")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def timerun(func):

@@ -26,7 +26,7 @@ from utils.solidity import SUBMISSION_KEYS
 from utils.block_time import block_to_ts
 
 log = logging.getLogger("events")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 PartialFilter = Callable[[BlockNumber, BlockNumber | Literal["latest"]], Coroutine[None, None, list[LogReceipt | EventData]]]
@@ -121,7 +121,7 @@ class Events(EventPlugin):
         return partial_filters, event_map, topic_map
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def trigger_event(
             self,
@@ -155,7 +155,7 @@ class Events(EventPlugin):
             await interaction.followup.send(content="No events triggered.")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def replay_events(self, interaction: Interaction, tx_hash: str):
         await interaction.response.defer()
@@ -601,7 +601,7 @@ class Events(EventPlugin):
                 args.discountAmount = (1 - args.exchangeRate / solidity.to_float(args.marketExchangeRate)) * 100
 
         receipt = None
-        if cfg["rocketpool.chain"] == "mainnet":
+        if cfg.rocketpool.chain == "mainnet":
             receipt = await w3.eth.get_transaction_receipt(event.transactionHash)
             args.tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
             args.tnx_fee_usd = round(await rp.get_eth_usdc_price() * args.tnx_fee / 10**18, 2)
@@ -698,7 +698,7 @@ class Events(EventPlugin):
         elif "transfer_event" in event_name:
             token_prefix = event_name.split("_", 1)[0]
             args.amount = args.value / 10**18
-            if args["from"] in cfg["rocketpool.dao_multsigs"]:
+            if args["from"] in cfg.rocketpool.dao_multisigs:
                 event_name = "pdao_erc20_transfer_event"
                 token_contract = await rp.assemble_contract(name="ERC20", address=event["address"])
                 args.symbol = await token_contract.functions.symbol().call()

@@ -19,7 +19,7 @@ from utils.visibility import is_hidden_weak
 from utils.block_time import ts_to_block
 
 log = logging.getLogger("governance")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Governance(StatusPlugin):
@@ -94,7 +94,7 @@ class Governance(StatusPlugin):
             for _i, _proposal in enumerate(_proposals, start=1):
                 _title = sanitize(_proposal.message, 40)
                 _tx_hash = await self._get_tx_hash_for_proposal(_dao, _proposal)
-                _url = f"{cfg['execution_layer.explorer']}/tx/{_tx_hash}"
+                _url = f"{cfg.execution_layer.explorer}/tx/{_tx_hash}"
                 text += f"  {_i}. [{_title}]({_url}) (#{_proposal.id})\n"
             return text
 

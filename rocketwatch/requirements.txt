@@ -7,7 +7,7 @@ cachetools==7.0.3
 bidict==0.23.1
 uptime==3.0.1
 discord.py==2.7.1
-config==0.5.1
+pydantic>=2.0.0,<3.0.0
 pytz==2026.1.post1
 matplotlib==3.10.8
 inflect==7.5.0

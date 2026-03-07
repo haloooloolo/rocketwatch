@@ -14,7 +14,7 @@ from utils.visibility import is_hidden_weak
 from utils.readable import render_tree_legacy
 
 log = logging.getLogger("fee_distribution")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class FeeDistribution(commands.Cog):

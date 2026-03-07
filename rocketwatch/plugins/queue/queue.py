@@ -17,7 +17,7 @@ from utils.shared_w3 import w3
 from utils.views import PageView
 
 log = logging.getLogger("queue")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Queue(Cog):

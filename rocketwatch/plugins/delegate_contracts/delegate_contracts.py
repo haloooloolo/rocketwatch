@@ -14,7 +14,7 @@ from utils.cfg import cfg
 from utils.rocketpool import rp
 
 log = logging.getLogger("delegate_contracts")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class DelegateContracts(commands.Cog):

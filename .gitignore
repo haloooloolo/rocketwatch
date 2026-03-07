@@ -119,6 +119,7 @@ dmypy.json
 # state
 state.db
 */main.cfg
+*/config.toml
 mongodb/
 
 # helper scripts

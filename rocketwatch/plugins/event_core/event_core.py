@@ -23,7 +23,7 @@ from utils.event import EventPlugin
 from utils.shared_w3 import w3
 
 log = logging.getLogger("event_core")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class EventCore(commands.Cog):
@@ -37,10 +37,10 @@ class EventCore(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.state = self.State.OK
-        self.channels = cfg["discord.channels"]
-        self.head_block: BlockIdentifier = cfg["events.genesis"]
-        self.block_batch_size = cfg["events.block_batch_size"]
-        self.monitor = Monitor("gather-new-events", api_key=cfg["other.secrets.cronitor"])
+        self.channels = cfg.discord.channels
+        self.head_block: BlockIdentifier = cfg.events.genesis
+        self.block_batch_size = cfg.events.block_batch_size
+        self.monitor = Monitor("gather-new-events", api_key=cfg.other.secrets.cronitor)
         self.task.start()
 
     async def cog_unload(self) -> None:
@@ -95,7 +95,7 @@ class EventCore(commands.Cog):
             to_block = latest_block
             coroutines = [sm.get_new_events() for sm in submodules]
             # prevent losing state if process is interrupted before updating db
-            self.head_block = cfg["events.genesis"]
+            self.head_block = cfg.events.genesis
         else:
             # behind chain head, let's see how far
             last_event_entry = await self.bot.db.event_queue.find().sort(
@@ -134,7 +134,7 @@ class EventCore(commands.Cog):
 
         results = await asyncio.gather(*coroutines)
 
-        channels = cfg["discord.channels"]
+        channels = self.channels
         events: list[dict[str, Any]] = []
 
         for result in results:
@@ -225,7 +225,7 @@ class EventCore(commands.Cog):
         log.info("Processed all events in queue")
 
     async def update_status_messages(self) -> None:
-        configs = cfg.get("events.status_message", {})
+        configs = cfg.events.status_message
         for state_message in (await self.bot.db.state_messages.find().to_list()):
             if state_message["_id"] not in configs:
                 log.debug(f"No config for state message ID {state_message['_id']}, removing message")
@@ -235,33 +235,33 @@ class EventCore(commands.Cog):
             log.debug(f"Updating state message for channel {channel_name}")
             await self._update_status_message(channel_name, config)
 
-    async def _update_status_message(self, channel_name: str, config: dict) -> None:
+    async def _update_status_message(self, channel_name: str, config) -> None:
         state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
         if state_message:
             age = datetime.now() - state_message["sent_at"]
-            cooldown = timedelta(seconds=config["cooldown"])
+            cooldown = timedelta(seconds=config.cooldown)
             if (age < cooldown) and (state_message["state"] == str(self.State.OK)):
                 log.debug(f"State message for {channel_name} not past cooldown: {age} < {cooldown}")
                 return
 
         if not (embed := await generate_template_embed(self.bot.db, "announcement")):
             try:
-                plugin: StatusPlugin = self.bot.cogs.get(config["plugin"])
+                plugin: StatusPlugin = self.bot.cogs.get(config.plugin)
                 embed = await plugin.get_status()
             except Exception as err:
                 await self.bot.report_error(err)
                 return
 
         embed.timestamp = datetime.now()
-        embed.set_footer(text=f"Tracking {cfg['rocketpool.chain']} using {len(self.bot.cogs)} plugins")
-        for field in config["fields"]:
+        embed.set_footer(text=f"Tracking {cfg.rocketpool.chain} using {len(self.bot.cogs)} plugins")
+        for field in config.fields:
             embed.add_field(**field)
 
         await self._replace_or_add_status(channel_name, embed, state_message)
 
     async def show_service_interrupt(self) -> None:
         embed = await assemble(MutableAttributeDict({"event_name": "service_interrupted"}))
-        for channel_name in cfg.get("events.status_message", {}).keys():
+        for channel_name in cfg.events.status_message:
             state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
             if (not state_message) or (state_message["state"] != str(self.state.ERROR)):
                 await self._replace_or_add_status(channel_name, embed, state_message)

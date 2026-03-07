@@ -33,14 +33,14 @@ class EventPlugin(commands.Cog):
     def __init__(self, bot: RocketWatch, rate_limit=timedelta(seconds=5)):
         self.bot = bot
         self.rate_limit = rate_limit
-        self.lookback_distance: int = cfg["events.lookback_distance"]
+        self.lookback_distance: int = cfg.events.lookback_distance
         self.last_served_block: Optional[int] = None
         self._pending_block: Optional[int] = None
         self._last_run = datetime.now() - rate_limit
 
     async def _ensure_genesis_block(self):
         if self.last_served_block is None:
-            block = await w3.eth.get_block(cfg["events.genesis"])
+            block = await w3.eth.get_block(cfg.events.genesis)
             self.last_served_block = block.number - 1
             self._pending_block = self.last_served_block
 

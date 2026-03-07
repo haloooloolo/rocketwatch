@@ -15,7 +15,7 @@ from utils.visibility import is_hidden_weak
 from utils.retry import retry_async
 
 log = logging.getLogger("forum")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Forum(commands.Cog):

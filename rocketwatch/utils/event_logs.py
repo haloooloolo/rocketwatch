@@ -8,7 +8,7 @@ from web3.types import LogReceipt
 from utils.cfg import cfg
 
 log = logging.getLogger("event_logs")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def get_logs(

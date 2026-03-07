@@ -25,7 +25,7 @@ from utils.rocketpool import rp
 
 
 log = logging.getLogger("dao")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class OnchainDAO(Cog):

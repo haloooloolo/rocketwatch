@@ -17,7 +17,7 @@ from utils.shared_w3 import w3, bacon
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("user_distribute")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class InstructionsView(ui.View):
@@ -82,7 +82,7 @@ class UserDistribute(commands.Cog):
 
     @tasks.loop(hours=8)
     async def task(self):
-        channel_id = cfg.get("discord.channels.user_distribute")
+        channel_id = cfg.discord.channels.get("user_distribute")
         if not channel_id:
             return
 

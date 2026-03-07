@@ -26,7 +26,7 @@ from utils.block_time import ts_to_block
 from utils.retry import retry_async
 
 log = logging.getLogger("snapshot")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Snapshot(EventPlugin):

@@ -7,10 +7,10 @@ from rocketwatch import RocketWatch
 
 logging.basicConfig(format="%(levelname)5s %(asctime)s [%(name)s] %(filename)s:%(lineno)d|%(funcName)s(): %(message)s")
 logging.getLogger().setLevel("INFO")
-logging.getLogger("discord.client").setLevel(cfg["log_level"])
+logging.getLogger("discord.client").setLevel(cfg.log_level)
 
 log = logging.getLogger("discord_bot")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def main() -> None:
@@ -24,7 +24,7 @@ def main() -> None:
 
     log.info("Starting bot...")
     bot = RocketWatch(intents=intents)
-    bot.run(cfg["discord.secret"])
+    bot.run(cfg.discord.secret)
 
 
 if __name__ == "__main__":

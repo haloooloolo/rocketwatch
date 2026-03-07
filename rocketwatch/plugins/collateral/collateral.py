@@ -22,7 +22,7 @@ from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("collateral")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 p = inflect.engine()
 

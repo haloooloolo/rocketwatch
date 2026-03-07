@@ -15,7 +15,7 @@ from utils.embeds import Embed
 from utils.visibility import is_hidden
 
 log = logging.getLogger("metrics")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Metrics(commands.Cog):

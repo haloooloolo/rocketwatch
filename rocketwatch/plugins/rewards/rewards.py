@@ -22,7 +22,7 @@ from utils.retry import retry_async
 from utils.block_time import ts_to_block
 
 log = logging.getLogger("rewards")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Rewards(commands.Cog):

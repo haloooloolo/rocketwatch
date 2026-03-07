@@ -24,7 +24,7 @@ from utils.event_logs import get_logs
 
 cog_id = "rocksolid"
 log = logging.getLogger(cog_id)
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class RockSolid(Cog):

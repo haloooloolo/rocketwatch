@@ -4,7 +4,7 @@ import logging
 from enum import IntEnum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Literal, cast
+from typing import Literal, cast
 
 import termplotlib as tpl
 from eth_typing import ChecksumAddress
@@ -14,7 +14,7 @@ from utils.cfg import cfg
 from utils.rocketpool import rp
 
 log = logging.getLogger("dao")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class DAO(ABC):

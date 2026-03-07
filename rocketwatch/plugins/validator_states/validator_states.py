@@ -12,7 +12,7 @@ from utils.shared_w3 import w3
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("validator_states")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 _BEACON_PENDING = {"in_queue": "unassigned", "prestaked": "prestaked", "staking": "staked"}

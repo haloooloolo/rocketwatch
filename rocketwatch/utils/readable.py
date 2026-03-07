@@ -57,7 +57,7 @@ async def cl_explorer_url(target, name=None):
         name = s_hex(target)
     if not name:
         name = target
-    url = cfg["consensus_layer.explorer"]
+    url = cfg.consensus_layer.explorer
     return f"[{name}]({url}/validator/{target})"
 
 

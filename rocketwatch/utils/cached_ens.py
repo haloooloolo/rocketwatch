@@ -9,7 +9,7 @@ from utils.cfg import cfg
 from utils.shared_w3 import w3_mainnet
 
 log = logging.getLogger("cached_ens")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class CachedEns:

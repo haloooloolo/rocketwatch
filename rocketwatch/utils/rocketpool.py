@@ -15,7 +15,7 @@ from utils.readable import decode_abi
 from utils.shared_w3 import w3, w3_mainnet, w3_archive
 
 log = logging.getLogger("rocketpool")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class NoAddressFound(Exception):
@@ -43,7 +43,7 @@ class RocketPool:
         await self._init_contract_addresses()
 
     async def _init_contract_addresses(self) -> None:
-        manual_addresses = cfg["rocketpool.manual_addresses"]
+        manual_addresses = cfg.rocketpool.manual_addresses
         for name, address in manual_addresses.items():
             self.addresses[name] = address
 

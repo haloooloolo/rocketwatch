@@ -16,7 +16,7 @@ from utils.embeds import Embed
 from utils.visibility import is_hidden
 
 log = logging.getLogger("minipool_distribution")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 p = inflect.engine()
 
 

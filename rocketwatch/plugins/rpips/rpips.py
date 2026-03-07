@@ -14,7 +14,7 @@ from utils.embeds import Embed
 from utils.retry import retry_async
 
 log = logging.getLogger("rpips")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class RPIPs(Cog):

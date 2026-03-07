@@ -12,7 +12,7 @@ from utils.cfg import cfg
 from utils.embeds import Embed
 
 log = logging.getLogger("support_utils")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 async def generate_template_embed(db, template_name: str):
@@ -133,10 +133,10 @@ class AdminModal(ui.Modal, title="Change Template Message"):
 
 def has_perms(interaction: Interaction):
     return any([
-        interaction.user.id in cfg["rocketpool.support.user_ids"],
-        any(r.id in cfg["rocketpool.support.role_ids"] for r in interaction.user.roles),
-        cfg["discord.owner.user_id"] == interaction.user.id,
-        interaction.user.guild_permissions.moderate_members and interaction.guild.id == cfg["rocketpool.support.server_id"]
+        interaction.user.id in cfg.rocketpool.support.user_ids,
+        any(r.id in cfg.rocketpool.support.role_ids for r in interaction.user.roles),
+        cfg.discord.owner.user_id == interaction.user.id,
+        interaction.user.guild_permissions.moderate_members and interaction.guild.id == cfg.rocketpool.support.server_id
     ])
 
 
@@ -193,7 +193,7 @@ class SupportUtils(GroupCog, name="support"):
     subgroup = Group(
         name='template',
         description='various templates used by active support members',
-        guild_ids=[cfg["rocketpool.support.server_id"]]
+        guild_ids=[cfg.rocketpool.support.server_id]
     )
 
     def __init__(self, bot: RocketWatch):

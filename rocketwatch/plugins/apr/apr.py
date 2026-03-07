@@ -19,7 +19,7 @@ from utils.shared_w3 import w3, w3_archive
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("apr")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def to_apr(d1, d2, effective=True):

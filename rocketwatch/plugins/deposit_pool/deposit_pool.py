@@ -13,7 +13,7 @@ from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("deposit_pool")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class DepositPool(StatusPlugin):
@@ -139,7 +139,7 @@ class DepositPool(StatusPlugin):
         collateral_embed = await self.get_contract_collateral_stats()
         embed.add_field(name="Withdrawals", value=collateral_embed.description, inline=False)
 
-        if cfg["rocketpool.chain"] != "mainnet":
+        if cfg.rocketpool.chain != "mainnet":
             return embed
 
         reth_price = await rp.get_reth_eth_price()

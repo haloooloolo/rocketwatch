@@ -26,7 +26,7 @@ from utils.block_time import block_to_ts
 ens = CachedEns()
 
 log = logging.getLogger("embeds")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Embed(discord.Embed):
@@ -37,8 +37,8 @@ class Embed(discord.Embed):
 
     def set_footer_parts(self, parts):
         footer_parts = ["Created by 0xinvis.eth, Developed by haloooloolo.eth"]
-        if cfg["rocketpool.chain"] != "mainnet":
-            footer_parts.insert(-1, f"Chain: {cfg['rocketpool.chain'].capitalize()}")
+        if cfg.rocketpool.chain != "mainnet":
+            footer_parts.insert(-1, f"Chain: {cfg.rocketpool.chain.capitalize()}")
         footer_parts.extend(parts)
         self.set_footer(text=" · ".join(footer_parts))
 
@@ -102,9 +102,9 @@ async def el_explorer_url(
     if w3.is_address(target):
         # sanitize address
         target = w3.to_checksum_address(target)
-        url = f"{cfg['execution_layer.explorer']}/address/{target}"
+        url = f"{cfg.execution_layer.explorer}/address/{target}"
 
-        chain = cfg["rocketpool.chain"]
+        chain = cfg.rocketpool.chain
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
 
         if await rp.is_node(target):
@@ -140,7 +140,7 @@ async def el_explorer_url(
                 prefix += "🏛️"
             name = delegate_name
 
-        if not name and cfg["rocketpool.chain"] != "mainnet":
+        if not name and cfg.rocketpool.chain != "mainnet":
             name = s_hex(target)
 
         if not name:
@@ -158,7 +158,7 @@ async def el_explorer_url(
         if code := await w3.eth.get_code(target):
             if prefix != -1:
                 prefix += "📄"
-            if ((not name) and (w3.keccak(text=code.hex()).hex() in cfg["other.mev_hashes"])):
+            if ((not name) and (w3.keccak(text=code.hex()).hex() in cfg.other.mev_hashes)):
                 name = "MEV Bot Contract"
             if not name:
                 with contextlib.suppress(Exception):
@@ -182,7 +182,7 @@ async def el_explorer_url(
                         name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
     else:
         # transaction hash
-        url = f"{cfg['execution_layer.explorer']}/tx/{target}"
+        url = f"{cfg.execution_layer.explorer}/tx/{target}"
 
     if not name:
         # fall back to shortened address
@@ -326,8 +326,8 @@ async def assemble(args) -> Embed:
     if has_small and not (has_large and use_large):
         e.description = _(f"embeds.{args.event_name}.description_small", **args)
         e.description += f" {args.transactionHash_small}"
-        if cfg["rocketpool.chain"] != "mainnet":
-            e.description += f" ({cfg['rocketpool.chain'].capitalize()})"
+        if cfg.rocketpool.chain != "mainnet":
+            e.description += f" ({cfg.rocketpool.chain.capitalize()})"
         e.set_footer(text="")
         return e
 
@@ -357,7 +357,7 @@ async def assemble(args) -> Embed:
 
     if "epoch" in args:
         e.add_field(name="Epoch",
-                    value=f"[{args.epoch}](https://{cfg['consensus_layer.explorer']}/epoch/{args.epoch})")
+                    value=f"[{args.epoch}](https://{cfg.consensus_layer.explorer}/epoch/{args.epoch})")
 
     if "timezone" in args:
         e.add_field(name="Timezone",
@@ -476,12 +476,12 @@ async def assemble(args) -> Embed:
                     value=v)
 
     # show block number
-    el_explorer = cfg["execution_layer.explorer"]
+    el_explorer = cfg.execution_layer.explorer
     if "block_number" in args:
         e.add_field(name="Block Number",
                     value=f"[{args.blockNumber}]({el_explorer}/block/{args.blockNumber})")
 
-    cl_explorer = cfg["consensus_layer.explorer"]
+    cl_explorer = cfg.consensus_layer.explorer
     if "slot" in args:
         e.add_field(name="Slot",
                     value=f"[{args.slot}]({cl_explorer}/slot/{args.slot})")

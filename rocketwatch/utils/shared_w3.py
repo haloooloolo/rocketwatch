@@ -8,17 +8,17 @@ from web3.providers import AsyncHTTPProvider
 from utils.cfg import cfg
 
 log = logging.getLogger("shared_w3")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
-w3 = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.current'], request_kwargs={'timeout': 60}))
+w3 = AsyncWeb3(AsyncHTTPProvider(cfg.execution_layer.endpoint.current, request_kwargs={'timeout': 60}))
 w3_mainnet = w3
 
-if cfg['rocketpool.chain'] != "mainnet":
-    w3_mainnet = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.mainnet']))
+if cfg.rocketpool.chain != "mainnet":
+    w3_mainnet = AsyncWeb3(AsyncHTTPProvider(cfg.execution_layer.endpoint.mainnet))
 
 w3_archive = None
-if "archive" in cfg['execution_layer.endpoint'].keys():
-    w3_archive = AsyncWeb3(AsyncHTTPProvider(cfg['execution_layer.endpoint.archive']))
+if cfg.execution_layer.endpoint.archive is not None:
+    w3_archive = AsyncWeb3(AsyncHTTPProvider(cfg.execution_layer.endpoint.archive))
 
 
 class Bacon(AsyncBeacon):
@@ -34,4 +34,4 @@ class Bacon(AsyncBeacon):
         )
 
 
-bacon = Bacon(cfg["consensus_layer.endpoint"])
+bacon = Bacon(cfg.consensus_layer.endpoint)

@@ -25,22 +25,22 @@ from utils.retry import retry_async
 from utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class RocketWatch(Bot):
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
-        self.db = AsyncMongoClient(cfg["mongodb.uri"]).rocketwatch
+        self.db = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
 
     async def _load_plugins(self):
-        chain = cfg["rocketpool.chain"]
-        storage = cfg["rocketpool.manual_addresses.rocketStorage"]
+        chain = cfg.rocketpool.chain
+        storage = cfg.rocketpool.manual_addresses["rocketStorage"]
         log.info(f"Running using storage contract {storage} (Chain: {chain})")
 
         log.info("Loading plugins...")
-        included_modules = set(cfg["modules.include"] or [])
-        excluded_modules = set(cfg["modules.exclude"] or [])
+        included_modules = set(cfg.modules.include or [])
+        excluded_modules = set(cfg.modules.exclude or [])
 
         def should_load_plugin(_plugin: str) -> bool:
             # inclusion takes precedence in case of collision
@@ -89,7 +89,7 @@ class RocketWatch(Bot):
 
     async def on_ready(self):
         log.info(f"Logged in as {self.user.name} ({self.user.id})")
-        commands_enabled = cfg["modules.enable_commands"]
+        commands_enabled = cfg.modules.enable_commands
         if not commands_enabled:
             log.info("Commands disabled, clearing tree...")
             self.clear_commands()
@@ -147,7 +147,7 @@ class RocketWatch(Bot):
         log.error(err_trace)
 
         try:
-            channel = await self.get_or_fetch_channel(cfg["discord.channels.errors"])
+            channel = await self.get_or_fetch_channel(cfg.discord.channels["errors"])
             file = File(io.StringIO(err_trace), "exception.txt")
             await retry_async(tries=5, delay=5)(channel.send)(err_description, file=file)
         except Exception:

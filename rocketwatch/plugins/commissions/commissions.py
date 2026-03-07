@@ -15,7 +15,7 @@ from utils.embeds import Embed
 from utils.visibility import is_hidden
 
 log = logging.getLogger("commissions")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Commissions(commands.Cog):

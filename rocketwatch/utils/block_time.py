@@ -7,7 +7,7 @@ from utils.cfg import cfg
 from utils.shared_w3 import w3
 
 log = logging.getLogger("block_time")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 @cached()

@@ -11,7 +11,7 @@ from utils.cfg import cfg
 from utils.embeds import Embed
 
 log = logging.getLogger("rich_activity")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class PinnedMessages(commands.Cog):
@@ -72,7 +72,7 @@ class PinnedMessages(commands.Cog):
                 await self.bot.report_error(err)
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def pin(self, interaction: Interaction, channel_id: int, title: str, description: str):
         await interaction.response.defer()
@@ -99,7 +99,7 @@ class PinnedMessages(commands.Cog):
         await interaction.followup.send("Created pinned message")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def unpin(self, interaction: Interaction, channel_id: str):
         await interaction.response.defer()

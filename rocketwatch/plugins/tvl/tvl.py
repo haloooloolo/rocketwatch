@@ -16,7 +16,7 @@ from utils.shared_w3 import w3
 from utils.visibility import is_hidden
 
 log = logging.getLogger("tvl")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 def split_rewards_logic(balance, node_share, commission, force_base=False):

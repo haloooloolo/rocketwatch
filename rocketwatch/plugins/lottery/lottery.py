@@ -15,7 +15,7 @@ from utils.time_debug import timerun_async
 from utils.visibility import is_hidden
 
 log = logging.getLogger("lottery")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Lottery(commands.Cog):

@@ -18,13 +18,13 @@ from utils.cfg import cfg
 from utils.embeds import Embed
 
 log = logging.getLogger("chat_summary")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class ChatSummary(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.client = anthropic.AsyncAnthropic(api_key=cfg["other.secrets.anthropic"])
+        self.client = anthropic.AsyncAnthropic(api_key=cfg.other.secrets.anthropic)
         # log all possible engines
         self.tokenizer = tiktoken.encoding_for_model("gpt-4-turbo")
 

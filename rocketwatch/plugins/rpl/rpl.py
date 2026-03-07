@@ -14,7 +14,7 @@ from utils.rocketpool import rp
 from utils.visibility import is_hidden_weak
 
 log = logging.getLogger("rpl")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class RPL(commands.Cog):

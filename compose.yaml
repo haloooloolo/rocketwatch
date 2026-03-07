@@ -4,7 +4,7 @@ services:
     build: ./rocketwatch
     volumes:
       - ./rocketwatch/contracts/rocketpool:/app/contracts/rocketpool
-      - ./rocketwatch/main.cfg:/app/main.cfg
+      - ./rocketwatch/config.toml:/app/config.toml
     restart: unless-stopped
     depends_on:
       - mongodb

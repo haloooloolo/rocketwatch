@@ -19,7 +19,7 @@ from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
 log = logging.getLogger("transactions")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Transactions(EventPlugin):
@@ -51,7 +51,7 @@ class Transactions(EventPlugin):
         return addresses, function_map
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def trigger_tx(
             self,
@@ -79,7 +79,7 @@ class Transactions(EventPlugin):
             await interaction.followup.send(content="No events triggered.")
 
     @command()
-    @guilds(cfg["discord.owner.server_id"])
+    @guilds(cfg.discord.owner.server_id)
     @is_owner()
     async def replay_tx(self, interaction: Interaction, tx_hash: str):
         await interaction.response.defer()

@@ -25,7 +25,7 @@ from utils.shared_w3 import bacon
 
 cog_id = "proposals"
 log = logging.getLogger(cog_id)
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 LOOKUP = {
     "consensus": {
@@ -115,7 +115,7 @@ def parse_proposal(beacon_block: dict) -> dict:
 class Proposals(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("proposals-task", api_key=cfg["other.secrets.cronitor"])
+        self.monitor = Monitor("proposals-task", api_key=cfg.other.secrets.cronitor)
         self.batch_size = 100
         self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())

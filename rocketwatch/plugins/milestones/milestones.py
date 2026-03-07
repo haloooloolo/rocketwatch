@@ -11,7 +11,7 @@ from utils.rocketpool import rp
 from utils.event import EventPlugin, Event
 
 log = logging.getLogger("milestones")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Milestones(EventPlugin):

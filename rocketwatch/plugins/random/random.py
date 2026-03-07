@@ -22,7 +22,7 @@ from utils.shared_w3 import w3, bacon
 from utils.visibility import is_hidden, is_hidden_weak
 
 log = logging.getLogger("random")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class Random(commands.Cog):
@@ -71,7 +71,7 @@ class Random(commands.Cog):
             if "address" not in entry:
                 description += f" {entry['name']}"
             else:
-                url = cfg["execution_layer.explorer"]
+                url = cfg.execution_layer.explorer
                 if not entry["name"]:
                     entry["name"] = s_hex(entry["address"])
                 target = f"[{entry['name']}]({url}/address/{entry['address']})"

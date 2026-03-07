@@ -38,7 +38,7 @@ from utils.cfg import cfg
 from utils.embeds import Embed
 
 log = logging.getLogger("detect_scam")
-log.setLevel(cfg["log_level"])
+log.setLevel(cfg.log_level)
 
 
 class DetectScam(Cog):
@@ -50,9 +50,9 @@ class DetectScam(Cog):
     @staticmethod
     def is_reputable(user: Member) -> bool:
         return any((
-            user.id == cfg["discord.owner.user_id"],
-            user.id in cfg["rocketpool.support.user_ids"],
-            {role.id for role in user.roles} & set(cfg["rocketpool.support.role_ids"]),
+            user.id == cfg.discord.owner.user_id,
+            user.id in cfg.rocketpool.support.user_ids,
+            {role.id for role in user.roles} & set(cfg.rocketpool.support.role_ids),
             user.guild_permissions.moderate_members
         ))
 
@@ -127,14 +127,14 @@ class DetectScam(Cog):
         self.message_report_menu = ContextMenu(
             name="Report Message",
             callback=self.manual_message_report,
-            guild_ids=[cfg["rocketpool.support.server_id"]],
+            guild_ids=[cfg.rocketpool.support.server_id],
         )
         self.bot.tree.add_command(self.message_report_menu)
         self.user_report_menu = ContextMenu(
             name="Report User",
             callback=self.manual_user_report,
             type=AppCommandType.user,
-            guild_ids=[cfg["rocketpool.support.server_id"]]
+            guild_ids=[cfg.rocketpool.support.server_id]
         )
         self.bot.tree.add_command(self.user_report_menu)
 
@@ -267,7 +267,7 @@ class DetectScam(Cog):
             warning_msg = None
             log.warning(f"Failed to send warning message in reply to {message.id}")
 
-        report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
+        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
         report_msg = await report_channel.send(embed=report, file=contents)
 
         await self.bot.db.scam_reports.update_one(
@@ -293,11 +293,11 @@ class DetectScam(Cog):
 
         warning, report, contents = components
 
-        report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
+        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
         report_msg = await report_channel.send(embed=report, file=contents)
         await self.bot.db.scam_reports.update_one({"message_id": message.id}, {"$set": {"report_id": report_msg.id}})
 
-        moderator = await self.bot.get_or_fetch_user(cfg["rocketpool.support.moderator_id"])
+        moderator = await self.bot.get_or_fetch_user(cfg.rocketpool.support.moderator_id)
         view = self.RemovalVoteView(self, message)
         warning_msg = await message.reply(
             content=f"{moderator.mention} {report_msg.jump_url}",
@@ -450,7 +450,7 @@ class DetectScam(Cog):
         if message.guild is None:
             return
 
-        if message.guild.id != cfg["rocketpool.support.server_id"]:
+        if message.guild.id != cfg.rocketpool.support.server_id:
             log.warning(f"Ignoring message in {message.guild.id})")
             return
 
@@ -473,7 +473,7 @@ class DetectScam(Cog):
 
     @Cog.listener()
     async def on_reaction_add(self, reaction: Reaction, user: User) -> None:
-        if reaction.message.guild.id != cfg["rocketpool.support.server_id"]:
+        if reaction.message.guild.id != cfg.rocketpool.support.server_id:
             log.warning(f"Ignoring reaction in {reaction.message.guild.id}")
             return
 
@@ -519,7 +519,7 @@ class DetectScam(Cog):
                 await self.bot.db.scam_reports.update_one(report, {"$set": {"user_banned": True}})
 
     async def _update_report(self, report: dict, note: str) -> None:
-        report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
+        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
         try:
             message = await report_channel.fetch_message(report["report_id"])
             embed = message.embeds[0]
@@ -542,7 +542,7 @@ class DetectScam(Cog):
             log.warning(f"Failed to send warning message in thread {thread.id}")
             warning_msg = None
 
-        report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
+        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
         report_msg = await report_channel.send(embed=report)
 
         await self.bot.db.scam_reports.update_one(
@@ -552,7 +552,7 @@ class DetectScam(Cog):
 
     @Cog.listener()
     async def on_thread_create(self, thread: Thread) -> None:
-        if thread.guild.id != cfg["rocketpool.support.server_id"]:
+        if thread.guild.id != cfg.rocketpool.support.server_id:
             log.warning(f"Ignoring thread creation in {thread.guild.id}")
             return
 
@@ -581,7 +581,7 @@ class DetectScam(Cog):
                 await self.bot.db.scam_reports.update_one(db_filter, {"$set": {"warning_id": None, "removed": True}})
 
     @command()
-    @guilds(cfg["rocketpool.support.server_id"])
+    @guilds(cfg.rocketpool.support.server_id)
     async def report_user(self, interaction: Interaction, user: Member) -> None:
         """Generate a suspicious user report and send it to the report channel"""
         await self.manual_user_report(interaction, user)
@@ -601,7 +601,7 @@ class DetectScam(Cog):
                 content="Failed to report user. They may have already been reported or banned."
             )
 
-        report_channel = await self.bot.get_or_fetch_channel(cfg["discord.channels.report_scams"])
+        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
         report_msg = await report_channel.send(embed=report)
 
         await self.bot.db.scam_reports.update_one(
