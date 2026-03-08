@@ -263,9 +263,14 @@ class Events(EventPlugin):
                     log.warning(f"Skipping unknown event {n}.{event.event}")
             elif event.get("event") in self.event_map:
                 event_name = self.event_map[event.event]
-                if event_name in ["contract_upgraded", "contract_added"]:
+                if event_name in ["odao_contract_upgraded_event", "odao_contract_added_event"]:
                     log.info("detected contract upgrade")
                     upgrade_block = event.blockNumber
+                if event_name in ["odao_upgrade_pending_event", "sdao_upgrade_vetoed_event",
+                                  "odao_contract_added_event", "odao_contract_upgraded_event"]:
+                    event.args = aDict(event.args)
+                    hash_args(event.args)
+                    embed = await self.handle_event(event_name, event)
                 else:
                     # deposit/exit event path
                     event.args = aDict(event.args)
@@ -737,6 +742,27 @@ class Events(EventPlugin):
                 if await rp.get_address_by_name(contract) == args.claimingContract:
                     return None
 
+        if event_name == "odao_upgrade_pending_event":
+            args.contractName = await rp.call(
+                "rocketDAONodeTrustedUpgrade.getName", args.upgradeProposalID, block=event.blockNumber
+            )
+            args.contractAddress = await rp.call(
+                "rocketDAONodeTrustedUpgrade.getUpgradeAddress", args.upgradeProposalID, block=event.blockNumber
+            )
+            args.vetoDeadline = await rp.call(
+                "rocketDAONodeTrustedUpgrade.getEnd", args.upgradeProposalID, block=event.blockNumber
+            )
+            if args.contractAddress == "0x0000000000000000000000000000000000000000":
+                del args.contractAddress
+                event_name = "upgrade_pending_abi_event"
+        elif event_name == "sdao_upgrade_vetoed_event":
+            args.contractName = await rp.call(
+                "rocketDAONodeTrustedUpgrade.getName", args.upgradeProposalID, block=event.blockNumber
+            )
+        elif event_name == "odao_contract_upgraded_event":
+            args.contractName = rp.get_name_by_address(args.oldAddress) or "Unknown"
+        elif event_name == "odao_contract_added_event":
+            args.contractName = rp.get_name_by_address(args.newAddress) or "Unknown"
         if "node_register_event" in event_name:
             args.timezone = await rp.call("rocketNodeManager.getNodeTimezoneLocation", args.node)
         if "odao_member_challenge_event" in event_name:

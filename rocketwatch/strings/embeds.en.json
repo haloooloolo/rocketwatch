@@ -119,6 +119,22 @@
         "title": ":crystal_ball: oDAO Contract Upgrade",
         "description": "The contract `%{name}` has been upgraded to %{contractAddress}!"
     },
+    "odao_upgrade_pending_event": {
+        "title": ":hourglass: Contract Upgrade Pending",
+        "description": "The upgrade process for `%{contractName}` has been initiated.\nVeto window ends %{vetoDeadline}."
+    },
+    "sdao_upgrade_vetoed_event": {
+        "title": ":no_entry: Contract Upgrade Vetoed",
+        "description": "Upgrade #%{upgradeProposalID} for `%{contractName}` has been vetoed by the security council!"
+    },
+    "odao_contract_added_event": {
+        "title": ":page_facing_up: Contract Added",
+        "description": "New contract `%{contractName}` added at %{newAddress}."
+    },
+    "odao_contract_upgraded_event": {
+        "title": ":page_facing_up: Contract Upgraded",
+        "description": "`%{contractName}` has been upgraded to %{newAddress}."
+    },
     "odao_member_invite": {
         "title": ":crystal_ball: oDAO Invite",
         "description": "**%{id}** (%{nodeAddress}) has been invited to join the oDAO!"

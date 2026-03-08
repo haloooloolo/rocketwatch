@@ -525,12 +525,20 @@
             "contract_name": "rocketDAONodeTrustedUpgrade",
             "events": [
                 {
+                    "event_name": "UpgradePending",
+                    "name": "odao_upgrade_pending_event"
+                },
+                {
+                    "event_name": "UpgradeVetoed",
+                    "name": "sdao_upgrade_vetoed_event"
+                },
+                {
                     "event_name": "ContractUpgraded",
-                    "name": "contract_upgraded"
+                    "name": "odao_contract_upgraded_event"
                 },
                 {
                     "event_name": "ContractAdded",
-                    "name": "contract_added"
+                    "name": "odao_contract_added_event"
                 }
             ]
         }

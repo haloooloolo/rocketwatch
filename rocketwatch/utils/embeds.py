@@ -205,7 +205,7 @@ async def prepare_args(args):
 
         # handle timestamps
         if "deadline" in arg_key.lower() and isinstance(arg_value, int):
-            args[arg_key] = f"<t:{arg_value}:f>(<t:{arg_value}:R>)"
+            args[arg_key] = f"<t:{arg_value}:f> (<t:{arg_value}:R>)"
 
         # handle percentages
         if "perc" in arg_key.lower():
@@ -385,13 +385,6 @@ async def assemble(args) -> Embed:
             inline=False
         )
 
-    if "contractName" in args:
-        e.add_field(
-            name="Contract",
-            value=f"`{args.contractName}`",
-            inline=False
-        )
-
     if "settingContractName" in args:
         e.add_field(name="Contract",
                     value=f"`{args.settingContractName}`",
@@ -438,7 +431,7 @@ async def assemble(args) -> Embed:
             inline=True
         )
 
-    if "contractAddress" in args and "Contract" in args.type:
+    if "contractAddress" in args and "Contract" in args.get("type", ""):
         e.add_field(name="Contract Address",
                     value=args.contractAddress,
                     inline=False)
