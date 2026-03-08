@@ -131,9 +131,7 @@ class TVL(Cog):
                         "DAO Share"  : {"_val": 0},
                     },
                 },
-                "Unclaimed Rewards"     : {
-                    "Smoothing Pool": {},  # accurate, live
-                }
+                "Unclaimed Rewards"     : {},  # accurate, live
             },
         }
         # note: _value in each dict will store the final string that gets rendered in the render
@@ -334,7 +332,7 @@ class TVL(Cog):
         data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool Balance"]["_val"] = smoothie_balance
 
         # Unclaimed Smoothing Pool Rewards: This is ETH from the previous Reward Periods that have not been claimed yet.
-        data["Total ETH Locked"]["Unclaimed Rewards"]["Smoothing Pool"]["_val"] = solidity.to_float(
+        data["Total ETH Locked"]["Unclaimed Rewards"]["_val"] = solidity.to_float(
             await rp.call("rocketVault.balanceOf", "rocketMerkleDistributorMainnet"))
 
         # Staked RPL: This is all ETH that has been staked by node operators.
