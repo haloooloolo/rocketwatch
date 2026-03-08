@@ -132,7 +132,7 @@ class ScamDetection(Cog):
         self.obfuscated_url_pattern = re.compile(
             rf"<{_ws}ht{_brk}tp|"                                     # <ht\n> tp
             rf"<{_ws}ma{_ws}i{_brk}l{_ws}t{_ws}o|"                   # <ma\n> i\n> L\n> To (mailto)
-            rf"<d\w{_brk}s{_brk}co{_brk}r|"                          # <dI\n> S\n> Co\n> R (discord:)
+            rf"<d{_brk}?i{_brk}?s{_brk}?c{_brk}?o{_brk}?r|"              # <discord: broken across lines
             rf"di{_brk}sco{_brk}rd(?!\.(?:com|gg|py|js|net|org))",   # di\nsco\nrd (not discord.com etc)
             re.IGNORECASE
         )
