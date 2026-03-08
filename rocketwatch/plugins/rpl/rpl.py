@@ -10,7 +10,7 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.embeds import Embed
 from utils.rocketpool import rp
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.rpl")
 
@@ -24,7 +24,7 @@ class RPL(commands.Cog):
         """
         Show the amount of RPL staked
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         rpl_supply = solidity.to_float(await rp.call("rocketTokenRPL.totalSupply"))
         legacy_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
@@ -87,7 +87,7 @@ class RPL(commands.Cog):
         """
         Show the available liquidity at different RPL/ETH prices
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         data = await (await self.bot.db.node_operators.aggregate([
             {

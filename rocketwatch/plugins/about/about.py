@@ -14,7 +14,7 @@ from rocketwatch import RocketWatch
 from utils import readable
 from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 psutil.getloadavg()
 BOOT_TIME = time.time()
@@ -30,7 +30,7 @@ class About(commands.Cog):
     @command()
     async def about(self, interaction: Interaction):
         """Bot and server information"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         g = self.bot.guilds
         code_time = None

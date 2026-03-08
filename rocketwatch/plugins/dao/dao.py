@@ -17,7 +17,7 @@ from utils.embeds import Embed, el_explorer_url
 from utils.event_logs import get_logs
 from utils.rocketpool import rp
 from utils.views import PageView
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.dao")
 
@@ -105,7 +105,7 @@ class OnchainDAO(Cog):
             full: bool = False
     ) -> None:
         """Show currently active on-chain proposals"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         match dao_name:
             case "pDAO":
@@ -214,7 +214,7 @@ class OnchainDAO(Cog):
     @autocomplete(proposal=_get_recent_proposals)
     async def voter_list(self, interaction: Interaction, proposal: int) -> None:
         """Show the list of voters for a pDAO proposal"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         if not (proposal := await ProtocolDAO().fetch_proposal(proposal)):
             return await interaction.followup.send("Invalid proposal ID.")
 

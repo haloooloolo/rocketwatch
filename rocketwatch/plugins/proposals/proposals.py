@@ -20,7 +20,7 @@ from utils.embeds import Embed
 from utils.shared_w3 import bacon
 from utils.solidity import beacon_block_to_date, date_to_beacon_block
 from utils.time_debug import timerun_async
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 cog_id = "proposals"
 log = logging.getLogger(f"rocketwatch.{cog_id}")
@@ -292,7 +292,7 @@ class Proposals(commands.Cog):
         """
         Show a historical chart of used Smart Node versions
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         window_length = 5
 
@@ -506,7 +506,7 @@ class Proposals(commands.Cog):
         """
         Generate a distribution graph of clients.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         embeds, files = [], []
         for attr, name in [["consensus_client", "Consensus Client"], ["execution_client", "Execution Client"]]:
             e, f = await self.proposal_vs_node_operators_embed(attr, name, remove_allnodes)
@@ -519,7 +519,7 @@ class Proposals(commands.Cog):
         """
         Generate a graph of NO groups.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         embed, file = await self.proposal_vs_node_operators_embed("type", "User")
         await interaction.followup.send(embed=embed, file=file)
 
@@ -530,7 +530,7 @@ class Proposals(commands.Cog):
         """
         Generate a ranking of most used execution and consensus clients.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         # aggregate [consensus, execution] pair counts
         client_pairs = await (await self.bot.db.latest_proposals.aggregate([
             {

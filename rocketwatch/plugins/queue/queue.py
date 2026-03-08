@@ -12,7 +12,7 @@ from utils.embeds import el_explorer_url
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.views import PageView
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.queue")
 
@@ -194,7 +194,7 @@ class Queue(Cog):
     @describe(lane="type of queue to display")
     async def queue(self, interaction: Interaction, lane: Literal["combined", "standard", "express"] = "combined"):
         """Show the RP validator queue"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         view = Queue.ValidatorPageView(lane)
         embed = await view.load()
         await interaction.followup.send(embed=embed, view=view)

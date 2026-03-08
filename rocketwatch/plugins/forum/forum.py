@@ -11,7 +11,7 @@ from discord.ext import commands
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
 from utils.retry import retry_async
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.forum")
 
@@ -122,7 +122,7 @@ class Forum(commands.Cog):
         period: Period = "monthly"
     ) -> None:
         """Get the most popular topics from the forum"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         if isinstance(period, Choice):
             period: Forum.Period = cast(Forum.Period, period.value)
@@ -150,7 +150,7 @@ class Forum(commands.Cog):
         order_by: UserMetric = "likes_received"
     ) -> None:
         """Get the most active forum users"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         embed = Embed(title=f"Top Forum Users ({period})")
         embed.description = ""

@@ -22,7 +22,7 @@ from utils.image import Color, FontVariant, Image, ImageCanvas
 from utils.readable import pretty_time
 from utils.retry import retry_async
 from utils.rocketpool import rp
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.snapshot")
 
@@ -577,7 +577,7 @@ class Snapshot(EventPlugin):
     @command()
     async def snapshot_votes(self, interaction: Interaction):
         """Show currently active Snapshot proposals"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         embed = Embed(title="Snapshot Proposals")
         embed.set_author(name="🔗 Data from snapshot.org", url="https://vote.rocketpool.net")

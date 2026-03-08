@@ -14,7 +14,7 @@ from utils import solidity
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import w3, w3_archive
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.apr")
 
@@ -82,7 +82,7 @@ class APR(commands.Cog):
     @command()
     async def reth_apr(self, interaction: Interaction):
         """Show the current rETH APR"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         e.title = "Current rETH APR"
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
@@ -252,7 +252,7 @@ class APR(commands.Cog):
     @command()
     async def node_apr(self, interaction: Interaction):
         """Show the current node operator APR"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         e.title = "Current NO APR"
         e.description = "Dashed red lines above and below the solid red one are leb8 and leb16 respectively. " \

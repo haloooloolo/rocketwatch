@@ -16,7 +16,7 @@ from utils.embeds import Embed, el_explorer_url
 from utils.event_logs import get_logs
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 cog_id = "rocksolid"
 log = logging.getLogger(f"rocketwatch.{cog_id}")
@@ -67,7 +67,7 @@ class RockSolid(Cog):
         """
         Summary of RockSolid rETH vault stats.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         current_block = await w3.eth.get_block_number()
         now = await block_to_ts(current_block)

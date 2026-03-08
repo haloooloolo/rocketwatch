@@ -14,7 +14,7 @@ from utils.config import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.user_distribute")
 
@@ -154,7 +154,7 @@ class UserDistribute(commands.Cog):
     @command()
     async def user_distribute_status(self, interaction: Interaction):
         """Show user distribute summary for minipools"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         eligible, pending, distributable = await self._fetch_minipools()
 

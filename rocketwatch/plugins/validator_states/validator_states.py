@@ -8,7 +8,7 @@ from rocketwatch import RocketWatch
 from utils.embeds import Embed, el_explorer_url
 from utils.readable import render_tree_legacy
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.validator_states")
 
@@ -114,7 +114,7 @@ class ValidatorStates(commands.Cog):
     @command()
     async def validator_states(self, interaction: Interaction):
         """Show validator counts by beacon chain and contract status"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         minipools = await self.bot.db.minipools.find(
             {"beacon.status": {"$exists": True}},

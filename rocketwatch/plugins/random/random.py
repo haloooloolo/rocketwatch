@@ -22,7 +22,7 @@ from utils.sea_creatures import (
     sea_creatures,
 )
 from utils.shared_w3 import bacon, w3
-from utils.visibility import is_hidden, is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.random")
 
@@ -33,7 +33,7 @@ class Random(commands.Cog):
 
     @command()
     async def dice(self, interaction: Interaction, dice_string: str = "1d6"):
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         result = dice.roll(dice_string)
         e = Embed()
         e.title = f"🎲 {dice_string}"
@@ -48,7 +48,7 @@ class Random(commands.Cog):
     @command()
     async def burn_reason(self, interaction: Interaction):
         """Show the largest sources of burned ETH"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         url = "https://ultrasound.money/api/fees/grouped-analysis-1"
         # get data from url using aiohttp
         async with aiohttp.ClientSession() as session, session.get(url) as resp:
@@ -155,7 +155,7 @@ class Random(commands.Cog):
     @command()
     async def smoothie(self, interaction: Interaction):
         """Show smoothing pool information"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         e = Embed(title="Smoothing Pool")
         smoothie_eth = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
@@ -263,7 +263,7 @@ class Random(commands.Cog):
     @command()
     async def odao_challenges(self, interaction: Interaction):
         """Shows the current oDAO challenges"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         c = await rp.get_contract_by_name("rocketDAONodeTrustedActions")
         # get challenges made
         events = list(c.events["ActionChallengeMade"].get_logs(

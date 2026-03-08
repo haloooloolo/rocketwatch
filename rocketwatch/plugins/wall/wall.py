@@ -44,7 +44,7 @@ from utils.liquidity import (
 )
 from utils.rocketpool import rp
 from utils.time_debug import timerun, timerun_async
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.wall")
 
@@ -260,7 +260,7 @@ class Wall(commands.Cog):
             sources: Literal["All", "CEX", "DEX"] = "All"
     ) -> None:
         """Show the current RPL market depth across exchanges"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         embed = Embed(title="RPL Market Depth")
 
         async def on_fail() -> None:

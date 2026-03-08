@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
 from utils.readable import render_tree_legacy
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.fee_distribution")
 
@@ -24,7 +24,7 @@ class FeeDistribution(commands.Cog):
         """
         Show the distribution of minipool commission percentages.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         e = Embed()
         e.title = "Minipool Fee Distribution"

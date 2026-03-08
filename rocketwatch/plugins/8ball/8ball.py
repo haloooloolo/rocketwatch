@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 
 class EightBall(commands.Cog):
@@ -25,7 +25,7 @@ class EightBall(commands.Cog):
             )
             await interaction.response.send_message(embed=e, ephemeral=True)
             return
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         await asyncio.sleep(random.randint(2, 5))
         res = pyrandom.choice([
             "As I see it, yes",

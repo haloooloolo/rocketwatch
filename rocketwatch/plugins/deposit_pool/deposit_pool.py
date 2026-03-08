@@ -10,7 +10,7 @@ from utils.config import cfg
 from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.status import StatusPlugin
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.deposit_pool")
 
@@ -110,13 +110,13 @@ class DepositPool(StatusPlugin):
     @command()
     async def deposit_pool(self, interaction: Interaction) -> None:
         """Show the current deposit pool status"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         await interaction.followup.send(embed=await self.get_deposit_pool_stats())
 
     @command()
     async def reth_extra_collateral(self, interaction: Interaction) -> None:
         """Show the amount of tokens held in the rETH contract for exit liquidity"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         await interaction.followup.send(embed=await self.get_contract_collateral_stats())
 
     async def get_status(self) -> Embed:

@@ -15,7 +15,7 @@ from utils.config import cfg
 from utils.dao import DAO, DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
 from utils.embeds import Embed
 from utils.status import StatusPlugin
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.governance")
 
@@ -155,7 +155,7 @@ class Governance(StatusPlugin):
     @command()
     async def governance_digest(self, interaction: Interaction) -> None:
         """Get a summary of recent activity in protocol governance"""
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         embed = await self.get_digest()
         await interaction.followup.send(embed=embed)
 

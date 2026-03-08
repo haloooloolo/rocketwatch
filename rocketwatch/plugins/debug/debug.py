@@ -20,7 +20,7 @@ from utils.embeds import Embed, el_explorer_url
 from utils.readable import prettify_json_string
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden, is_hidden_role_controlled, is_hidden_weak
+from utils.visibility import is_hidden, is_hidden_role_controlled
 
 log = logging.getLogger("rocketwatch.debug")
 
@@ -308,7 +308,7 @@ class Debug(Cog):
         """
         Randomly generated Asian restaurant names
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         async with aiohttp.ClientSession() as session, session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
             a = (await resp.json())["name"]
         await interaction.followup.send(a)

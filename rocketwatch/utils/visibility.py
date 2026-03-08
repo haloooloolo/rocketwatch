@@ -4,11 +4,11 @@ from plugins.support_utils.support_utils import has_perms
 
 
 def is_hidden(interaction: Interaction):
-    return all(w not in interaction.channel.name for w in ["random", "rocket-watch"])
-
-
-def is_hidden_weak(interaction: Interaction):
-    return all(w not in interaction.channel.name for w in ["random", "rocket-watch", "trading"])
+    channel_name: str = interaction.channel.name
+    for allowed_channel in ["random", "rocket-watch", "trading"]:
+        if allowed_channel in channel_name:
+            return False
+    return False
 
 
 def is_hidden_role_controlled(interaction: Interaction):

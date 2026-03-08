@@ -13,7 +13,7 @@ from utils.embeds import Embed, assemble, prepare_args
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.cow_orders")
 
@@ -33,7 +33,7 @@ class CowOrders(EventPlugin):
             await interaction.response.send_message("nop", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
         url = tnx.replace("etherscan.io", "explorer.cow.fi")
         embed = Embed(description=f"[cow explorer]({url})")
         await interaction.followup.send(embed=embed)

@@ -18,7 +18,7 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.embeds import Embed, resolve_ens
 from utils.rocketpool import rp
-from utils.visibility import is_hidden_weak
+from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.collateral")
 
@@ -118,7 +118,7 @@ class Collateral(commands.Cog):
         """
         Show a scatter plot of collateral ratios for given node TVLs
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         display_name = None
         address = None
@@ -232,7 +232,7 @@ class Collateral(commands.Cog):
         """
         Show the distribution of collateral across nodes.
         """
-        await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         data = await get_average_collateral_percentage_per_node(collateral_cap, bonded)
         distribution = [(collateral, len(nodes)) for collateral, nodes in sorted(data.items(), key=lambda x: x[0])]
