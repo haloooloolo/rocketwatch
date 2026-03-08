@@ -255,7 +255,7 @@ class APR(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden_weak(interaction))
         e = Embed()
         e.title = "Current NO APR"
-        e.description = "Dashed red lines above and bellow the solid red one are leb8 and leb16 respectively. " \
+        e.description = "Dashed red lines above and below the solid red one are leb8 and leb16 respectively. " \
                         "The solid line is the protocol average."
 
         # get the last 30 datapoints

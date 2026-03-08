@@ -53,13 +53,14 @@ class TVL(Cog):
     @describe(show_all="Also show entries with 0 value")
     async def tvl(self, interaction: Interaction, show_all: bool = False):
         """
-        Show the total value locked in the Protocol.
+        Show the total value locked in the protocol
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         data = {
             "Total RPL Locked": {
                 "Staked RPL"       : {
-                    "Node Operators": {},  # accurate, live
+                    "Minipools":      {},  # accurate, live
+                    "Megapools":      {},  # accurate, live
                     "oDAO Bond"     : {},  # accurate, live
                 },
                 "Unclaimed Rewards": {
@@ -70,7 +71,7 @@ class TVL(Cog):
                 "Unused Inflation" : {},  # accurate, live
             },
             "Total ETH Locked": {
-                "Minipools Stake"       : {
+                "Minipool Stake"       : {
                     "Queued Minipools"   : {},  # accurate, db
                     "Pending Minipools"  : {},  # accurate, db
                     "Dissolved Minipools": {
@@ -136,7 +137,7 @@ class TVL(Cog):
             }
         ])).to_list(1)
         if tmp:
-            data["Total ETH Locked"]["Minipools Stake"]["Queued Minipools"]["_val"] = tmp[0]["beacon_balance"]
+            data["Total ETH Locked"]["Minipool Stake"]["Queued Minipools"]["_val"] = tmp[0]["beacon_balance"]
 
         # Pending Minipools: prelaunchCount of minipool_count_per_status * 32 ETH.
         # Minipools that are flagged as prelaunch have the following applied to them:
@@ -162,7 +163,7 @@ class TVL(Cog):
             }
         ])).to_list(1)
         if tmp:
-            data["Total ETH Locked"]["Minipools Stake"]["Pending Minipools"]["_val"] = tmp[0]["beacon_balance"] + tmp[0][
+            data["Total ETH Locked"]["Minipool Stake"]["Pending Minipools"]["_val"] = tmp[0]["beacon_balance"] + tmp[0][
                 "execution_balance"]
 
         # Dissolved Minipools:
@@ -172,7 +173,7 @@ class TVL(Cog):
         # They have the following applied to them:
         # - They have 1 ETH locked on the Beacon Chain, not earning any rewards.
         # - The 31 ETH that was waiting in their address was moved back to the Deposit Pool (This can cause the Deposit Pool
-        #   to grow beyond its Cap, check the bellow comment for information about that).
+        #   to grow beyond its Cap, check the below comment for information about that).
         tmp = await (await self.bot.db.minipools.aggregate([
             {
                 '$match': {
@@ -193,9 +194,9 @@ class TVL(Cog):
         ])).to_list(1)
         if len(tmp) > 0:
             tmp = tmp[0]
-            data["Total ETH Locked"]["Minipools Stake"]["Dissolved Minipools"]["Locked on Beacon Chain"]["_val"] = tmp[
+            data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"]["Locked on Beacon Chain"]["_val"] = tmp[
                 "beacon_balance"]
-            data["Total ETH Locked"]["Minipools Stake"]["Dissolved Minipools"]["Contract Balance"]["_val"] = tmp[
+            data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"]["Contract Balance"]["_val"] = tmp[
                 "execution_balance"]
 
         # Staking Minipools:
@@ -227,18 +228,18 @@ class TVL(Cog):
                 if refund_balance > 0 and beacon_balance > 0:
                         if beacon_balance >= refund_balance:
                             beacon_balance -= refund_balance
-                            data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"][
+                            data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["Node Share"][
                                 "_val"] += refund_balance
                             refund_balance = 0
                         else:
                             refund_balance -= beacon_balance
-                            data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"][
+                            data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["Node Share"][
                                 "_val"] += beacon_balance
                             beacon_balance = 0
             if beacon_balance > 0:
                 d = split_rewards_logic(beacon_balance, node_share, commission, force_base=True)
-                data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["Node Share"]["_val"] += d["base"]["node"]
-                data["Total ETH Locked"]["Minipools Stake"]["Staking Minipools"]["rETH Share"]["_val"] += d["base"]["reth"]
+                data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["Node Share"]["_val"] += d["base"]["node"]
+                data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["rETH Share"]["_val"] += d["base"]["reth"]
                 data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["Node Share"]["_val"] += \
                     d["rewards"]["node"]
                 data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["rETH Share"]["_val"] += \
@@ -332,9 +333,11 @@ class TVL(Cog):
         data["Total ETH Locked"]["Unclaimed Rewards"]["Smoothing Pool"]["_val"] = solidity.to_float(
             await rp.call("rocketVault.balanceOf", "rocketMerkleDistributorMainnet"))
 
-        # Staked RPL: This is all ETH that has been staked by Node Operators.
-        data["Total RPL Locked"]["Staked RPL"]["Node Operators"]["_val"] = solidity.to_float(
-            await rp.call("rocketNodeStaking.getTotalStakedRPL"))
+        # Staked RPL: This is all ETH that has been staked by node operators.
+        data["Total RPL Locked"]["Staked RPL"]["Minipools"]["_val"] = solidity.to_float(
+            await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
+        data["Total RPL Locked"]["Staked RPL"]["Megapools"]["_val"] = solidity.to_float(
+            await rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
 
         # oDAO bonded RPL: RPL oDAO Members have to lock up to join it. This RPL can be slashed if they misbehave.
         data["Total RPL Locked"]["Staked RPL"]["oDAO Bond"]["_val"] = solidity.to_float(
@@ -445,12 +448,10 @@ class TVL(Cog):
         data["_value"] = f"{total_tvl:,.2f} ETH"
         test = render_tree(data, "Total Locked Value", max_depth=0 if show_all else 2)
         # send embed with tvl
-        e = Embed()
         closer = f"or about {Style.BRIGHT}{humanize.intword(usdc_total_tvl, format='%.3f')} USDC{Style.RESET_ALL}".rjust(
             max([len(line) for line in test.split("\n")]) - 1)
-        e.description = f"```ansi\n{test}\n{closer}```"
-        e.set_footer(text="\"that looks good to me\" - invis 2023")
-        await interaction.followup.send(embed=e)
+        embed = Embed(title="Protocol TVL", description=f"```ansi\n{test}\n{closer}```")
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot):

@@ -4,15 +4,15 @@ A Discord bot that monitors and reports on [Rocket Pool](https://rocketpool.net)
 
 ## Features
 
-- **On-chain event tracking** — monitors Rocket Pool smart contract events (deposits, minipools, rewards, governance votes, etc.) and posts formatted embeds to Discord
-- **Beacon chain integration** — tracks validator proposals, sync committees, and consensus layer activity
-- **Governance monitoring** — follows on-chain DAO votes (pDAO, oDAO, Security Council) and Snapshot proposals
-- **Data visualization** — generates APR charts, collateral distributions, fee breakdowns, and TVL calculations using matplotlib
-- **ENS resolution** — resolves and caches ENS names for readable address display
-- **Multi-channel support** — split event tracking and status messages across multiple channels
-- **Deduplication** — prevents duplicate messages caused by chain reorgs or bot restarts
-- **Dynamic contract loading** — retrieves contract addresses from the Rocket Pool storage contract at startup, automatically supporting protocol upgrades
-- **Plugin system** — 40+ plugins that can be individually enabled or disabled
+- **On-chain event tracking**: monitors Rocket Pool smart contract events (deposits, minipools, rewards, governance votes, etc.) and posts formatted embeds to Discord
+- **Beacon chain integration**: tracks validator proposals, sync committees, and consensus layer activity
+- **Governance monitoring**: follows on-chain DAO votes (pDAO, oDAO, Security Council) and Snapshot proposals
+- **Data visualization**: generates APR charts, collateral distributions, fee breakdowns, and TVL calculations using matplotlib
+- **ENS resolution**: resolves and caches ENS names for readable address display
+- **Multi-channel support**: split event tracking and status messages across multiple channels
+- **Deduplication**: prevents duplicate messages caused by chain reorgs or bot restarts
+- **Dynamic contract loading**: retrieves contract addresses from the Rocket Pool storage contract at startup, automatically supporting protocol upgrades
+- **Plugin system**: 40+ plugins that can be individually enabled or disabled
 
 ## Architecture
 
