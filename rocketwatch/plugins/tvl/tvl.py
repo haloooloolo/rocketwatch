@@ -17,7 +17,7 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.tvl")
 
 
-def split_rewards_logic(balance, node_share, commission, force_base=False):
+def minipool_split_rewards_logic(balance, node_share, commission, force_base=False):
     d = {
         "base"   : {
             "reth": 0,
@@ -44,6 +44,14 @@ def split_rewards_logic(balance, node_share, commission, force_base=False):
         d["rewards"]["reth"] = balance * (1 - node_ownership_share)
     return d
 
+def megapool_split_rewards(rewards, capital_ratio, node_commission, voter_share, dao_share):
+    borrowed_portion = rewards * (1 - capital_ratio)
+    reth_commission = 1 - node_commission - voter_share - dao_share
+    reth = borrowed_portion * reth_commission
+    voter = borrowed_portion * voter_share
+    dao = borrowed_portion * dao_share
+    node = rewards - reth - voter - dao
+    return {"node": node, "reth": reth, "voter": voter, "dao": dao}
 
 class TVL(Cog):
     def __init__(self, bot: RocketWatch):
@@ -71,39 +79,56 @@ class TVL(Cog):
                 "Unused Inflation" : {},  # accurate, live
             },
             "Total ETH Locked": {
-                "Minipool Stake"       : {
-                    "Queued Minipools"   : {},  # accurate, db
-                    "Pending Minipools"  : {},  # accurate, db
+                "Minipool Stake": {
                     "Dissolved Minipools": {
                         "Locked on Beacon Chain": {},  # accurate, db
                         "Contract Balance"      : {},  # accurate, db
                     },
                     "Staking Minipools"  : {
-                        # beacon chain balances of staking minipools but ceil at 32 ETH and node share gets penalties first
                         "rETH Share": {"_val": 0},  # done, db
                         "Node Share": {"_val": 0},  # done, db
                     }
                 },
-                "rETH Collateral"       : {
+                "Megapool Stake": {
+                    "Pending Validators"  : {},
+                    "Dissolved Validators": {},
+                    "Staking Validators"  : {
+                        "rETH Share": {"_val": 0},
+                        "Node Share": {"_val": 0},
+                    },
+                    "Exiting Validators"  : {
+                        "rETH Share": {"_val": 0},
+                        "Node Share": {"_val": 0},
+                    }
+                },
+                "rETH Collateral": {
                     "Deposit Pool"    : {},  # accurate, live
                     "Extra Collateral": {},  # accurate, live
                 },
                 "Undistributed Balances": {
-                    "Smoothing Pool Balance"    : {
-                        "rETH Share": {"_val": 0, "_is_estimate": True},  # missing
-                        "Node Share": {"_val": 0, "_is_estimate": True},  # missing
+                    "Smoothing Pool Balance": {
+                        "rETH Share": {"_val": 0},
+                        "Node Share": {"_val": 0},
                     },
                     "Node Distributor Contracts": {
                         "rETH Share": {"_val": 0},  # done, db
                         "Node Share": {"_val": 0},  # done, db
                     },
-                    "Minipool Contract Balances": {  # important, only after minipool has gone to state "staking"
+                    "Minipool Contract Balances": {
                         "rETH Share": {"_val": 0},  # done, db
                         "Node Share": {"_val": 0},  # done, db
                     },
-                    "Beacon Chain Rewards"      : {  # anything over 32, split acording to node share
-                        "rETH Share": {"_val": 0},  # done, db
-                        "Node Share": {"_val": 0},  # done, db
+                    "Megapool Contract Balances": {
+                        "rETH Share" : {"_val": 0},
+                        "Node Share" : {"_val": 0},
+                        "Voter Share": {"_val": 0},
+                        "DAO Share"  : {"_val": 0},
+                    },
+                    "Beacon Chain Rewards"      : {
+                        "rETH Share" : {"_val": 0},
+                        "Node Share" : {"_val": 0},
+                        "Voter Share": {"_val": 0},
+                        "DAO Share"  : {"_val": 0},
                     },
                 },
                 "Unclaimed Rewards"     : {
@@ -116,55 +141,6 @@ class TVL(Cog):
         eth_price = await rp.get_eth_usdc_price()
         rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         rpl_address = await rp.get_address_by_name("rocketTokenRPL")
-
-        # Queued Minipools: initialisedCount of minipool_count_per_status * 1 ETH.
-        # Minipools that are flagged as initialised have the following applied to them:
-        # - They have 1 ETH staked on the beacon chain.
-        # - They have not yet received 31 ETH from the Deposit Pool.
-        tmp = await (await self.bot.db.minipools.aggregate([
-            {
-                '$match': {
-                    'status': 'initialised',
-                    'vacant': False
-                }
-            }, {
-                '$group': {
-                    '_id'           : 'total',
-                    'beacon_balance': {
-                        '$sum': 1
-                    }
-                }
-            }
-        ])).to_list(1)
-        if tmp:
-            data["Total ETH Locked"]["Minipool Stake"]["Queued Minipools"]["_val"] = tmp[0]["beacon_balance"]
-
-        # Pending Minipools: prelaunchCount of minipool_count_per_status * 32 ETH.
-        # Minipools that are flagged as prelaunch have the following applied to them:
-        #  - They have deposited 1 ETH to the Beacon Chain.
-        #  - They have 31 ETH from the Deposit Pool in their contract waiting to be staked as well.
-        #  - They are currently in the scrubbing process (should be 12 hours) or have not yet initiated the second phase.
-        tmp = await (await self.bot.db.minipools.aggregate([
-            {
-                '$match': {
-                    'status': 'prelaunch',
-                    'vacant': False
-                }
-            }, {
-                '$group': {
-                    '_id'              : 'total',
-                    'beacon_balance'   : {
-                        '$sum': 1
-                    },
-                    'execution_balance': {
-                        '$sum': "$execution_balance"
-                    }
-                }
-            }
-        ])).to_list(1)
-        if tmp:
-            data["Total ETH Locked"]["Minipool Stake"]["Pending Minipools"]["_val"] = tmp[0]["beacon_balance"] + tmp[0][
-                "execution_balance"]
 
         # Dissolved Minipools:
         # Minipools that are flagged as dissolved are Pending minipools that didn't
@@ -237,7 +213,7 @@ class TVL(Cog):
                                 "_val"] += beacon_balance
                             beacon_balance = 0
             if beacon_balance > 0:
-                d = split_rewards_logic(beacon_balance, node_share, commission, force_base=True)
+                d = minipool_split_rewards_logic(beacon_balance, node_share, commission, force_base=True)
                 data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["Node Share"]["_val"] += d["base"]["node"]
                 data["Total ETH Locked"]["Minipool Stake"]["Staking Minipools"]["rETH Share"]["_val"] += d["base"]["reth"]
                 data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["Node Share"]["_val"] += \
@@ -245,11 +221,97 @@ class TVL(Cog):
                 data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["rETH Share"]["_val"] += \
                     d["rewards"]["reth"]
             if contract_balance > 0:
-                d = split_rewards_logic(contract_balance, node_share, commission)
+                d = minipool_split_rewards_logic(contract_balance, node_share, commission)
                 data["Total ETH Locked"]["Undistributed Balances"]["Minipool Contract Balances"]["Node Share"][
                     "_val"] += d["base"]["node"] + d["rewards"]["node"]
                 data["Total ETH Locked"]["Undistributed Balances"]["Minipool Contract Balances"]["rETH Share"][
                     "_val"] += d["base"]["reth"] + d["rewards"]["reth"]
+
+        # Megapool commission settings
+        network_settings = await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
+        node_share = solidity.to_float(await network_settings.functions.getNodeShare().call())
+        voter_share = solidity.to_float(await network_settings.functions.getVoterShare().call())
+        dao_share = solidity.to_float(await network_settings.functions.getProtocolDAOShare().call())
+
+        # Pending Megapool Validators: prestaked validators have deposit_value locked
+        # (1 ETH on beacon + 31 ETH in contract as assignedValue)
+        # in_queue validators are skipped — their ETH is in the Deposit Pool (already counted)
+        tmp = await (await self.bot.db.megapool_validators.aggregate([
+            {'$match': {'status': 'prestaked'}},
+            {'$count': 'count'}
+        ])).to_list(1)
+        if tmp:
+            data["Total ETH Locked"]["Megapool Stake"]["Pending Validators"]["_val"] = tmp[0]["count"] * 32
+
+        # Dissolved Megapool Validators: 1 ETH stuck on beacon chain, 31 ETH returned to DP
+        tmp = await (await self.bot.db.megapool_validators.aggregate([
+            {'$match': {'status': 'dissolved'}},
+            {'$group': {'_id': 'total', 'beacon_balance': {'$sum': '$beacon.balance'}}}
+        ])).to_list(1)
+        if tmp:
+            data["Total ETH Locked"]["Megapool Stake"]["Dissolved Validators"]["_val"] = tmp[0]["beacon_balance"]
+
+        # Staking, Locked & Exiting Megapool Validators: beacon balance split by capital ratio
+        # locked = exit requested but not yet confirmed on beacon chain, treated as exiting
+        megapool_validators = await self.bot.db.megapool_validators.find(
+            {'status': {'$in': ['staking', 'locked', 'exiting']}}
+        ).to_list(None)
+        for v in megapool_validators:
+            capital_ratio = v["requested_bond"] / 32
+            beacon_balance = v.get("beacon", {}).get("balance", 32)
+            status = v["status"]
+            # base stake (up to 32 ETH)
+            base = min(beacon_balance, 32)
+            node_base = v["requested_bond"]
+            # handle penalties (beacon < 32): node absorbs losses first
+            if base < 32:
+                shortfall = 32 - base
+                node_base = max(0, node_base - shortfall)
+            reth_base = base - node_base
+            target = "Staking Validators" if (status == "staking") else "Exiting Validators"
+            data["Total ETH Locked"]["Megapool Stake"][target]["rETH Share"]["_val"] += reth_base
+            data["Total ETH Locked"]["Megapool Stake"][target]["Node Share"]["_val"] += node_base
+            # beacon chain rewards (anything over 32)
+            if beacon_balance > 32:
+                rewards = beacon_balance - 32
+                split = megapool_split_rewards(rewards, capital_ratio, node_share, voter_share, dao_share)
+                data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["Node Share"]["_val"] += split["node"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["rETH Share"]["_val"] += split["reth"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["Voter Share"]["_val"] += split["voter"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Beacon Chain Rewards"]["DAO Share"]["_val"] += split["dao"]
+
+        # Megapool Contract Balances: eth_balance = assignedValue + refundValue + pendingRewards
+        # assignedValue already counted in Queued Validators, so we split the rest:
+        #   refundValue (minus debt) → Node Share
+        #   pendingRewards → split by commission (node/rETH/voter/DAO)
+        megapool_balances = await (await self.bot.db.node_operators.aggregate([
+            {'$match': {'megapool.deployed': True, 'megapool.eth_balance': {'$gt': 0}}},
+            {
+                '$project': {
+                    'refund_value': '$megapool.refund_value',
+                    'debt': '$megapool.debt',
+                    'pending_rewards': '$megapool.pending_rewards',
+                    'node_bond': '$megapool.node_bond',
+                    'user_capital': '$megapool.user_capital',
+                }
+            }
+        ])).to_list()
+        for mp in megapool_balances:
+            refund_value = mp.get("refund_value", 0)
+            debt_val = mp.get("debt", 0)
+            pending_rewards = mp.get("pending_rewards", 0)
+            # refundValue minus debt → Node Share
+            node_refund = max(0, refund_value - debt_val)
+            data["Total ETH Locked"]["Undistributed Balances"]["Megapool Contract Balances"]["Node Share"]["_val"] += node_refund
+            # pendingRewards → split by commission
+            if pending_rewards > 0:
+                total_capital = mp.get("node_bond", 0) + mp.get("user_capital", 0)
+                capital_ratio = mp.get("node_bond", 0) / total_capital if total_capital > 0 else 0
+                split = megapool_split_rewards(pending_rewards, capital_ratio, node_share, voter_share, dao_share)
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Contract Balances"]["Node Share"]["_val"] += split["node"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Contract Balances"]["rETH Share"]["_val"] += split["reth"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Contract Balances"]["Voter Share"]["_val"] += split["voter"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Contract Balances"]["DAO Share"]["_val"] += split["dao"]
 
         # Deposit Pool Balance: calls the contract and asks what its balance is, simple enough.
         # ETH in here has been swapped for rETH and is waiting to be matched with a minipool.
@@ -269,65 +331,7 @@ class TVL(Cog):
 
         # Smoothing Pool Balance: This is ETH from Proposals by minipools that have joined the Smoothing Pool.
         smoothie_balance = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
-        tmp = await (await self.bot.db.node_operators.aggregate([
-            {
-                '$match': {
-                    'smoothing_pool_registration': True,
-                    'staking_minipool_count'           : {
-                        '$ne': 0
-                    }
-                }
-            }, {
-                '$project': {
-                    'staking_minipool_count': 1,
-                    'effective_node_share'  : 1,
-                    'node_share'            : {
-                        '$sum': [
-                            '$effective_node_share', {
-                                '$multiply': [
-                                    {
-                                        '$subtract': [
-                                            1, '$effective_node_share'
-                                        ]
-                                    }, '$average_node_fee'
-                                ]
-                            }
-                        ]
-                    }
-                }
-            }, {
-                '$group': {
-                    '_id'       : None,
-                    'node_share': {
-                        '$sum': {
-                            '$multiply': [
-                                '$node_share', '$staking_minipool_count', '$effective_node_share'
-                            ]
-                        }
-                    },
-                    'count'     : {
-                        '$sum': {
-                            '$multiply': [
-                                '$staking_minipool_count', '$effective_node_share'
-                            ]
-                        }
-                    }
-                }
-            }, {
-                '$project': {
-                    'avg_node_share': {
-                        '$divide': [
-                            '$node_share', '$count'
-                        ]
-                    }
-                }
-            }
-        ])).to_list()
-        if len(tmp) > 0:
-            data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool Balance"]["Node Share"][
-                "_val"] = smoothie_balance * tmp[0]["avg_node_share"]
-            data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool Balance"]["rETH Share"][
-                "_val"] = smoothie_balance * (1 - tmp[0]["avg_node_share"])
+        data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool Balance"]["_val"] = smoothie_balance
 
         # Unclaimed Smoothing Pool Rewards: This is ETH from the previous Reward Periods that have not been claimed yet.
         data["Total ETH Locked"]["Unclaimed Rewards"]["Smoothing Pool"]["_val"] = solidity.to_float(
