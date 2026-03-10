@@ -1,26 +1,18 @@
 import io
-import json
 import logging
 import random
 import time
 from datetime import UTC
 
-import aiohttp
-import humanize
-from colorama import Fore, Style
 from discord import File, Interaction
-from discord.app_commands import Choice, command, describe, guilds
+from discord.app_commands import command, guilds
 from discord.ext.commands import Cog, is_owner
 
 from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import block_to_ts, ts_to_block
 from utils.config import cfg
-from utils.embeds import Embed, el_explorer_url
-from utils.readable import prettify_json_string
+from utils.embeds import Embed
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
-from utils.visibility import is_hidden, is_hidden_role_controlled
 
 log = logging.getLogger("rocketwatch.debug")
 
@@ -28,25 +20,6 @@ log = logging.getLogger("rocketwatch.debug")
 class Debug(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.contract_names = []
-        self.function_names = []
-
-    # --------- LISTENERS --------- #
-
-    @Cog.listener()
-    async def on_ready(self):
-        if self.function_names:
-            return
-
-        for contract in rp.addresses.copy():
-            try:
-                for function in (await rp.get_contract_by_name(contract)).functions:
-                    self.function_names.append(f"{contract}.{function}")
-                self.contract_names.append(contract)
-            except Exception:
-                log.exception(f"Could not get function list for {contract}")
-
-    # --------- PRIVATE OWNER COMMANDS --------- #
 
     @command()
     @guilds(cfg.discord.owner.server_id)
@@ -123,22 +96,6 @@ class Debug(Cog):
         embed.description = new_description
         await msg.edit(embed=embed)
         await interaction.followup.send(content="Done")
-
-    @command()
-    @guilds(cfg.discord.owner.server_id)
-    @is_owner()
-    async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None):
-        """
-        Decode transaction calldata
-        """
-        await interaction.response.defer(ephemeral=True)
-        tnx = await w3.eth.get_transaction(tnx_hash)
-        if contract_name:
-            contract = await rp.get_contract_by_name(contract_name)
-        else:
-            contract = await rp.get_contract_by_address(tnx.to)
-        data = contract.decode_function_input(tnx.input)
-        await interaction.followup.send(content=f"```Input:\n{data}```")
 
     @command()
     @guilds(cfg.discord.owner.server_id)
@@ -286,146 +243,6 @@ class Debug(Cog):
             })
             await interaction.followup.send(embed=event.embed)
         await interaction.followup.send(content="Done")
-
-    # --------- PUBLIC COMMANDS --------- #
-
-    @command()
-    async def color_test(self, interaction: Interaction):
-        """
-        Simple test to check ansi color support
-        """
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
-        payload = "```ansi"
-        for fg_name, fg in Fore.__dict__.items():
-            if fg_name.endswith("_EX"):
-                continue
-            payload += f"\n{fg}Hello World"
-        payload += f"{Style.RESET_ALL}```"
-        await interaction.followup.send(content=payload)
-
-    @command()
-    async def asian_restaurant_name(self, interaction: Interaction):
-        """
-        Randomly generated Asian restaurant names
-        """
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
-        async with aiohttp.ClientSession() as session, session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
-            a = (await resp.json())["name"]
-        await interaction.followup.send(a)
-
-    @command()
-    async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
-        """
-        Get a block using its timestamp. Useful for contracts that track block time instead of block number.
-        """
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
-
-        block = await ts_to_block(timestamp)
-        found_ts = await block_to_ts(block)
-
-        if found_ts == timestamp:
-            text = (
-                f"Found perfect match for timestamp {timestamp}:\n"
-                f"Block: {block}"
-            )
-        else:
-            text = (
-                f"Found close match for timestamp {timestamp}:\n"
-                f"Timestamp: {found_ts}\n"
-                f"Block: {block}"
-            )
-
-        await interaction.followup.send(content=f"```{text}```")
-
-    @command()
-    async def get_abi_of_contract(self, interaction: Interaction, contract: str):
-        """Retrieve the latest ABI for a contract"""
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
-        try:
-            abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
-            file = File(io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
-            await interaction.followup.send(file=file)
-        except Exception as err:
-            await interaction.followup.send(content=f"```Exception: {err!r}```")
-
-    @command()
-    async def get_address_of_contract(self, interaction: Interaction, contract: str):
-        """Retrieve the latest address for a contract"""
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
-        try:
-            address = cfg.rocketpool.manual_addresses.get(contract)
-            if not address:
-                address = await rp.uncached_get_address_by_name(contract)
-            await interaction.followup.send(content=await el_explorer_url(address))
-        except Exception as err:
-            await interaction.followup.send(content=f"Exception: ```{err!r}```")
-            if "No address found for" in repr(err):
-                # private response as a tip
-                m = (
-                    "It may be that you are requesting the address of a contract that does not"
-                    " get deployed (e.g. `rocketBase`), is deployed multiple times"
-                    " (e.g. `rocketNodeDistributor`),"
-                    " or is not yet deployed on the current chain.\n"
-                    "... or you messed up the name"
-                )
-                await interaction.followup.send(content=m)
-
-    @command()
-    @describe(
-        json_args="json formatted arguments. example: `[1, \"World\"]`",
-        block="call against block state"
-    )
-    async def call(
-        self,
-        interaction: Interaction,
-        function: str,
-        json_args: str = "[]",
-        block: str = "latest",
-        address: str | None = None,
-        raw_output: bool = False
-    ):
-        """Call Function of Contract"""
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
-        # convert block to int if number
-        if block.isnumeric():
-            block = int(block)
-        try:
-            args = json.loads(json_args)
-            if not isinstance(args, list):
-                args = [args]
-            v = await rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
-        except Exception as err:
-            await interaction.followup.send(content=f"Exception: ```{err!r}```")
-            return
-        try:
-            g = await rp.estimate_gas_for_call(function, *args, block=block)
-        except Exception as err:
-            g = "N/A"
-            if isinstance(err, ValueError) and err.args and "code" in err.args and err.args[0]["code"] == -32000:
-                g += f" ({err.args[0]['message']})"
-
-        if isinstance(v, int) and abs(v) >= 10 ** 12 and not raw_output:
-            v = solidity.to_float(v)
-        g = humanize.intcomma(g)
-        text = f"`block: {block}`\n`gas estimate: {g}`\n`{function}({', '.join([repr(a) for a in args])}): "
-        if len(text + str(v)) > 2000:
-            text += "too long, attached as file`"
-            await interaction.followup.send(text, file=File(io.StringIO(str(v)), "exception.txt"))
-        else:
-            text += f"{v!s}`"
-            await interaction.followup.send(content=text)
-
-    # --------- OTHERS --------- #
-
-    @get_address_of_contract.autocomplete("contract")
-    @get_abi_of_contract.autocomplete("contract")
-    @decode_tnx.autocomplete("contract_name")
-    async def match_contract_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        return [Choice(name=name, value=name) for name in self.contract_names if current.lower() in name.lower()][:25]
-
-    @call.autocomplete("function")
-    async def match_function_name(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        return [Choice(name=name, value=name) for name in self.function_names if current.lower() in name.lower()][:25]
 
 
 async def setup(bot):

@@ -7,14 +7,15 @@ import dice
 import humanize
 import pytz
 from discord import File, Interaction
-from discord.app_commands import command
+from discord.app_commands import Choice, command
 from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils import solidity
+from utils.block_time import block_to_ts, ts_to_block
 from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url, ens
-from utils.readable import pretty_time, s_hex
+from utils.readable import prettify_json_string, pretty_time, s_hex
 from utils.rocketpool import rp
 from utils.sea_creatures import (
     get_holding_for_address,
@@ -22,7 +23,7 @@ from utils.sea_creatures import (
     sea_creatures,
 )
 from utils.shared_w3 import bacon, w3
-from utils.visibility import is_hidden
+from utils.visibility import is_hidden, is_hidden_role_controlled
 
 log = logging.getLogger("rocketwatch.random")
 
@@ -30,6 +31,12 @@ log = logging.getLogger("rocketwatch.random")
 class Random(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
+        self.contract_names = []
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if not self.contract_names:
+            self.contract_names = list(rp.addresses)
 
     @command()
     async def dice(self, interaction: Interaction, dice_string: str = "1d6"):
@@ -290,6 +297,95 @@ class Random(commands.Cog):
             e.description += f"**{challenged}** was challenged by **{challenger}**\n"
             e.description += f"Time Left: **{time_left}**\n\n"
         await interaction.followup.send(embed=e)
+
+    @command()
+    async def asian_restaurant_name(self, interaction: Interaction):
+        """
+        Randomly generated Asian restaurant names
+        """
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
+        async with aiohttp.ClientSession() as session, session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
+            a = (await resp.json())["name"]
+        await interaction.followup.send(a)
+
+    @command()
+    async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
+        """
+        Get a block using its timestamp. Useful for contracts that track block time instead of block number.
+        """
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
+
+        block = await ts_to_block(timestamp)
+        found_ts = await block_to_ts(block)
+
+        if found_ts == timestamp:
+            text = (
+                f"Found perfect match for timestamp {timestamp}:\n"
+                f"Block: {block}"
+            )
+        else:
+            text = (
+                f"Found close match for timestamp {timestamp}:\n"
+                f"Timestamp: {found_ts}\n"
+                f"Block: {block}"
+            )
+
+        await interaction.followup.send(content=f"```{text}```")
+
+    @command()
+    async def get_abi_of_contract(self, interaction: Interaction, contract: str):
+        """Retrieve the latest ABI for a contract"""
+        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        try:
+            abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
+            file = File(io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
+            await interaction.followup.send(file=file)
+        except Exception as err:
+            await interaction.followup.send(content=f"```Exception: {err!r}```")
+
+    @command()
+    async def get_address_of_contract(self, interaction: Interaction, contract: str):
+        """Retrieve the latest address for a contract"""
+        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        try:
+            address = cfg.rocketpool.manual_addresses.get(contract)
+            if not address:
+                address = await rp.uncached_get_address_by_name(contract)
+            await interaction.followup.send(content=await el_explorer_url(address))
+        except Exception as err:
+            await interaction.followup.send(content=f"Exception: ```{err!r}```")
+            if "No address found for" in repr(err):
+                # private response as a tip
+                m = (
+                    "It may be that you are requesting the address of a contract that does not"
+                    " get deployed (e.g. `rocketBase`), is deployed multiple times"
+                    " (e.g. `rocketNodeDistributor`),"
+                    " or is not yet deployed on the current chain.\n"
+                    "... or you messed up the name"
+                )
+                await interaction.followup.send(content=m)
+
+    @command()
+    async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None):
+        """
+        Decode transaction calldata
+        """
+        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        tnx = await w3.eth.get_transaction(tnx_hash)
+        if contract_name:
+            contract = await rp.get_contract_by_name(contract_name)
+        else:
+            contract = await rp.get_contract_by_address(tnx.to)
+        data = contract.decode_function_input(tnx.input)
+        await interaction.followup.send(content=f"```Input:\n{data}```")
+
+    # --------- AUTOCOMPLETE --------- #
+
+    @get_address_of_contract.autocomplete("contract")
+    @get_abi_of_contract.autocomplete("contract")
+    @decode_tnx.autocomplete("contract_name")
+    async def match_contract_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
+        return [Choice(name=name, value=name) for name in self.contract_names if current.lower() in name.lower()][:25]
 
 
 async def setup(self):
