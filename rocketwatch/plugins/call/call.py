@@ -115,9 +115,11 @@ class Call(Cog):
 
         for contract in rp.addresses.copy():
             try:
-                for function in (await rp.get_contract_by_name(contract)).functions:
-                    func_str = function.abi_element_identifier
-                    self.function_names.append(f"{contract}.{func_str}")
+                c = await rp.get_contract_by_name(contract)
+                for entry in c.abi:
+                    if entry.get("type") == "function" and entry.get("stateMutability") in ("view", "pure"):
+                        func_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
+                        self.function_names.append(f"{contract}.{func_id}")
             except Exception:
                 log.exception(f"Could not get function list for {contract}")
 
@@ -131,7 +133,7 @@ class Call(Cog):
         address: str | None = None,
         raw_output: bool = False
     ):
-        """Call function of contract"""
+        """Manually call a function on a protocol contract"""
         if block.isnumeric():
             block = int(block)
 
