@@ -175,7 +175,8 @@ class Call(Cog):
         if isinstance(v, int) and abs(v) >= 10 ** 12 and not raw_output:
             v = solidity.to_float(v)
         g = humanize.intcomma(g)
-        text = f"`block: {block}`\n`gas estimate: {g}`\n`{function}({', '.join([repr(a) for a in args])}): "
+        func_name = function.split("(")[0]
+        text = f"`block: {block}`\n`gas estimate: {g}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
         if len(text + str(v)) > 2000:
             text += "too long, attached as file`"
             await interaction.followup.send(text, file=File(io.StringIO(str(v)), "exception.txt"))
