@@ -4,7 +4,7 @@ import json
 import logging
 
 import humanize
-from discord import File, Interaction, TextStyle
+from discord import File, Interaction
 from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 from discord.ui import Modal, TextInput
@@ -75,34 +75,6 @@ class CallModal(Modal):
         return None
 
 
-class CallJsonModal(Modal, title="Function Arguments"):
-    json_input = TextInput(
-        label="Arguments (JSON array)",
-        style=TextStyle.paragraph,
-        placeholder='[1, "0x..."]',
-        required=True,
-    )
-
-    def __init__(self, cog, function, block, address, raw_output):
-        super().__init__()
-        self.cog = cog
-        self.function = function
-        self.block = block
-        self.address = address
-        self.raw_output = raw_output
-
-    async def on_submit(self, interaction):
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
-        try:
-            args = json.loads(self.json_input.value)
-            if not isinstance(args, list):
-                args = [args]
-        except json.JSONDecodeError:
-            await interaction.followup.send(content=f"Invalid JSON: ```{self.json_input.value}```")
-            return
-        await self.cog._execute_call(interaction, self.function, args, self.block, self.address, self.raw_output)
-
-
 class Call(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
@@ -152,10 +124,7 @@ class Call(Cog):
             pass
 
         if abi_inputs:
-            if len(abi_inputs) <= 5:
-                modal = CallModal(self, function, block, address, raw_output, abi_inputs)
-            else:
-                modal = CallJsonModal(self, function, block, address, raw_output)
+            modal = CallModal(self, function, block, address, raw_output, abi_inputs)
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
