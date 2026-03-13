@@ -150,7 +150,7 @@ class Transactions(EventPlugin):
         args.event_name = event_name
 
         # add transaction hash and block number to args
-        args.transactionHash = event.hash.hex()
+        args.transactionHash = event.hash.to_0x_hex()
         args.blockNumber = event.blockNumber
 
         # oDAO bootstrap doesn't emit an event

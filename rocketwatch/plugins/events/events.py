@@ -730,7 +730,7 @@ class Events(EventPlugin):
             args.caller = receipt["from"]
 
         # add transaction hash and block number to args
-        args.transactionHash = "0x" + event.transactionHash.hex()
+        args.transactionHash = event.transactionHash.to_0x_hex()
         args.blockNumber = event.blockNumber
 
         # add proposal message manually if the event contains a proposal

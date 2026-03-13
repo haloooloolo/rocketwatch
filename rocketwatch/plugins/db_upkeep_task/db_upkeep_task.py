@@ -37,7 +37,7 @@ def safe_to_float(num):
 
 
 def safe_to_hex(b):
-    return f"0x{b.hex()}" if b else None
+    return b.to_0x_hex() if b else None
 
 
 def safe_state_to_str(state):
