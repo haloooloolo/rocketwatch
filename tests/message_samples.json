@@ -904,7 +904,8 @@
     ],
     "known_false_positives": [
       "rocketpool.support",
-      "Reduce Express ticket RPIP"
+      "Reduce Express ticket RPIP",
+      "EIP-7002 - Fee Structure"
     ],
     "known_false_negatives": []
   }

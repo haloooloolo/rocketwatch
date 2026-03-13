@@ -321,14 +321,15 @@ class Transactions(EventPlugin):
             return []
         log.debug(decoded)
 
-        function = decoded[0].function_identifier
-        if (event_name := self.function_map[contract_name].get(function)) is None:
+        function = decoded[0].abi_element_identifier
+        function_name = function.split("(")[0]
+        if (event_name := self.function_map[contract_name].get(function_name)) is None:
             return []
 
         event = aDict(tnx)
         event.args = {arg.lstrip("_"): value for arg, value in decoded[1].items()}
         event.args["timestamp"] = block.timestamp
-        event.args["function_name"] = function
+        event.args["function_name"] = function_name
         if not receipt.status:
             event.args["reason"] = await rp.get_revert_reason(tnx)
             # if revert reason includes the phrase "insufficient for pre deposit" filter out
