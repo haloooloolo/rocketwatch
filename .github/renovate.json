@@ -4,7 +4,6 @@
         "config:recommended"
     ],
     "forkProcessing": "enabled",
-    "prCreation": "not-pending",
     "rollbackPrs": true,
     "stabilityDays": 3,
     "packageRules": [
