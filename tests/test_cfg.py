@@ -31,7 +31,9 @@ def _minimal_config(**overrides) -> Config:
         ),
         "execution_layer": ExecutionLayerConfig(
             explorer="https://etherscan.io",
-            endpoint=ExecutionLayerEndpoint(current="http://localhost:8545", mainnet="http://localhost:8545"),
+            endpoint=ExecutionLayerEndpoint(
+                current="http://localhost:8545", mainnet="http://localhost:8545"
+            ),
             etherscan_secret="test",
         ),
         "consensus_layer": ConsensusLayerConfig(
@@ -43,7 +45,9 @@ def _minimal_config(**overrides) -> Config:
         "rocketpool": RocketPoolConfig(
             manual_addresses={"rocketStorage": "0x1234"},
             dao_multisigs=["0xabcd"],
-            support=RocketPoolSupport(user_ids=[1], role_ids=[2], server_id=3, channel_id=4, moderator_id=5),
+            support=RocketPoolSupport(
+                user_ids=[1], role_ids=[2], server_id=3, channel_id=4, moderator_id=5
+            ),
             dm_warning=DmWarningConfig(channels=[100]),
         ),
         "events": EventsConfig(lookback_distance=100, genesis=0, block_batch_size=50),
@@ -63,7 +67,7 @@ class TestConfigConstruction:
         assert cfg.modules == ModulesConfig()
         assert cfg.modules.include == []
         assert cfg.modules.exclude == []
-        assert cfg.modules.enable_commands is True
+        assert cfg.modules.enable_commands is None
         assert cfg.other == OtherConfig()
         assert cfg.other.secrets.wakatime == ""
         assert cfg.rocketpool.chain == "mainnet"
@@ -94,11 +98,13 @@ class TestConfigConstruction:
 class TestConfigValidation:
     def test_missing_required_field(self):
         with pytest.raises(ValueError):
-            Config(discord=DiscordConfig(
-                secret="test",
-                owner=DiscordOwner(user_id=1, server_id=2),
-                channels={},
-            ))
+            Config(
+                discord=DiscordConfig(
+                    secret="test",
+                    owner=DiscordOwner(user_id=1, server_id=2),
+                    channels={},
+                )
+            )
 
     def test_wrong_type_user_id(self):
         with pytest.raises(ValueError):
@@ -141,7 +147,11 @@ class TestSecretsConfig:
 
 class TestSampleConfig:
     def test_sample_config_validates(self):
-        sample_path = Path(__file__).resolve().parent.parent / "rocketwatch" / "config.toml.sample"
+        sample_path = (
+            Path(__file__).resolve().parent.parent
+            / "rocketwatch"
+            / "config.toml.sample"
+        )
         with open(sample_path, "rb") as f:
             data = tomllib.load(f)
         cfg = Config(**data)

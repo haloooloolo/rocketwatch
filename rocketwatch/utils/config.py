@@ -59,7 +59,7 @@ class RocketPoolConfig(BaseModel):
 class ModulesConfig(BaseModel):
     include: list[str] = []
     exclude: list[str] = []
-    enable_commands: bool = True
+    enable_commands: bool | None = None
 
 
 class StatusMessageConfig(BaseModel):

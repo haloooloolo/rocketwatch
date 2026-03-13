@@ -10,10 +10,8 @@ from discord import (
     Interaction,
     Thread,
     User,
-    app_commands,
 )
 from discord.abc import GuildChannel, PrivateChannel
-from discord.ext import commands
 from discord.ext.commands import Bot
 from pymongo import AsyncMongoClient
 
@@ -54,20 +52,21 @@ class RocketWatch(Bot):
                 log.debug(f"Plugin {_plugin} implicitly included")
                 return True
 
-        for path in Path("plugins").glob('**/*.py'):
+        for path in Path("plugins").glob("**/*.py"):
             plugin_name = path.stem
             if not should_load_plugin(plugin_name):
                 log.warning(f"Skipping plugin {plugin_name}")
                 continue
 
-            log.info(f"Loading plugin \"{plugin_name}\"")
+            log.info(f'Loading plugin "{plugin_name}"')
             try:
                 extension_name = f"plugins.{plugin_name}.{plugin_name}"
                 await self.load_extension(extension_name)
-            except Exception:
-                log.exception(f"Failed to load plugin \"{plugin_name}\"")
+            except Exception as e:
+                log.exception(f'Failed to load plugin "{plugin_name}"')
+                await self.report_error(e)
 
-        log.info('Finished loading plugins')
+        log.info("Finished loading plugins")
 
     async def setup_hook(self) -> None:
         await rp.async_init()
@@ -88,40 +87,28 @@ class RocketWatch(Bot):
         log.info(f"Logged in as {self.user.name} ({self.user.id})")
         commands_enabled = cfg.modules.enable_commands
         if not commands_enabled:
-            log.info("Commands disabled, clearing tree...")
+            log.info("Commands disabled, clearing local tree...")
             self.clear_commands()
             if commands_enabled is None:
-                log.info("Command sync behavior unspecified, skipping")
+                log.info("Sync behavior unspecified, skipping")
                 return
 
         await self.sync_commands()
 
-    async def on_app_command_error(self, interaction: Interaction, error: Exception) -> None:
-        cmd_name = interaction.command.name if interaction.command else "unknown"
-        log.error(f"/{cmd_name} called by {interaction.user} in #{interaction.channel.name} ({interaction.guild}) failed")
-        if isinstance(error, commands.errors.MaxConcurrencyReached):
-            msg = "Someone else is already using this command. Please try again later."
-        elif isinstance(error, app_commands.errors.CommandOnCooldown):
-            msg = f"Slow down! You are using this command too fast. Please try again in {error.retry_after:.0f} seconds."
-        else:
-            msg = "An unexpected error occurred and has been reported to the developer. Please try again later."
-
-        try:
-            await self.report_error(error, interaction)
-            await interaction.followup.send(content=msg, ephemeral=True)
-        except Exception:
-            log.exception("Failed to alert user")
-
     async def get_or_fetch_guild(self, guild_id: int) -> Guild:
         return self.get_guild(guild_id) or await self.fetch_guild(guild_id)
 
-    async def get_or_fetch_channel(self, channel_id: int) -> GuildChannel | PrivateChannel | Thread:
+    async def get_or_fetch_channel(
+        self, channel_id: int
+    ) -> GuildChannel | PrivateChannel | Thread:
         return self.get_channel(channel_id) or await self.fetch_channel(channel_id)
 
     async def get_or_fetch_user(self, user_id: int) -> User:
         return self.get_user(user_id) or await self.fetch_user(user_id)
 
-    async def report_error(self, exception: Exception, interaction: Interaction | None = None, *args) -> None:
+    async def report_error(
+        self, exception: Exception, interaction: Interaction | None = None, *args
+    ) -> None:
         err_description = f"`{repr(exception)[:150]}`"
 
         if args:
@@ -129,23 +116,35 @@ class RocketWatch(Bot):
             err_description += f"\n```{args_fmt}```"
 
         if interaction:
-            cmd_name = interaction.command.name if interaction.command else "unknown"
+            if interaction.command:
+                cmd_name = interaction.command.name
+            else:
+                cmd_name = getattr(interaction, "data", {}).get("name", "unknown")
+            cmd_options = (
+                interaction.namespace.__dict__
+                if interaction.namespace
+                else (interaction.data.get("options", []) if interaction.data else [])
+            )
             err_description += (
                 f"\n```"
                 f"command = {cmd_name}\n"
-                f"command.params = {getattr(interaction.command, 'parameters', '')}\n"
+                f"command.params = {cmd_options}\n"
                 f"channel = {interaction.channel}\n"
                 f"user = {interaction.user}"
                 f"```"
             )
 
         error = getattr(exception, "original", exception)
-        err_trace = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+        err_trace = "".join(
+            traceback.format_exception(type(error), error, error.__traceback__)
+        )
         log.error(err_trace)
 
         try:
             channel = await self.get_or_fetch_channel(cfg.discord.channels["errors"])
             file = File(io.StringIO(err_trace), "exception.txt")
-            await retry_async(tries=5, delay=5)(channel.send)(err_description, file=file)
+            await retry_async(tries=5, delay=5)(channel.send)(
+                err_description, file=file
+            )
         except Exception:
             log.exception("Failed to send message. Max retries reached.")
