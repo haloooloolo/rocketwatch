@@ -12,11 +12,16 @@ from discord.app_commands.errors import (
     TransformerError,
 )
 
+from utils.config import cfg
+
 log = logging.getLogger("rocketwatch.command_tree")
 
 
 class RWCommandTree(CommandTree):
     async def _call(self, interaction: Interaction) -> None:
+        if not cfg.modules.enable_commands:
+            return
+
         cmd_name = interaction.command.name if interaction.command else "unknown"
         timestamp = datetime.utcnow()
 
