@@ -15,3 +15,7 @@ jobs:
         with:
           args: "check"
           src: "rocketwatch"
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check"
+          src: "rocketwatch"
