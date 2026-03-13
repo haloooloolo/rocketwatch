@@ -9,7 +9,7 @@ dependencies = [
     "anyascii==0.3.3",
     "beautifulsoup4==4.14.3",
     "bidict==0.23.1",
-    "cachetools==7.0.3",
+    "cachetools==7.0.5",
     "colorama==0.4.6",
     "cronitor==4.9.0",
     "dice==4.0.0",
