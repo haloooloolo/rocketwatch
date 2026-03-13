@@ -23,7 +23,9 @@ class Milestones(EventPlugin):
 
     async def _get_new_events(self) -> list[Event]:
         if self.state == "RUNNING":
-            log.error("Milestones plugin was interrupted while running. Re-initializing...")
+            log.error(
+                "Milestones plugin was interrupted while running. Re-initializing..."
+            )
             self.__init__(self.bot)
 
         self.state = "RUNNING"
@@ -55,24 +57,32 @@ class Milestones(EventPlugin):
                 previous_milestone = state["current_goal"]
             else:
                 log.debug(
-                    f"First time we have processed Milestones for milestone {milestone.id}. Adding it to the Database.")
-                await self.collection.insert_one({"_id": milestone["id"], "current_goal": latest_goal})
+                    f"First time we have processed Milestones for milestone {milestone.id}. Adding it to the Database."
+                )
+                await self.collection.insert_one(
+                    {"_id": milestone["id"], "current_goal": latest_goal}
+                )
                 previous_milestone = milestone.min
             if previous_milestone < latest_goal:
-                log.info(f"Goal for milestone {milestone.id} has increased. Triggering Milestone!")
-                embed = await assemble(aDict({
-                    "event_name"  : milestone.id,
-                    "result_value": value
-                }))
-                payload.append(Event(
-                    embed=embed,
-                    topic="milestones",
-                    block_number=self._pending_block,
-                    event_name=milestone.id,
-                    unique_id=f"{milestone.id}:{latest_goal}",
-                ))
+                log.info(
+                    f"Goal for milestone {milestone.id} has increased. Triggering Milestone!"
+                )
+                embed = await assemble(
+                    aDict({"event_name": milestone.id, "result_value": value})
+                )
+                payload.append(
+                    Event(
+                        embed=embed,
+                        topic="milestones",
+                        block_number=self._pending_block,
+                        event_name=milestone.id,
+                        unique_id=f"{milestone.id}:{latest_goal}",
+                    )
+                )
                 # update the current goal in collection
-                await self.collection.update_one({"_id": milestone["id"]}, {"$set": {"current_goal": latest_goal}})
+                await self.collection.update_one(
+                    {"_id": milestone["id"]}, {"$set": {"current_goal": latest_goal}}
+                )
 
         log.debug("Finished Checking Milestones")
         return payload

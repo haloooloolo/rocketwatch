@@ -19,7 +19,7 @@ p = inflect.engine()
 
 def get_percentiles(percentiles, counts):
     for p in percentiles:
-        yield p, np.percentile(counts, p, method='nearest')
+        yield p, np.percentile(counts, p, method="nearest")
 
 
 async def minipool_distribution_raw(interaction: Interaction, distribution):
@@ -27,8 +27,9 @@ async def minipool_distribution_raw(interaction: Interaction, distribution):
     e.title = "Minipool Distribution"
     description = "```\n"
     for minipools, nodes in distribution:
-        description += f"{p.no('minipool', minipools):>14}: " \
-                       f"{nodes:>4} {p.plural('node', nodes)}\n"
+        description += (
+            f"{p.no('minipool', minipools):>14}: {nodes:>4} {p.plural('node', nodes)}\n"
+        )
     description += "```"
     e.description = description
     await interaction.followup.send(embed=e)
@@ -47,32 +48,19 @@ class MinipoolDistribution(commands.Cog):
         # 3 nodes have 3 minipools
         pipeline = [
             {
-                '$match': {
-                    'beacon.status': {
-                        '$not': re.compile(r"(?:withdraw|exit|init)")
-                    },
-                    'status': 'staking'
+                "$match": {
+                    "beacon.status": {"$not": re.compile(r"(?:withdraw|exit|init)")},
+                    "status": "staking",
                 }
-            }, {
-                '$group': {
-                    '_id': '$node_operator',
-                    'count': {
-                        '$sum': 1
-                    }
-                }
-            }, {
-                '$sort': {
-                    'count': 1
-                }
-            }
+            },
+            {"$group": {"_id": "$node_operator", "count": {"$sum": 1}}},
+            {"$sort": {"count": 1}},
         ]
         return [x["count"] async for x in self.bot.db.minipools.aggregate(pipeline)]
 
     @command()
     @describe(raw="Show the raw Distribution Data")
-    async def minipool_distribution(self,
-                                    interaction: Interaction,
-                                    raw: bool = False):
+    async def minipool_distribution(self, interaction: Interaction, raw: bool = False):
         """Show the distribution of minipools per node."""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
@@ -101,12 +89,12 @@ class MinipoolDistribution(commands.Cog):
         ax.bar_label(rects, rotation=90, padding=3, fontsize=7)
         ax.set_ylabel("Total Minipools")
         # tilt the x axis labels
-        ax.tick_params(axis='x', labelrotation=90, labelsize=7)
+        ax.tick_params(axis="x", labelrotation=90, labelsize=7)
         # Add a 5% buffer to the ylim to help fit all the bar labels
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
 
         fig.tight_layout()
-        fig.savefig(img, format='png')
+        fig.savefig(img, format="png")
         img.seek(0)
 
         fig.clear()
@@ -115,8 +103,11 @@ class MinipoolDistribution(commands.Cog):
         e.title = "Minipool Distribution"
         e.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
-        percentile_strings = [f"{x[0]}th percentile: {p.no('minipool', int(x[1]))} per node" for x in
-                              get_percentiles([50, 75, 90, 99], counts) if x[1]]
+        percentile_strings = [
+            f"{x[0]}th percentile: {p.no('minipool', int(x[1]))} per node"
+            for x in get_percentiles([50, 75, 90, 99], counts)
+            if x[1]
+        ]
         percentile_strings.append(f"Max: {distribution[-1][0]} minipools per node")
         percentile_strings.append(f"Total: {p.no('minipool', sum(counts))}")
         e.set_footer(text="\n".join(percentile_strings))
@@ -144,7 +135,10 @@ class MinipoolDistribution(commands.Cog):
         # calculate gini coefficient from sorted list
         counts_nz = minipool_counts[minipool_counts != 0]
         n_nz = counts_nz.size
-        gini = -(((2 * np.arange(1, n_nz + 1) - n_nz - 1) * counts_nz).sum() / (n_nz * counts_nz.sum()))
+        gini = -(
+            ((2 * np.arange(1, n_nz + 1) - n_nz - 1) * counts_nz).sum()
+            / (n_nz * counts_nz.sum())
+        )
 
         e.set_footer(text=f"Gini coefficient: {gini:.4f}")
 
@@ -179,7 +173,7 @@ class MinipoolDistribution(commands.Cog):
             x_pos = x[index]
             percentage = round(100 * threshold)
             x_ticks.append(x_pos)
-            ax.axvline(x=x_pos, linestyle='--', c=color, label=f'{percentage}%')
+            ax.axvline(x=x_pos, linestyle="--", c=color, label=f"{percentage}%")
 
         draw_threshold(1 / 3, "tab:green")
         draw_threshold(0.5, "tab:olive")

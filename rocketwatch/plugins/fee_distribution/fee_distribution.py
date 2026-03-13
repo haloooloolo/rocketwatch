@@ -20,7 +20,9 @@ class FeeDistribution(commands.Cog):
         self.bot = bot
 
     @command()
-    async def fee_distribution(self, interaction: Interaction, mode: Literal["tree", "pie"]):
+    async def fee_distribution(
+        self, interaction: Interaction, mode: Literal["tree", "pie"]
+    ):
         """
         Show the distribution of minipool commission percentages.
         """
@@ -33,30 +35,30 @@ class FeeDistribution(commands.Cog):
         fig, axs = plt.subplots(1, 2)
 
         for i, bond in enumerate([8, 16]):
-            result = await self.bot.db.minipools.aggregate([
-                {
-                    "$match": {
-                        "node_deposit_balance": bond,
-                        "beacon.status": "active_ongoing"
-                    }
-                },
-                {
-                    "$group": {
-                        "_id" : {"$round": ["$node_fee", 2]},
-                        "count": {"$sum": 1}
-                    }
-                },
-                {
-                    "$sort": {"_id": 1}
-                }
-            ])
+            result = await self.bot.db.minipools.aggregate(
+                [
+                    {
+                        "$match": {
+                            "node_deposit_balance": bond,
+                            "beacon.status": "active_ongoing",
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": {"$round": ["$node_fee", 2]},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {"$sort": {"_id": 1}},
+                ]
+            )
 
             labels = []
             sizes = []
             subtree = {}
 
             for entry in await result.to_list():
-                fee_percentage = entry['_id'] * 100
+                fee_percentage = entry["_id"] * 100
                 labels.append(f"{fee_percentage:.0f}%")
                 sizes.append(entry["count"])
                 subtree[labels[-1]] = sizes[-1]
@@ -71,7 +73,13 @@ class FeeDistribution(commands.Cog):
                     labels[i] = ""
 
             ax.set_title(f"{bond} ETH")
-            ax.pie(sizes, labels=labels, autopct=lambda p, _total=total: f"{p * _total / 100:.0f}" if (p >= 5) else "")
+            ax.pie(
+                sizes,
+                labels=labels,
+                autopct=lambda p, _total=total: (
+                    f"{p * _total / 100:.0f}" if (p >= 5) else ""
+                ),
+            )
 
         if mode == "tree":
             e.description = f"```\n{render_tree_legacy(tree, 'Minipools')}\n```"
@@ -79,7 +87,7 @@ class FeeDistribution(commands.Cog):
         elif mode == "pie":
             img = BytesIO()
             fig.tight_layout()
-            fig.savefig(img, format='png')
+            fig.savefig(img, format="png")
             img.seek(0)
             fig.clear()
             plt.close()

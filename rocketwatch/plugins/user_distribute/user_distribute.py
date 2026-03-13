@@ -20,7 +20,9 @@ log = logging.getLogger("rocketwatch.user_distribute")
 
 
 class InstructionsView(ui.View):
-    def __init__(self, eligible: list[dict], distributable: list[dict], instruction_timeout: int):
+    def __init__(
+        self, eligible: list[dict], distributable: list[dict], instruction_timeout: int
+    ):
         super().__init__(timeout=instruction_timeout)
         self.eligible = eligible
         self.distributable = distributable
@@ -28,8 +30,12 @@ class InstructionsView(ui.View):
     @ui.button(label="Instructions", style=ButtonStyle.blurple)
     async def instructions(self, interaction: Interaction, _) -> None:
         mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
-        bud_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="beginUserDistribute")[2:])
-        dist_calldata = bytes.fromhex(mp_contract.encodeABI(fn_name="distributeBalance", args=[False])[2:])
+        bud_calldata = bytes.fromhex(
+            mp_contract.encodeABI(fn_name="beginUserDistribute")[2:]
+        )
+        dist_calldata = bytes.fromhex(
+            mp_contract.encodeABI(fn_name="distributeBalance", args=[False])[2:]
+        )
 
         calls = [(mp["address"], True, dist_calldata) for mp in self.distributable]
         calls += [(mp["address"], True, bud_calldata) for mp in self.eligible]
@@ -41,7 +47,9 @@ class InstructionsView(ui.View):
 
         tuple_strs = []
         for address, allow_failure, calldata in calls:
-            tuple_strs.append(f"[\"{address}\", {str(allow_failure).lower()}, 0x{calldata.hex()}]")
+            tuple_strs.append(
+                f'["{address}", {str(allow_failure).lower()}, 0x{calldata.hex()}]'
+            )
 
         input_data = "[" + ",".join(tuple_strs) + "]"
         etherscan_url = f"https://etherscan.io/address/{multicall_contract.address}#writeContract#F2"
@@ -57,9 +65,13 @@ class InstructionsView(ui.View):
 
         actions = []
         if (count := len(self.distributable)) > 0:
-            actions.append(f"distribute the balance of **{count}** minipool{'s' if count != 1 else ''}")
+            actions.append(
+                f"distribute the balance of **{count}** minipool{'s' if count != 1 else ''}"
+            )
         if (count := len(self.eligible)) > 0:
-            actions.append(f"begin the user distribution process for **{count}** minipool{'s' if count != 1 else ''}")
+            actions.append(
+                f"begin the user distribution process for **{count}** minipool{'s' if count != 1 else ''}"
+            )
 
         embed.description += "\nThis will " + " and ".join(actions) + "."
         embed.description += f"\nEstimated cost: **{cost_eth:,.6f} ETH** ({gas_used:,} gas @ {(gas_price / 1e9):.2f} gwei)"
@@ -67,7 +79,7 @@ class InstructionsView(ui.View):
         await interaction.response.send_message(
             embed=embed,
             file=discord.File(StringIO(input_data), filename="input_data.txt"),
-            ephemeral=True
+            ephemeral=True,
         )
 
 
@@ -100,7 +112,12 @@ class UserDistribute(commands.Cog):
             f"The next window closes <t:{next_window_close}:R>!"
         )
 
-        await channel.send(embed=embed, view=InstructionsView([], distributable[:100], instruction_timeout=(4 * 3600)))
+        await channel.send(
+            embed=embed,
+            view=InstructionsView(
+                [], distributable[:100], instruction_timeout=(4 * 3600)
+            ),
+        )
 
     @task.before_loop
     async def before_task(self):
@@ -115,20 +132,30 @@ class UserDistribute(commands.Cog):
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
         threshold_epoch = current_epoch - 5000
 
-        minipools = await self.bot.db.minipools.find({
-            "user_distributed": False,
-            "status": "staking",
-            "execution_balance": {"$gte": 8},
-            "beacon.withdrawable_epoch": {"$lt": threshold_epoch}
-        }).sort("beacon.withdrawable_epoch", ASCENDING).to_list()
+        minipools = (
+            await self.bot.db.minipools.find(
+                {
+                    "user_distributed": False,
+                    "status": "staking",
+                    "execution_balance": {"$gte": 8},
+                    "beacon.withdrawable_epoch": {"$lt": threshold_epoch},
+                }
+            )
+            .sort("beacon.withdrawable_epoch", ASCENDING)
+            .to_list()
+        )
 
         eligible = []
         pending = []
         distributable = []
 
         current_time = int(time.time())
-        ud_window_start = await rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart")
-        ud_window_end = ud_window_start + await rp.call("rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength")
+        ud_window_start = await rp.call(
+            "rocketDAOProtocolSettingsMinipool.getUserDistributeWindowStart"
+        )
+        ud_window_end = ud_window_start + await rp.call(
+            "rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength"
+        )
 
         for mp in minipools:
             mp["address"] = w3.to_checksum_address(mp["address"])
@@ -142,7 +169,9 @@ class UserDistribute(commands.Cog):
                 mp["ud_window_open"] = user_distribute_time + ud_window_start
                 pending.append(mp)
             # double check, DB may lag behind
-            elif not await rp.call("rocketMinipoolDelegate.getUserDistributed", address=mp["address"]):
+            elif not await rp.call(
+                "rocketMinipoolDelegate.getUserDistributed", address=mp["address"]
+            ):
                 mp["ud_window_close"] = user_distribute_time + ud_window_end
                 distributable.append(mp)
 
@@ -163,7 +192,7 @@ class UserDistribute(commands.Cog):
         embed.add_field(
             name="Eligible",
             value=f"**{len(eligible)}** minipool{'s' if len(eligible) != 1 else ''}",
-            inline=False
+            inline=False,
         )
 
         if pending:
@@ -174,7 +203,7 @@ class UserDistribute(commands.Cog):
                     f"**{len(pending)}** minipool{'s' if len(pending) != 1 else ''}"
                     f" · next window opens <t:{next_window_open}:R>"
                 ),
-                inline=False
+                inline=False,
             )
         else:
             embed.add_field(name="Pending", value="**0** minipools", inline=False)
@@ -187,7 +216,7 @@ class UserDistribute(commands.Cog):
                     f"**{len(distributable)}** minipool{'s' if len(distributable) != 1 else ''}"
                     f" · next window closes <t:{next_window_close}:R>"
                 ),
-                inline=False
+                inline=False,
             )
         else:
             embed.add_field(name="Distributable", value="**0** minipools", inline=False)
@@ -195,7 +224,10 @@ class UserDistribute(commands.Cog):
         if eligible or distributable:
             # limit the number of distributions to not run out of gas
             await interaction.followup.send(
-                embed=embed, view=InstructionsView(eligible[:50], distributable[:100], instruction_timeout=300)
+                embed=embed,
+                view=InstructionsView(
+                    eligible[:50], distributable[:100], instruction_timeout=300
+                ),
             )
         else:
             await interaction.followup.send(embed=embed)

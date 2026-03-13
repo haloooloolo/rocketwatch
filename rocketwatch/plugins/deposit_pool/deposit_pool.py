@@ -21,11 +21,19 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     async def get_deposit_pool_stats() -> Embed:
-        balance_raw, max_size_raw, max_amount_raw = await rp.multicall([
-            (await rp.get_contract_by_name("rocketDepositPool")).functions.getBalance(),
-            (await rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit")).functions.getMaximumDepositPoolSize(),
-            (await rp.get_contract_by_name("rocketDepositPool")).functions.getMaximumDepositAmount(),
-        ])
+        balance_raw, max_size_raw, max_amount_raw = await rp.multicall(
+            [
+                (
+                    await rp.get_contract_by_name("rocketDepositPool")
+                ).functions.getBalance(),
+                (
+                    await rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit")
+                ).functions.getMaximumDepositPoolSize(),
+                (
+                    await rp.get_contract_by_name("rocketDepositPool")
+                ).functions.getMaximumDepositAmount(),
+            ]
+        )
 
         dp_balance = solidity.to_float(balance_raw)
         deposit_cap = solidity.to_int(max_size_raw)
@@ -42,8 +50,12 @@ class DepositPool(StatusPlugin):
         embed.add_field(name="Status", value=dp_status, inline=False)
 
         display_limit = 2
-        exp_queue_length, exp_queue_content = await Queue.get_express_queue(display_limit)
-        std_queue_length, std_queue_content = await Queue.get_standard_queue(display_limit)
+        exp_queue_length, exp_queue_content = await Queue.get_express_queue(
+            display_limit
+        )
+        std_queue_length, std_queue_content = await Queue.get_standard_queue(
+            display_limit
+        )
         total_queue_length = exp_queue_length + std_queue_length
         if (total_queue_length) > 0:
             embed.description = ""
@@ -61,7 +73,9 @@ class DepositPool(StatusPlugin):
             queue_capacity = max(free_capacity - deposit_cap, 0.0)
             possible_assignments = min(int(dp_balance // 32), total_queue_length)
 
-            embed.description += f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
+            embed.description += (
+                f"Need **{queue_capacity:,.2f} ETH** to dequeue all validators."
+            )
             if possible_assignments > 0:
                 embed.description += f"\nSufficient balance for **{possible_assignments} deposit assignment{'s' if possible_assignments != 1 else ''}**!"
         else:
@@ -69,7 +83,9 @@ class DepositPool(StatusPlugin):
             if (num_eb4 := int(dp_balance // 28)) > 0:
                 lines.append(f"**`{num_eb4:>4}`** 4 ETH validators (28 ETH from DP)")
             if (num_credit := int(dp_balance // 32)) > 0:
-                lines.append(f"**`{num_credit:>4}`** credit validators (32 ETH from DP)")
+                lines.append(
+                    f"**`{num_credit:>4}`** credit validators (32 ETH from DP)"
+                )
 
             if lines:
                 embed.add_field(name="Enough For", value="\n".join(lines), inline=False)
@@ -78,12 +94,27 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     async def get_contract_collateral_stats() -> Embed:
-        exchange_rate, total_supply, collateral_rate_raw, target_rate_raw = await rp.multicall([
-            (await rp.get_contract_by_name("rocketTokenRETH")).functions.getExchangeRate(),
-            (await rp.get_contract_by_name("rocketTokenRETH")).functions.totalSupply(),
-            (await rp.get_contract_by_name("rocketTokenRETH")).functions.getCollateralRate(),
-            (await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")).functions.getTargetRethCollateralRate(),
-        ])
+        (
+            exchange_rate,
+            total_supply,
+            collateral_rate_raw,
+            target_rate_raw,
+        ) = await rp.multicall(
+            [
+                (
+                    await rp.get_contract_by_name("rocketTokenRETH")
+                ).functions.getExchangeRate(),
+                (
+                    await rp.get_contract_by_name("rocketTokenRETH")
+                ).functions.totalSupply(),
+                (
+                    await rp.get_contract_by_name("rocketTokenRETH")
+                ).functions.getCollateralRate(),
+                (
+                    await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
+                ).functions.getTargetRethCollateralRate(),
+            ]
+        )
 
         total_eth_in_reth: float = total_supply * exchange_rate / 10**36
         collateral_rate: float = solidity.to_float(collateral_rate_raw)
@@ -117,7 +148,9 @@ class DepositPool(StatusPlugin):
     async def reth_extra_collateral(self, interaction: Interaction) -> None:
         """Show the amount of tokens held in the rETH contract for exit liquidity"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
-        await interaction.followup.send(embed=await self.get_contract_collateral_stats())
+        await interaction.followup.send(
+            embed=await self.get_contract_collateral_stats()
+        )
 
     async def get_status(self) -> Embed:
         embed = Embed(title=":rocket: Live Protocol Status")
@@ -136,13 +169,17 @@ class DepositPool(StatusPlugin):
             embed.add_field(name="Deposits", value=field.value, inline=False)
 
         collateral_embed = await self.get_contract_collateral_stats()
-        embed.add_field(name="Withdrawals", value=collateral_embed.description, inline=False)
+        embed.add_field(
+            name="Withdrawals", value=collateral_embed.description, inline=False
+        )
 
         if cfg.rocketpool.chain != "mainnet":
             return embed
 
         reth_price = await rp.get_reth_eth_price()
-        protocol_rate = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate"))
+        protocol_rate = solidity.to_float(
+            await rp.call("rocketTokenRETH.getExchangeRate")
+        )
         relative_rate_diff = (reth_price / protocol_rate) - 1
         expected_rate_diff = 0.0005
 
@@ -153,7 +190,11 @@ class DepositPool(StatusPlugin):
         else:
             rate_status = f"at a **{-relative_rate_diff:.2%} discount**!"
 
-        embed.add_field(name="Secondary Market", value=f"rETH is trading {rate_status}", inline=False)
+        embed.add_field(
+            name="Secondary Market",
+            value=f"rETH is trading {rate_status}",
+            inline=False,
+        )
         return embed
 
 

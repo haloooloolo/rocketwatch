@@ -36,16 +36,20 @@ class Lottery(commands.Cog):
         assert period in ["latest", "next"]
         await self._check_indexes()
         h = await bacon.get_block("head")
-        sync_period = int(h['data']['message']['slot']) // 32 // 256
+        sync_period = int(h["data"]["message"]["slot"]) // 32 // 256
         if period == "next":
             sync_period += 1
         data = (await bacon.get_sync_committee(sync_period * 256))["data"]
-        await self.bot.db.sync_committee_stats.replace_one({"period": period},
-                                                           {"period"     : period,
-                                                            "start_epoch": sync_period * 256,
-                                                            "end_epoch"  : (sync_period + 1) * 256,
-                                                            "sync_period": sync_period * 256,
-                                                            }, upsert=True)
+        await self.bot.db.sync_committee_stats.replace_one(
+            {"period": period},
+            {
+                "period": period,
+                "start_epoch": sync_period * 256,
+                "end_epoch": (sync_period + 1) * 256,
+                "sync_period": sync_period * 256,
+            },
+            upsert=True,
+        )
         validators = data["validators"]
         col = self.bot.db[f"sync_committee_{period}"]
         # get unique validators from collection
@@ -62,40 +66,29 @@ class Lottery(commands.Cog):
                 await col.bulk_write(payload)
 
     async def get_validators_for_sync_committee_period(self, period):
-        data = await self.bot.db[f"sync_committee_{period}"].aggregate([
-            {
-                '$lookup': {
-                    'from'        : 'minipools',
-                    'localField'  : 'validator',
-                    'foreignField': 'validator_index',
-                    'as'          : 'entry'
-                }
-            }, {
-                '$match': {
-                    'entry': {
-                        '$ne': []
+        data = await self.bot.db[f"sync_committee_{period}"].aggregate(
+            [
+                {
+                    "$lookup": {
+                        "from": "minipools",
+                        "localField": "validator",
+                        "foreignField": "validator_index",
+                        "as": "entry",
                     }
-                }
-            }, {
-                '$replaceRoot': {
-                    'newRoot': {
-                        '$first': '$entry'
+                },
+                {"$match": {"entry": {"$ne": []}}},
+                {"$replaceRoot": {"newRoot": {"$first": "$entry"}}},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "validator": "$validator_index",
+                        "pubkey": 1,
+                        "node_operator": 1,
                     }
-                }
-            }, {
-                '$project': {
-                    '_id'          : 0,
-                    'validator'    : "$validator_index",
-                    'pubkey'       : 1,
-                    'node_operator': 1
-                }
-            }, {
-                '$match': {
-                    'node_operator': {
-                        '$ne': None
-                    }
-                }
-            }])
+                },
+                {"$match": {"node_operator": {"$ne": None}}},
+            ]
+        )
         return await data.to_list()
 
     async def generate_sync_committee_description(self, period):
@@ -104,27 +97,39 @@ class Lottery(commands.Cog):
         # get stats about the current period
         stats = await self.bot.db.sync_committee_stats.find_one({"period": period})
         perc = len(validators) / 512
-        description = f"_Rocket Pool Participation:_ {len(validators)}/512 ({perc:.2%})\n"
-        start_timestamp = BEACON_START_DATE + (stats['start_epoch'] * BEACON_EPOCH_LENGTH)
+        description = (
+            f"_Rocket Pool Participation:_ {len(validators)}/512 ({perc:.2%})\n"
+        )
+        start_timestamp = BEACON_START_DATE + (
+            stats["start_epoch"] * BEACON_EPOCH_LENGTH
+        )
         description += f"_Start:_ Epoch {stats['start_epoch']} <t:{start_timestamp}> (<t:{start_timestamp}:R>)\n"
-        end_timestamp = BEACON_START_DATE + (stats['end_epoch'] * BEACON_EPOCH_LENGTH)
+        end_timestamp = BEACON_START_DATE + (stats["end_epoch"] * BEACON_EPOCH_LENGTH)
         description += f"_End:_ Epoch {stats['end_epoch']} <t:{end_timestamp}> (<t:{end_timestamp}:R>)\n"
         # validators (called minipools here)
         # sort validators
-        validators.sort(key=lambda x: x['validator'])
-        description += f"_Minipools:_ `{', '.join(str(v['validator']) for v in validators)}`\n"
+        validators.sort(key=lambda x: x["validator"])
+        description += (
+            f"_Minipools:_ `{', '.join(str(v['validator']) for v in validators)}`\n"
+        )
         # node operators
         # gather count per
         node_operators = {}
         for v in validators:
-            if v['node_operator'] not in node_operators:
-                node_operators[v['node_operator']] = 0
-            node_operators[v['node_operator']] += 1
+            if v["node_operator"] not in node_operators:
+                node_operators[v["node_operator"]] = 0
+            node_operators[v["node_operator"]] += 1
         # sort by count
-        node_operators = sorted(node_operators.items(), key=lambda x: x[1], reverse=True)
+        node_operators = sorted(
+            node_operators.items(), key=lambda x: x[1], reverse=True
+        )
         description += "_Node Operators:_ "
-        description += ", ".join([f"{count}x {await el_explorer_url(node_operator)}" for node_operator, count in
-                                  node_operators])
+        description += ", ".join(
+            [
+                f"{count}x {await el_explorer_url(node_operator)}"
+                for node_operator, count in node_operators
+            ]
+        )
         return description
 
     @command()
@@ -134,8 +139,14 @@ class Lottery(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         embeds = [
-            Embed(title="Current sync committee:", description=await self.generate_sync_committee_description("latest")),
-            Embed(title="Next sync committee:", description=await self.generate_sync_committee_description("next"))
+            Embed(
+                title="Current sync committee:",
+                description=await self.generate_sync_committee_description("latest"),
+            ),
+            Embed(
+                title="Next sync committee:",
+                description=await self.generate_sync_committee_description("next"),
+            ),
         ]
         await interaction.followup.send(embeds=embeds)
 

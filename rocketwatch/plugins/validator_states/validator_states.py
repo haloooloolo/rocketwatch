@@ -13,7 +13,11 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.validator_states")
 
 
-_BEACON_PENDING = {"in_queue": "unassigned", "prestaked": "prestaked", "staking": "staked"}
+_BEACON_PENDING = {
+    "in_queue": "unassigned",
+    "prestaked": "prestaked",
+    "staking": "staked",
+}
 
 
 def _classify_beacon_validator(beacon, contract_status):
@@ -51,7 +55,7 @@ def _empty_state_tree():
         "exiting": {},
         "exited": {},
         "withdrawn": {},
-        "closed": {}
+        "closed": {},
     }
 
 
@@ -118,7 +122,13 @@ class ValidatorStates(commands.Cog):
 
         minipools = await self.bot.db.minipools.find(
             {"beacon.status": {"$exists": True}},
-            {"beacon": 1, "status": 1, "finalized": 1, "node_operator": 1, "validator_index": 1}
+            {
+                "beacon": 1,
+                "status": 1,
+                "finalized": 1,
+                "node_operator": 1,
+                "validator_index": 1,
+            },
         ).to_list(None)
         megapool_vals = await self.bot.db.megapool_validators.find(
             {}, {"beacon": 1, "status": 1, "node_operator": 1, "validator_index": 1}
@@ -136,7 +146,7 @@ class ValidatorStates(commands.Cog):
             "megapools": _collapse_tree(mg_data),
         }
 
-        embed = Embed(title="Validator States", color=0x00ff00)
+        embed = Embed(title="Validator States", color=0x00FF00)
         description = "```\n"
         description += render_tree_legacy(tree, "Validators")
 
@@ -172,35 +182,50 @@ class ValidatorStates(commands.Cog):
             exiting_node_operators, withdrawn_node_operators = node_operators
             max_total_list_length = 16
 
-            if len(exiting_node_operators) + len(withdrawn_node_operators) <= max_total_list_length:
+            if (
+                len(exiting_node_operators) + len(withdrawn_node_operators)
+                <= max_total_list_length
+            ):
                 num_exiting = len(exiting_node_operators)
                 num_withdrawn = len(withdrawn_node_operators)
             elif len(exiting_node_operators) >= len(withdrawn_node_operators):
-                num_withdrawn = min(len(withdrawn_node_operators), max_total_list_length // 2)
+                num_withdrawn = min(
+                    len(withdrawn_node_operators), max_total_list_length // 2
+                )
                 num_exiting = max_total_list_length - num_withdrawn
             else:
-                num_exiting = min(len(exiting_node_operators), max_total_list_length // 2)
+                num_exiting = min(
+                    len(exiting_node_operators), max_total_list_length // 2
+                )
                 num_withdrawn = max_total_list_length - num_exiting
 
             if num_exiting > 0:
                 description += "\n**Exiting Node Operators**\n"
-                description += ", ".join([
-                    f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
-                    for v, c in exiting_node_operators[:num_exiting]
-                ])
+                description += ", ".join(
+                    [
+                        f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
+                        for v, c in exiting_node_operators[:num_exiting]
+                    ]
+                )
                 if remaining_no := exiting_node_operators[num_exiting:]:
                     num_remaining_valis = sum([c for _, c in remaining_no])
-                    description += f", and {len(remaining_no)} more ({num_remaining_valis})"
+                    description += (
+                        f", and {len(remaining_no)} more ({num_remaining_valis})"
+                    )
                 description += "\n"
             if num_withdrawn > 0:
                 description += "\n**Withdrawn Node Operators**\n"
-                description += ", ".join([
-                    f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
-                    for v, c in withdrawn_node_operators[:num_withdrawn]
-                ])
+                description += ", ".join(
+                    [
+                        f"{await el_explorer_url(w3.to_checksum_address(v))} ({c})"
+                        for v, c in withdrawn_node_operators[:num_withdrawn]
+                    ]
+                )
                 if remaining_no := withdrawn_node_operators[num_withdrawn:]:
                     num_remaining_valis = sum([c for _, c in remaining_no])
-                    description += f", and {len(remaining_no)} more ({num_remaining_valis})"
+                    description += (
+                        f", and {len(remaining_no)} more ({num_remaining_valis})"
+                    )
                 description += "\n"
 
         embed.description = description

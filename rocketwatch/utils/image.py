@@ -34,17 +34,17 @@ class FontVariant(StrEnum):
 class ImageCanvas(ImageDraw):
     # default color matches Discord mobile dark mode Embed
     def __init__(self, width: int, height: int, bg_color: Color = (57, 58, 64)):
-        p_img = PillowImage.new('RGB', (width, height), color=bg_color)
+        p_img = PillowImage.new("RGB", (width, height), color=bg_color)
         super().__init__(p_img)
         self.image = Image(p_img)
 
     def progress_bar(
-            self,
-            xy: tuple[float, float],
-            size: tuple[float, float],
-            progress: float,
-            fill_color: Color,
-            bg_color : Color = (0, 0, 0)
+        self,
+        xy: tuple[float, float],
+        size: tuple[float, float],
+        progress: float,
+        fill_color: Color,
+        bg_color: Color = (0, 0, 0),
     ) -> None:
         x, y = xy
         width, height = size
@@ -59,33 +59,45 @@ class ImageCanvas(ImageDraw):
             # left semicircle
             fill_perc = min(1.0, fill_width / radius)
             angle = 90 * (1 + 2 * math.acos(fill_perc) / math.pi)
-            self.chord((x, y, x + 2 * radius, y + height), angle, 360 - angle, fill_color)
+            self.chord(
+                (x, y, x + 2 * radius, y + height), angle, 360 - angle, fill_color
+            )
 
         if fill_width > radius:
             # main bar
-            self.rectangle((x + radius, y, x + min(fill_width, width - radius), y + height), fill_color)
+            self.rectangle(
+                (x + radius, y, x + min(fill_width, width - radius), y + height),
+                fill_color,
+            )
 
         if fill_width > (width - radius):
             # right semicircle
             fill_perc = min(1.0, (fill_width - width + radius) / radius)
             angle = 90 * (2 * math.acos(fill_perc) / math.pi)
-            self.chord((x + width - 2 * radius, y, x + width, y + height), angle, 360 - angle, fill_color)
+            self.chord(
+                (x + width - 2 * radius, y, x + width, y + height),
+                angle,
+                360 - angle,
+                fill_color,
+            )
 
     @staticmethod
     @cache
-    def _get_font(name: str, variant: FontVariant, size: float) -> ImageFont.FreeTypeFont:
+    def _get_font(
+        name: str, variant: FontVariant, size: float
+    ) -> ImageFont.FreeTypeFont:
         return ImageFont.truetype(f"fonts/{name}-{variant}.ttf", size)
 
     def dynamic_text(
-            self,
-            xy: tuple[float, float],
-            text: str,
-            font_size: float,
-            font_name: Font = Font.INTER,
-            font_variant: FontVariant = FontVariant.REGULAR,
-            color: Color = (255, 255, 255),
-            max_width: float | None = None,
-            anchor: str = "lt"
+        self,
+        xy: tuple[float, float],
+        text: str,
+        font_size: float,
+        font_name: Font = Font.INTER,
+        font_variant: FontVariant = FontVariant.REGULAR,
+        color: Color = (255, 255, 255),
+        max_width: float | None = None,
+        anchor: str = "lt",
     ) -> None:
         font = self._get_font(font_name, font_variant, font_size)
         if max_width is not None:

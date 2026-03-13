@@ -28,7 +28,9 @@ class DAO(ABC):
 
     async def _get_proposal_contract(self):
         if self._proposal_contract is None:
-            self._proposal_contract = await rp.get_contract_by_name(self._proposal_contract_name)
+            self._proposal_contract = await rp.get_contract_by_name(
+                self._proposal_contract_name
+            )
         return self._proposal_contract
 
     @dataclass(frozen=True, slots=True)
@@ -51,16 +53,16 @@ class DAO(ABC):
     def sanitize(message: str) -> str:
         max_length = 150
         if len(message) > max_length:
-            message = message[:(max_length - 1)] + "…"
+            message = message[: (max_length - 1)] + "…"
         return message
 
     async def build_proposal_body(
-            self,
-            proposal: Proposal,
-            *,
-            include_proposer=True,
-            include_payload=True,
-            include_votes=True
+        self,
+        proposal: Proposal,
+        *,
+        include_proposer=True,
+        include_payload=True,
+        include_votes=True,
     ) -> str:
         body_repr = f"Description:\n{self.sanitize(proposal.message)}"
 
@@ -78,7 +80,9 @@ class DAO(ABC):
             except Exception:
                 # if this goes wrong, just use the raw payload
                 log.exception("Failed to decode proposal payload")
-                body_repr += f"\n\nRaw Payload (failed to decode):\n{proposal.payload.hex()}"
+                body_repr += (
+                    f"\n\nRaw Payload (failed to decode):\n{proposal.payload.hex()}"
+                )
 
         if include_votes:
             body_repr += f"\n\nVotes:\n{self._build_vote_graph(proposal)}"
@@ -87,7 +91,12 @@ class DAO(ABC):
 
 
 class DefaultDAO(DAO):
-    def __init__(self, contract_name: Literal["rocketDAONodeTrustedProposals", "rocketDAOSecurityProposals"]):
+    def __init__(
+        self,
+        contract_name: Literal[
+            "rocketDAONodeTrustedProposals", "rocketDAOSecurityProposals"
+        ],
+    ):
         if contract_name == "rocketDAONodeTrustedProposals":
             self.display_name = "oDAO"
         elif contract_name == "rocketDAOSecurityProposals":
@@ -117,36 +126,60 @@ class DefaultDAO(DAO):
     async def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
         proposal_contract = await self._get_proposal_contract()
         num_proposals = await proposal_contract.functions.getTotal().call()
-        proposal_dao_names = await rp.multicall([
-            proposal_contract.functions.getDAO(proposal_id) for proposal_id in range(1, num_proposals + 1)
-        ])
+        proposal_dao_names = await rp.multicall(
+            [
+                proposal_contract.functions.getDAO(proposal_id)
+                for proposal_id in range(1, num_proposals + 1)
+            ]
+        )
 
-        relevant_proposals = [(i + 1) for (i, dao_name) in enumerate(proposal_dao_names) if (dao_name == self.contract_name)]
-        proposal_states = await rp.multicall([
-            proposal_contract.functions.getState(proposal_id) for proposal_id in relevant_proposals
-        ])
+        relevant_proposals = [
+            (i + 1)
+            for (i, dao_name) in enumerate(proposal_dao_names)
+            if (dao_name == self.contract_name)
+        ]
+        proposal_states = await rp.multicall(
+            [
+                proposal_contract.functions.getState(proposal_id)
+                for proposal_id in relevant_proposals
+            ]
+        )
 
         proposals = {state: [] for state in DefaultDAO.ProposalState}
-        for proposal_id, state in zip(relevant_proposals, proposal_states, strict=False):
+        for proposal_id, state in zip(
+            relevant_proposals, proposal_states, strict=False
+        ):
             proposals[state].append(proposal_id)
 
         return proposals
 
     async def fetch_proposal(self, proposal_id: int) -> Proposal:
         proposal_contract = await self._get_proposal_contract()
-        (proposer, message, payload, created, start, end, expires,
-         votes_for_raw, votes_against_raw, votes_required_raw) = await rp.multicall([
-             proposal_contract.functions.getProposer(proposal_id),
-             proposal_contract.functions.getMessage(proposal_id),
-             proposal_contract.functions.getPayload(proposal_id),
-             proposal_contract.functions.getCreated(proposal_id),
-             proposal_contract.functions.getStart(proposal_id),
-             proposal_contract.functions.getEnd(proposal_id),
-             proposal_contract.functions.getExpires(proposal_id),
-             proposal_contract.functions.getVotesFor(proposal_id),
-             proposal_contract.functions.getVotesAgainst(proposal_id),
-             proposal_contract.functions.getVotesRequired(proposal_id)
-         ])
+        (
+            proposer,
+            message,
+            payload,
+            created,
+            start,
+            end,
+            expires,
+            votes_for_raw,
+            votes_against_raw,
+            votes_required_raw,
+        ) = await rp.multicall(
+            [
+                proposal_contract.functions.getProposer(proposal_id),
+                proposal_contract.functions.getMessage(proposal_id),
+                proposal_contract.functions.getPayload(proposal_id),
+                proposal_contract.functions.getCreated(proposal_id),
+                proposal_contract.functions.getStart(proposal_id),
+                proposal_contract.functions.getEnd(proposal_id),
+                proposal_contract.functions.getExpires(proposal_id),
+                proposal_contract.functions.getVotesFor(proposal_id),
+                proposal_contract.functions.getVotesAgainst(proposal_id),
+                proposal_contract.functions.getVotesRequired(proposal_id),
+            ]
+        )
         return DefaultDAO.Proposal(
             id=proposal_id,
             proposer=cast(ChecksumAddress, proposer),
@@ -158,7 +191,7 @@ class DefaultDAO(DAO):
             expires=expires,
             votes_for=solidity.to_int(votes_for_raw),
             votes_against=solidity.to_int(votes_against_raw),
-            votes_required=solidity.to_float(votes_required_raw)
+            votes_required=solidity.to_float(votes_required_raw),
         )
 
     def _build_vote_graph(self, proposal: Proposal) -> str:
@@ -170,13 +203,13 @@ class DefaultDAO(DAO):
         graph.barh(
             [votes_for, votes_against, max([votes_for, votes_against, votes_required])],
             ["For", "Against", ""],
-            max_width=12
+            max_width=12,
         )
         graph_bars = graph.get_string().split("\n")
         quorum_perc = max(votes_for, votes_against) / votes_required
         return (
-            f"{graph_bars[0] : <{len(graph_bars[2])}}{'▏' if votes_for >= votes_against else ''}\n"
-            f"{graph_bars[1] : <{len(graph_bars[2])}}{'▏' if votes_for <= votes_against else ''}\n"
+            f"{graph_bars[0]: <{len(graph_bars[2])}}{'▏' if votes_for >= votes_against else ''}\n"
+            f"{graph_bars[1]: <{len(graph_bars[2])}}{'▏' if votes_for <= votes_against else ''}\n"
             f"Quorum: {quorum_perc:.0%}{' ✔' if (quorum_perc >= 1) else ''}"
         )
 
@@ -227,9 +260,12 @@ class ProtocolDAO(DAO):
     async def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
         proposal_contract = await self._get_proposal_contract()
         num_proposals = await proposal_contract.functions.getTotal().call()
-        proposal_states = await rp.multicall([
-            proposal_contract.functions.getState(proposal_id) for proposal_id in range(1, num_proposals + 1)
-        ])
+        proposal_states = await rp.multicall(
+            [
+                proposal_contract.functions.getState(proposal_id)
+                for proposal_id in range(1, num_proposals + 1)
+            ]
+        )
 
         proposals = {state: [] for state in ProtocolDAO.ProposalState}
         for proposal_id in range(1, num_proposals + 1):
@@ -240,24 +276,39 @@ class ProtocolDAO(DAO):
 
     async def fetch_proposal(self, proposal_id: int) -> Proposal:
         proposal_contract = await self._get_proposal_contract()
-        (proposer, message, payload, created, start, phase1_end, phase2_end,
-         expires, vp_for_raw, vp_against_raw, vp_veto_raw, vp_abstain_raw,
-         vp_required_raw, veto_quorum_raw) = await rp.multicall([
-             proposal_contract.functions.getProposer(proposal_id),
-             proposal_contract.functions.getMessage(proposal_id),
-             proposal_contract.functions.getPayload(proposal_id),
-             proposal_contract.functions.getCreated(proposal_id),
-             proposal_contract.functions.getStart(proposal_id),
-             proposal_contract.functions.getPhase1End(proposal_id),
-             proposal_contract.functions.getPhase2End(proposal_id),
-             proposal_contract.functions.getExpires(proposal_id),
-             proposal_contract.functions.getVotingPowerFor(proposal_id),
-             proposal_contract.functions.getVotingPowerAgainst(proposal_id),
-             proposal_contract.functions.getVotingPowerVeto(proposal_id),
-             proposal_contract.functions.getVotingPowerAbstained(proposal_id),
-             proposal_contract.functions.getVotingPowerRequired(proposal_id),
-             proposal_contract.functions.getVetoQuorum(proposal_id)
-         ])
+        (
+            proposer,
+            message,
+            payload,
+            created,
+            start,
+            phase1_end,
+            phase2_end,
+            expires,
+            vp_for_raw,
+            vp_against_raw,
+            vp_veto_raw,
+            vp_abstain_raw,
+            vp_required_raw,
+            veto_quorum_raw,
+        ) = await rp.multicall(
+            [
+                proposal_contract.functions.getProposer(proposal_id),
+                proposal_contract.functions.getMessage(proposal_id),
+                proposal_contract.functions.getPayload(proposal_id),
+                proposal_contract.functions.getCreated(proposal_id),
+                proposal_contract.functions.getStart(proposal_id),
+                proposal_contract.functions.getPhase1End(proposal_id),
+                proposal_contract.functions.getPhase2End(proposal_id),
+                proposal_contract.functions.getExpires(proposal_id),
+                proposal_contract.functions.getVotingPowerFor(proposal_id),
+                proposal_contract.functions.getVotingPowerAgainst(proposal_id),
+                proposal_contract.functions.getVotingPowerVeto(proposal_id),
+                proposal_contract.functions.getVotingPowerAbstained(proposal_id),
+                proposal_contract.functions.getVotingPowerRequired(proposal_id),
+                proposal_contract.functions.getVetoQuorum(proposal_id),
+            ]
+        )
         return ProtocolDAO.Proposal(
             id=proposal_id,
             proposer=cast(ChecksumAddress, proposer),
@@ -273,7 +324,7 @@ class ProtocolDAO(DAO):
             votes_veto=solidity.to_float(vp_veto_raw),
             votes_abstain=solidity.to_float(vp_abstain_raw),
             quorum=solidity.to_float(vp_required_raw),
-            veto_quorum=solidity.to_float(veto_quorum_raw)
+            veto_quorum=solidity.to_float(veto_quorum_raw),
         )
 
     def _build_vote_graph(self, proposal: Proposal) -> str:
@@ -283,15 +334,17 @@ class ProtocolDAO(DAO):
                 round(proposal.votes_for),
                 round(proposal.votes_against),
                 round(proposal.votes_abstain),
-                round(max(proposal.votes_total, proposal.quorum))
+                round(max(proposal.votes_total, proposal.quorum)),
             ],
             ["For", "Against", "Abstain", ""],
-            max_width=12
+            max_width=12,
         )
         main_quorum_perc = proposal.votes_total / proposal.quorum
 
         lines = graph.get_string().split("\n")[:-1]
-        lines.append(f"Quorum: {main_quorum_perc:.2%}{' ✔' if (main_quorum_perc >= 1) else ''}")
+        lines.append(
+            f"Quorum: {main_quorum_perc:.2%}{' ✔' if (main_quorum_perc >= 1) else ''}"
+        )
 
         if proposal.votes_veto > 0:
             graph = tpl.figure()
@@ -300,14 +353,16 @@ class ProtocolDAO(DAO):
                     round(proposal.votes_veto),
                     round(max(proposal.votes_veto, proposal.veto_quorum)),
                 ],
-                [f"{'Veto' : <{len('Against')}}", ""],
-                max_width=12
+                [f"{'Veto': <{len('Against')}}", ""],
+                max_width=12,
             )
             veto_graph_bars = graph.get_string().split("\n")
             veto_quorum_perc = proposal.votes_veto / proposal.veto_quorum
 
             lines.append("")
-            lines.append(f"{veto_graph_bars[0] : <{len(veto_graph_bars[1])}}▏")
-            lines.append(f"Quorum: {veto_quorum_perc:.2%}{' ✔' if (veto_quorum_perc >= 1) else ''}")
+            lines.append(f"{veto_graph_bars[0]: <{len(veto_graph_bars[1])}}▏")
+            lines.append(
+                f"Quorum: {veto_quorum_perc:.2%}{' ✔' if (veto_quorum_perc >= 1) else ''}"
+            )
 
         return "\n".join(lines)

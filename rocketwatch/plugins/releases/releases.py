@@ -25,7 +25,9 @@ class Releases(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         async with aiohttp.ClientSession() as session:
-            res = await session.get("https://api.github.com/repos/rocket-pool/smartnode-install/tags")
+            res = await session.get(
+                "https://api.github.com/repos/rocket-pool/smartnode-install/tags"
+            )
             res = await res.json()
         latest_release = None
         for tag in res:
@@ -34,7 +36,9 @@ class Releases(commands.Cog):
                 break
 
         e = Embed()
-        e.add_field(name="Latest Smart Node Release", value=latest_release, inline=False)
+        e.add_field(
+            name="Latest Smart Node Release", value=latest_release, inline=False
+        )
         await interaction.followup.send(embed=e)
 
 

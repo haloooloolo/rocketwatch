@@ -18,14 +18,26 @@ class Reloader(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    async def _get_loaded_extensions(self, interaction: Interaction, current: str) -> list[Choice[str]]:
+    async def _get_loaded_extensions(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
         loaded = {ext.split(".")[-1] for ext in self.bot.extensions}
-        return [Choice(name=plugin, value=plugin) for plugin in loaded if current.lower() in plugin.lower()][:25]
+        return [
+            Choice(name=plugin, value=plugin)
+            for plugin in loaded
+            if current.lower() in plugin.lower()
+        ][:25]
 
-    async def _get_unloaded_extensions(self, interaction: Interaction, current: str) -> list[Choice[str]]:
+    async def _get_unloaded_extensions(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
         loaded = {ext.split(".")[-1] for ext in self.bot.extensions}
-        all = {path.stem for path in Path("plugins").glob('**/*.py')}
-        return [Choice(name=plugin, value=plugin) for plugin in (all - loaded) if current.lower() in plugin.lower()][:25]
+        all = {path.stem for path in Path("plugins").glob("**/*.py")}
+        return [
+            Choice(name=plugin, value=plugin)
+            for plugin in (all - loaded)
+            if current.lower() in plugin.lower()
+        ][:25]
 
     @command()
     @guilds(cfg.discord.owner.server_id)
@@ -39,7 +51,9 @@ class Reloader(Cog):
             await interaction.followup.send(content=f"Loaded plugin `{module}`!")
             await self.bot.sync_commands()
         except ExtensionAlreadyLoaded:
-            await interaction.followup.send(content=f"Plugin `{module}` already loaded!")
+            await interaction.followup.send(
+                content=f"Plugin `{module}` already loaded!"
+            )
         except ExtensionNotFound:
             await interaction.followup.send(content=f"Plugin `{module}` not found!")
 

@@ -12,7 +12,7 @@ def get_logs(
     event: ContractEvent,
     from_block: BlockNumber,
     to_block: BlockNumber,
-    arg_filters: dict[str, Any] | None = None
+    arg_filters: dict[str, Any] | None = None,
 ) -> list[LogReceipt]:
     start_block = from_block
     end_block = to_block
@@ -29,7 +29,7 @@ def get_logs(
         logs += event.get_logs(
             from_block=from_block,
             to_block=min(to_block, end_block),
-            argument_filters=arg_filters
+            argument_filters=arg_filters,
         )
 
         from_block = to_block + 1

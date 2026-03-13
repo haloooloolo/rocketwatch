@@ -41,10 +41,7 @@ class About(commands.Cog):
                     aiohttp.ClientSession() as session,
                     session.get(
                         "https://wakatime.com/api/v1/users/current/all_time_since_today",
-                        params={
-                            "project": "rocketwatch",
-                            "api_key": api_key
-                        }
+                        params={"project": "rocketwatch", "api_key": api_key},
                     ) as resp,
                 ):
                     code_time = (await resp.json())["data"]["text"]
@@ -52,16 +49,22 @@ class About(commands.Cog):
                 await self.bot.report_error(err)
 
         if code_time:
-            e.add_field(name="Project Statistics",
-                        value=f"An estimate of {code_time} has been spent developing this bot!",
-                        inline=False)
+            e.add_field(
+                name="Project Statistics",
+                value=f"An estimate of {code_time} has been spent developing this bot!",
+                inline=False,
+            )
 
-        e.add_field(name="Bot Statistics",
-                    value=f"{len(g)} guilds joined and "
-                          f"{humanize.intcomma(sum(guild.member_count for guild in g))} members reached!",
-                    inline=False)
+        e.add_field(
+            name="Bot Statistics",
+            value=f"{len(g)} guilds joined and "
+            f"{humanize.intcomma(sum(guild.member_count for guild in g))} members reached!",
+            inline=False,
+        )
 
-        address = await el_explorer_url(cfg.rocketpool.manual_addresses["rocketStorage"])
+        address = await el_explorer_url(
+            cfg.rocketpool.manual_addresses["rocketStorage"]
+        )
         e.add_field(name="Storage Contract", value=address)
 
         e.add_field(name="Chain", value=cfg.rocketpool.chain.capitalize())
@@ -69,11 +72,16 @@ class About(commands.Cog):
         e.add_field(name="Plugins loaded", value=str(len(self.bot.cogs)))
 
         e.add_field(name="Host CPU", value=f"{psutil.cpu_percent():.2f}%")
-        e.add_field(name="Host Memory", value=f"{psutil.virtual_memory().percent}% used")
-        e.add_field(name="Bot Memory", value=f"{humanize.naturalsize(self.process.memory_info().rss)} used")
+        e.add_field(
+            name="Host Memory", value=f"{psutil.virtual_memory().percent}% used"
+        )
+        e.add_field(
+            name="Bot Memory",
+            value=f"{humanize.naturalsize(self.process.memory_info().rss)} used",
+        )
 
         load = [x / psutil.cpu_count() for x in psutil.getloadavg()]
-        e.add_field(name="Host Load", value=' / '.join(f"{pct:.0%}" for pct in load))
+        e.add_field(name="Host Load", value=" / ".join(f"{pct:.0%}" for pct in load))
 
         system_uptime = uptime.uptime()
         e.add_field(name="Host Uptime", value=f"{readable.pretty_time(system_uptime)}")
@@ -85,7 +93,12 @@ class About(commands.Cog):
 
         # show credits
         try:
-            async with aiohttp.ClientSession() as session, session.get(f"https://api.github.com/repos/{repo_name}/contributors") as resp:
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(
+                    f"https://api.github.com/repos/{repo_name}/contributors"
+                ) as resp,
+            ):
                 contributors_data = await resp.json()
             contributors = [
                 f"[{c['login']}]({c['html_url']}) ({c['contributions']})"

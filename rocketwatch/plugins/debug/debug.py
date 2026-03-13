@@ -34,7 +34,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def get_members_of_role(self, interaction: Interaction, guild_id: str, role_id: str):
+    async def get_members_of_role(
+        self, interaction: Interaction, guild_id: str, role_id: str
+    ):
         """Get members of a role"""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -43,9 +45,15 @@ class Debug(Cog):
             role = guild.get_role(int(role_id))
             log.debug(role)
             # print name + identifier and id of each member
-            members = [f"{member.name}#{member.discriminator}, ({member.id})" for member in role.members]
+            members = [
+                f"{member.name}#{member.discriminator}, ({member.id})"
+                for member in role.members
+            ]
             # generate a file with a header that mentions what role and guild the members are from
-            content = f"Members of {role.name} ({role.id}) in {guild.name} ({guild.id})\n\n" + "\n".join(members)
+            content = (
+                f"Members of {role.name} ({role.id}) in {guild.name} ({guild.id})\n\n"
+                + "\n".join(members)
+            )
             file = File(io.StringIO(content), "members.txt")
             await interaction.followup.send(file=file)
         except Exception as err:
@@ -87,7 +95,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def edit_embed(self, interaction: Interaction, message_url: str, new_description: str):
+    async def edit_embed(
+        self, interaction: Interaction, message_url: str, new_description: str
+    ):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
@@ -107,7 +117,9 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         transaction_receipt = await w3.eth.get_transaction(tnx_hash)
         if revert_reason := await rp.get_revert_reason(transaction_receipt):
-            await interaction.followup.send(content=f"```Revert reason: {revert_reason}```")
+            await interaction.followup.send(
+                content=f"```Revert reason: {revert_reason}```"
+            )
         else:
             await interaction.followup.send(content="```No revert reason Available```")
 
@@ -120,7 +132,9 @@ class Debug(Cog):
         """
         await interaction.response.defer(ephemeral=True)
         if not confirm:
-            await interaction.followup.send("Not running. Set `confirm` to `true` to run.")
+            await interaction.followup.send(
+                "Not running. Set `confirm` to `true` to run."
+            )
             return
         await self.bot.db.minipools.drop()
         await interaction.followup.send(content="Done")
@@ -158,14 +172,19 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         channel = await self.bot.get_or_fetch_channel(int(channel))
         e = Embed(title="Announcement", description=message)
-        e.add_field(name="Timestamp", value=f"<t:{int(time.time())}:R> (<t:{int(time.time())}:f>)")
+        e.add_field(
+            name="Timestamp",
+            value=f"<t:{int(time.time())}:R> (<t:{int(time.time())}:f>)",
+        )
         await channel.send(embed=e)
         await interaction.followup.send(content="Done")
 
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def restore_support_template(self, interaction: Interaction, template_name: str, message_url: str):
+    async def restore_support_template(
+        self, interaction: Interaction, template_name: str, message_url: str
+    ):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
@@ -179,7 +198,9 @@ class Debug(Cog):
         from datetime import datetime
 
         edit_line = template_embed.description.splitlines()[-1]
-        match = re.search(r"Last Edited by <@(?P<user>[0-9]+)> <t:(?P<ts>[0-9]+):R>", edit_line)
+        match = re.search(
+            r"Last Edited by <@(?P<user>[0-9]+)> <t:(?P<ts>[0-9]+):R>", edit_line
+        )
         user_id = int(match.group("user"))
         ts = int(match.group("ts"))
 
@@ -187,21 +208,19 @@ class Debug(Cog):
 
         await self.bot.db.support_bot_dumps.insert_one(
             {
-                "ts"      : datetime.fromtimestamp(ts, tz=UTC),
+                "ts": datetime.fromtimestamp(ts, tz=UTC),
                 "template": template_name,
-                "prev"    : None,
-                "new"     : {
-                    "title"      : template_title,
-                    "description": template_description
-                },
-                "author"  : {
-                    "id"  : user.id,
-                    "name": user.name
-                }
+                "prev": None,
+                "new": {"title": template_title, "description": template_description},
+                "author": {"id": user.id, "name": user.name},
             }
         )
         await self.bot.db.support_bot.insert_one(
-            {"_id": template_name, "title": template_title, "description": template_description}
+            {
+                "_id": template_name,
+                "title": template_title,
+                "description": template_description,
+            }
         )
 
         await interaction.followup.send(content="Done")
@@ -221,26 +240,38 @@ class Debug(Cog):
 
         filtered_events = []
         for event_log in (await w3.eth.get_transaction_receipt(tx_hash)).logs:
-            if ("topics" in event_log) and (event_log["topics"][0].hex() in events_plugin.topic_map):
+            if ("topics" in event_log) and (
+                event_log["topics"][0].hex() in events_plugin.topic_map
+            ):
                 filtered_events.append(event_log)
 
         channels = cfg.discord.channels
         events, _ = events_plugin.process_events(filtered_events)
         for event in events:
-            channel_candidates = [value for key, value in channels.items() if event.event_name.startswith(key)]
-            channel_id = channel_candidates[0] if channel_candidates else channels["default"]
-            await self.bot.db.event_queue.insert_one({
-                "_id": event.unique_id,
-                "embed": pickle.dumps(event.embed),
-                "topic": event.topic,
-                "event_name": event.event_name,
-                "block_number": event.block_number,
-                "score": event.get_score(),
-                "time_seen": datetime.now(),
-                "attachment": pickle.dumps(event.attachment) if event.attachment else None,
-                "channel_id": channel_id,
-                "message_id": None
-            })
+            channel_candidates = [
+                value
+                for key, value in channels.items()
+                if event.event_name.startswith(key)
+            ]
+            channel_id = (
+                channel_candidates[0] if channel_candidates else channels["default"]
+            )
+            await self.bot.db.event_queue.insert_one(
+                {
+                    "_id": event.unique_id,
+                    "embed": pickle.dumps(event.embed),
+                    "topic": event.topic,
+                    "event_name": event.event_name,
+                    "block_number": event.block_number,
+                    "score": event.get_score(),
+                    "time_seen": datetime.now(),
+                    "attachment": pickle.dumps(event.attachment)
+                    if event.attachment
+                    else None,
+                    "channel_id": channel_id,
+                    "message_id": None,
+                }
+            )
             await interaction.followup.send(embed=event.embed)
         await interaction.followup.send(content="Done")
 

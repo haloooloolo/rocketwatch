@@ -72,20 +72,22 @@ class CEX(Exchange, ABC):
 
     @retry_async(tries=3, delay=1)
     async def _get_order_book(
-            self,
-            market: Market,
-            session: aiohttp.ClientSession
+        self, market: Market, session: aiohttp.ClientSession
     ) -> tuple[dict[float, float], dict[float, float]]:
         params = self._get_request_params(market)
         url = self._api_base_url + self._get_request_path(market)
-        response = await session.get(url, params=params, headers={"User-Agent": "Rocket Watch"})
+        response = await session.get(
+            url, params=params, headers={"User-Agent": "Rocket Watch"}
+        )
         log.debug(f"response from {url}: {response}")
         data = await response.json()
         bids = OrderedDict(sorted(self._get_bids(data).items(), reverse=True))
         asks = OrderedDict(sorted(self._get_asks(data).items()))
         return bids, asks
 
-    async def _get_liquidity(self, market: Market, session: aiohttp.ClientSession) -> Liquidity | None:
+    async def _get_liquidity(
+        self, market: Market, session: aiohttp.ClientSession
+    ) -> Liquidity | None:
         bids, asks = await self._get_order_book(market, session)
         if not (bids and asks):
             log.warning("Empty order book")
@@ -114,7 +116,9 @@ class CEX(Exchange, ABC):
 
         return Liquidity(price, depth_at)
 
-    async def get_liquidity(self, session: aiohttp.ClientSession) -> dict[Market, Liquidity]:
+    async def get_liquidity(
+        self, session: aiohttp.ClientSession
+    ) -> dict[Market, Liquidity]:
         markets = {}
         for market in self.markets:
             if liq := await self._get_liquidity(market, session):
@@ -164,10 +168,16 @@ class Coinbase(CEX):
         return {"product_id": f"{market.major}-{market.minor}"}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(bid["price"]): float(bid["size"]) for bid in api_response["pricebook"]["bids"]}
+        return {
+            float(bid["price"]): float(bid["size"])
+            for bid in api_response["pricebook"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(ask["price"]): float(ask["size"]) for ask in api_response["pricebook"]["asks"]}
+        return {
+            float(ask["price"]): float(ask["size"])
+            for ask in api_response["pricebook"]["asks"]
+        }
 
 
 class Deepcoin(CEX):
@@ -188,10 +198,14 @@ class Deepcoin(CEX):
         return {"instId": f"{market.major}-{market.minor}", "sz": 400}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["bids"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["asks"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["asks"]
+        }
 
 
 class GateIO(CEX):
@@ -236,10 +250,16 @@ class OKX(CEX):
         return {"instId": f"{market.major}-{market.minor}", "sz": 400}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _, _ in api_response["data"][0]["bids"]}
+        return {
+            float(price): float(size)
+            for price, size, _, _ in api_response["data"][0]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _, _ in api_response["data"][0]["asks"]}
+        return {
+            float(price): float(size)
+            for price, size, _, _ in api_response["data"][0]["asks"]
+        }
 
 
 class Bitget(CEX):
@@ -260,10 +280,14 @@ class Bitget(CEX):
         return {"symbol": f"{market.major}{market.minor}", "limit": 150}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["bids"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["asks"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["asks"]
+        }
 
 
 class MEXC(CEX):
@@ -305,13 +329,21 @@ class Bybit(CEX):
 
     @staticmethod
     def _get_request_params(market: Market) -> dict[str, str | int]:
-        return {"category": "spot", "symbol": f"{market.major}{market.minor}", "limit": 200}
+        return {
+            "category": "spot",
+            "symbol": f"{market.major}{market.minor}",
+            "limit": 200,
+        }
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["result"]["b"]}
+        return {
+            float(price): float(size) for price, size in api_response["result"]["b"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["result"]["a"]}
+        return {
+            float(price): float(size) for price, size in api_response["result"]["a"]
+        }
 
 
 class CryptoDotCom(CEX):
@@ -335,10 +367,16 @@ class CryptoDotCom(CEX):
         return {"instrument_name": f"{market.major}_{market.minor}", "depth": 150}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in api_response["result"]["data"][0]["bids"]}
+        return {
+            float(price): float(size)
+            for price, size, _ in api_response["result"]["data"][0]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in api_response["result"]["data"][0]["asks"]}
+        return {
+            float(price): float(size)
+            for price, size, _ in api_response["result"]["data"][0]["asks"]
+        }
 
 
 class Kraken(CEX):
@@ -359,10 +397,16 @@ class Kraken(CEX):
         return {"pair": f"{market.major}{market.minor}", "count": 500}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in next(iter(api_response["result"].values()))["bids"]}
+        return {
+            float(price): float(size)
+            for price, size, _ in next(iter(api_response["result"].values()))["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size, _ in next(iter(api_response["result"].values()))["asks"]}
+        return {
+            float(price): float(size)
+            for price, size, _ in next(iter(api_response["result"].values()))["asks"]
+        }
 
 
 class Kucoin(CEX):
@@ -383,10 +427,14 @@ class Kucoin(CEX):
         return {"symbol": f"{market.major}-{market.minor}"}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["bids"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["asks"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["asks"]
+        }
 
 
 class Bithumb(CEX):
@@ -407,10 +455,16 @@ class Bithumb(CEX):
         return {"markets": f"{market.minor}-{market.major}"}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {entry["bid_price"]: entry["bid_size"] for entry in api_response[0]["orderbook_units"]}
+        return {
+            entry["bid_price"]: entry["bid_size"]
+            for entry in api_response[0]["orderbook_units"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {entry["ask_price"]: entry["ask_size"] for entry in api_response[0]["orderbook_units"]}
+        return {
+            entry["ask_price"]: entry["ask_size"]
+            for entry in api_response[0]["orderbook_units"]
+        }
 
 
 class BingX(CEX):
@@ -431,10 +485,14 @@ class BingX(CEX):
         return {"symbol": f"{market.major}-{market.minor}", "limit": 1000}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["bids"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["asks"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["asks"]
+        }
 
 
 class Bitvavo(CEX):
@@ -476,13 +534,20 @@ class HTX(CEX):
 
     @staticmethod
     def _get_request_params(market: Market) -> dict[str, str | int]:
-        return {"symbol": f"{market.major.lower()}{market.minor.lower()}", "type": "step0"}
+        return {
+            "symbol": f"{market.major.lower()}{market.minor.lower()}",
+            "type": "step0",
+        }
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["tick"]["bids"]}
+        return {
+            float(entry[0]): float(entry[1]) for entry in api_response["tick"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["tick"]["asks"]}
+        return {
+            float(entry[0]): float(entry[1]) for entry in api_response["tick"]["asks"]
+        }
 
 
 class BitMart(CEX):
@@ -503,10 +568,14 @@ class BitMart(CEX):
         return {"symbol": f"{market.major}_{market.minor}", "limit": 50}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["data"]["bids"]}
+        return {
+            float(entry[0]): float(entry[1]) for entry in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["data"]["asks"]}
+        return {
+            float(entry[0]): float(entry[1]) for entry in api_response["data"]["asks"]
+        }
 
 
 class Bitrue(CEX):
@@ -527,10 +596,16 @@ class Bitrue(CEX):
         return {"symbol": f"{market.major}{market.minor}"}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["data"]["tick"]["b"]}
+        return {
+            float(entry[0]): float(entry[1])
+            for entry in api_response["data"]["tick"]["b"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(entry[0]): float(entry[1]) for entry in api_response["data"]["tick"]["a"]}
+        return {
+            float(entry[0]): float(entry[1])
+            for entry in api_response["data"]["tick"]["a"]
+        }
 
 
 class CoinTR(CEX):
@@ -551,10 +626,14 @@ class CoinTR(CEX):
         return {"symbol": f"{market.major}{market.minor}", "limit": 150}
 
     def _get_bids(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["bids"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["bids"]
+        }
 
     def _get_asks(self, api_response: dict) -> dict[float, float]:
-        return {float(price): float(size) for price, size in api_response["data"]["asks"]}
+        return {
+            float(price): float(size) for price, size in api_response["data"]["asks"]
+        }
 
 
 class DigiFinex(CEX):
@@ -588,13 +667,12 @@ class ERC20Token:
         self.decimals = decimals
 
     @classmethod
-    async def create(cls, address: ChecksumAddress) -> 'ERC20Token':
+    async def create(cls, address: ChecksumAddress) -> "ERC20Token":
         address = w3.to_checksum_address(address)
         contract = await rp.assemble_contract("ERC20", address, mainnet=True)
-        symbol, decimals = await rp.multicall([
-            contract.functions.symbol(),
-            contract.functions.decimals()
-        ])
+        symbol, decimals = await rp.multicall(
+            [contract.functions.symbol(), contract.functions.decimals()]
+        )
         return cls(address, symbol, decimals)
 
     def __str__(self) -> str:
@@ -631,14 +709,16 @@ class DEX(Exchange, ABC):
 
 class BalancerV2(DEX):
     class WeightedPool(DEX.LiquidityPool):
-        def __init__(self, pool_id: HexStr, vault, token_0: ERC20Token, token_1: ERC20Token):
+        def __init__(
+            self, pool_id: HexStr, vault, token_0: ERC20Token, token_1: ERC20Token
+        ):
             self.id = pool_id
             self.vault = vault
             self.token_0 = token_0
             self.token_1 = token_1
 
         @classmethod
-        async def create(cls, pool_id: HexStr) -> 'BalancerV2.WeightedPool':
+        async def create(cls, pool_id: HexStr) -> "BalancerV2.WeightedPool":
             vault = await rp.get_contract_by_name("BalancerVault", mainnet=True)
             tokens = (await vault.functions.getPoolTokens(pool_id).call())[0]
             token_0 = await ERC20Token.create(tokens[0])
@@ -650,10 +730,14 @@ class BalancerV2(DEX):
             return balances[1] / balances[0] if (balances[0] > 0) else 0
 
         async def get_normalized_price(self) -> float:
-            return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
+            return await self.get_price() * 10 ** (
+                self.token_0.decimals - self.token_1.decimals
+            )
 
         async def get_liquidity(self) -> Liquidity | None:
-            balance_0, balance_1 = (await self.vault.functions.getPoolTokens(self.id).call())[1]
+            balance_0, balance_1 = (
+                await self.vault.functions.getPoolTokens(self.id).call()
+            )[1]
             if (balance_0 == 0) or (balance_1 == 0):
                 log.warning("Empty token balances")
                 return None
@@ -665,7 +749,7 @@ class BalancerV2(DEX):
             def depth_at(_price: float) -> float:
                 invariant = balance_0 * balance_1
                 new_balance_0 = math.sqrt(_price * invariant / balance_norm)
-                return abs(new_balance_0 - balance_0) / (10 ** self.token_0.decimals)
+                return abs(new_balance_0 - balance_0) / (10**self.token_0.decimals)
 
             return Liquidity(price, depth_at)
 
@@ -688,15 +772,21 @@ class UniswapV3(DEX):
 
     @staticmethod
     def tick_to_price(tick: int) -> float:
-        return 1.0001 ** tick
+        return 1.0001**tick
 
     @staticmethod
     def price_to_tick(price: float) -> float:
         return math.log(price, 1.0001)
 
     class Pool(DEX.LiquidityPool):
-        def __init__(self, pool_address: ChecksumAddress, contract, tick_spacing: int,
-                     token_0: ERC20Token, token_1: ERC20Token):
+        def __init__(
+            self,
+            pool_address: ChecksumAddress,
+            contract,
+            tick_spacing: int,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
+        ):
             self.pool_address = pool_address
             self.contract = contract
             self.tick_spacing = tick_spacing
@@ -704,13 +794,17 @@ class UniswapV3(DEX):
             self.token_1 = token_1
 
         @classmethod
-        async def create(cls, pool_address: ChecksumAddress) -> 'UniswapV3.Pool':
-            contract = await rp.assemble_contract("UniswapV3Pool", pool_address, mainnet=True)
-            tick_spacing, token_0_addr, token_1_addr = await rp.multicall([
-                contract.functions.tickSpacing(),
-                contract.functions.token0(),
-                contract.functions.token1()
-            ])
+        async def create(cls, pool_address: ChecksumAddress) -> "UniswapV3.Pool":
+            contract = await rp.assemble_contract(
+                "UniswapV3Pool", pool_address, mainnet=True
+            )
+            tick_spacing, token_0_addr, token_1_addr = await rp.multicall(
+                [
+                    contract.functions.tickSpacing(),
+                    contract.functions.token0(),
+                    contract.functions.token1(),
+                ]
+            )
             token_0 = await ERC20Token.create(token_0_addr)
             token_1 = await ERC20Token.create(token_1_addr)
             return cls(pool_address, contract, tick_spacing, token_0, token_1)
@@ -725,7 +819,9 @@ class UniswapV3(DEX):
             return word_position, bit_position
 
         async def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
-            results = await rp.multicall([self.contract.functions.ticks(tick) for tick in ticks])
+            results = await rp.multicall(
+                [self.contract.functions.ticks(tick) for tick in ticks]
+            )
             return dict(zip(ticks, [r[1] for r in results], strict=False))
 
         async def get_initialized_ticks(self, current_tick: int) -> list[int]:
@@ -733,9 +829,9 @@ class UniswapV3(DEX):
             active_word, b = self.tick_to_word_and_bit(current_tick)
 
             word_range = list(range(active_word - 5, active_word + 5))
-            bitmaps = await rp.multicall([
-                self.contract.functions.tickBitmap(word) for word in word_range
-            ])
+            bitmaps = await rp.multicall(
+                [self.contract.functions.tickBitmap(word) for word in word_range]
+            )
 
             for word, tick_bitmap in zip(word_range, bitmaps, strict=False):
                 if not tick_bitmap:
@@ -748,24 +844,28 @@ class UniswapV3(DEX):
 
             return ticks
 
-        def liquidity_to_tokens(self, liquidity: int, tick_lower: int, tick_upper: int) -> tuple[float, float]:
+        def liquidity_to_tokens(
+            self, liquidity: int, tick_lower: int, tick_upper: int
+        ) -> tuple[float, float]:
             sqrtp_lower = math.sqrt(UniswapV3.tick_to_price(tick_lower))
             sqrtp_upper = math.sqrt(UniswapV3.tick_to_price(tick_upper))
 
             delta_x = (1 / sqrtp_lower - 1 / sqrtp_upper) * liquidity
             delta_y = (sqrtp_upper - sqrtp_lower) * liquidity
 
-            balance_0 = float(delta_x / (10 ** self.token_0.decimals))
-            balance_1 = float(delta_y / (10 ** self.token_1.decimals))
+            balance_0 = float(delta_x / (10**self.token_0.decimals))
+            balance_1 = float(delta_y / (10**self.token_1.decimals))
 
             return balance_0, balance_1
 
         async def get_price(self) -> float:
             sqrt96x = (await self.contract.functions.slot0().call())[0]
-            return (sqrt96x ** 2) / (2 ** 192)
+            return (sqrt96x**2) / (2**192)
 
         async def get_normalized_price(self) -> float:
-            return await self.get_price() * 10 ** (self.token_0.decimals - self.token_1.decimals)
+            return await self.get_price() * 10 ** (
+                self.token_0.decimals - self.token_1.decimals
+            )
 
         async def get_liquidity(self) -> Liquidity | None:
             price = await self.get_price()
@@ -786,16 +886,22 @@ class UniswapV3(DEX):
                 last_tick = calculated_tick
                 active_liquidity = initial_liquidity
 
-                net_liquidity: dict[int, int] = await self.get_ticks_net_liquidity(_ticks)
+                net_liquidity: dict[int, int] = await self.get_ticks_net_liquidity(
+                    _ticks
+                )
                 liquidity = []
 
                 # assume liquidity in token 0 for now
                 for tick in _ticks:
                     if tick > last_tick:
-                        liq_0, _ = self.liquidity_to_tokens(active_liquidity, last_tick, tick)
+                        liq_0, _ = self.liquidity_to_tokens(
+                            active_liquidity, last_tick, tick
+                        )
                         active_liquidity += net_liquidity[tick]
                     else:
-                        liq_0, _ = self.liquidity_to_tokens(active_liquidity, tick, last_tick)
+                        liq_0, _ = self.liquidity_to_tokens(
+                            active_liquidity, tick, last_tick
+                        )
                         active_liquidity -= net_liquidity[tick]
 
                     cumulative_liquidity += liq_0
@@ -804,7 +910,9 @@ class UniswapV3(DEX):
 
                 return liquidity
 
-            ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [UniswapV3.MIN_TICK]
+            ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [
+                UniswapV3.MIN_TICK
+            ]
             ask_liquidity = [0] + await get_cumulative_liquidity(ask_ticks)
             ask_ticks.insert(0, calculated_tick)
 
@@ -832,7 +940,9 @@ class UniswapV3(DEX):
                 if i >= len(liquidity_levels):
                     return liquidity_levels[-1]
 
-                range_share = abs(tick - liq_ticks[i - 1]) / abs(liq_ticks[i] - liq_ticks[i - 1])
+                range_share = abs(tick - liq_ticks[i - 1]) / abs(
+                    liq_ticks[i] - liq_ticks[i - 1]
+                )
                 range_liquidity = abs(liquidity_levels[i] - liquidity_levels[i - 1])
                 # linear interpolation should be fine since ticks are exponential
                 return liquidity_levels[i - 1] + range_share * range_liquidity
@@ -843,7 +953,7 @@ class UniswapV3(DEX):
         super().__init__(pools)
 
     @classmethod
-    async def create(cls, pool_addresses: list[ChecksumAddress]) -> 'UniswapV3':
+    async def create(cls, pool_addresses: list[ChecksumAddress]) -> "UniswapV3":
         pools = [await UniswapV3.Pool.create(addr) for addr in pool_addresses]
         return cls(pools)
 

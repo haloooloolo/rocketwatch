@@ -24,9 +24,13 @@ class RPIPs(Cog):
         """Show information about a specific RPIP."""
         await interaction.response.defer()
         embed = Embed()
-        embed.set_author(name="🔗 Data from rpips.rocketpool.net", url="https://rpips.rocketpool.net")
+        embed.set_author(
+            name="🔗 Data from rpips.rocketpool.net", url="https://rpips.rocketpool.net"
+        )
 
-        rpips_by_name: dict[str, RPIPs.RPIP] = {rpip.full_title: rpip for rpip in await self.get_all_rpips()}
+        rpips_by_name: dict[str, RPIPs.RPIP] = {
+            rpip.full_title: rpip for rpip in await self.get_all_rpips()
+        }
         if rpip := rpips_by_name.get(name):
             details = await rpip.fetch_details()
             embed.title = name
@@ -41,7 +45,9 @@ class RPIPs(Cog):
 
             embed.add_field(name="Status", value=rpip.status)
             embed.add_field(name="Created", value=details["created"])
-            embed.add_field(name="Discussion Link", value=details["discussion"], inline=False)
+            embed.add_field(
+                name="Discussion Link", value=details["discussion"], inline=False
+            )
         else:
             embed.description = "No matching RPIPs."
 
@@ -61,13 +67,18 @@ class RPIPs(Cog):
         @cached(ttl=300, key_builder=lambda _, rpip: rpip.number)
         @retry_async(tries=3, delay=1)
         async def fetch_details(self) -> dict:
-            async with aiohttp.ClientSession() as session, session.get(self.url) as resp:
+            async with (
+                aiohttp.ClientSession() as session,
+                session.get(self.url) as resp,
+            ):
                 html = await resp.text()
 
             soup = BeautifulSoup(html, "html.parser")
             metadata = {}
 
-            for field in soup.main.find("table", {"class": "rpip-preamble"}).find_all("tr"):
+            for field in soup.main.find("table", {"class": "rpip-preamble"}).find_all(
+                "tr"
+            ):
                 match field_name := field.th.text:
                     case "Discussion":
                         metadata[field_name] = field.td.a["href"]
@@ -81,7 +92,7 @@ class RPIPs(Cog):
                 "authors": metadata.get("Author"),
                 "created": metadata.get("Created"),
                 "discussion": metadata.get("Discussion"),
-                "description": soup.find("big", {"class": "rpip-description"}).text
+                "description": soup.find("big", {"class": "rpip-description"}).text,
             }
 
         @property
@@ -93,7 +104,9 @@ class RPIPs(Cog):
             return f"https://rpips.rocketpool.net/RPIPs/RPIP-{self.number}"
 
     @rpip.autocomplete("name")
-    async def _get_rpip_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
+    async def _get_rpip_names(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
         choices = []
         for rpip in await self.get_all_rpips():
             if current.lower() in (name := rpip.full_title).lower():
@@ -103,8 +116,11 @@ class RPIPs(Cog):
     @staticmethod
     @cached(ttl=60)
     @retry_async(tries=3, delay=1)
-    async def get_all_rpips() -> list['RPIPs.RPIP']:
-        async with aiohttp.ClientSession() as session, session.get("https://rpips.rocketpool.net/all") as resp:
+    async def get_all_rpips() -> list["RPIPs.RPIP"]:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get("https://rpips.rocketpool.net/all") as resp,
+        ):
             html = await resp.text()
 
         soup = BeautifulSoup(html, "html.parser")

@@ -52,23 +52,38 @@ class APR(commands.Cog):
         cursor_block = (await w3_archive.eth.get_block("latest"))["number"]
         while True:
             # get address of rocketNetworkBalances contract at cursor block
-            address = await rp.uncached_get_address_by_name("rocketNetworkBalances", block=cursor_block)
-            balance_block = await rp.call("rocketNetworkBalances.getBalancesBlock", block=cursor_block, address=address)
+            address = await rp.uncached_get_address_by_name(
+                "rocketNetworkBalances", block=cursor_block
+            )
+            balance_block = await rp.call(
+                "rocketNetworkBalances.getBalancesBlock",
+                block=cursor_block,
+                address=address,
+            )
             if balance_block == latest_db_block:
                 break
             block_time = (await w3.eth.get_block(balance_block))["timestamp"]
             # abort if the blocktime is older than 120 days
             if block_time < (datetime.now().timestamp() - 120 * 24 * 60 * 60):
                 break
-            reth_ratio = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block))
+            reth_ratio = solidity.to_float(
+                await rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block)
+            )
             effectiveness = solidity.to_float(
-                await rp.call("rocketNetworkBalances.getETHUtilizationRate", block=cursor_block, address=address))
-            await self.bot.db.reth_apr.insert_one({
-                "block"        : balance_block,
-                "time"         : block_time,
-                "value"        : reth_ratio,
-                "effectiveness": effectiveness
-            })
+                await rp.call(
+                    "rocketNetworkBalances.getETHUtilizationRate",
+                    block=cursor_block,
+                    address=address,
+                )
+            )
+            await self.bot.db.reth_apr.insert_one(
+                {
+                    "block": balance_block,
+                    "time": block_time,
+                    "value": reth_ratio,
+                    "effectiveness": effectiveness,
+                }
+            )
             cursor_block = balance_block - 1
 
     @task.before_loop
@@ -88,84 +103,69 @@ class APR(commands.Cog):
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
 
         # get the last 30 datapoints
-        datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
+        datapoints = (
+            await self.bot.db.reth_apr.find()
+            .sort("block", -1)
+            .limit(180 + 38)
+            .to_list(None)
+        )
         if len(datapoints) == 0:
             e.description = "No data available yet."
             return await interaction.followup.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.bot.db.minipools.aggregate([
-            {
-                '$match': {
-                    'beacon.status'       : 'active_ongoing',
-                    'node_fee'            : {
-                        '$ne': None
-                    },
-                    'node_deposit_balance': {
-                        '$ne': None
-                    }
-                }
-            }, {
-                '$project': {
-                    'fee'  : '$node_fee',
-                    'share': {
-                        '$multiply': [
-                            {
-                                '$subtract': [
-                                    1, {
-                                        '$divide': [
-                                            '$node_deposit_balance', 32
-                                        ]
-                                    }
-                                ]
-                            }, 100
-                        ]
-                    }
-                }
-            }, {
-                '$group': {
-                    '_id'          : None,
-                    'pre_numerator': {
-                        '$sum': '$fee'
-                    },
-                    'numerator'    : {
-                        '$sum': {
-                            '$multiply': [
-                                '$fee', '$share'
-                            ]
+        tmp = await (
+            await self.bot.db.minipools.aggregate(
+                [
+                    {
+                        "$match": {
+                            "beacon.status": "active_ongoing",
+                            "node_fee": {"$ne": None},
+                            "node_deposit_balance": {"$ne": None},
                         }
                     },
-                    'denominator'  : {
-                        '$sum': '$share'
-                    },
-                    'count'        : {
-                        '$sum': 1
-                    }
-                }
-            }, {
-                '$project': {
-                    'average'          : {
-                        '$divide': [
-                            '$numerator', '$denominator'
-                        ]
-                    },
-                    'reference_average': {
-                        '$divide': [
-                            '$pre_numerator', '$count'
-                        ]
-                    },
-                    'used_pETH_share'  : {
-                        '$divide': [
-                            {
-                                '$divide': [
-                                    '$denominator', '$count'
+                    {
+                        "$project": {
+                            "fee": "$node_fee",
+                            "share": {
+                                "$multiply": [
+                                    {
+                                        "$subtract": [
+                                            1,
+                                            {"$divide": ["$node_deposit_balance", 32]},
+                                        ]
+                                    },
+                                    100,
                                 ]
-                            }, 100
-                        ]
-                    }
-                }
-            }
-        ])).to_list(length=1)
+                            },
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": None,
+                            "pre_numerator": {"$sum": "$fee"},
+                            "numerator": {"$sum": {"$multiply": ["$fee", "$share"]}},
+                            "denominator": {"$sum": "$share"},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {
+                        "$project": {
+                            "average": {"$divide": ["$numerator", "$denominator"]},
+                            "reference_average": {
+                                "$divide": ["$pre_numerator", "$count"]
+                            },
+                            "used_pETH_share": {
+                                "$divide": [
+                                    {"$divide": ["$denominator", "$count"]},
+                                    100,
+                                ]
+                            },
+                        }
+                    },
+                ]
+            )
+        ).to_list(length=1)
 
         node_fee = tmp[0]["average"] if len(tmp) > 0 else 20
         peth_share = tmp[0]["used_pETH_share"] if len(tmp) > 0 else 0.75
@@ -191,26 +191,61 @@ class APR(commands.Cog):
             # calculate the 7 day average
             if i > 8:
                 y_7d.append(to_apr(datapoints[i - 9], datapoints[i]))
-                y_7d_virtual.append(to_apr(datapoints[i - 9], datapoints[i], effective=False))
-                y_7d_claim = get_duration(datapoints[i - 9], datapoints[i]) / (60 * 60 * 24)
+                y_7d_virtual.append(
+                    to_apr(datapoints[i - 9], datapoints[i], effective=False)
+                )
+                y_7d_claim = get_duration(datapoints[i - 9], datapoints[i]) / (
+                    60 * 60 * 24
+                )
             else:
                 # if we dont have enough data, we dont show it
                 y_7d.append(None)
                 y_7d_virtual.append(None)
-        e.add_field(name=f"{y_7d_claim:.1f} Day Average rETH APR",
-                    value=f"{y_7d[-1]:.2%}")
-        e.add_field(name=f"{y_7d_claim:.1f} Day Average rETH APR (without Effectiveness Drag, Virtual)",
-                    value=f"{y_7d_virtual[-1]:.2%}", inline=False)
+        e.add_field(
+            name=f"{y_7d_claim:.1f} Day Average rETH APR", value=f"{y_7d[-1]:.2%}"
+        )
+        e.add_field(
+            name=f"{y_7d_claim:.1f} Day Average rETH APR (without Effectiveness Drag, Virtual)",
+            value=f"{y_7d_virtual[-1]:.2%}",
+            inline=False,
+        )
         fig = plt.figure()
         ax1 = plt.gca()
         ax2 = plt.twinx()
 
-        ax2.plot(x, y, marker="+", linestyle="", label="Period Average", alpha=0.6, color="orange")
+        ax2.plot(
+            x,
+            y,
+            marker="+",
+            linestyle="",
+            label="Period Average",
+            alpha=0.6,
+            color="orange",
+        )
         # ax2.plot(x, y_virtual, marker="x", linestyle="", label="Period Average (Virtual)", alpha=0.4)
         # ax2.plot(x, y_node_operators, marker="+", linestyle="", label="Node Operator APR", alpha=0.4)
-        ax2.plot(x, y_7d, linestyle="-", label=f"{y_7d_claim:.1f} Day Average", color="orange")
-        ax2.plot(x, y_7d_virtual, linestyle="-", label=f"{y_7d_claim:.1f} Day Average (Virtual)", color="green")
-        ax1.plot(x, y_effectiveness, linestyle="--", label="Effectiveness", alpha=0.7, color="royalblue")
+        ax2.plot(
+            x,
+            y_7d,
+            linestyle="-",
+            label=f"{y_7d_claim:.1f} Day Average",
+            color="orange",
+        )
+        ax2.plot(
+            x,
+            y_7d_virtual,
+            linestyle="-",
+            label=f"{y_7d_claim:.1f} Day Average (Virtual)",
+            color="green",
+        )
+        ax1.plot(
+            x,
+            y_effectiveness,
+            linestyle="--",
+            label="Effectiveness",
+            alpha=0.7,
+            color="royalblue",
+        )
 
         plt.title("Observed rETH APR values")
         plt.xlabel("Date")
@@ -230,7 +265,7 @@ class APR(commands.Cog):
 
         img = BytesIO()
         fig.tight_layout()
-        fig.savefig(img, format='png')
+        fig.savefig(img, format="png")
         img.seek(0)
         fig.clear()
         plt.close()
@@ -240,13 +275,15 @@ class APR(commands.Cog):
 
         e.set_image(url="attachment://reth_apr.png")
 
-        e.add_field(name="Current Average Effective Commission",
-                    value=f"{node_fee:.2%} (Observed pETH Share: {peth_share:.2%})",
-                    inline=False)
+        e.add_field(
+            name="Current Average Effective Commission",
+            value=f"{node_fee:.2%} (Observed pETH Share: {peth_share:.2%})",
+            inline=False,
+        )
 
-        e.add_field(name="Effectiveness",
-                    value=f"{y_effectiveness[-1]:.2%}",
-                    inline=False)
+        e.add_field(
+            name="Effectiveness", value=f"{y_effectiveness[-1]:.2%}", inline=False
+        )
         await interaction.followup.send(embed=e, file=File(img, "reth_apr.png"))
 
     @command()
@@ -255,88 +292,75 @@ class APR(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         e.title = "Current NO APR"
-        e.description = "Dashed red lines above and below the solid red one are leb8 and leb16 respectively. " \
-                        "The solid line is the protocol average."
+        e.description = (
+            "Dashed red lines above and below the solid red one are leb8 and leb16 respectively. "
+            "The solid line is the protocol average."
+        )
 
         # get the last 30 datapoints
-        datapoints = await self.bot.db.reth_apr.find().sort("block", -1).limit(180 + 38).to_list(None)
+        datapoints = (
+            await self.bot.db.reth_apr.find()
+            .sort("block", -1)
+            .limit(180 + 38)
+            .to_list(None)
+        )
         if len(datapoints) == 0:
             e.description = "No data available yet."
             return await interaction.followup.send(embed=e)
 
             # get average meta.NodeFee from db, weighted by meta.NodeOperatorShare
-        tmp = await (await self.bot.db.minipools.aggregate([
-            {
-                '$match': {
-                    'beacon.status'       : 'active_ongoing',
-                    'node_fee'            : {
-                        '$ne': None
-                    },
-                    'node_deposit_balance': {
-                        '$ne': None
-                    }
-                }
-            }, {
-                '$project': {
-                    'fee'  : '$node_fee',
-                    'share': {
-                        '$multiply': [
-                            {
-                                '$subtract': [
-                                    1, {
-                                        '$divide': [
-                                            '$node_deposit_balance', 32
-                                        ]
-                                    }
-                                ]
-                            }, 100
-                        ]
-                    }
-                }
-            }, {
-                '$group': {
-                    '_id'          : None,
-                    'pre_numerator': {
-                        '$sum': '$fee'
-                    },
-                    'numerator'    : {
-                        '$sum': {
-                            '$multiply': [
-                                '$fee', '$share'
-                            ]
+        tmp = await (
+            await self.bot.db.minipools.aggregate(
+                [
+                    {
+                        "$match": {
+                            "beacon.status": "active_ongoing",
+                            "node_fee": {"$ne": None},
+                            "node_deposit_balance": {"$ne": None},
                         }
                     },
-                    'denominator'  : {
-                        '$sum': '$share'
-                    },
-                    'count'        : {
-                        '$sum': 1
-                    }
-                }
-            }, {
-                '$project': {
-                    'average'          : {
-                        '$divide': [
-                            '$numerator', '$denominator'
-                        ]
-                    },
-                    'reference_average': {
-                        '$divide': [
-                            '$pre_numerator', '$count'
-                        ]
-                    },
-                    'used_pETH_share'  : {
-                        '$divide': [
-                            {
-                                '$divide': [
-                                    '$denominator', '$count'
+                    {
+                        "$project": {
+                            "fee": "$node_fee",
+                            "share": {
+                                "$multiply": [
+                                    {
+                                        "$subtract": [
+                                            1,
+                                            {"$divide": ["$node_deposit_balance", 32]},
+                                        ]
+                                    },
+                                    100,
                                 ]
-                            }, 100
-                        ]
-                    }
-                }
-            }
-        ])).to_list(length=1)
+                            },
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": None,
+                            "pre_numerator": {"$sum": "$fee"},
+                            "numerator": {"$sum": {"$multiply": ["$fee", "$share"]}},
+                            "denominator": {"$sum": "$share"},
+                            "count": {"$sum": 1},
+                        }
+                    },
+                    {
+                        "$project": {
+                            "average": {"$divide": ["$numerator", "$denominator"]},
+                            "reference_average": {
+                                "$divide": ["$pre_numerator", "$count"]
+                            },
+                            "used_pETH_share": {
+                                "$divide": [
+                                    {"$divide": ["$denominator", "$count"]},
+                                    100,
+                                ]
+                            },
+                        }
+                    },
+                ]
+            )
+        ).to_list(length=1)
 
         node_fee = tmp[0]["average"] if len(tmp) > 0 else 0.2
         peth_share = tmp[0]["used_pETH_share"] if len(tmp) > 0 else 0.75
@@ -358,16 +382,32 @@ class APR(commands.Cog):
             # calculate the 7 day average
             if i > 8:
                 y_7d.append(to_apr(datapoints[i - 9], datapoints[i]))
-                y_7d_virtual.append(to_apr(datapoints[i - 9], datapoints[i], effective=False))
+                y_7d_virtual.append(
+                    to_apr(datapoints[i - 9], datapoints[i], effective=False)
+                )
                 bare_apr = y_7d_virtual[-1] / Decimal(1 - node_fee)
                 y_7d_solo.append(bare_apr)
                 peth_share_leb8 = 0.75
-                y_7d_node_operators_leb8_14.append(bare_apr * Decimal(1 + (0.14 * peth_share_leb8 / (1 - peth_share_leb8))))
+                y_7d_node_operators_leb8_14.append(
+                    bare_apr
+                    * Decimal(1 + (0.14 * peth_share_leb8 / (1 - peth_share_leb8)))
+                )
                 peth_share_leb16 = 0.5
-                y_7d_node_operators_leb16_05.append(bare_apr * Decimal(1 + (0.05 * peth_share_leb16 / (1 - peth_share_leb16))))
-                y_7d_node_operators_leb16_14.append(bare_apr * Decimal(1 + (0.14 * peth_share_leb16 / (1 - peth_share_leb16))))
-                y_7d_node_operators_leb16_20.append(bare_apr * Decimal(1 + (0.20 * peth_share_leb16 / (1 - peth_share_leb16))))
-                y_7d_claim = get_duration(datapoints[i - 9], datapoints[i]) / (60 * 60 * 24)
+                y_7d_node_operators_leb16_05.append(
+                    bare_apr
+                    * Decimal(1 + (0.05 * peth_share_leb16 / (1 - peth_share_leb16)))
+                )
+                y_7d_node_operators_leb16_14.append(
+                    bare_apr
+                    * Decimal(1 + (0.14 * peth_share_leb16 / (1 - peth_share_leb16)))
+                )
+                y_7d_node_operators_leb16_20.append(
+                    bare_apr
+                    * Decimal(1 + (0.20 * peth_share_leb16 / (1 - peth_share_leb16)))
+                )
+                y_7d_claim = get_duration(datapoints[i - 9], datapoints[i]) / (
+                    60 * 60 * 24
+                )
             else:
                 # if we dont have enough data, we dont show it
                 y_7d_solo.append(None)
@@ -375,25 +415,53 @@ class APR(commands.Cog):
                 y_7d_node_operators_leb16_05.append(None)
                 y_7d_node_operators_leb16_14.append(None)
                 y_7d_node_operators_leb16_20.append(None)
-        e.add_field(name=f"{y_7d_claim:.1f} Day Average Node Operator APR:",
-                    value=f"**leb8:** `{y_7d_node_operators_leb8_14[-1]:.2%}`\n"
-                          f"**leb16 5%:** `{y_7d_node_operators_leb16_05[-1]:.2%}` | "
-                          f"**leb16 14%:** `{y_7d_node_operators_leb16_14[-1]:.2%}` | "
-                          f"**leb16 20%:** `{y_7d_node_operators_leb16_20[-1]:.2%}`", inline=False)
+        e.add_field(
+            name=f"{y_7d_claim:.1f} Day Average Node Operator APR:",
+            value=f"**leb8:** `{y_7d_node_operators_leb8_14[-1]:.2%}`\n"
+            f"**leb16 5%:** `{y_7d_node_operators_leb16_05[-1]:.2%}` | "
+            f"**leb16 14%:** `{y_7d_node_operators_leb16_14[-1]:.2%}` | "
+            f"**leb16 20%:** `{y_7d_node_operators_leb16_20[-1]:.2%}`",
+            inline=False,
+        )
 
         fig = plt.figure()
         ax1 = plt.gca()
 
         # solo apr
-        ax1.plot(x, y_7d_node_operators_leb8_14, linestyle="-.",
-                 label=f"{y_7d_claim:.1f} Day Average (leb8 14%)", color="red", alpha=0.5)
+        ax1.plot(
+            x,
+            y_7d_node_operators_leb8_14,
+            linestyle="-.",
+            label=f"{y_7d_claim:.1f} Day Average (leb8 14%)",
+            color="red",
+            alpha=0.5,
+        )
         # use area to show region between leb16 20% and leb16 5%. use a spare dotted fill to show the region between
-        ax1.fill_between(x, y_7d_node_operators_leb16_20, y_7d_node_operators_leb16_05, alpha=0.2,
-                         color="red", label=f"{y_7d_claim:.1f} Day Average (leb16 5-20%)")
+        ax1.fill_between(
+            x,
+            y_7d_node_operators_leb16_20,
+            y_7d_node_operators_leb16_05,
+            alpha=0.2,
+            color="red",
+            label=f"{y_7d_claim:.1f} Day Average (leb16 5-20%)",
+        )
         # plot the leb16 14% line
-        ax1.plot(x, y_7d_node_operators_leb16_14, linestyle="--",
-                 label=f"{y_7d_claim:.1f} Day Average (leb16 14%)", color="red", alpha=0.5)
-        ax1.plot(x, y_7d_solo, linestyle=":", label=f"{y_7d_claim:.1f} Day Average (solo)", color="black", alpha=0.5)
+        ax1.plot(
+            x,
+            y_7d_node_operators_leb16_14,
+            linestyle="--",
+            label=f"{y_7d_claim:.1f} Day Average (leb16 14%)",
+            color="red",
+            alpha=0.5,
+        )
+        ax1.plot(
+            x,
+            y_7d_solo,
+            linestyle=":",
+            label=f"{y_7d_claim:.1f} Day Average (solo)",
+            color="black",
+            alpha=0.5,
+        )
 
         plt.title("Observed NO APR values")
         plt.grid(True)
@@ -408,7 +476,7 @@ class APR(commands.Cog):
 
         img = BytesIO()
         fig.tight_layout()
-        fig.savefig(img, format='png')
+        fig.savefig(img, format="png")
         img.seek(0)
         fig.clear()
         plt.close()
@@ -416,9 +484,11 @@ class APR(commands.Cog):
         # reset the x axis formatter
         plt.gca().xaxis.set_major_formatter(old_formatter)
 
-        e.add_field(name="Current Average Effective Commission:",
-                    value=f"{node_fee:.2%} (Observed pETH Share: {peth_share:.2%})",
-                    inline=False)
+        e.add_field(
+            name="Current Average Effective Commission:",
+            value=f"{node_fee:.2%} (Observed pETH Share: {peth_share:.2%})",
+            inline=False,
+        )
 
         e.set_image(url="attachment://no_apr.png")
 

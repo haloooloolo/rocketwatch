@@ -30,12 +30,16 @@ class CallModal(Modal):
         self.abi_inputs = abi_inputs
         self.param_inputs = []
         for inp in abi_inputs:
-            text_input = TextInput(label=f"{inp['name']} ({inp['type']})"[:45], required=True)
+            text_input = TextInput(
+                label=f"{inp['name']} ({inp['type']})"[:45], required=True
+            )
             self.add_item(text_input)
             self.param_inputs.append(text_input)
 
     async def on_submit(self, interaction):
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        await interaction.response.defer(
+            ephemeral=is_hidden_role_controlled(interaction)
+        )
         args = []
         errors = []
         for text_input, inp in zip(self.param_inputs, self.abi_inputs, strict=True):
@@ -48,9 +52,13 @@ class CallModal(Modal):
             else:
                 args.append(val)
         if errors:
-            await interaction.followup.send(content="Validation failed:\n" + "\n".join(errors))
+            await interaction.followup.send(
+                content="Validation failed:\n" + "\n".join(errors)
+            )
             return
-        await self.cog._execute_call(interaction, self.function, args, self.block, self.address, self.raw_output)
+        await self.cog._execute_call(
+            interaction, self.function, args, self.block, self.address, self.raw_output
+        )
 
     @staticmethod
     def _validate(value, abi_type):
@@ -89,7 +97,9 @@ class Call(Cog):
             try:
                 c = await rp.get_contract_by_name(contract)
                 for entry in c.abi:
-                    if entry.get("type") == "function" and entry.get("stateMutability") in ("view", "pure"):
+                    if entry.get("type") == "function" and entry.get(
+                        "stateMutability"
+                    ) in ("view", "pure"):
                         func_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
                         self.function_names.append(f"{contract}.{func_id}")
             except Exception:
@@ -103,7 +113,7 @@ class Call(Cog):
         function: str,
         block: str = "latest",
         address: str | None = None,
-        raw_output: bool = False
+        raw_output: bool = False,
     ):
         """Manually call a function on a protocol contract"""
         if block.isnumeric():
@@ -127,12 +137,23 @@ class Call(Cog):
             modal = CallModal(self, function, block, address, raw_output, abi_inputs)
             await interaction.response.send_modal(modal)
         else:
-            await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
-            await self._execute_call(interaction, function, [], block, address, raw_output)
+            await interaction.response.defer(
+                ephemeral=is_hidden_role_controlled(interaction)
+            )
+            await self._execute_call(
+                interaction, function, [], block, address, raw_output
+            )
 
-    async def _execute_call(self, interaction, function, args, block, address, raw_output):
+    async def _execute_call(
+        self, interaction, function, args, block, address, raw_output
+    ):
         try:
-            v = await rp.call(function, *args, block=block, address=w3.to_checksum_address(address) if address else None)
+            v = await rp.call(
+                function,
+                *args,
+                block=block,
+                address=w3.to_checksum_address(address) if address else None,
+            )
         except Exception as err:
             await interaction.followup.send(content=f"Exception: ```{err!r}```")
             return
@@ -140,24 +161,37 @@ class Call(Cog):
             g = await rp.estimate_gas_for_call(function, *args, block=block)
         except Exception as err:
             g = "N/A"
-            if isinstance(err, ValueError) and err.args and "code" in err.args and err.args[0]["code"] == -32000:
+            if (
+                isinstance(err, ValueError)
+                and err.args
+                and "code" in err.args
+                and err.args[0]["code"] == -32000
+            ):
                 g += f" ({err.args[0]['message']})"
 
-        if isinstance(v, int) and abs(v) >= 10 ** 12 and not raw_output:
+        if isinstance(v, int) and abs(v) >= 10**12 and not raw_output:
             v = solidity.to_float(v)
         g = humanize.intcomma(g)
         func_name = function.split("(")[0]
         text = f"`block: {block}`\n`gas estimate: {g}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
         if len(text + str(v)) > 2000:
             text += "too long, attached as file`"
-            await interaction.followup.send(text, file=File(io.StringIO(str(v)), "exception.txt"))
+            await interaction.followup.send(
+                text, file=File(io.StringIO(str(v)), "exception.txt")
+            )
         else:
             text += f"{v!s}`"
             await interaction.followup.send(content=text)
 
     @call.autocomplete("function")
-    async def match_function_name(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        return [Choice(name=name, value=name) for name in self.function_names if current.lower() in name.lower()][:25]
+    async def match_function_name(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
+        return [
+            Choice(name=name, value=name)
+            for name in self.function_names
+            if current.lower() in name.lower()
+        ][:25]
 
 
 async def setup(bot):

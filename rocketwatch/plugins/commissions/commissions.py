@@ -26,9 +26,11 @@ class Commissions(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
-        e = Embed(title='Commission History')
+        e = Embed(title="Commission History")
 
-        minipools = await self.bot.db.minipools.find().sort("validator_index", 1).to_list(None)
+        minipools = (
+            await self.bot.db.minipools.find().sort("validator_index", 1).to_list(None)
+        )
         # create dot chart of minipools
         # x-axis: validator
         # y-axis: node_fee
@@ -69,7 +71,9 @@ class Commissions(commands.Cog):
         e.add_field(name="Bar Width", value=f"{step_size} minipools")
 
         # send data
-        await interaction.followup.send(content="", embed=e, files=[File(img, filename="chart.png")])
+        await interaction.followup.send(
+            content="", embed=e, files=[File(img, filename="chart.png")]
+        )
         img.close()
 
 

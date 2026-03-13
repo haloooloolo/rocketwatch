@@ -66,16 +66,18 @@ class Forum(commands.Cog):
 
         topics = []
         for topic_dict in topic_list:
-            topics.append(Forum.Topic(
-                id=topic_dict["id"],
-                title=topic_dict["fancy_title"],
-                slug=topic_dict["slug"],
-                post_count=topic_dict["posts_count"],
-                created_at=datetime_to_epoch(topic_dict["created_at"]),
-                last_post_at=datetime_to_epoch(topic_dict["last_posted_at"]),
-                views=topic_dict["views"],
-                like_count=topic_dict["like_count"]
-            ))
+            topics.append(
+                Forum.Topic(
+                    id=topic_dict["id"],
+                    title=topic_dict["fancy_title"],
+                    slug=topic_dict["slug"],
+                    post_count=topic_dict["posts_count"],
+                    created_at=datetime_to_epoch(topic_dict["created_at"]),
+                    last_post_at=datetime_to_epoch(topic_dict["last_posted_at"]),
+                    views=topic_dict["views"],
+                    like_count=topic_dict["like_count"],
+                )
+            )
         return topics
 
     @staticmethod
@@ -100,26 +102,30 @@ class Forum(commands.Cog):
     @retry_async(tries=3, delay=2, backoff=2)
     async def get_top_users(period: Period, order_by: UserMetric) -> list[User]:
         async with aiohttp.ClientSession() as session:
-            response = await session.get(f"{Forum.DOMAIN}/directory_items.json?period={period}&order={order_by}")
+            response = await session.get(
+                f"{Forum.DOMAIN}/directory_items.json?period={period}&order={order_by}"
+            )
             data = await response.json()
 
         users = []
         for user_dict in data["directory_items"]:
-            users.append(Forum.User(
-                id=user_dict["id"],
-                username=user_dict["user"]["username"],
-                name=user_dict["user"]["name"] if user_dict["user"]["name"] else None,
-                topic_count=user_dict["topic_count"],
-                post_count=user_dict["post_count"],
-                likes_received=user_dict["likes_received"]
-            ))
+            users.append(
+                Forum.User(
+                    id=user_dict["id"],
+                    username=user_dict["user"]["username"],
+                    name=user_dict["user"]["name"]
+                    if user_dict["user"]["name"]
+                    else None,
+                    topic_count=user_dict["topic_count"],
+                    post_count=user_dict["post_count"],
+                    likes_received=user_dict["likes_received"],
+                )
+            )
         return users
 
     @command()
     async def top_forum_posts(
-        self,
-        interaction: Interaction,
-        period: Period = "monthly"
+        self, interaction: Interaction, period: Period = "monthly"
     ) -> None:
         """Get the most popular topics from the forum"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
@@ -147,7 +153,7 @@ class Forum(commands.Cog):
         self,
         interaction: Interaction,
         period: Period = "monthly",
-        order_by: UserMetric = "likes_received"
+        order_by: UserMetric = "likes_received",
     ) -> None:
         """Get the most active forum users"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))

@@ -12,11 +12,11 @@ BEACON_EPOCH_LENGTH = 12 * 32
 
 
 def to_float(n, decimals=18):
-    return int(n) / 10 ** decimals
+    return int(n) / 10**decimals
 
 
 def to_int(n, decimals=18):
-    return int(n) // 10 ** decimals
+    return int(n) // 10**decimals
 
 
 def beacon_block_to_date(block_num: int) -> int:
@@ -32,8 +32,18 @@ def slot_to_beacon_day_epoch_slot(slot: int) -> tuple[int, int, int]:
 
 
 SUBMISSION_KEYS = (
-    "rewardIndex", "executionBlock", "consensusBlock", "merkleRoot", "merkleTreeCID", "intervalsPassed", "treasuryRPL",
-    "trustedNodeRPL", "nodeRPL", "nodeETH", "userETH")
+    "rewardIndex",
+    "executionBlock",
+    "consensusBlock",
+    "merkleRoot",
+    "merkleTreeCID",
+    "intervalsPassed",
+    "treasuryRPL",
+    "trustedNodeRPL",
+    "nodeRPL",
+    "nodeETH",
+    "userETH",
+)
 
 
 def mp_state_to_str(state):

@@ -22,18 +22,26 @@ log = logging.getLogger("rocketwatch.governance")
 
 class Governance(StatusPlugin):
     @staticmethod
-    async def _get_active_pdao_proposals(dao: ProtocolDAO) -> list[ProtocolDAO.Proposal]:
+    async def _get_active_pdao_proposals(
+        dao: ProtocolDAO,
+    ) -> list[ProtocolDAO.Proposal]:
         proposal_ids = await dao.get_proposal_ids_by_state()
         active_proposal_ids = []
         active_proposal_ids += proposal_ids[dao.ProposalState.ActivePhase1]
         active_proposal_ids += proposal_ids[dao.ProposalState.ActivePhase2]
-        return [await dao.fetch_proposal(proposal_id) for proposal_id in reversed(active_proposal_ids)]
+        return [
+            await dao.fetch_proposal(proposal_id)
+            for proposal_id in reversed(active_proposal_ids)
+        ]
 
     @staticmethod
     async def _get_active_dao_proposals(dao: DefaultDAO) -> list[DefaultDAO.Proposal]:
         proposal_ids = await dao.get_proposal_ids_by_state()
         active_proposal_ids = proposal_ids[dao.ProposalState.Active]
-        return [await dao.fetch_proposal(proposal_id) for proposal_id in reversed(active_proposal_ids)]
+        return [
+            await dao.fetch_proposal(proposal_id)
+            for proposal_id in reversed(active_proposal_ids)
+        ]
 
     @staticmethod
     async def _get_tx_hash_for_proposal(dao: DAO, proposal: DAO.Proposal) -> HexStr:
@@ -41,7 +49,9 @@ class Governance(StatusPlugin):
         to_block = (await ts_to_block(proposal.created)) + 1
 
         log.info(f"Looking for proposal {proposal} in [{from_block},{to_block}]")
-        for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(from_block=from_block, to_block=to_block):
+        for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(
+            from_block=from_block, to_block=to_block
+        ):
             log.info(f"Found receipt {receipt}")
             if receipt.args.proposalID == proposal.id:
                 return receipt.transactionHash.hex()
@@ -58,7 +68,11 @@ class Governance(StatusPlugin):
     async def _get_draft_rpips(self) -> list[RPIPs.RPIP]:
         try:
             statuses = {"Draft", "Review"}
-            return [rpip for rpip in await RPIPs.get_all_rpips() if (rpip.status in statuses)][::-1]
+            return [
+                rpip
+                for rpip in await RPIPs.get_all_rpips()
+                if (rpip.status in statuses)
+            ][::-1]
         except Exception as e:
             await self.bot.report_error(e)
             return []
@@ -68,7 +82,11 @@ class Governance(StatusPlugin):
             topics = await Forum.get_recent_topics()
             now = datetime.now().timestamp()
             # only get topics from within a week
-            topics = [t for t in topics if (now - t.last_post_at) <= timedelta(days=days).total_seconds()]
+            topics = [
+                t
+                for t in topics
+                if (now - t.last_post_at) <= timedelta(days=days).total_seconds()
+            ]
             return topics
         except Exception as e:
             await self.bot.report_error(e)
@@ -84,7 +102,7 @@ class Governance(StatusPlugin):
             text = text.replace("https://", "")
             text = escape_markdown(text)
             if len(text) > max_length:
-                text = text[:(max_length - 1)] + "…"
+                text = text[: (max_length - 1)] + "…"
             return text
 
         async def print_proposals(_dao: DAO, _proposals: list[DAO.Proposal]) -> str:
@@ -131,7 +149,9 @@ class Governance(StatusPlugin):
             section_content += "- **RPIPs in review or draft status**\n"
             for i, rpip in enumerate(draft_rpips, start=1):
                 title = sanitize(rpip.title, 40)
-                section_content += f"  {i}. [{title}]({rpip.url}) (RPIP-{rpip.number})\n"
+                section_content += (
+                    f"  {i}. [{title}]({rpip.url}) (RPIP-{rpip.number})\n"
+                )
 
         if section_content:
             embed.description += "### Protocol DAO\n"
@@ -145,7 +165,7 @@ class Governance(StatusPlugin):
             embed.description += f"- **Recently active topics ({num_days}d)**\n"
             for i, topic in enumerate(topics[:10], start=1):
                 title = sanitize(topic.title, 40)
-                embed.description += f"  {i}. [{title}]({topic.url}) [`{topic.post_count-1}\u202f💬`]\n"
+                embed.description += f"  {i}. [{title}]({topic.url}) [`{topic.post_count - 1}\u202f💬`]\n"
 
         if not embed.description:
             embed.set_image(url="https://c.tenor.com/PVf-csSHmu8AAAAd/tenor.gif")

@@ -25,7 +25,11 @@ class Event:
     thumbnail: Image | None = None
 
     def get_score(self):
-        return (10**9 * self.block_number) + (10**5 * self.transaction_index) + self.event_index
+        return (
+            (10**9 * self.block_number)
+            + (10**5 * self.transaction_index)
+            + self.event_index
+        )
 
 
 class EventPlugin(commands.Cog):
@@ -55,5 +59,7 @@ class EventPlugin(commands.Cog):
     async def _get_new_events(self) -> list[Event]:
         pass
 
-    async def get_past_events(self, from_block: BlockNumber, to_block: BlockNumber) -> list[Event]:
+    async def get_past_events(
+        self, from_block: BlockNumber, to_block: BlockNumber
+    ) -> list[Event]:
         return []

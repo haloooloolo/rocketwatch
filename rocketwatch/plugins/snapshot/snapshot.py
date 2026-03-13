@@ -38,7 +38,10 @@ class Snapshot(EventPlugin):
     async def _query_api(query: Query) -> list[dict] | dict | None:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")
-        async with aiohttp.ClientSession() as session, session.get("https://hub.snapshot.org/graphql", json=query_json) as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get("https://hub.snapshot.org/graphql", json=query_json) as resp,
+        ):
             response = await resp.json()
         if "errors" in response:
             raise Exception(response["errors"])
@@ -73,7 +76,9 @@ class Snapshot(EventPlugin):
             height = 0
             if with_title:
                 height = self._TITLE_SIZE + self._V_SPACE_LARGE
-            height += len(self.choices) * (self._predict_choice_height() + self._V_SPACE_MEDIUM)
+            height += len(self.choices) * (
+                self._predict_choice_height() + self._V_SPACE_MEDIUM
+            )
             height += self._V_SPACE_SMALL + self._HEADER_SIZE + self._V_SPACE_SMALL
             height += self._BAR_SIZE + self._V_SPACE_LARGE
             height += self._TEXT_SIZE
@@ -83,13 +88,13 @@ class Snapshot(EventPlugin):
             return sum(self.scores) >= self.quorum
 
         def render_to(
-                self,
-                canvas: ImageCanvas,
-                width: int,
-                x_offset: int = 0,
-                y_offset: int = 0,
-                *,
-                include_title: bool = True
+            self,
+            canvas: ImageCanvas,
+            width: int,
+            x_offset: int = 0,
+            y_offset: int = 0,
+            *,
+            include_title: bool = True,
         ) -> int:
             def safe_div(x, y):
                 return (x / y) if y else 0
@@ -97,12 +102,14 @@ class Snapshot(EventPlugin):
             label_offset = self._BAR_SIZE / 2
             label_font_variant = FontVariant.BOLD
 
-            def render_choice(_choice: str, _score: float, _x_offset: int, _y_offset: int) -> int:
+            def render_choice(
+                _choice: str, _score: float, _x_offset: int, _y_offset: int
+            ) -> int:
                 color: Color = (128, 128, 128)  # slate gray
                 choice_colors = {
-                    "for": (4, 99, 7),       # green
+                    "for": (4, 99, 7),  # green
                     "against": (156, 0, 47),  # red
-                    "abstain": (114, 121, 138)
+                    "abstain": (114, 121, 138),
                 }
                 for k, v in choice_colors.items():
                     # assign color based on keywords
@@ -116,32 +123,40 @@ class Snapshot(EventPlugin):
                     _choice,
                     self._TEXT_SIZE,
                     max_width=(width / 2),
-                    anchor="lt"
+                    anchor="lt",
                 )
                 choice_height += self._TEXT_SIZE + self._V_SPACE_SMALL
 
-                divisor = max(self.scores) if len(self.scores) >= 5 else sum(self.scores)
+                divisor = (
+                    max(self.scores) if len(self.scores) >= 5 else sum(self.scores)
+                )
                 canvas.progress_bar(
                     (_x_offset, _y_offset + choice_height),
                     (width, self._BAR_SIZE),
                     safe_div(_score, divisor),
-                    fill_color=color
+                    fill_color=color,
                 )
                 canvas.dynamic_text(
-                    (_x_offset + label_offset, _y_offset + choice_height + (self._BAR_SIZE / 2)),
+                    (
+                        _x_offset + label_offset,
+                        _y_offset + choice_height + (self._BAR_SIZE / 2),
+                    ),
                     f"{safe_div(_score, sum(self.scores)):.2%}",
                     self._LABEL_SIZE,
                     font_variant=label_font_variant,
                     max_width=((width / 2) - label_offset),
-                    anchor="lm"
+                    anchor="lm",
                 )
                 canvas.dynamic_text(
-                    (_x_offset + width - label_offset, _y_offset + choice_height + (self._BAR_SIZE / 2)),
+                    (
+                        _x_offset + width - label_offset,
+                        _y_offset + choice_height + (self._BAR_SIZE / 2),
+                    ),
                     f"{_score:,.2f}",
                     self._LABEL_SIZE,
                     font_variant=label_font_variant,
                     max_width=((width / 2) - label_offset),
-                    anchor="rm"
+                    anchor="rm",
                 )
                 choice_height += self._BAR_SIZE
                 return choice_height
@@ -154,7 +169,7 @@ class Snapshot(EventPlugin):
                     self.title,
                     self._TITLE_SIZE,
                     max_width=width,
-                    anchor="mt"
+                    anchor="mt",
                 )
                 proposal_height += self._TITLE_SIZE + self._V_SPACE_LARGE
 
@@ -162,7 +177,9 @@ class Snapshot(EventPlugin):
             choice_scores = list(zip(self.choices, self.scores, strict=False))
             choice_scores.sort(key=lambda x: x[1], reverse=True)
             for choice, score in choice_scores:
-                proposal_height += render_choice(choice, score, x_offset, y_offset + proposal_height)
+                proposal_height += render_choice(
+                    choice, score, x_offset, y_offset + proposal_height
+                )
                 proposal_height += self._V_SPACE_MEDIUM
 
             proposal_height += self._V_SPACE_SMALL
@@ -173,7 +190,7 @@ class Snapshot(EventPlugin):
                 "Quorum",
                 self._HEADER_SIZE,
                 max_width=(width / 2),
-                anchor="lt"
+                anchor="lt",
             )
             proposal_height += self._HEADER_SIZE + self._V_SPACE_SMALL
             quorum_perc: float = safe_div(sum(self.scores), self.quorum)
@@ -185,25 +202,31 @@ class Snapshot(EventPlugin):
                 (x_offset, y_offset + proposal_height),
                 (width, self._BAR_SIZE),
                 min(quorum_perc, 1),
-                fill_color=pb_color
+                fill_color=pb_color,
             )
             canvas.dynamic_text(
-                (x_offset + label_offset, y_offset + proposal_height + (self._BAR_SIZE / 2)),
+                (
+                    x_offset + label_offset,
+                    y_offset + proposal_height + (self._BAR_SIZE / 2),
+                ),
                 f"{quorum_perc:.2%}",
                 self._LABEL_SIZE,
                 font_variant=label_font_variant,
                 max_width=((width / 2) - label_offset),
                 anchor="lm",
-                color=label_color
+                color=label_color,
             )
             canvas.dynamic_text(
-                (x_offset + width - label_offset, y_offset + proposal_height + (self._BAR_SIZE / 2)),
+                (
+                    x_offset + width - label_offset,
+                    y_offset + proposal_height + (self._BAR_SIZE / 2),
+                ),
                 f"{sum(self.scores):,.0f} / {self.quorum:,.0f}",
                 self._LABEL_SIZE,
                 font_variant=label_font_variant,
                 max_width=((width / 2) - label_offset),
                 anchor="rm",
-                color=label_color
+                color=label_color,
             )
             proposal_height += self._BAR_SIZE + self._V_SPACE_LARGE
 
@@ -214,7 +237,7 @@ class Snapshot(EventPlugin):
                 f"{pretty_time(rem_time)} left" if (rem_time >= 0) else "Final Result",
                 self._TEXT_SIZE,
                 max_width=width,
-                anchor="mt"
+                anchor="mt",
             )
             proposal_height += self._TEXT_SIZE
             return proposal_height
@@ -233,8 +256,12 @@ class Snapshot(EventPlugin):
             pad_left, pad_right = 20, 20
             width = 800
             height = self.predict_render_height(include_title)
-            canvas = ImageCanvas(width + pad_left + pad_right, height + pad_top + pad_bottom)
-            self.render_to(canvas, width, pad_left, pad_top, include_title=include_title)
+            canvas = ImageCanvas(
+                width + pad_left + pad_right, height + pad_top + pad_bottom
+            )
+            self.render_to(
+                canvas, width, pad_left, pad_top, include_title=include_title
+            )
             return canvas.image
 
         async def create_start_event(self) -> Event:
@@ -246,7 +273,7 @@ class Snapshot(EventPlugin):
                 block_number=await ts_to_block(self.start),
                 event_name="pdao_snapshot_vote_start",
                 unique_id=f"snapshot_vote_start:{self.id}",
-                image=self.create_image(include_title=True)
+                image=self.create_image(include_title=True),
             )
 
         def create_reached_quorum_event(self, block_number: BlockNumber) -> Event:
@@ -258,7 +285,7 @@ class Snapshot(EventPlugin):
                 block_number=block_number,
                 event_name="pdao_snapshot_vote_quorum",
                 unique_id=f"snapshot_vote_quorum:{self.id}",
-                image=self.create_image(include_title=True)
+                image=self.create_image(include_title=True),
             )
 
         async def create_end_event(self) -> Event:
@@ -281,7 +308,7 @@ class Snapshot(EventPlugin):
                 block_number=await ts_to_block(self.end),
                 event_name="pdao_snapshot_vote_end",
                 unique_id=f"snapshot_vote_end:{self.id}",
-                image=self.create_image(include_title=True)
+                image=self.create_image(include_title=True),
             )
 
     @dataclass(frozen=True, slots=True)
@@ -290,9 +317,9 @@ class Snapshot(EventPlugin):
         MultiChoice = list[SingleChoice]
         # weighted votes use strings as keys for some reason
         WeightedChoice = dict[str, int]
-        Choice = (SingleChoice | MultiChoice | WeightedChoice)
+        Choice = SingleChoice | MultiChoice | WeightedChoice
 
-        proposal: 'Snapshot.Proposal'
+        proposal: "Snapshot.Proposal"
         id: str
         voter: ChecksumAddress
         created: int
@@ -301,7 +328,7 @@ class Snapshot(EventPlugin):
         reason: str
 
         def pretty_print(self) -> str | None:
-            match (raw_choice := self.choice):
+            match raw_choice := self.choice:
                 case int():
                     return self._format_single_choice(raw_choice)
                 case list():
@@ -336,18 +363,22 @@ class Snapshot(EventPlugin):
         def _format_weighted_choice(self, choice: WeightedChoice) -> str:
             labels = {self._label_choice(int(c)): w for c, w in choice.items()}
             total_weight = sum(labels.values())
-            choice_perc = [(c, round(100 * w / total_weight)) for c, w in labels.items()]
+            choice_perc = [
+                (c, round(100 * w / total_weight)) for c, w in labels.items()
+            ]
             choice_perc.sort(key=lambda x: x[1], reverse=True)
             graph = tpl.figure()
             graph.barh(
                 [x[1] for x in choice_perc],
                 [x[0] for x in choice_perc],
                 force_ascii=True,
-                max_width=15
+                max_width=15,
             )
             return "```" + graph.get_string().replace("]", "%]") + "```"
 
-        async def create_event(self, prev_vote: Optional['Snapshot.Vote']) -> Event | None:
+        async def create_event(
+            self, prev_vote: Optional["Snapshot.Vote"]
+        ) -> Event | None:
             node = await rp.call("rocketSignerRegistry.signerToNode", self.voter)
             signer = await el_explorer_url(self.voter)
             voter = signer if (node == ADDRESS_ZERO) else await el_explorer_url(node)
@@ -364,14 +395,21 @@ class Snapshot(EventPlugin):
                 embed.description = separator.join([f"{voter} voted", vote_fmt])
             elif self.choice != prev_vote.choice:
                 prev_vote_fmt = prev_vote.pretty_print()
-                parts = [f"{voter} changed their vote from", prev_vote_fmt, "to", vote_fmt]
+                parts = [
+                    f"{voter} changed their vote from",
+                    prev_vote_fmt,
+                    "to",
+                    vote_fmt,
+                ]
                 separator = " " if (len(vote_fmt) + len(prev_vote_fmt) <= 20) else "\n"
                 embed.description = separator.join(parts)
             elif self.reason != prev_vote.reason:
                 embed.description = (
-                    f"{voter} "
-                    "changed the reason for their vote" if prev_vote.reason else "added context to their vote"
-                    f" ({vote_fmt})" if (len(vote_fmt) <= 20) else f":\n{vote_fmt}"
+                    f"{voter} changed the reason for their vote"
+                    if prev_vote.reason
+                    else f"added context to their vote ({vote_fmt})"
+                    if (len(vote_fmt) <= 20)
+                    else f":\n{vote_fmt}"
                 )
             else:
                 log.debug("Same vote as before, skipping event")
@@ -383,7 +421,7 @@ class Snapshot(EventPlugin):
                 if len(embed.description) + len(reason) > max_length:
                     suffix = "..."
                     overage = len(embed.description) + len(reason) - max_length
-                    reason = reason[:-(overage + len(suffix))] + suffix
+                    reason = reason[: -(overage + len(suffix))] + suffix
 
                 embed.description += f" ```{reason}```"
 
@@ -394,12 +432,12 @@ class Snapshot(EventPlugin):
             if self.vp >= 250:
                 conditional_args = {
                     "event_name": "pdao_snapshot_vote",
-                    "image": self.proposal.create_image(include_title=False)
+                    "image": self.proposal.create_image(include_title=False),
                 }
             else:
                 conditional_args = {
                     "event_name": "snapshot_vote",
-                    "thumbnail": self.proposal.create_image(include_title=False)
+                    "thumbnail": self.proposal.create_image(include_title=False),
                 }
 
             return Event(
@@ -407,26 +445,22 @@ class Snapshot(EventPlugin):
                 topic="snapshot",
                 block_number=await ts_to_block(self.created),
                 unique_id=f"snapshot_vote:{self.proposal.id}:{self.voter}:{self.created}",
-                **conditional_args
+                **conditional_args,
             )
 
     @staticmethod
     async def fetch_proposal(proposal_id: str) -> Proposal | None:
         query = Query(
             name="proposal",
-            arguments=[Argument(name="id", value=f"\"{proposal_id}\"")],
-            fields=["id", "title", "choices", "start", "end", "scores", "quorum"]
+            arguments=[Argument(name="id", value=f'"{proposal_id}"')],
+            fields=["id", "title", "choices", "start", "end", "scores", "quorum"],
         )
         response: dict | None = await Snapshot._query_api(query)
         return Snapshot.Proposal(**response) if response else None
 
     @staticmethod
     async def fetch_proposals(
-            state: Proposal.State,
-            *,
-            reverse: bool = False,
-            limit: int = 25,
-            skip: int = 0
+        state: Proposal.State, *, reverse: bool = False, limit: int = 25, skip: int = 0
     ) -> list[Proposal]:
         query = Query(
             name="proposals",
@@ -436,26 +470,26 @@ class Snapshot(EventPlugin):
                 Argument(
                     name="where",
                     value=[
-                        Argument(name="space_in", value=["\"rocketpool-dao.eth\""]),
-                        Argument(name="state", value=f"\"{state}\"")
-                    ]
+                        Argument(name="space_in", value=['"rocketpool-dao.eth"']),
+                        Argument(name="state", value=f'"{state}"'),
+                    ],
                 ),
-                Argument(name="orderBy", value="\"created\""),
-                Argument(name="orderDirection", value="desc" if reverse else "asc")
+                Argument(name="orderBy", value='"created"'),
+                Argument(name="orderDirection", value="desc" if reverse else "asc"),
             ],
-            fields=["id", "title", "choices", "start", "end", "scores", "quorum"]
+            fields=["id", "title", "choices", "start", "end", "scores", "quorum"],
         )
         response: list[dict] = await Snapshot._query_api(query)
         return [Snapshot.Proposal(**d) for d in response]
 
     @staticmethod
     async def fetch_votes(
-            proposal: Proposal,
-            *,
-            created_after: int = 0,
-            reverse: bool = False,
-            limit: int = 100,
-            skip: int = 0
+        proposal: Proposal,
+        *,
+        created_after: int = 0,
+        reverse: bool = False,
+        limit: int = 100,
+        skip: int = 0,
     ) -> list[Vote]:
         query = Query(
             name="votes",
@@ -465,14 +499,14 @@ class Snapshot(EventPlugin):
                 Argument(
                     name="where",
                     value=[
-                        Argument(name="proposal", value=f"\"{proposal.id}\""),
-                        Argument(name="created_gt", value=created_after)
-                    ]
+                        Argument(name="proposal", value=f'"{proposal.id}"'),
+                        Argument(name="created_gt", value=created_after),
+                    ],
                 ),
-                Argument(name="orderBy", value="\"created\""),
-                Argument(name="orderDirection", value="desc" if reverse else "asc")
+                Argument(name="orderBy", value='"created"'),
+                Argument(name="orderDirection", value="desc" if reverse else "asc"),
             ],
-            fields=["id", "voter", "created", "vp", "choice", "reason"]
+            fields=["id", "voter", "created", "vp", "choice", "reason"],
         )
         response: list[dict] = await Snapshot._query_api(query)
         return [Snapshot.Vote(proposal=proposal, **d) for d in response]
@@ -505,39 +539,50 @@ class Snapshot(EventPlugin):
                 log.info(f"Found new proposal: {proposal}")
                 event = await proposal.create_start_event()
                 proposal_dict = {
-                    "_id"   : proposal.id,
-                    "start" : proposal.start,
-                    "end"   : proposal.end,
-                    "quorum": proposal.reached_quorum()
+                    "_id": proposal.id,
+                    "start": proposal.start,
+                    "end": proposal.end,
+                    "quorum": proposal.reached_quorum(),
                 }
                 proposal_db_changes.append(InsertOne(proposal_dict))
                 known_active_proposals[proposal.id] = proposal_dict
                 events.append(event)
-            elif proposal.reached_quorum() and (not known_active_proposals[proposal.id]["quorum"]):
+            elif proposal.reached_quorum() and (
+                not known_active_proposals[proposal.id]["quorum"]
+            ):
                 log.info(f"Proposal {proposal} has reached quorum")
                 event = proposal.create_reached_quorum_event(self._pending_block)
-                proposal_db_changes.append(UpdateOne(
-                    {"_id": proposal.id},
-                    {"$set": {"quorum": True}}
-                ))
+                proposal_db_changes.append(
+                    UpdateOne({"_id": proposal.id}, {"$set": {"quorum": True}})
+                )
                 events.append(event)
 
             try:
-                last_vote_entry = await self.vote_db.find(
-                    {"proposal_id": proposal.id}
-                ).sort({"created": DESCENDING}).limit(1).to_list()
+                last_vote_entry = (
+                    await self.vote_db.find({"proposal_id": proposal.id})
+                    .sort({"created": DESCENDING})
+                    .limit(1)
+                    .to_list()
+                )
                 last_vote_ts = last_vote_entry[0]["created"]
             except IndexError:
                 last_vote_ts = 0
 
-            current_votes: list[Snapshot.Vote] = await self.fetch_votes(proposal, created_after=last_vote_ts)
+            current_votes: list[Snapshot.Vote] = await self.fetch_votes(
+                proposal, created_after=last_vote_ts
+            )
             for vote in current_votes:
                 log.debug(f"Processing vote {vote}")
 
                 try:
-                    stored_vote = (await self.vote_db.find(
-                        {"proposal_id": proposal.id, "voter": vote.voter}
-                    ).sort({"created": DESCENDING}).limit(1).to_list())[0]
+                    stored_vote = (
+                        await self.vote_db.find(
+                            {"proposal_id": proposal.id, "voter": vote.voter}
+                        )
+                        .sort({"created": DESCENDING})
+                        .limit(1)
+                        .to_list()
+                    )[0]
                     prev_vote = Snapshot.Vote(
                         id=stored_vote["_id"],
                         proposal=proposal,
@@ -545,7 +590,7 @@ class Snapshot(EventPlugin):
                         created=stored_vote["created"],
                         vp=stored_vote["vp"],
                         choice=stored_vote["choice"],
-                        reason=stored_vote["reason"]
+                        reason=stored_vote["reason"],
                     )
                 except IndexError:
                     prev_vote = None
@@ -555,15 +600,17 @@ class Snapshot(EventPlugin):
                     continue
 
                 events.append(event)
-                db_update = InsertOne({
-                    "_id"        : vote.id,
-                    "proposal_id": vote.proposal.id,
-                    "voter"      : vote.voter,
-                    "created"    : vote.created,
-                    "vp"         : vote.vp,
-                    "choice"     : vote.choice,
-                    "reason"     : vote.reason,
-                })
+                db_update = InsertOne(
+                    {
+                        "_id": vote.id,
+                        "proposal_id": vote.proposal.id,
+                        "voter": vote.voter,
+                        "created": vote.created,
+                        "vp": vote.vp,
+                        "choice": vote.choice,
+                        "reason": vote.reason,
+                    }
+                )
                 vote_db_changes.append(db_update)
 
         if proposal_db_changes:
@@ -580,7 +627,9 @@ class Snapshot(EventPlugin):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         embed = Embed(title="Snapshot Proposals")
-        embed.set_author(name="🔗 Data from snapshot.org", url="https://vote.rocketpool.net")
+        embed.set_author(
+            name="🔗 Data from snapshot.org", url="https://vote.rocketpool.net"
+        )
 
         proposals = (await self.fetch_proposals("active", reverse=True))[::-1]
         if not proposals:
@@ -604,7 +653,7 @@ class Snapshot(EventPlugin):
         total_height = v_spacing * (num_rows - 1)
         proposal_grid: list[list[Snapshot.Proposal]] = []
         for row_idx in range(num_rows):
-            row = proposals[row_idx * num_cols:(row_idx + 1) * num_cols]
+            row = proposals[row_idx * num_cols : (row_idx + 1) * num_cols]
             proposal_grid.append(row)
             # row height is equal to height of its tallest proposal
             total_height += max(p.predict_render_height() for p in row)
@@ -614,7 +663,9 @@ class Snapshot(EventPlugin):
             proposal_width = (total_height - h_spacing * (num_cols - 1)) // num_cols
             total_width = (proposal_width * num_cols) + h_spacing * (num_cols - 1)
 
-        canvas = ImageCanvas(total_width + pad_left + pad_right, total_height + pad_top + pad_bottom)
+        canvas = ImageCanvas(
+            total_width + pad_left + pad_right, total_height + pad_top + pad_bottom
+        )
 
         # draw proposals in num_rows x num_cols grid
         y_offset = pad_top

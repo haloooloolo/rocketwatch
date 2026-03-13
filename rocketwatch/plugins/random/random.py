@@ -62,7 +62,9 @@ class Random(commands.Cog):
             data = await resp.json()
 
         e = Embed()
-        e.set_author(name="🔗 Data from ultrasound.money", url="https://ultrasound.money")
+        e.set_author(
+            name="🔗 Data from ultrasound.money", url="https://ultrasound.money"
+        )
         description = "**ETH Burned:**\n```"
         feesburned = data["feesBurned"]
         for span in ["5m", "1h", "24h"]:
@@ -92,7 +94,7 @@ class Random(commands.Cog):
 
         e.add_field(
             name="Current Base Fee",
-            value=f"`{solidity.to_float(data['latestBlockFees'][0]['baseFeePerGas'], 9):,.2f} GWEI`"
+            value=f"`{solidity.to_float(data['latestBlockFees'][0]['baseFeePerGas'], 9):,.2f} GWEI`",
         )
         e.description = description
         await interaction.followup.send(embed=e)
@@ -111,18 +113,28 @@ class Random(commands.Cog):
         uint_day = int(percentage_of_day * 65535)
         # generate binary string
         binary_day = f"{uint_day:016b}"
-        e.add_field(name="Coordinated Universal Time",
-                    value=f"{dev_time.strftime(time_format)}\n"
-                          f"`{binary_day} (0x{uint_day:04x})`")
-        head_slot = int((await bacon.get_block_header("head"))["data"]["header"]["message"]["slot"])
+        e.add_field(
+            name="Coordinated Universal Time",
+            value=f"{dev_time.strftime(time_format)}\n"
+            f"`{binary_day} (0x{uint_day:04x})`",
+        )
+        head_slot = int(
+            (await bacon.get_block_header("head"))["data"]["header"]["message"]["slot"]
+        )
         b = solidity.slot_to_beacon_day_epoch_slot(head_slot)
         e.add_field(name="Beacon Time", value=f"Day {b[0]}, {b[1]}:{b[2]}")
 
         dev_time = datetime.now(tz=pytz.timezone("Australia/Lindeman"))
-        e.add_field(name="Most of the core team", value=dev_time.strftime(time_format), inline=False)
+        e.add_field(
+            name="Most of the core team",
+            value=dev_time.strftime(time_format),
+            inline=False,
+        )
 
         fornax_time = datetime.now(tz=pytz.timezone("America/Sao_Paulo"))
-        e.add_field(name="Fornax", value=fornax_time.strftime(time_format), inline=False)
+        e.add_field(
+            name="Fornax", value=fornax_time.strftime(time_format), inline=False
+        )
         e.add_field(name="Mav", value="Who even knows", inline=False)
 
         await interaction.response.send_message(embed=e)
@@ -146,17 +158,32 @@ class Random(commands.Cog):
                 e.description = f"No sea creature for {address}"
             else:
                 # get the required holding from the dictionary
-                required_holding = next(h for h, c in sea_creatures.items() if c == creature[0])
-                e.add_field(name="Visualization", value=await el_explorer_url(address, prefix=creature), inline=False)
-                e.add_field(name="Required holding for emoji", value=f"{required_holding * len(creature)} ETH", inline=False)
+                required_holding = next(
+                    h for h, c in sea_creatures.items() if c == creature[0]
+                )
+                e.add_field(
+                    name="Visualization",
+                    value=await el_explorer_url(address, prefix=creature),
+                    inline=False,
+                )
+                e.add_field(
+                    name="Required holding for emoji",
+                    value=f"{required_holding * len(creature)} ETH",
+                    inline=False,
+                )
                 holding = await get_holding_for_address(address)
-                e.add_field(name="Actual Holding", value=f"{holding:.0f} ETH", inline=False)
+                e.add_field(
+                    name="Actual Holding", value=f"{holding:.0f} ETH", inline=False
+                )
         else:
             e.title = "Possible Sea Creatures"
             e.description = "RPL (both old and new), rETH and ETH are consider as assets for the sea creature determination!"
             for holding_value, sea_creature in sea_creatures.items():
-                e.add_field(name=f"{sea_creature}:", value=f"holds over {holding_value} ETH worth of assets",
-                            inline=False)
+                e.add_field(
+                    name=f"{sea_creature}:",
+                    value=f"holds over {holding_value} ETH worth of assets",
+                    inline=False,
+                )
         await interaction.followup.send(embed=e)
 
     @command()
@@ -165,85 +192,78 @@ class Random(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         e = Embed(title="Smoothing Pool")
-        smoothie_eth = solidity.to_float(await w3.eth.get_balance(await rp.get_address_by_name("rocketSmoothingPool")))
-        data = await (await self.bot.db.minipools.aggregate([
-            {
-                '$match': {
-                    'beacon.status': {
-                        '$nin': [
-                            'exited_unslashed', 'exited_slashed', 'withdrawal_possible', 'withdrawal_done',
-                            'pending_initialized'
-                        ]
-                    }
-                }
-            }, {
-                '$group': {
-                    '_id'  : '$node_operator',
-                    'count': {
-                        '$sum': 1
-                    }
-                }
-            }, {
-                '$lookup': {
-                    'from'        : 'node_operators',
-                    'localField'  : '_id',
-                    'foreignField': 'address',
-                    'as'          : 'meta'
-                }
-            }, {
-                '$unwind': {
-                    'path'                      : '$meta',
-                    'preserveNullAndEmptyArrays': True
-                }
-            }, {
-                '$project': {
-                    '_id'     : 1,
-                    'count'   : 1,
-                    'smoothie': '$meta.smoothing_pool_registration'
-                }
-            }, {
-                '$group': {
-                    '_id'       : '$smoothie',
-                    'count'     : {
-                        '$sum': '$count'
-                    },
-                    'node_count': {
-                        '$sum': 1
-                    },
-                    'counts'    : {
-                        '$addToSet': {
-                            'count'  : '$count',
-                            'address': '$_id'
-                        }
-                    }
-                }
-            }, {
-                '$project': {
-                    '_id'       : 1,
-                    'count'     : 1,
-                    'node_count': 1,
-                    'counts'    : {
-                        '$sortArray': {
-                            'input' : '$counts',
-                            'sortBy': {
-                                'count': -1
+        smoothie_eth = solidity.to_float(
+            await w3.eth.get_balance(
+                await rp.get_address_by_name("rocketSmoothingPool")
+            )
+        )
+        data = await (
+            await self.bot.db.minipools.aggregate(
+                [
+                    {
+                        "$match": {
+                            "beacon.status": {
+                                "$nin": [
+                                    "exited_unslashed",
+                                    "exited_slashed",
+                                    "withdrawal_possible",
+                                    "withdrawal_done",
+                                    "pending_initialized",
+                                ]
                             }
                         }
-                    }
-                }
-            }, {
-                '$project': {
-                    '_id'       : 1,
-                    'count'     : 1,
-                    'node_count': 1,
-                    'counts'    : {
-                        '$slice': [
-                            '$counts', 5
-                        ]
-                    }
-                }
-            }
-        ])).to_list()
+                    },
+                    {"$group": {"_id": "$node_operator", "count": {"$sum": 1}}},
+                    {
+                        "$lookup": {
+                            "from": "node_operators",
+                            "localField": "_id",
+                            "foreignField": "address",
+                            "as": "meta",
+                        }
+                    },
+                    {"$unwind": {"path": "$meta", "preserveNullAndEmptyArrays": True}},
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "count": 1,
+                            "smoothie": "$meta.smoothing_pool_registration",
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": "$smoothie",
+                            "count": {"$sum": "$count"},
+                            "node_count": {"$sum": 1},
+                            "counts": {
+                                "$addToSet": {"count": "$count", "address": "$_id"}
+                            },
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "count": 1,
+                            "node_count": 1,
+                            "counts": {
+                                "$sortArray": {
+                                    "input": "$counts",
+                                    "sortBy": {"count": -1},
+                                }
+                            },
+                        }
+                    },
+                    {
+                        "$project": {
+                            "_id": 1,
+                            "count": 1,
+                            "node_count": 1,
+                            "counts": {"$slice": ["$counts", 5]},
+                        }
+                    },
+                ]
+            )
+        ).to_list()
         if not data:
             await interaction.followup.send("no minipools found", ephemeral=True)
             return
@@ -254,16 +274,22 @@ class Random(commands.Cog):
         # minipool counts
         total_minipool_count = data[True]["count"] + data[False]["count"]
         smoothie_minipool_count = data[True]["count"]
-        d = datetime.now().timestamp() - await rp.call("rocketRewardsPool.getClaimIntervalTimeStart")
-        e.description = f"`{smoothie_node_count}/{total_node_count}` nodes (`{smoothie_node_count / total_node_count:.2%}`)" \
-                        f" have joined the smoothing pool.\n" \
-                        f" That is `{smoothie_minipool_count}/{total_minipool_count}` minipools " \
-                        f"(`{smoothie_minipool_count / total_minipool_count:.2%}`).\n" \
-                        f"The current (not overall) balance is **`{smoothie_eth:,.2f}` ETH.**\n" \
-                        f"This is over a span of `{pretty_time(d)}`.\n\n" \
-                        f"{min(smoothie_node_count, 5)} largest nodes:\n"
-        lines = [f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}" for d in
-                 data[True]["counts"][:min(smoothie_node_count, 5)]]
+        d = datetime.now().timestamp() - await rp.call(
+            "rocketRewardsPool.getClaimIntervalTimeStart"
+        )
+        e.description = (
+            f"`{smoothie_node_count}/{total_node_count}` nodes (`{smoothie_node_count / total_node_count:.2%}`)"
+            f" have joined the smoothing pool.\n"
+            f" That is `{smoothie_minipool_count}/{total_minipool_count}` minipools "
+            f"(`{smoothie_minipool_count / total_minipool_count:.2%}`).\n"
+            f"The current (not overall) balance is **`{smoothie_eth:,.2f}` ETH.**\n"
+            f"This is over a span of `{pretty_time(d)}`.\n\n"
+            f"{min(smoothie_node_count, 5)} largest nodes:\n"
+        )
+        lines = [
+            f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}"
+            for d in data[True]["counts"][: min(smoothie_node_count, 5)]
+        ]
         e.description += "\n".join(lines)
         await interaction.followup.send(embed=e)
 
@@ -273,11 +299,18 @@ class Random(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         c = await rp.get_contract_by_name("rocketDAONodeTrustedActions")
         # get challenges made
-        events = list(c.events["ActionChallengeMade"].get_logs(
-            from_block=(await w3.eth.get_block("latest")).number - 7 * 24 * 60 * 60 // 12))
+        events = list(
+            c.events["ActionChallengeMade"].get_logs(
+                from_block=(await w3.eth.get_block("latest")).number
+                - 7 * 24 * 60 * 60 // 12
+            )
+        )
         # remove all events of nodes that aren't challenged anymore
         for event in events:
-            if not await rp.call("rocketDAONodeTrusted.getMemberIsChallenged", event.args.nodeChallengedAddress):
+            if not await rp.call(
+                "rocketDAONodeTrusted.getMemberIsChallenged",
+                event.args.nodeChallengedAddress,
+            ):
                 events.remove(event)
         # sort by block number
         events.sort(key=lambda x: x.blockNumber)
@@ -287,7 +320,9 @@ class Random(commands.Cog):
         e = Embed(title="Active oDAO Challenges")
         e.description = ""
         # get duration of challenge period
-        challenge_period = await rp.call("rocketDAONodeTrustedSettingsMembers.getChallengeWindow")
+        challenge_period = await rp.call(
+            "rocketDAONodeTrustedSettingsMembers.getChallengeWindow"
+        )
         for event in events:
             latest_block = await w3.eth.get_block("latest")
             time_left = challenge_period - (latest_block.timestamp - event.args.time)
@@ -304,7 +339,12 @@ class Random(commands.Cog):
         Randomly generated Asian restaurant names
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
-        async with aiohttp.ClientSession() as session, session.get("https://www.dotomator.com/api/random_name.json?type=asian") as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get(
+                "https://www.dotomator.com/api/random_name.json?type=asian"
+            ) as resp,
+        ):
             a = (await resp.json())["name"]
         await interaction.followup.send(a)
 
@@ -319,10 +359,7 @@ class Random(commands.Cog):
         found_ts = await block_to_ts(block)
 
         if found_ts == timestamp:
-            text = (
-                f"Found perfect match for timestamp {timestamp}:\n"
-                f"Block: {block}"
-            )
+            text = f"Found perfect match for timestamp {timestamp}:\nBlock: {block}"
         else:
             text = (
                 f"Found close match for timestamp {timestamp}:\n"
@@ -335,10 +372,14 @@ class Random(commands.Cog):
     @command()
     async def get_abi_of_contract(self, interaction: Interaction, contract: str):
         """Retrieve the latest ABI for a contract"""
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        await interaction.response.defer(
+            ephemeral=is_hidden_role_controlled(interaction)
+        )
         try:
             abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
-            file = File(io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
+            file = File(
+                io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json"
+            )
             await interaction.followup.send(file=file)
         except Exception as err:
             await interaction.followup.send(content=f"```Exception: {err!r}```")
@@ -346,7 +387,9 @@ class Random(commands.Cog):
     @command()
     async def get_address_of_contract(self, interaction: Interaction, contract: str):
         """Retrieve the latest address for a contract"""
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        await interaction.response.defer(
+            ephemeral=is_hidden_role_controlled(interaction)
+        )
         try:
             address = cfg.rocketpool.manual_addresses.get(contract)
             if not address:
@@ -366,11 +409,15 @@ class Random(commands.Cog):
                 await interaction.followup.send(content=m)
 
     @command()
-    async def decode_tnx(self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None):
+    async def decode_tnx(
+        self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None
+    ):
         """
         Decode transaction calldata
         """
-        await interaction.response.defer(ephemeral=is_hidden_role_controlled(interaction))
+        await interaction.response.defer(
+            ephemeral=is_hidden_role_controlled(interaction)
+        )
         tnx = await w3.eth.get_transaction(tnx_hash)
         if contract_name:
             contract = await rp.get_contract_by_name(contract_name)
@@ -384,8 +431,14 @@ class Random(commands.Cog):
     @get_address_of_contract.autocomplete("contract")
     @get_abi_of_contract.autocomplete("contract")
     @decode_tnx.autocomplete("contract_name")
-    async def match_contract_names(self, interaction: Interaction, current: str) -> list[Choice[str]]:
-        return [Choice(name=name, value=name) for name in self.contract_names if current.lower() in name.lower()][:25]
+    async def match_contract_names(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
+        return [
+            Choice(name=name, value=name)
+            for name in self.contract_names
+            if current.lower() in name.lower()
+        ][:25]
 
 
 async def setup(self):

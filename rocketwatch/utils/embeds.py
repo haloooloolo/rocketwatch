@@ -84,7 +84,10 @@ _pdao_delegates: dict[str, str] = {}
 async def get_pdao_delegates() -> dict[str, str]:
     global _pdao_delegates
     try:
-        async with aiohttp.ClientSession() as session, session.get("https://delegates.rocketpool.net/api/delegates") as resp:
+        async with (
+            aiohttp.ClientSession() as session,
+            session.get("https://delegates.rocketpool.net/api/delegates") as resp,
+        ):
             _pdao_delegates = {d["nodeAddress"]: d["name"] for d in await resp.json()}
     except Exception:
         log.warning("Failed to fetch pDAO delegates.")
@@ -92,11 +95,11 @@ async def get_pdao_delegates() -> dict[str, str]:
 
 
 async def el_explorer_url(
-        target: str,
-        name: str = "",
-        prefix: str | Literal[-1] = "",
-        name_fmt: Callable[[str], str] | None = None,
-        block="latest"
+    target: str,
+    name: str = "",
+    prefix: str | Literal[-1] = "",
+    name_fmt: Callable[[str], str] | None = None,
+    block="latest",
 ):
     if w3.is_address(target):
         # sanitize address
@@ -107,7 +110,9 @@ async def el_explorer_url(
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
 
         if await rp.is_node(target):
-            megapool_address = await rp.call("rocketNodeManager.getMegapoolAddress", target)
+            megapool_address = await rp.call(
+                "rocketNodeManager.getMegapoolAddress", target
+            )
             if megapool_address != "0x0000000000000000000000000000000000000000":
                 url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
 
@@ -121,15 +126,25 @@ async def el_explorer_url(
         if not name and (n := _(n_key)) != n_key:
             name = n
 
-        if prefix != -1 and await rp.call("rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block):
+        if prefix != -1 and await rp.call(
+            "rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block
+        ):
             prefix += ":cup_with_straw:"
 
-        if not name and (member_id := await rp.call("rocketDAONodeTrusted.getMemberID", target, block=block)):
+        if not name and (
+            member_id := await rp.call(
+                "rocketDAONodeTrusted.getMemberID", target, block=block
+            )
+        ):
             if prefix != -1:
                 prefix += "🔮"
             name = member_id
 
-        if not name and (member_id := await rp.call("rocketDAOSecurity.getMemberID", target, block=block)):
+        if not name and (
+            member_id := await rp.call(
+                "rocketDAOSecurity.getMemberID", target, block=block
+            )
+        ):
             if prefix != -1:
                 prefix += "🔒"
             name = member_id
@@ -145,10 +160,16 @@ async def el_explorer_url(
         if not name:
             a = Addresses.get(target)
             # don't apply name if it has  label is one with the id "take-action", as these don't show up on the explorer
-            if all((
-                (not a.labels or len(a.labels) != 1 or a.labels[0].id != "take-action"),
-                a.name and ("alert" not in a.name.lower())
-            )):
+            if all(
+                (
+                    (
+                        not a.labels
+                        or len(a.labels) != 1
+                        or a.labels[0].id != "take-action"
+                    ),
+                    a.name and ("alert" not in a.name.lower()),
+                )
+            ):
                 name = a.name
         if not name:
             # not an odao member, try to get their ens
@@ -157,28 +178,52 @@ async def el_explorer_url(
         if code := await w3.eth.get_code(target):
             if prefix != -1:
                 prefix += "📄"
-            if ((not name) and (w3.keccak(text=code.hex()).hex() in cfg.other.mev_hashes)):
+            if (not name) and (
+                w3.keccak(text=code.hex()).hex() in cfg.other.mev_hashes
+            ):
                 name = "MEV Bot Contract"
             if not name:
                 with contextlib.suppress(Exception):
-                    c = w3.eth.contract(address=target, abi=[{"inputs"         : [],
-                                                              "name"           : "name",
-                                                              "outputs"        : [{"internalType": "string",
-                                                                                   "name"        : "",
-                                                                                   "type"        : "string"}],
-                                                              "stateMutability": "view",
-                                                              "type"           : "function"}])
+                    c = w3.eth.contract(
+                        address=target,
+                        abi=[
+                            {
+                                "inputs": [],
+                                "name": "name",
+                                "outputs": [
+                                    {
+                                        "internalType": "string",
+                                        "name": "",
+                                        "type": "string",
+                                    }
+                                ],
+                                "stateMutability": "view",
+                                "type": "function",
+                            }
+                        ],
+                    )
                     n = await c.functions.name().call()
                     # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
                     # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
                     # in an attempt to get people to click on his contract
 
                     # first, if the name has a link in it, we ignore it
-                    if any(keyword in n.lower() for keyword in
-                           ["http", "discord", "airdrop", "telegram", "twitter", "youtube"]):
+                    if any(
+                        keyword in n.lower()
+                        for keyword in [
+                            "http",
+                            "discord",
+                            "airdrop",
+                            "telegram",
+                            "twitter",
+                            "youtube",
+                        ]
+                    ):
                         log.warning(f"Contract {target} has a suspicious name: {n}")
                     else:
-                        name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
+                        name = (
+                            f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
+                        )
     else:
         # transaction hash
         url = f"{cfg.execution_layer.explorer}/tx/{target}"
@@ -199,9 +244,20 @@ async def prepare_args(args):
         args[f"{arg_key}_raw"] = arg_value
 
         # handle numbers
-        numeric_keywords = ["amount", "value", "rate", "totaleth", "stakingeth", "rethsupply", "rplprice", "profit"]
-        if any(keyword in arg_key.lower() for keyword in numeric_keywords) and isinstance(arg_value, int):
-            args[arg_key] = arg_value / 10 ** 18
+        numeric_keywords = [
+            "amount",
+            "value",
+            "rate",
+            "totaleth",
+            "stakingeth",
+            "rethsupply",
+            "rplprice",
+            "profit",
+        ]
+        if any(
+            keyword in arg_key.lower() for keyword in numeric_keywords
+        ) and isinstance(arg_value, int):
+            args[arg_key] = arg_value / 10**18
 
         # handle timestamps
         if "deadline" in arg_key.lower() and isinstance(arg_value, int):
@@ -209,9 +265,9 @@ async def prepare_args(args):
 
         # handle percentages
         if "perc" in arg_key.lower():
-            args[arg_key] = arg_value / 10 ** 16
+            args[arg_key] = arg_value / 10**16
         if arg_key.lower() in ["rate", "penalty"]:
-            args[f"{arg_key}_perc"] = arg_value / 10 ** 16
+            args[f"{arg_key}_perc"] = arg_value / 10**16
 
         # handle hex strings
         if str(arg_value).startswith("0x"):
@@ -231,7 +287,9 @@ async def prepare_args(args):
                 args[arg_key] = await el_explorer_url(arg_value, prefix=prefix)
                 args[f"{arg_key}_clean"] = await el_explorer_url(arg_value)
                 if len(arg_value) == 66:
-                    args[f'{arg_key}_small'] = await el_explorer_url(arg_value, name="[tnx]")
+                    args[f"{arg_key}_small"] = await el_explorer_url(
+                        arg_value, name="[tnx]"
+                    )
     if "from" in args:
         args["fancy_from"] = args["from"]
         if "caller" in args and args["from"] != args["caller"]:
@@ -245,7 +303,10 @@ async def assemble(args) -> Embed:
         e.colour = Color.from_rgb(235, 86, 86)
     if "sell_rpl" in args.event_name:
         e.colour = Color.from_rgb(235, 86, 86)
-    if "buy_rpl" in args.event_name or "finality_delay_recover_event" in args.event_name:
+    if (
+        "buy_rpl" in args.event_name
+        or "finality_delay_recover_event" in args.event_name
+    ):
         e.colour = Color.from_rgb(86, 235, 86)
     if "price_update_event" in args.event_name:
         e.colour = Color.from_rgb(86, 235, 235)
@@ -255,18 +316,32 @@ async def assemble(args) -> Embed:
     # raise Exception(str((args, args.assets, args.event_name)))
     if ("pool_deposit" in args.event_name) and (amount >= 1000):
         e.set_image(url="https://media.giphy.com/media/VIX2atZr8dCKk5jF6L/giphy.gif")
-    elif any(kw in args.event_name for kw in ["_scrub_event", "_dissolve_event", "_slash_event", "finality_delay_event"]):
+    elif any(
+        kw in args.event_name
+        for kw in [
+            "_scrub_event",
+            "_dissolve_event",
+            "_slash_event",
+            "finality_delay_event",
+        ]
+    ):
         e.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
     elif "_penalty" in args.event_name:
         e.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
     elif "_proposal_smoothie_" in args.event_name:
-        e.set_image(url="https://cdn.discordapp.com/attachments/812745786638336021/1106983677130461214/butta-commie-filter.png")
+        e.set_image(
+            url="https://cdn.discordapp.com/attachments/812745786638336021/1106983677130461214/butta-commie-filter.png"
+        )
     elif "sdao_member_kick" in args.event_name:
-        e.set_image(url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif")
+        e.set_image(
+            url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
+        )
 
     match args.event_name:
         case "cs_max_validator_increase_event":
-            e.set_image(url="https://media1.tenor.com/m/Yp6Yeiufb04AAAAd/piranhas-feeding.gif")
+            e.set_image(
+                url="https://media1.tenor.com/m/Yp6Yeiufb04AAAAd/piranhas-feeding.gif"
+            )
         case "redstone_upgrade_triggered":
             url = "https://cdn.dribbble.com/users/187497/screenshots/2284528/media/123903807d334c15aa105b44f2bd9252.gif"
             e.set_image(url=url)
@@ -285,17 +360,22 @@ async def assemble(args) -> Embed:
 
     match args.event_name:
         case "pdao_set_delegate":
-            use_large = (args.votingPower >= 200)
+            use_large = args.votingPower >= 200
         case "eth_deposit_event":
-            use_large = (amount >= 32)
+            use_large = amount >= 32
         case "rpl_stake_event":
-            use_large = (amount >= ((3 * 2.4) / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))))
+            use_large = amount >= (
+                (3 * 2.4)
+                / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
+            )
         case "rpl_migration_event":
-            use_large = (amount >= 1000)
+            use_large = amount >= 1000
         case "cs_deposit_eth_event" | "cs_withdraw_eth_event":
-            use_large = (args["assets"] >= 100)
+            use_large = args["assets"] >= 100
         case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
-            use_large = (args["assets"] >= 16 / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice")))
+            use_large = args["assets"] >= 16 / solidity.to_float(
+                await rp.call("rocketNetworkPrices.getRPLPrice")
+            )
         case "rocksolid_deposit_event":
             use_large = args["assets"] >= 50
         case "rocksolid_withdrawal_event":
@@ -303,12 +383,25 @@ async def assemble(args) -> Embed:
         case "validator_multi_deposit_event":
             use_large = args["numberOfValidators"] >= 5
         case _:
-            use_large = (amount >= 100)
+            use_large = amount >= 100
 
     # make numbers look nice
     for arg_key, arg_value in list(args.items()):
-        if any(keyword in arg_key.lower() for keyword in
-               ["amount", "value", "total_supply", "perc", "tnx_fee", "rate", "votingpower", "assets", "shares", "profit"]):
+        if any(
+            keyword in arg_key.lower()
+            for keyword in [
+                "amount",
+                "value",
+                "total_supply",
+                "perc",
+                "tnx_fee",
+                "rate",
+                "votingpower",
+                "assets",
+                "shares",
+                "profit",
+            ]
+        ):
             if not isinstance(arg_value, (int, float)) or "raw" in arg_key:
                 continue
             if arg_value:
@@ -319,8 +412,14 @@ async def assemble(args) -> Embed:
                 arg_value = int(arg_value)
             args[arg_key] = humanize.intcomma(arg_value)
 
-    has_small = _(f"embeds.{args.event_name}.description_small") != f"embeds.{args.event_name}.description_small"
-    has_large = _(f"embeds.{args.event_name}.description") != f"embeds.{args.event_name}.description"
+    has_small = (
+        _(f"embeds.{args.event_name}.description_small")
+        != f"embeds.{args.event_name}.description_small"
+    )
+    has_large = (
+        _(f"embeds.{args.event_name}.description")
+        != f"embeds.{args.event_name}.description"
+    )
 
     if has_small and not (has_large and use_large):
         e.description = _(f"embeds.{args.event_name}.description_small", **args)
@@ -334,17 +433,19 @@ async def assemble(args) -> Embed:
     e.description = _(f"embeds.{args.event_name}.description", **args)
 
     if "cow_uid" in args:
-        e.add_field(name="Cow Order",
-                    value=args.cow_uid,
-                    inline=False)
+        e.add_field(name="Cow Order", value=args.cow_uid, inline=False)
 
     if "exchangeRate" in args:
-        e.add_field(name="Exchange Rate",
-                    value=f"`{args.exchangeRate} RPL/{args.otherToken}`" + (
-                        f" (`{args.discountAmount}%` Discount, oDAO: `{args.marketExchangeRate} RPL/ETH`)"
-                        if "discountAmount" in args else ""
-                    ),
-                    inline=False)
+        e.add_field(
+            name="Exchange Rate",
+            value=f"`{args.exchangeRate} RPL/{args.otherToken}`"
+            + (
+                f" (`{args.discountAmount}%` Discount, oDAO: `{args.marketExchangeRate} RPL/ETH`)"
+                if "discountAmount" in args
+                else ""
+            ),
+            inline=False,
+        )
 
     """
     # show public key if we have one
@@ -355,21 +456,19 @@ async def assemble(args) -> Embed:
     """
 
     if "epoch" in args:
-        e.add_field(name="Epoch",
-                    value=f"[{args.epoch}](https://{cfg.consensus_layer.explorer}/epoch/{args.epoch})")
+        e.add_field(
+            name="Epoch",
+            value=f"[{args.epoch}](https://{cfg.consensus_layer.explorer}/epoch/{args.epoch})",
+        )
 
     if "timezone" in args:
-        e.add_field(name="Timezone",
-                    value=f"`{args.timezone}`",
-                    inline=False)
+        e.add_field(name="Timezone", value=f"`{args.timezone}`", inline=False)
 
     if "node_operator" in args:
-        e.add_field(name="Node Operator",
-                    value=args.node_operator)
+        e.add_field(name="Node Operator", value=args.node_operator)
 
     if "slashing_type" in args:
-        e.add_field(name="Reason",
-                    value=f"`{args.slashing_type} Violation`")
+        e.add_field(name="Reason", value=f"`{args.slashing_type} Violation`")
 
     """
     if "commission" in args:
@@ -379,78 +478,62 @@ async def assemble(args) -> Embed:
     """
 
     if "invoiceID" in args:
-        e.add_field(
-            name="Invoice ID",
-            value=f"`{args.invoiceID}`",
-            inline=False
-        )
+        e.add_field(name="Invoice ID", value=f"`{args.invoiceID}`", inline=False)
 
     if "settingContractName" in args:
-        e.add_field(name="Contract",
-                    value=f"`{args.settingContractName}`",
-                    inline=False)
+        e.add_field(
+            name="Contract", value=f"`{args.settingContractName}`", inline=False
+        )
 
     if "periodLength" in args:
         e.add_field(
             name="Payment Interval",
             value=humanize.naturaldelta(datetime.timedelta(seconds=args.periodLength)),
-            inline=False
+            inline=False,
         )
         if "startTime" in args:
             e.add_field(
                 name="First Payment",
                 value=f"<t:{args.startTime + args.periodLength}>",
-                inline=False
+                inline=False,
             )
 
     if "index" in args:
-        e.add_field(
-            name="Index",
-            value=args.index,
-            inline=True
-        )
+        e.add_field(name="Index", value=args.index, inline=True)
 
     if "challengePeriod" in args:
         e.add_field(
             name="Challenge Period",
-            value=humanize.naturaldelta(datetime.timedelta(seconds=args.challengePeriod)),
-            inline=True
+            value=humanize.naturaldelta(
+                datetime.timedelta(seconds=args.challengePeriod)
+            ),
+            inline=True,
         )
 
     if "proposalBond" in args:
-        e.add_field(
-            name="Proposal Bond",
-            value=f"{args.proposalBond} RPL",
-            inline=True
-        )
+        e.add_field(name="Proposal Bond", value=f"{args.proposalBond} RPL", inline=True)
 
     if "challengeBond" in args:
         e.add_field(
-            name="Challenge Bond",
-            value=f"{args.challengeBond} RPL",
-            inline=True
+            name="Challenge Bond", value=f"{args.challengeBond} RPL", inline=True
         )
 
     if "contractAddress" in args and "Contract" in args.get("type", ""):
-        e.add_field(name="Contract Address",
-                    value=args.contractAddress,
-                    inline=False)
+        e.add_field(name="Contract Address", value=args.contractAddress, inline=False)
 
     if "url" in args:
-        e.add_field(name="URL",
-                    value=args.url,
-                    inline=False)
+        e.add_field(name="URL", value=args.url, inline=False)
 
     # show current inflation
     if "inflation" in args:
-        e.add_field(name="Current Inflation",
-                    value=f"{args.inflation}%",
-                    inline=False)
+        e.add_field(name="Current Inflation", value=f"{args.inflation}%", inline=False)
 
     if "submission" in args and "merkleTreeCID" in args.submission:
         n = f"0x{s_hex(args.submission.merkleRoot.hex())}"
-        e.add_field(name="Merkle Tree",
-                    value=f"[{n}](https://gateway.ipfs.io/ipfs/{args.submission.merkleTreeCID})")
+        e.add_field(
+            name="Merkle Tree",
+            value=f"[{n}](https://gateway.ipfs.io/ipfs/{args.submission.merkleTreeCID})",
+        )
 
     # show transaction hash if possible
     if "transactionHash" in args:
@@ -458,34 +541,35 @@ async def assemble(args) -> Embed:
         e.add_field(name="Transaction Hash", value=content)
 
     # show sender address
-    if senders := [value for key, value in args.items() if key.lower() in ["sender", "from"]]:
+    if senders := [
+        value for key, value in args.items() if key.lower() in ["sender", "from"]
+    ]:
         sender = senders[0]
         v = sender
         # if args["origin"] is an address and does not match the sender, show both
         if "caller" in args and args["caller"] != sender and "0x" in args["caller"]:
             v = f"{args.caller} ({sender})"
-        e.add_field(name="Sender Address",
-                    value=v)
+        e.add_field(name="Sender Address", value=v)
 
     # show block number
     el_explorer = cfg.execution_layer.explorer
     if "block_number" in args:
-        e.add_field(name="Block Number",
-                    value=f"[{args.blockNumber}]({el_explorer}/block/{args.blockNumber})")
+        e.add_field(
+            name="Block Number",
+            value=f"[{args.blockNumber}]({el_explorer}/block/{args.blockNumber})",
+        )
 
     cl_explorer = cfg.consensus_layer.explorer
     if "slot" in args:
-        e.add_field(name="Slot",
-                    value=f"[{args.slot}]({cl_explorer}/slot/{args.slot})")
+        e.add_field(name="Slot", value=f"[{args.slot}]({cl_explorer}/slot/{args.slot})")
 
     if "smoothie_amount" in args:
-        e.add_field(name="Smoothing Pool Balance",
-                    value=f"||{args.smoothie_amount}|| ETH")
+        e.add_field(
+            name="Smoothing Pool Balance", value=f"||{args.smoothie_amount}|| ETH"
+        )
 
     if args.get("reason"):
-        e.add_field(name="Likely Revert Reason",
-                    value=f"`{args.reason}`",
-                    inline=False)
+        e.add_field(name="Likely Revert Reason", value=f"`{args.reason}`", inline=False)
 
     # show timestamp
     if "time" in args:
@@ -497,9 +581,7 @@ async def assemble(args) -> Embed:
         times += [await block_to_ts(block)]
 
     time = times[0] if times else int(datetime.datetime.now().timestamp())
-    e.add_field(name="Timestamp",
-                value=f"<t:{time}:R> (<t:{time}:f>)",
-                inline=False)
+    e.add_field(name="Timestamp", value=f"<t:{time}:R> (<t:{time}:f>)", inline=False)
 
     # show the transaction fees
     if "tnx_fee" in args:

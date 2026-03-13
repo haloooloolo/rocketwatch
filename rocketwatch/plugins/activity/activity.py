@@ -34,7 +34,7 @@ class RichActivity(commands.Cog):
         await self.bot.change_presence(
             activity=Activity(
                 type=ActivityType.watching,
-                name=f"{validator_count:,} active validators"
+                name=f"{validator_count:,} active validators",
             )
         )
 

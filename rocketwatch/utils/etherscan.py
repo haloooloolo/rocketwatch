@@ -16,18 +16,22 @@ async def get_recent_account_transactions(address, block_count=44800):
     lowest_block = highest_block - block_count
 
     async with aiohttp.ClientSession() as session:
-        resp = await session.get(ETHERSCAN_URL, params={"address"   : address,
-                                                        "page"      : page,
-                                                        "apikey"    : cfg.execution_layer.etherscan_secret,
-                                                        "module"    : "account",
-                                                        "action"    : "txlist",
-                                                        "sort"      : "desc",
-                                                        "startblock": lowest_block,
-                                                        "endblock"  : highest_block})
+        resp = await session.get(
+            ETHERSCAN_URL,
+            params={
+                "address": address,
+                "page": page,
+                "apikey": cfg.execution_layer.etherscan_secret,
+                "module": "account",
+                "action": "txlist",
+                "sort": "desc",
+                "startblock": lowest_block,
+                "endblock": highest_block,
+            },
+        )
 
         if resp.status != 200:
-            log.debug(
-                f"Error querying etherscan, unexpected HTTP {resp.status!s}")
+            log.debug(f"Error querying etherscan, unexpected HTTP {resp.status!s}")
             return
 
         parsed = await resp.json()
@@ -42,4 +46,6 @@ async def get_recent_account_transactions(address, block_count=44800):
                 return False
             return int(tx["isError"]) == 0
 
-        return {result["hash"]: result for result in parsed["result"] if valid_tx(result)}
+        return {
+            result["hash"]: result for result in parsed["result"] if valid_tx(result)
+        }

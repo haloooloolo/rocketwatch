@@ -41,7 +41,9 @@ class Rewards(commands.Cog):
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
             return await response.json()
 
-    async def get_estimated_rewards(self, interaction: Interaction, address: str) -> RewardEstimate | None:
+    async def get_estimated_rewards(
+        self, interaction: Interaction, address: str
+    ) -> RewardEstimate | None:
         if not await rp.call("rocketNodeManager.getNodeExists", address):
             await interaction.followup.send(f"{address} is not a registered node.")
             return None
@@ -50,13 +52,18 @@ class Rewards(commands.Cog):
             patches_res = await self._make_request(address)
         except Exception as e:
             await self.bot.report_error(e, interaction)
-            await interaction.followup.send("Error fetching node data from Sprocket Pool API. Blame Patches.")
+            await interaction.followup.send(
+                "Error fetching node data from Sprocket Pool API. Blame Patches."
+            )
             return None
 
         data_block = await ts_to_block(patches_res["time"])
         rpl_rewards: int = patches_res[address].get("collateralRpl", 0)
         eth_rewards: int = patches_res[address].get("smoothingPoolEth", 0)
-        interval_time = await rp.call("rocketDAOProtocolSettingsRewards.getRewardsClaimIntervalTime", block=data_block)
+        interval_time = await rp.call(
+            "rocketDAOProtocolSettingsRewards.getRewardsClaimIntervalTime",
+            block=data_block,
+        )
 
         return Rewards.RewardEstimate(
             address=address,
@@ -67,7 +74,7 @@ class Rewards(commands.Cog):
             end_time=patches_res["startTime"] + interval_time,
             rpl_rewards=solidity.to_float(rpl_rewards),
             eth_rewards=solidity.to_float(eth_rewards),
-            system_weight=solidity.to_float(patches_res["totalNodeWeight"])
+            system_weight=solidity.to_float(patches_res["totalNodeWeight"]),
         )
 
     @staticmethod
@@ -82,8 +89,12 @@ class Rewards(commands.Cog):
 
     @command()
     @describe(node_address="address of node to show rewards for")
-    @describe(extrapolate="whether to extrapolate partial rewards for the entire period")
-    async def upcoming_rewards(self, interaction: Interaction, node_address: str, extrapolate: bool = True):
+    @describe(
+        extrapolate="whether to extrapolate partial rewards for the entire period"
+    )
+    async def upcoming_rewards(
+        self, interaction: Interaction, node_address: str, extrapolate: bool = True
+    ):
         """
         Show estimated RPL and smoothing pool rewards for this period.
         """
@@ -97,9 +108,13 @@ class Rewards(commands.Cog):
             return
 
         if extrapolate:
-            registration_time = await rp.call("rocketNodeManager.getNodeRegistrationTime", address)
+            registration_time = await rp.call(
+                "rocketNodeManager.getNodeRegistrationTime", address
+            )
             reward_start_time = max(registration_time, rewards.start_time)
-            proj_factor = (rewards.end_time - reward_start_time) / (rewards.data_time - reward_start_time)
+            proj_factor = (rewards.end_time - reward_start_time) / (
+                rewards.data_time - reward_start_time
+            )
             rewards.rpl_rewards *= proj_factor
             rewards.eth_rewards *= proj_factor
 
@@ -115,15 +130,15 @@ class Rewards(commands.Cog):
         node_address="address of node to simulate rewards for",
         rpl_stake="amount of staked RPL to simulate",
         num_leb8="number of 8 ETH minipools to simulate",
-        num_eb16="number of 16 ETH minipools to simulate"
+        num_eb16="number of 16 ETH minipools to simulate",
     )
     async def simulate_rewards(
-            self,
-            interaction: Interaction,
-            node_address: str,
-            rpl_stake: int = 0,
-            num_leb8: int = 0,
-            num_eb16: int = 0
+        self,
+        interaction: Interaction,
+        node_address: str,
+        rpl_stake: int = 0,
+        num_leb8: int = 0,
+        num_eb16: int = 0,
     ):
         """
         Simulate RPL rewards for this period
@@ -145,16 +160,32 @@ class Rewards(commands.Cog):
         data_block: int = rewards.data_block
         reward_start_block = await ts_to_block(rewards.start_time)
 
-        rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice", block=data_block))
-        actual_borrowed_eth = solidity.to_float(
-            await rp.call("rocketNodeStaking.getNodeETHBorrowed", address, block=data_block)
+        rpl_ratio = solidity.to_float(
+            await rp.call("rocketNetworkPrices.getRPLPrice", block=data_block)
         )
-        actual_rpl_stake = solidity.to_float(await rp.call("rocketNodeStaking.getNodeStakedRPL", address, block=data_block))
+        actual_borrowed_eth = solidity.to_float(
+            await rp.call(
+                "rocketNodeStaking.getNodeETHBorrowed", address, block=data_block
+            )
+        )
+        actual_rpl_stake = solidity.to_float(
+            await rp.call(
+                "rocketNodeStaking.getNodeStakedRPL", address, block=data_block
+            )
+        )
 
-        inflation_rate: int = await rp.call("rocketTokenRPL.getInflationIntervalRate", block=data_block)
-        inflation_interval: int = await rp.call("rocketTokenRPL.getInflationIntervalTime", block=data_block)
-        num_inflation_intervals: int = (rewards.end_time - rewards.start_time) // inflation_interval
-        total_supply: int = await rp.call("rocketTokenRPL.totalSupply", block=reward_start_block)
+        inflation_rate: int = await rp.call(
+            "rocketTokenRPL.getInflationIntervalRate", block=data_block
+        )
+        inflation_interval: int = await rp.call(
+            "rocketTokenRPL.getInflationIntervalTime", block=data_block
+        )
+        num_inflation_intervals: int = (
+            rewards.end_time - rewards.start_time
+        ) // inflation_interval
+        total_supply: int = await rp.call(
+            "rocketTokenRPL.totalSupply", block=reward_start_block
+        )
 
         period_inflation: int = total_supply
         for _i in range(num_inflation_intervals):
@@ -167,13 +198,17 @@ class Rewards(commands.Cog):
             if collateral_ratio <= 0.15:
                 return 100 * rpl_value
             else:
-                return (13.6137 + 2 * np.log(100 * collateral_ratio - 13)) * _borrowed_eth
+                return (
+                    13.6137 + 2 * np.log(100 * collateral_ratio - 13)
+                ) * _borrowed_eth
 
         def rewards_at(_stake: float, _borrowed_eth: float) -> float:
             weight = node_weight(_stake, _borrowed_eth)
             base_weight = node_weight(actual_rpl_stake, _borrowed_eth)
             new_system_weight = rewards.system_weight + weight - base_weight
-            return solidity.to_float(0.7 * period_inflation * weight / new_system_weight)
+            return solidity.to_float(
+                0.7 * period_inflation * weight / new_system_weight
+            )
 
         fig, ax = plt.subplots(figsize=(5, 2.5))
         ax.grid()
@@ -187,7 +222,9 @@ class Rewards(commands.Cog):
         cur_color, cur_label, cur_ls = "#eb8e55", "current", "solid"
         sim_color, sim_label, sim_ls = "darkred", "simulated", "dashed"
 
-        def draw_reward_curve(_color: str, _label: str | None, _line_style: str, _borrowed_eth: float) -> None:
+        def draw_reward_curve(
+            _color: str, _label: str | None, _line_style: str, _borrowed_eth: float
+        ) -> None:
             step_size = max(1, (x_max - x_min) // 1000)
             x = np.arange(x_min, x_max, step_size, dtype=int)
             y = np.array([rewards_at(x, _borrowed_eth) for x in x])
@@ -202,7 +239,7 @@ class Rewards(commands.Cog):
                     (_x, _y),
                     textcoords="offset points",
                     xytext=(5, -10 if _y > 0 else 5),
-                    ha="left"
+                    ha="left",
                 )
 
             plot_point(cur_color, cur_label, actual_rpl_stake)
@@ -217,7 +254,9 @@ class Rewards(commands.Cog):
         elif borrowed_eth > 0:
             draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
         else:
-            await interaction.followup.send("Empty node. Choose another one or specify the minipool count.")
+            await interaction.followup.send(
+                "Empty node. Choose another one or specify the minipool count."
+            )
             return
 
         def formatter(_x, _pos) -> str:
@@ -234,7 +273,9 @@ class Rewards(commands.Cog):
         ax.set_ylabel("rewards")
         ax.xaxis.set_major_formatter(formatter)
 
-        y_min = min(rewards_at(x_min, borrowed_eth), rewards_at(x_min, actual_borrowed_eth))
+        y_min = min(
+            rewards_at(x_min, borrowed_eth), rewards_at(x_min, actual_borrowed_eth)
+        )
         _, y_max = ax.get_ylim()
         ax.set_ylim((y_min, y_max))
 

@@ -27,22 +27,30 @@ class DelegateContracts(commands.Cog):
         latest_contract: str,
         title: str,
     ) -> Embed:
-        distribution_stats = await (await collection.aggregate([
-            {"$match": match_filter},
-            {"$group": {"_id": f"${delegate_field}", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-        ])).to_list()
+        distribution_stats = await (
+            await collection.aggregate(
+                [
+                    {"$match": match_filter},
+                    {"$group": {"_id": f"${delegate_field}", "count": {"$sum": 1}}},
+                    {"$sort": {"count": -1}},
+                ]
+            )
+        ).to_list()
 
         use_latest_counts = {True: 0, False: 0}
-        for d in await (await collection.aggregate([
-            {"$match": match_filter},
-            {"$group": {"_id": f"${use_latest_field}", "count": {"$sum": 1}}},
-        ])).to_list():
+        for d in await (
+            await collection.aggregate(
+                [
+                    {"$match": match_filter},
+                    {"$group": {"_id": f"${use_latest_field}", "count": {"$sum": 1}}},
+                ]
+            )
+        ).to_list():
             use_latest_counts[bool(d["_id"])] = d["count"]
 
         e = Embed()
         e.title = title
-        s = "\u00A0" * 4
+        s = "\u00a0" * 4
         desc = "**Effective Delegate Distribution:**\n"
         c_sum = sum(d["count"] for d in distribution_stats)
         # refresh cached address
@@ -69,7 +77,11 @@ class DelegateContracts(commands.Cog):
         await interaction.response.defer()
         e = await self._delegate_stats(
             collection=self.bot.db.minipools,
-            match_filter={"beacon.status": {"$in": ["pending_initialized", "pending_queued", "active_ongoing"]}},
+            match_filter={
+                "beacon.status": {
+                    "$in": ["pending_initialized", "pending_queued", "active_ongoing"]
+                }
+            },
             delegate_field="effective_delegate",
             use_latest_field="use_latest_delegate",
             latest_contract="rocketMinipoolDelegate",

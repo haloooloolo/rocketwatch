@@ -49,7 +49,7 @@ class RocketPool:
         self._multicall = await self.get_contract_by_name("multicall3")
 
         log.info("Indexing Rocket Pool contracts...")
-        for path in Path("contracts/rocketpool/contracts/contract").rglob('*.sol'):
+        for path in Path("contracts/rocketpool/contracts/contract").rglob("*.sol"):
             file_name = path.stem
             contract = file_name[0].lower() + file_name[1:]
             try:
@@ -61,12 +61,22 @@ class RocketPool:
         try:
             cs_dir, cs_prefix = "ConstellationDirectory", "Constellation"
             self.addresses |= {
-                f"{cs_prefix}.SuperNodeAccount": await self.call(f"{cs_dir}.getSuperNodeAddress"),
-                f"{cs_prefix}.OperatorDistributor": await self.call(f"{cs_dir}.getOperatorDistributorAddress"),
-                f"{cs_prefix}.Whitelist": await self.call(f"{cs_dir}.getWhitelistAddress"),
-                f"{cs_prefix}.ETHVault": await self.call(f"{cs_dir}.getWETHVaultAddress"),
-                f"{cs_prefix}.RPLVault": await self.call(f"{cs_dir}.getRPLVaultAddress"),
-                "WETH": await self.call(f"{cs_dir}.getWETHAddress")
+                f"{cs_prefix}.SuperNodeAccount": await self.call(
+                    f"{cs_dir}.getSuperNodeAddress"
+                ),
+                f"{cs_prefix}.OperatorDistributor": await self.call(
+                    f"{cs_dir}.getOperatorDistributorAddress"
+                ),
+                f"{cs_prefix}.Whitelist": await self.call(
+                    f"{cs_dir}.getWhitelistAddress"
+                ),
+                f"{cs_prefix}.ETHVault": await self.call(
+                    f"{cs_dir}.getWETHVaultAddress"
+                ),
+                f"{cs_prefix}.RPLVault": await self.call(
+                    f"{cs_dir}.getRPLVaultAddress"
+                ),
+                "WETH": await self.call(f"{cs_dir}.getWETHAddress"),
             }
         except NoAddressFound:
             log.warning("Failed to find address for Constellation contracts")
@@ -108,7 +118,10 @@ class RocketPool:
     async def multicall(self, calls, require_success=True) -> list:
         """Multicall accepting ContractFunction objects or (fn, require_success) tuples."""
         fns, flags = self._normalize_calls(calls, require_success)
-        encoded = [(fn.address, af, fn._encode_transaction_data()) for fn, af in zip(fns, flags, strict=False)]
+        encoded = [
+            (fn.address, af, fn._encode_transaction_data())
+            for fn, af in zip(fns, flags, strict=False)
+        ]
         results = await self._multicall.functions.aggregate3(encoded).call()
         return [
             RocketPool._decode_fn_output(fns[i], data) if success else None
@@ -128,7 +141,9 @@ class RocketPool:
     async def uncached_get_address_by_name(self, name, block="latest"):
         log.debug(f"Retrieving address for {name} Contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
-        storage = await self.get_contract_by_name("rocketStorage", historical=block != "latest")
+        storage = await self.get_contract_by_name(
+            "rocketStorage", historical=block != "latest"
+        )
         address = await storage.functions.getAddress(sha3).call(block_identifier=block)
         if not w3.to_int(hexstr=address):
             raise NoAddressFound(f"No address found for {name} Contract")
@@ -141,14 +156,14 @@ class RocketPool:
         try:
             await w3.eth.call(
                 {
-                    "from"    : tnx["from"],
-                    "to"      : tnx["to"],
-                    "data"    : tnx["input"],
-                    "gas"     : tnx["gas"],
+                    "from": tnx["from"],
+                    "to": tnx["to"],
+                    "data": tnx["input"],
+                    "gas": tnx["gas"],
                     "gasPrice": tnx["gasPrice"],
-                    "value"   : tnx["value"]
+                    "value": tnx["value"],
                 },
-                block_identifier=tnx.blockNumber
+                block_identifier=tnx.blockNumber,
             )
         except ContractLogicError as err:
             log.debug(f"Transaction: {tnx.hash} ContractLogicError: {err}")
@@ -193,7 +208,9 @@ class RocketPool:
             raise Exception(f"No abi found for {name} Contract")
         return decode_abi(compressed_string)
 
-    async def assemble_contract(self, name, address=None, historical=False, mainnet=False):
+    async def assemble_contract(
+        self, name, address=None, historical=False, mainnet=False
+    ):
         cache_key = (name, address, historical, mainnet)
         if cache_key in self.CONTRACT_CACHE:
             return self.CONTRACT_CACHE[cache_key]
@@ -225,7 +242,9 @@ class RocketPool:
 
     async def get_contract_by_name(self, name, historical=False, mainnet=False):
         address = await self.get_address_by_name(name)
-        return await self.assemble_contract(name, address, historical=historical, mainnet=mainnet)
+        return await self.assemble_contract(
+            name, address, historical=historical, mainnet=mainnet
+        )
 
     async def get_contract_by_address(self, address):
         """
@@ -238,29 +257,48 @@ class RocketPool:
         log.debug(f"Estimating gas for {path} (block={block})")
         name, function = path.rsplit(".", 1)
         contract = await self.get_contract_by_name(name)
-        return await contract.functions[function](*args).estimate_gas({"gas": 2 ** 32},
-                                                                      block_identifier=block)
+        return await contract.functions[function](*args).estimate_gas(
+            {"gas": 2**32}, block_identifier=block
+        )
 
-    async def get_function(self, path, *args, historical=False, address=None, mainnet=False):
+    async def get_function(
+        self, path, *args, historical=False, address=None, mainnet=False
+    ):
         name, function = path.rsplit(".", 1)
         if not address:
             address = await self.get_address_by_name(name)
         contract = await self.assemble_contract(name, address, historical, mainnet)
-        args = tuple(w3.to_checksum_address(a) if isinstance(a, str) and w3.is_address(a) else a for a in args)
+        args = tuple(
+            w3.to_checksum_address(a) if isinstance(a, str) and w3.is_address(a) else a
+            for a in args
+        )
         return contract.functions[function](*args)
 
-    async def call(self, path, *args, block: BlockIdentifier = "latest", address=None, mainnet=False):
+    async def call(
+        self,
+        path,
+        *args,
+        block: BlockIdentifier = "latest",
+        address=None,
+        mainnet=False,
+    ):
         log.debug(f"Calling {path} (block={block})")
-        fn = await self.get_function(path, *args, historical=block != "latest", address=address, mainnet=mainnet)
+        fn = await self.get_function(
+            path, *args, historical=block != "latest", address=address, mainnet=mainnet
+        )
         return await fn.call(block_identifier=block)
 
     async def get_annual_rpl_inflation(self):
-        inflation_per_interval = solidity.to_float(await self.call("rocketTokenRPL.getInflationIntervalRate"))
+        inflation_per_interval = solidity.to_float(
+            await self.call("rocketTokenRPL.getInflationIntervalRate")
+        )
         if not inflation_per_interval:
             return 0
-        seconds_per_interval = await self.call("rocketTokenRPL.getInflationIntervalTime")
+        seconds_per_interval = await self.call(
+            "rocketTokenRPL.getInflationIntervalTime"
+        )
         intervals_per_year = solidity.years / seconds_per_interval
-        return (inflation_per_interval ** intervals_per_year) - 1
+        return (inflation_per_interval**intervals_per_year) - 1
 
     async def get_percentage_rpl_swapped(self):
         value = solidity.to_float(await self.call("rocketTokenRPL.totalSwappedRPL"))
@@ -280,12 +318,14 @@ class RocketPool:
 
     async def get_eth_usdc_price(self) -> float:
         from utils.liquidity import UniswapV3
+
         pool_address = await self.get_address_by_name("UniV3_USDC_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
         return 1 / await pool.get_normalized_price()
 
     async def get_reth_eth_price(self) -> float:
         from utils.liquidity import UniswapV3
+
         pool_address = await self.get_address_by_name("UniV3_rETH_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
         return await pool.get_normalized_price()

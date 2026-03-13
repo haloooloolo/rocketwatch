@@ -40,12 +40,16 @@ class ChatSummary(commands.Cog):
         if message.embeds:
             metadata.append(f"{len(message.embeds)} embeds")
         # replies and make sure the reference is not deleted
-        if message.reference and not isinstance(message.reference.resolved,
-                                                DeletedReferencedMessage) and message.reference.resolved:
+        if (
+            message.reference
+            and not isinstance(message.reference.resolved, DeletedReferencedMessage)
+            and message.reference.resolved
+        ):
             # show name of referenced message author
             # and the first 10 characters of the referenced message
             metadata.append(
-                f"reply to \"{message.reference.resolved.content[:32]}…\" from {message.reference.resolved.author.name}")
+                f'reply to "{message.reference.resolved.content[:32]}…" from {message.reference.resolved.author.name}'
+            )
         if metadata:
             text += f" <{', '.join(metadata)}>\n"
         # replace all <@[0-9]+> with the name of the user
@@ -59,17 +63,26 @@ class ChatSummary(commands.Cog):
     @is_owner()
     async def summarize_chat(self, interaction: Interaction):
         await interaction.response.defer(ephemeral=True)
-        last_ts = await self.bot.db["last_summary"].find_one({"channel_id": interaction.channel.id})
+        last_ts = await self.bot.db["last_summary"].find_one(
+            {"channel_id": interaction.channel.id}
+        )
         # ratelimit
-        if last_ts and (datetime.now(UTC) - last_ts["timestamp"].replace(tzinfo=pytz.utc)) < timedelta(hours=6):
-            await interaction.followup.send("You can only summarize once every 6 hours.", ephemeral=True)
+        if last_ts and (
+            datetime.now(UTC) - last_ts["timestamp"].replace(tzinfo=pytz.utc)
+        ) < timedelta(hours=6):
+            await interaction.followup.send(
+                "You can only summarize once every 6 hours.", ephemeral=True
+            )
             return
         if interaction.channel.id not in [405163713063288832]:
             await interaction.followup.send("You can't summarize here.", ephemeral=True)
             return
         msg = await interaction.channel.send("Summarizing chat…")
-        last_ts = last_ts["timestamp"].replace(
-            tzinfo=pytz.utc) if last_ts and "timestamp" in last_ts else datetime.now(UTC) - timedelta(days=365)
+        last_ts = (
+            last_ts["timestamp"].replace(tzinfo=pytz.utc)
+            if last_ts and "timestamp" in last_ts
+            else datetime.now(UTC) - timedelta(days=365)
+        )
         prompt = (
             "Task Description:\n"
             "I need a summary of the entire chat log. This summary should be presented in the form of a bullet list.\n\n"
@@ -93,13 +106,17 @@ class ChatSummary(commands.Cog):
             "----------------\n\n"
             "Please begin the task now."
         )
-        response, prompt, msgs = await self.prompt_model(interaction.channel, prompt, last_ts)
+        response, prompt, msgs = await self.prompt_model(
+            interaction.channel, prompt, last_ts
+        )
         if not response:
             await msg.delete()
             await interaction.followup.send(content="Not enough messages to summarize.")
             return
         es = [Embed()]
-        es[0].title = f"Chat Summarization of {msgs} messages since {last_ts.strftime('%Y-%m-%d %H:%M')}"
+        es[
+            0
+        ].title = f"Chat Summarization of {msgs} messages since {last_ts.strftime('%Y-%m-%d %H:%M')}"
         res = response.content[-1].text
         # split content in multiple embeds if it is too long. limit for description is 4096
         while len(res):
@@ -125,11 +142,15 @@ class ChatSummary(commands.Cog):
                 f"Request cost: ${token_usage / 1000000 * 3:.2f}"
                 f" | Tokens: {response.usage.input_tokens + response.usage.output_tokens}"
                 " | /donate if you like this command"
-            ))
+            )
+        )
         # attach the prompt as a file
         f = BytesIO(prompt.encode("utf-8"))
         f.name = "prompt._log"
-        f = File(f, filename=f"prompt_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}._log")
+        f = File(
+            f,
+            filename=f"prompt_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}._log",
+        )
         # send message in the channel
         await interaction.followup.send("done", ephemeral=True)
         await msg.edit(embeds=es, attachments=[f])
@@ -137,26 +158,39 @@ class ChatSummary(commands.Cog):
         await self.bot.db["last_summary"].update_one(
             {"channel_id": interaction.channel.id},
             {"$set": {"timestamp": datetime.now(UTC)}},
-            upsert=True
+            upsert=True,
         )
 
     # a function that generates the prompt for the model by taking an array of messages, a prefix and a suffix
     def generate_prompt(self, messages, prefix, suffix):
         messages.sort(key=lambda x: x.created_at)
-        prompt = "\n".join([self.message_to_text(message, i) for i, message in enumerate(messages)]).replace("\n\n", "\n")
+        prompt = "\n".join(
+            [self.message_to_text(message, i) for i, message in enumerate(messages)]
+        ).replace("\n\n", "\n")
         return f"{prefix}\n\n{prompt}\n\n{suffix}"
 
     async def prompt_model(
-            self, channel: TextChannel, prompt: str, cut_off_ts: int
+        self, channel: TextChannel, prompt: str, cut_off_ts: int
     ) -> tuple[anthropic.types.Message, str, int]:
-        messages = [message async for message in channel.history(limit=4096) if message.content != ""]
-        messages = [message for message in messages if message.author.id != self.bot.user.id]
+        messages = [
+            message
+            async for message in channel.history(limit=4096)
+            if message.content != ""
+        ]
+        messages = [
+            message for message in messages if message.author.id != self.bot.user.id
+        ]
         messages = [message for message in messages if message.created_at > cut_off_ts]
         if len(messages) < 320:
             return None, None, None
         prefix = "The following is a chat log. Everything prefixed with `>` is a quote."
-        log.info(f"Prompt len: {len(self.tokenizer.encode(self.generate_prompt(messages, prefix, prompt)))}")
-        while len(self.tokenizer.encode(self.generate_prompt(messages, prefix, prompt))) > 100000 - 4096:
+        log.info(
+            f"Prompt len: {len(self.tokenizer.encode(self.generate_prompt(messages, prefix, prompt)))}"
+        )
+        while (
+            len(self.tokenizer.encode(self.generate_prompt(messages, prefix, prompt)))
+            > 100000 - 4096
+        ):
             # remove the oldest message
             messages.pop(0)
         prompt = self.generate_prompt(messages, prefix, prompt)
@@ -164,7 +198,7 @@ class ChatSummary(commands.Cog):
         response = await self.client.messages.create(
             model="claude-3-sonnet-20240229",  # Update this to the desired model
             max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
         )
         # find all {message:index} in response["choices"][0]["message"]["content"]
         log.debug(response.content[-1].text)

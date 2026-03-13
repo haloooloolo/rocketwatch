@@ -29,7 +29,7 @@ class PageView(ui.View):
 
         num_items, content = await self._load_content(
             (self.page_index * self.page_size),
-            ((self.page_index + 1) * self.page_size - 1)
+            ((self.page_index + 1) * self.page_size - 1),
         )
 
         embed = Embed(title=self._title)
@@ -45,8 +45,8 @@ class PageView(ui.View):
             return await self.load()
 
         embed.description = content
-        self.prev_page.disabled = (self.page_index <= 0)
-        self.next_page.disabled = (self.page_index >= max_page_index)
+        self.prev_page.disabled = self.page_index <= 0
+        self.next_page.disabled = self.page_index >= max_page_index
         return embed
 
     @ui.button(emoji="⬅", label="Prev", style=ButtonStyle.gray)
@@ -62,13 +62,11 @@ class PageView(ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
     class JumpToModal(ui.Modal, title="Jump To Position"):
-        def __init__(self, view: 'PageView'):
+        def __init__(self, view: "PageView"):
             super().__init__()
             self.view = view
             self.position_field = ui.TextInput(
-                label="Position",
-                placeholder="Enter position to jump to",
-                required=True
+                label="Position", placeholder="Enter position to jump to", required=True
             )
             self.add_item(self.position_field)
 

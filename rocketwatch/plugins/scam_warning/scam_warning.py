@@ -19,9 +19,15 @@ class ScamWarning(commands.Cog):
         self.failure_cooldown = timedelta(days=1)
 
     async def send_warning(self, user) -> None:
-        support_channel = await self.bot.get_or_fetch_channel(cfg.rocketpool.support.channel_id)
-        report_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
-        resource_channel = await self.bot.get_or_fetch_channel(cfg.discord.channels["resources"])
+        support_channel = await self.bot.get_or_fetch_channel(
+            cfg.rocketpool.support.channel_id
+        )
+        report_channel = await self.bot.get_or_fetch_channel(
+            cfg.discord.channels["report_scams"]
+        )
+        resource_channel = await self.bot.get_or_fetch_channel(
+            cfg.discord.channels["resources"]
+        )
 
         embed = Embed()
         embed.title = "**Stay Safe on Rocket Pool Discord**"
@@ -76,7 +82,9 @@ class ScamWarning(commands.Cog):
             return
 
         msg_time = message.created_at.replace(tzinfo=None)
-        db_entry = (await self.bot.db.scam_warning.find_one({"_id": message.author.id})) or {}
+        db_entry = (
+            await self.bot.db.scam_warning.find_one({"_id": message.author.id})
+        ) or {}
 
         cooldown_end = datetime.fromtimestamp(0)
         if last_failure_time := db_entry.get("last_failure"):
@@ -95,8 +103,12 @@ class ScamWarning(commands.Cog):
 
         await self.bot.db.scam_warning.replace_one(
             {"_id": message.author.id},
-            {"_id": message.author.id, "last_message": msg_time, "last_failure": last_failure_time},
-            upsert=True
+            {
+                "_id": message.author.id,
+                "last_message": msg_time,
+                "last_failure": last_failure_time,
+            },
+            upsert=True,
         )
 
 

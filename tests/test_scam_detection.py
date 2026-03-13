@@ -21,6 +21,7 @@ def _get_test_cfg():
         RocketPoolConfig,
         RocketPoolSupport,
     )
+
     return Config(
         discord=DiscordConfig(
             secret="test",
@@ -29,7 +30,9 @@ def _get_test_cfg():
         ),
         execution_layer=ExecutionLayerConfig(
             explorer="https://etherscan.io",
-            endpoint=ExecutionLayerEndpoint(current="http://localhost:8545", mainnet="http://localhost:8545"),
+            endpoint=ExecutionLayerEndpoint(
+                current="http://localhost:8545", mainnet="http://localhost:8545"
+            ),
             etherscan_secret="test",
         ),
         consensus_layer=ConsensusLayerConfig(
@@ -41,7 +44,9 @@ def _get_test_cfg():
         rocketpool=RocketPoolConfig(
             manual_addresses={"rocketStorage": "0x1234"},
             dao_multisigs=["0xabcd"],
-            support=RocketPoolSupport(user_ids=[1], role_ids=[2], server_id=3, channel_id=4, moderator_id=5),
+            support=RocketPoolSupport(
+                user_ids=[1], role_ids=[2], server_id=3, channel_id=4, moderator_id=5
+            ),
             dm_warning=DmWarningConfig(channels=[100]),
         ),
         events=EventsConfig(lookback_distance=100, genesis=0, block_batch_size=50),
@@ -78,6 +83,7 @@ def _make_detector():
     bot.tree = MagicMock()
     with patch.object(bot.tree, "add_command"):
         from plugins.scam_detection.scam_detection import ScamDetection
+
         return ScamDetection(bot)
 
 
@@ -133,13 +139,17 @@ class TestMessageDetection:
         reasons = _check_message(detector, case)
         assert not reasons, f"Safe message falsely flagged: {reasons}"
 
-    @pytest.mark.parametrize("case", TEST_CASES["messages"]["known_false_positives"], ids=_case_id)
+    @pytest.mark.parametrize(
+        "case", TEST_CASES["messages"]["known_false_positives"], ids=_case_id
+    )
     @pytest.mark.xfail(reason="known false positive", strict=True)
     def test_known_false_positive(self, detector, case):
         reasons = _check_message(detector, case)
         assert not reasons, f"Falsely flagged: {reasons}"
 
-    @pytest.mark.parametrize("case", TEST_CASES["messages"]["known_false_negatives"], ids=_case_id)
+    @pytest.mark.parametrize(
+        "case", TEST_CASES["messages"]["known_false_negatives"], ids=_case_id
+    )
     @pytest.mark.xfail(reason="known false negative", strict=True)
     def test_known_false_negative(self, detector, case):
         reasons = _check_message(detector, case)

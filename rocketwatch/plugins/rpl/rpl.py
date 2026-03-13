@@ -27,19 +27,27 @@ class RPL(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         rpl_supply = solidity.to_float(await rp.call("rocketTokenRPL.totalSupply"))
-        legacy_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL"))
-        megapool_staked_rpl = solidity.to_float(await rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL"))
+        legacy_staked_rpl = solidity.to_float(
+            await rp.call("rocketNodeStaking.getTotalLegacyStakedRPL")
+        )
+        megapool_staked_rpl = solidity.to_float(
+            await rp.call("rocketNodeStaking.getTotalMegapoolStakedRPL")
+        )
         staked_rpl = legacy_staked_rpl + megapool_staked_rpl
-        unstaking_rpl = (await (await self.bot.db.node_operators.aggregate([
-            {
-                '$group': {
-                    '_id'                 : 'out',
-                    'total_unstaking_rpl_': {
-                        '$sum': '$rpl.unstaking'
-                    }
-                }
-            }
-        ])).next())['total_unstaking_rpl_']
+        unstaking_rpl = (
+            await (
+                await self.bot.db.node_operators.aggregate(
+                    [
+                        {
+                            "$group": {
+                                "_id": "out",
+                                "total_unstaking_rpl_": {"$sum": "$rpl.unstaking"},
+                            }
+                        }
+                    ]
+                )
+            ).next()
+        )["total_unstaking_rpl_"]
         unstaked_rpl = rpl_supply - staked_rpl - unstaking_rpl
 
         def fmt(v):
@@ -89,39 +97,38 @@ class RPL(commands.Cog):
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
-        data = await (await self.bot.db.node_operators.aggregate([
-            {
-                '$match': {
-                    'staking_minipool_count': {
-                        '$ne': 0
-                    }
-                }
-            }, {
-                '$project': {
-                    'eth_stake': {
-                        '$multiply': [
-                            '$effective_node_share', {
-                                '$multiply': [
-                                    '$staking_minipool_count', 32
+        data = await (
+            await self.bot.db.node_operators.aggregate(
+                [
+                    {"$match": {"staking_minipool_count": {"$ne": 0}}},
+                    {
+                        "$project": {
+                            "eth_stake": {
+                                "$multiply": [
+                                    "$effective_node_share",
+                                    {"$multiply": ["$staking_minipool_count", 32]},
                                 ]
-                            }
-                        ]
+                            },
+                            "rpl_stake": "$rpl.legacy_stake",
+                        }
                     },
-                    'rpl_stake': "$rpl.legacy_stake"
-                }
-            }
-        ])).to_list()
-        rpl_eth_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
+                ]
+            )
+        ).to_list()
+        rpl_eth_price = solidity.to_float(
+            await rp.call("rocketNetworkPrices.getRPLPrice")
+        )
 
         # calculate withdrawable RPL at various RPL ETH prices
         # i/10 is the ratio of the price checked to the actual RPL ETH price
 
         free_rpl_liquidity = {}
-        max_collateral = solidity.to_float(await rp.call("rocketDAOProtocolSettingsNode.getMinimumLegacyRPLStake"))
+        max_collateral = solidity.to_float(
+            await rp.call("rocketDAOProtocolSettingsNode.getMinimumLegacyRPLStake")
+        )
         current_withdrawable_rpl = 0
         for i in range(1, 31):
-
-            test_ratio = (i / 10)
+            test_ratio = i / 10
             rpl_eth_test_price = rpl_eth_price * test_ratio
             liquid_rpl = 0
 
@@ -141,7 +148,9 @@ class RPL(commands.Cog):
                 if collateral_percentage < max_collateral:
                     continue
 
-                liquid_rpl += ((collateral_percentage - max_collateral) / collateral_percentage) * rpl_stake
+                liquid_rpl += (
+                    (collateral_percentage - max_collateral) / collateral_percentage
+                ) * rpl_stake
 
             free_rpl_liquidity[i] = (rpl_eth_test_price, liquid_rpl)
             if test_ratio == 1:
@@ -154,14 +163,23 @@ class RPL(commands.Cog):
 
         # plot the data
         plt.plot(x, y, color=str(embed.color))
-        plt.plot(rpl_eth_price, current_withdrawable_rpl, 'bo')
+        plt.plot(rpl_eth_price, current_withdrawable_rpl, "bo")
         plt.xlim(min(x), max(x))
 
-        plt.annotate(f"{rpl_eth_price:.4f}", (rpl_eth_price, current_withdrawable_rpl),
-                     textcoords="offset points", xytext=(-10, -5), ha='right')
-        plt.annotate(f"{current_withdrawable_rpl / 1000000:.2f} million RPL withdrawable",
-                     (rpl_eth_price, current_withdrawable_rpl), textcoords="offset points", xytext=(10, -5),
-                     ha='left')
+        plt.annotate(
+            f"{rpl_eth_price:.4f}",
+            (rpl_eth_price, current_withdrawable_rpl),
+            textcoords="offset points",
+            xytext=(-10, -5),
+            ha="right",
+        )
+        plt.annotate(
+            f"{current_withdrawable_rpl / 1000000:.2f} million RPL withdrawable",
+            (rpl_eth_price, current_withdrawable_rpl),
+            textcoords="offset points",
+            xytext=(10, -5),
+            ha="left",
+        )
         plt.grid()
 
         ax = plt.gca()
@@ -172,7 +190,7 @@ class RPL(commands.Cog):
 
         img = BytesIO()
         plt.tight_layout()
-        plt.savefig(img, format='png')
+        plt.savefig(img, format="png")
         img.seek(0)
 
         plt.close()

@@ -32,8 +32,13 @@ class PinnedMessages(commands.Cog):
         messages = await self.bot.db.pinned_messages.find().to_list()
         for message in messages:
             # if it's older than 6 hours and not disabled, mark as disabled
-            if message["created_at"] + timedelta(hours=6) < datetime.utcnow() and not message["disabled"]:
-                await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
+            if (
+                message["created_at"] + timedelta(hours=6) < datetime.utcnow()
+                and not message["disabled"]
+            ):
+                await self.bot.db.pinned_messages.update_one(
+                    {"_id": message["_id"]}, {"$set": {"disabled": True}}
+                )
                 message["disabled"] = True
             try:
                 # check if it's marked as disabled but not cleaned_up
@@ -45,13 +50,17 @@ class PinnedMessages(commands.Cog):
                     # delete message
                     await msg.delete()
                     # mark as cleaned_up
-                    await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"cleaned_up": True}})
+                    await self.bot.db.pinned_messages.update_one(
+                        {"_id": message["_id"]}, {"$set": {"cleaned_up": True}}
+                    )
                 elif not message["disabled"]:
                     # delete and resend message
                     channel = self.bot.get_channel(message["channel_id"])
                     # check if we have message sent already and if its the latest message in the channel
                     if message.get("message_id"):
-                        messages = [message async for message in channel.history(limit=5)]
+                        messages = [
+                            message async for message in channel.history(limit=5)
+                        ]
                         # if it isnt within the last 5 messages, we need to resend it
                         if any(m.id == message["message_id"] for m in messages):
                             continue
@@ -64,16 +73,21 @@ class PinnedMessages(commands.Cog):
                         text=(
                             "This message has been pinned by Invis."
                             " Will be automatically removed if not updated within 6 hours."
-                        ))
+                        )
+                    )
                     m = await channel.send(embed=e)
-                    await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"message_id": m.id}})
+                    await self.bot.db.pinned_messages.update_one(
+                        {"_id": message["_id"]}, {"$set": {"message_id": m.id}}
+                    )
             except Exception as err:
                 await self.bot.report_error(err)
 
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def pin(self, interaction: Interaction, channel_id: int, title: str, description: str):
+    async def pin(
+        self, interaction: Interaction, channel_id: int, title: str, description: str
+    ):
         await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(channel_id)
@@ -84,16 +98,34 @@ class PinnedMessages(commands.Cog):
         message = await self.bot.db.pinned_messages.find_one({"channel_id": channel.id})
         if message:
             # update message
-            await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {
-                "$set": {"title"     : title, "content": description, "disabled": False, "cleaned_up": False,
-                         "message_id": None, "created_at": datetime.utcnow()}})
+            await self.bot.db.pinned_messages.update_one(
+                {"_id": message["_id"]},
+                {
+                    "$set": {
+                        "title": title,
+                        "content": description,
+                        "disabled": False,
+                        "cleaned_up": False,
+                        "message_id": None,
+                        "created_at": datetime.utcnow(),
+                    }
+                },
+            )
             # rest is done by the run_loop
             await interaction.followup.send("Updated pinned message")
             return
         # create new message
         await self.bot.db.pinned_messages.insert_one(
-            {"channel_id": channel.id, "message_id": None, "title": title, "content": description, "disabled": False,
-             "cleaned_up": False, "created_at": datetime.utcnow()})
+            {
+                "channel_id": channel.id,
+                "message_id": None,
+                "title": title,
+                "content": description,
+                "disabled": False,
+                "cleaned_up": False,
+                "created_at": datetime.utcnow(),
+            }
+        )
         # rest is done by the run_loop
         await interaction.followup.send("Created pinned message")
 
@@ -117,7 +149,9 @@ class PinnedMessages(commands.Cog):
             await interaction.followup.send("Pinned message already disabled")
             return
         # soft delete
-        await self.bot.db.pinned_messages.update_one({"_id": message["_id"]}, {"$set": {"disabled": True}})
+        await self.bot.db.pinned_messages.update_one(
+            {"_id": message["_id"]}, {"$set": {"disabled": True}}
+        )
         # rest is done by the run_loop
         await interaction.followup.send("Disabled pinned message")
 

@@ -44,7 +44,9 @@ class RockSolid(Cog):
             updates.append((doc["time"], doc["assets"]))
 
         db_operations = []
-        for event_log in get_logs(vault_contract.events.TotalAssetsUpdated, b_from, b_to):
+        for event_log in get_logs(
+            vault_contract.events.TotalAssetsUpdated, b_from, b_to
+        ):
             ts = await block_to_ts(event_log.blockNumber)
             assets = solidity.to_float(event_log.args.totalAssets)
             updates.append((ts, assets))
@@ -55,9 +57,7 @@ class RockSolid(Cog):
                 if db_operations:
                     await self.bot.db.rocksolid.bulk_write(db_operations)
                 await self.bot.db.last_checked_block.replace_one(
-                    {"_id": cog_id},
-                    {"_id": cog_id, "block": b_to},
-                    upsert=True
+                    {"_id": cog_id}, {"_id": cog_id, "block": b_to}, upsert=True
                 )
 
         return updates
@@ -74,16 +74,26 @@ class RockSolid(Cog):
 
         async def get_eth_rate(block_number: int) -> int:
             block_number = max(block_number, self.deployment_block)
-            reth_value = await rp.call("RockSolidVault.convertToAssets", 10**18, block=block_number)
-            return await rp.call("rocketTokenRETH.getEthValue", reth_value, block=block_number)
+            reth_value = await rp.call(
+                "RockSolidVault.convertToAssets", 10**18, block=block_number
+            )
+            return await rp.call(
+                "rocketTokenRETH.getEthValue", reth_value, block=block_number
+            )
 
         current_eth_rate = await get_eth_rate(current_block)
 
         async def get_apy(days: int) -> float | None:
-            reference_block = await ts_to_block(now - timedelta(days=days).total_seconds())
+            reference_block = await ts_to_block(
+                now - timedelta(days=days).total_seconds()
+            )
             if reference_block < self.deployment_block:
                 return None
-            return (current_eth_rate / await get_eth_rate(reference_block) - 1) * (365 / days) * 100
+            return (
+                (current_eth_rate / await get_eth_rate(reference_block) - 1)
+                * (365 / days)
+                * 100
+            )
 
         apy_7d = await get_apy(days=7)
         apy_30d = await get_apy(days=30)
@@ -93,7 +103,9 @@ class RockSolid(Cog):
         tvl_rock_reth = solidity.to_float(await rp.call("RockSolidVault.totalSupply"))
 
         asset_updates: list[tuple[int, float]] = await self._fetch_asset_updates()
-        current_date = datetime.fromtimestamp(asset_updates[0][0]).date() - timedelta(days=1)
+        current_date = datetime.fromtimestamp(asset_updates[0][0]).date() - timedelta(
+            days=1
+        )
         current_assets = 0.0
 
         x, y = [], []
@@ -121,7 +133,7 @@ class RockSolid(Cog):
 
         img = BytesIO()
         fig.tight_layout()
-        fig.savefig(img, format='png')
+        fig.savefig(img, format="png")
         img.seek(0)
         plt.clf()
 
@@ -132,11 +144,19 @@ class RockSolid(Cog):
         embed.add_field(name="7d APY", value=f"{apy_7d:.2f}%" if apy_7d else "-")
         embed.add_field(name="30d APY", value=f"{apy_30d:.2f}%" if apy_30d else "-")
         embed.add_field(name="90d APY", value=f"{apy_90d:.2f}%" if apy_90d else "-")
-        embed.add_field(name="TVL", value=f"`{tvl_reth:,.2f}` {await el_explorer_url(ca_reth, name=' rETH')}")
-        embed.add_field(name="Supply", value=f"`{tvl_rock_reth:,.2f}` {await el_explorer_url(ca_rock_reth, name=' rock.rETH')}")
+        embed.add_field(
+            name="TVL",
+            value=f"`{tvl_reth:,.2f}` {await el_explorer_url(ca_reth, name=' rETH')}",
+        )
+        embed.add_field(
+            name="Supply",
+            value=f"`{tvl_rock_reth:,.2f}` {await el_explorer_url(ca_rock_reth, name=' rock.rETH')}",
+        )
         embed.set_image(url="attachment://rocksolid-tvl.png")
 
-        await interaction.followup.send(embed=embed, file=File(img, "rocksolid-tvl.png"))
+        await interaction.followup.send(
+            embed=embed, file=File(img, "rocksolid-tvl.png")
+        )
 
 
 async def setup(bot):

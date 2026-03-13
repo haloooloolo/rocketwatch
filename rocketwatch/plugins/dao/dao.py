@@ -36,30 +36,53 @@ class OnchainDAO(Cog):
 
         for state, ids in (await dao.get_proposal_ids_by_state()).items():
             if state in current_proposals:
-                current_proposals[state].extend([await dao.fetch_proposal(pid) for pid in ids])
+                current_proposals[state].extend(
+                    [await dao.fetch_proposal(pid) for pid in ids]
+                )
 
         parts = []
         for proposal in current_proposals[dao.ProposalState.Pending]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=False, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=False,
+                include_payload=full,
+            )
             parts.append(
                 f"**Proposal #{proposal.id}** - Pending\n```{body}```"
-                f"Voting starts <t:{proposal.start}:R>, ends <t:{proposal.end}:R>.")
+                f"Voting starts <t:{proposal.start}:R>, ends <t:{proposal.end}:R>."
+            )
         for proposal in current_proposals[dao.ProposalState.Active]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=True, include_payload=full)
-            parts.append(f"**Proposal #{proposal.id}** - Active\n```{body}```Voting ends <t:{proposal.end}:R>.")
-        for proposal in current_proposals[dao.ProposalState.Succeeded]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=full, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=True,
+                include_payload=full,
+            )
             parts.append(
-                f"**Proposal #{proposal.id}** - Succeeded (Not Yet Executed)\n```{body}```Expires <t:{proposal.expires}:R>.")
+                f"**Proposal #{proposal.id}** - Active\n```{body}```Voting ends <t:{proposal.end}:R>."
+            )
+        for proposal in current_proposals[dao.ProposalState.Succeeded]:
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=full,
+                include_payload=full,
+            )
+            parts.append(
+                f"**Proposal #{proposal.id}** - Succeeded (Not Yet Executed)\n```{body}```Expires <t:{proposal.expires}:R>."
+            )
 
         return Embed(
             title=f"{dao.display_name} Proposals",
-            description="\n\n".join(parts) or "No active proposals."
+            description="\n\n".join(parts) or "No active proposals.",
         )
 
     @staticmethod
     async def get_pdao_votes_embed(dao: ProtocolDAO, full: bool) -> Embed:
-        current_proposals: dict[ProtocolDAO.ProposalState, list[ProtocolDAO.Proposal]] = {
+        current_proposals: dict[
+            ProtocolDAO.ProposalState, list[ProtocolDAO.Proposal]
+        ] = {
             dao.ProposalState.Pending: [],
             dao.ProposalState.ActivePhase1: [],
             dao.ProposalState.ActivePhase2: [],
@@ -68,41 +91,67 @@ class OnchainDAO(Cog):
 
         for state, ids in (await dao.get_proposal_ids_by_state()).items():
             if state in current_proposals:
-                current_proposals[state].extend([await dao.fetch_proposal(pid) for pid in ids])
+                current_proposals[state].extend(
+                    [await dao.fetch_proposal(pid) for pid in ids]
+                )
 
         parts = []
         for proposal in current_proposals[dao.ProposalState.Pending]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=False, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=False,
+                include_payload=full,
+            )
             parts.append(
                 f"**Proposal #{proposal.id}** - Pending\n```{body}```"
-                f"Voting starts <t:{proposal.start}:R>, ends <t:{proposal.end_phase_2}:R>.")
+                f"Voting starts <t:{proposal.start}:R>, ends <t:{proposal.end_phase_2}:R>."
+            )
         for proposal in current_proposals[dao.ProposalState.ActivePhase1]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=True, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=True,
+                include_payload=full,
+            )
             parts.append(
                 f"**Proposal #{proposal.id}** - Active (Phase 1)\n```{body}```"
-                f"Next phase <t:{proposal.end_phase_1}:R>, voting ends <t:{proposal.end_phase_2}:R>.")
+                f"Next phase <t:{proposal.end_phase_1}:R>, voting ends <t:{proposal.end_phase_2}:R>."
+            )
         for proposal in current_proposals[dao.ProposalState.ActivePhase2]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=True, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=True,
+                include_payload=full,
+            )
             parts.append(
-                f"**Proposal #{proposal.id}** - Active (Phase 2)\n```{body}```Voting ends <t:{proposal.end_phase_2}:R>.")
+                f"**Proposal #{proposal.id}** - Active (Phase 2)\n```{body}```Voting ends <t:{proposal.end_phase_2}:R>."
+            )
         for proposal in current_proposals[dao.ProposalState.Succeeded]:
-            body = await dao.build_proposal_body(proposal, include_proposer=full, include_votes=full, include_payload=full)
+            body = await dao.build_proposal_body(
+                proposal,
+                include_proposer=full,
+                include_votes=full,
+                include_payload=full,
+            )
             parts.append(
-                f"**Proposal #{proposal.id}** - Succeeded (Not Yet Executed)\n```{body}```Expires <t:{proposal.expires}:R>.")
+                f"**Proposal #{proposal.id}** - Succeeded (Not Yet Executed)\n```{body}```Expires <t:{proposal.expires}:R>."
+            )
 
         return Embed(
             title="pDAO Proposals",
-            description="\n\n".join(parts) or "No active proposals."
+            description="\n\n".join(parts) or "No active proposals.",
         )
 
     @command()
     @describe(dao_name="DAO to show proposals for")
     @describe(full="show all information (e.g. payload)")
     async def dao_votes(
-            self,
-            interaction: Interaction,
-            dao_name: Literal["oDAO", "pDAO", "Security Council"] = "pDAO",
-            full: bool = False
+        self,
+        interaction: Interaction,
+        dao_name: Literal["oDAO", "pDAO", "Security Council"] = "pDAO",
+        full: bool = False,
     ) -> None:
         """Show currently active on-chain proposals"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
@@ -140,7 +189,9 @@ class OnchainDAO(Cog):
                 return
             self._voter_list = await self._get_voter_list(self.proposal)
 
-        async def _get_voter_list(self, proposal: ProtocolDAO.Proposal) -> list['OnchainDAO.Vote']:
+        async def _get_voter_list(
+            self, proposal: ProtocolDAO.Proposal
+        ) -> list["OnchainDAO.Vote"]:
             voters: dict[ChecksumAddress, OnchainDAO.Vote] = {}
             dao = ProtocolDAO()
             proposal_contract = await dao._get_proposal_contract()
@@ -149,13 +200,13 @@ class OnchainDAO(Cog):
                 proposal_contract.events.ProposalVoted,
                 await ts_to_block(proposal.start) - 1,
                 await ts_to_block(proposal.end_phase_2) + 1,
-                {"proposalID": proposal.id}
+                {"proposalID": proposal.id},
             ):
                 vote = OnchainDAO.Vote(
                     vote_log.args.voter,
                     vote_log.args.direction,
                     solidity.to_float(vote_log.args.votingPower),
-                    vote_log.args.time
+                    vote_log.args.time,
                 )
                 voters[vote.voter] = vote
 
@@ -163,7 +214,7 @@ class OnchainDAO(Cog):
                 proposal_contract.events.ProposalVoteOverridden,
                 await ts_to_block(proposal.end_phase_1) - 1,
                 await ts_to_block(proposal.end_phase_2) + 1,
-                {"proposalID": proposal.id}
+                {"proposalID": proposal.id},
             ):
                 voting_power = solidity.to_float(override_log.args.votingPower)
                 voters[override_log.args.delegate].voting_power -= voting_power
@@ -178,8 +229,14 @@ class OnchainDAO(Cog):
             await self._ensure_voter_list()
             headers = ["#", "Voter", "Choice", "Weight"]
             data = []
-            for i, voter in enumerate(self._voter_list[from_idx:(to_idx + 1)], start=from_idx):
-                name = (await el_explorer_url(voter.voter, prefix=-1)).split("[")[1].split("]")[0]
+            for i, voter in enumerate(
+                self._voter_list[from_idx : (to_idx + 1)], start=from_idx
+            ):
+                name = (
+                    (await el_explorer_url(voter.voter, prefix=-1))
+                    .split("[")[1]
+                    .split("]")[0]
+                )
                 vote = ["", "Abstain", "For", "Against", "Veto"][voter.direction]
                 voting_power = f"{voter.voting_power:,.2f}"
                 data.append([i + 1, name, vote, voting_power])
@@ -190,7 +247,9 @@ class OnchainDAO(Cog):
             table = tabulate(data, headers, colalign=("right", "left", "left", "right"))
             return len(self._voter_list), f"```{table}```"
 
-    async def _get_recent_proposals(self, interaction: Interaction, current: str) -> list[Choice[int]]:
+    async def _get_recent_proposals(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[int]]:
         dao = ProtocolDAO()
         proposal_contract = await dao._get_proposal_contract()
         num_proposals = await proposal_contract.functions.getTotal().call()
@@ -204,10 +263,16 @@ class OnchainDAO(Cog):
         else:
             suggestions = list(range(1, num_proposals + 1))[:-26:-1]
 
-        titles: list[str] = await rp.multicall([
-            proposal_contract.functions.getMessage(proposal_id) for proposal_id in suggestions
-        ])
-        return [Choice(name=f"#{pid}: {title}", value=pid) for pid, title in zip(suggestions, titles, strict=False)]
+        titles: list[str] = await rp.multicall(
+            [
+                proposal_contract.functions.getMessage(proposal_id)
+                for proposal_id in suggestions
+            ]
+        )
+        return [
+            Choice(name=f"#{pid}: {title}", value=pid)
+            for pid, title in zip(suggestions, titles, strict=False)
+        ]
 
     @command()
     @describe(proposal="proposal to show voters for")

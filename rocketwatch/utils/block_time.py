@@ -37,7 +37,9 @@ async def ts_to_block(target_ts: int) -> int:
 
     # l == r, highest block number below target
     block = hi
-    if abs(await block_to_ts(block + 1) - target_ts) < abs(await block_to_ts(block) - target_ts):
+    if abs(await block_to_ts(block + 1) - target_ts) < abs(
+        await block_to_ts(block) - target_ts
+    ):
         block += 1
 
     log.debug(f"Closest match: block {block} @ {await block_to_ts(block)}")
