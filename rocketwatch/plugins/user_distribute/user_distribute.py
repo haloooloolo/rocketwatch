@@ -31,10 +31,12 @@ class InstructionsView(ui.View):
     async def instructions(self, interaction: Interaction, _) -> None:
         mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
         bud_calldata = bytes.fromhex(
-            mp_contract.encodeABI(fn_name="beginUserDistribute")[2:]
+            mp_contract.encode_abi(abi_element_identifier="beginUserDistribute")[2:]
         )
         dist_calldata = bytes.fromhex(
-            mp_contract.encodeABI(fn_name="distributeBalance", args=[False])[2:]
+            mp_contract.encode_abi(
+                abi_element_identifier="distributeBalance", args=[False]
+            )[2:]
         )
 
         calls = [(mp["address"], True, dist_calldata) for mp in self.distributable]
