@@ -21,17 +21,15 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     async def get_deposit_pool_stats() -> Embed:
+        dp_contract = await rp.get_contract_by_name("rocketDepositPool")
+        dp_settings_contract = await rp.get_contract_by_name(
+            "rocketDAOProtocolSettingsDeposit"
+        )
         balance_raw, max_size_raw, max_amount_raw = await rp.multicall(
             [
-                (
-                    await rp.get_contract_by_name("rocketDepositPool")
-                ).functions.getBalance(),
-                (
-                    await rp.get_contract_by_name("rocketDAOProtocolSettingsDeposit")
-                ).functions.getMaximumDepositPoolSize(),
-                (
-                    await rp.get_contract_by_name("rocketDepositPool")
-                ).functions.getMaximumDepositAmount(),
+                dp_contract.functions.getBalance(),
+                dp_settings_contract.functions.getMaximumDepositPoolSize(),
+                dp_contract.functions.getMaximumDepositAmount(),
             ]
         )
 
@@ -94,6 +92,10 @@ class DepositPool(StatusPlugin):
 
     @staticmethod
     async def get_contract_collateral_stats() -> Embed:
+        reth_contract = await rp.get_contract_by_name("rocketTokenRETH")
+        network_setting_contract = await rp.get_contract_by_name(
+            "rocketDAOProtocolSettingsNetwork"
+        )
         (
             exchange_rate,
             total_supply,
@@ -101,18 +103,10 @@ class DepositPool(StatusPlugin):
             target_rate_raw,
         ) = await rp.multicall(
             [
-                (
-                    await rp.get_contract_by_name("rocketTokenRETH")
-                ).functions.getExchangeRate(),
-                (
-                    await rp.get_contract_by_name("rocketTokenRETH")
-                ).functions.totalSupply(),
-                (
-                    await rp.get_contract_by_name("rocketTokenRETH")
-                ).functions.getCollateralRate(),
-                (
-                    await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
-                ).functions.getTargetRethCollateralRate(),
+                reth_contract.functions.getExchangeRate(),
+                reth_contract.functions.totalSupply(),
+                reth_contract.functions.getCollateralRate(),
+                network_setting_contract.functions.getTargetRethCollateralRate(),
             ]
         )
 
@@ -131,9 +125,8 @@ class DepositPool(StatusPlugin):
         else:
             collateral_target_perc = collateral_eth / collateral_target_eth
             description = (
-                f"**{collateral_eth:,.2f} ETH** of liquidity in the rETH contract.\n"
+                f"**{collateral_eth:,.2f} ETH** of liquidity in the rETH contract\n"
                 f"**{collateral_target_perc:.2%}** of the {collateral_target_eth:,.0f} ETH target"
-                f" ({collateral_rate:.2%}/{collateral_rate_target:.0%})."
             )
 
         return Embed(title="rETH Extra Collateral", description=description)
