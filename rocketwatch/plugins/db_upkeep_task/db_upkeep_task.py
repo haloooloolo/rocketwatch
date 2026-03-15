@@ -131,6 +131,7 @@ class DBUpkeepTask(commands.Cog):
                 await self.update_dynamic_minipool_beacon_data()
                 # megapool validator tasks
                 await self.add_untracked_megapool_validators()
+                await self.add_static_megapool_deposit_data()
                 await self.update_dynamic_megapool_validator_data()
                 await self.update_dynamic_megapool_validator_beacon_data()
                 log.debug("finished db upkeep task")
@@ -155,6 +156,7 @@ class DBUpkeepTask(commands.Cog):
         )
         await self.bot.db.megapool_validators.create_index("pubkey")
         await self.bot.db.megapool_validators.create_index("validator_index")
+        await self.bot.db.megapool_validators.create_index("status")
         await self.bot.db.megapool_validators.create_index("beacon.status")
         log.debug("indexes checked")
 
@@ -578,9 +580,9 @@ class DBUpkeepTask(commands.Cog):
             log.debug(f"Processing deposit data for blocks {block_start}..{block_end}")
             addresses = {m["address"] for m in minipool_batch}
 
-            events = get_logs(
+            events = await get_logs(
                 nd.events.DepositReceived, block_start, block_end
-            ) + get_logs(mm.events.MinipoolCreated, block_start, block_end)
+            ) + await get_logs(mm.events.MinipoolCreated, block_start, block_end)
             events.sort(
                 key=lambda e: (e["blockNumber"], e["transactionIndex"], e["logIndex"]),
                 reverse=True,
@@ -820,6 +822,59 @@ class DBUpkeepTask(commands.Cog):
                     await self.bot.db.megapool_validators.insert_many(
                         docs, ordered=False
                     )
+
+    @timerun_async
+    async def add_static_megapool_deposit_data(self):
+        validators = await self.bot.db.megapool_validators.find(
+            {"deposit_time": {"$exists": False}},
+            {"megapool": 1, "validator_id": 1},
+        ).to_list()
+        if not validators:
+            return
+
+        dp = await rp.get_contract_by_name("rocketDepositPool")
+        saturn_upgrade_block = 24479994
+        to_block = await w3.eth.get_block_number()
+
+        by_megapool = defaultdict(list)
+        for v in validators:
+            by_megapool[v["megapool"]].append(v)
+
+        for megapool_addr, megapool_validators in by_megapool.items():
+            min_vid = min(v["validator_id"] for v in megapool_validators)
+            if min_vid > 0:
+                prev = await self.bot.db.megapool_validators.find_one(
+                    {"megapool": megapool_addr, "validator_id": min_vid - 1},
+                    {"deposit_time": 1},
+                )
+                from_block = (
+                    await ts_to_block(prev["deposit_time"])
+                    if prev and prev.get("deposit_time")
+                    else saturn_upgrade_block
+                )
+            else:
+                from_block = saturn_upgrade_block
+
+            events = await get_logs(
+                dp.events.FundsRequested,
+                from_block,
+                to_block,
+                arg_filters={"receiver": megapool_addr},
+            )
+            events_by_vid = {e["args"]["validatorId"]: e for e in events}
+
+            ops = []
+            for v in megapool_validators:
+                if not (event := events_by_vid.get(v["validator_id"])):
+                    continue
+                ops.append(
+                    UpdateOne(
+                        {"_id": v["_id"]},
+                        {"$set": {"deposit_time": event["args"]["time"]}},
+                    )
+                )
+            if ops:
+                await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
     @timerun_async
     async def update_dynamic_megapool_validator_data(self):
