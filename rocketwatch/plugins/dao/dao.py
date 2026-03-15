@@ -196,7 +196,7 @@ class OnchainDAO(Cog):
             dao = ProtocolDAO()
             proposal_contract = await dao._get_proposal_contract()
 
-            for vote_log in get_logs(
+            for vote_log in await get_logs(
                 proposal_contract.events.ProposalVoted,
                 await ts_to_block(proposal.start) - 1,
                 await ts_to_block(proposal.end_phase_2) + 1,
@@ -210,7 +210,7 @@ class OnchainDAO(Cog):
                 )
                 voters[vote.voter] = vote
 
-            for override_log in get_logs(
+            for override_log in await get_logs(
                 proposal_contract.events.ProposalVoteOverridden,
                 await ts_to_block(proposal.end_phase_1) - 1,
                 await ts_to_block(proposal.end_phase_2) + 1,

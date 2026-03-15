@@ -44,7 +44,7 @@ class RockSolid(Cog):
             updates.append((doc["time"], doc["assets"]))
 
         db_operations = []
-        for event_log in get_logs(
+        for event_log in await get_logs(
             vault_contract.events.TotalAssetsUpdated, b_from, b_to
         ):
             ts = await block_to_ts(event_log.blockNumber)

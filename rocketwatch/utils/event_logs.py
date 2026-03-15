@@ -1,38 +1,35 @@
+import asyncio
 import logging
 from typing import Any
 
 from eth_typing import BlockNumber
-from web3.contract.contract import ContractEvent
+from web3.contract.async_contract import AsyncContractEvent
 from web3.types import LogReceipt
 
 log = logging.getLogger("rocketwatch.event_logs")
 
 
-def get_logs(
-    event: ContractEvent,
+async def get_logs(
+    event: AsyncContractEvent,
     from_block: BlockNumber,
     to_block: BlockNumber,
     arg_filters: dict[str, Any] | None = None,
 ) -> list[LogReceipt]:
-    start_block = from_block
-    end_block = to_block
-
-    log.debug(f"Fetching event logs in [{start_block}, {end_block}]")
+    log.debug(f"Fetching event logs in [{from_block}, {to_block}]")
 
     chunk_size = 50_000
-    from_block = start_block
-    to_block = from_block + chunk_size
-
-    logs = []
-
-    while from_block <= end_block:
-        logs += event.get_logs(
-            from_block=from_block,
-            to_block=min(to_block, end_block),
-            argument_filters=arg_filters,
+    tasks = []
+    chunk_start = from_block
+    while chunk_start <= to_block:
+        chunk_end = min(chunk_start + chunk_size, to_block)
+        tasks.append(
+            event.get_logs(
+                from_block=chunk_start,
+                to_block=chunk_end,
+                argument_filters=arg_filters,
+            )
         )
+        chunk_start = chunk_end + 1
 
-        from_block = to_block + 1
-        to_block = from_block + chunk_size
-
-    return logs
+    results = await asyncio.gather(*tasks)
+    return [log_entry for chunk in results for log_entry in chunk]
