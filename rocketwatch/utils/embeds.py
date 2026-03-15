@@ -3,7 +3,6 @@ import datetime
 import logging
 import math
 from collections.abc import Callable
-from typing import Literal
 
 import aiohttp
 import discord
@@ -11,6 +10,7 @@ import humanize
 from aiocache import cached
 from discord import Color
 from ens import InvalidName
+from eth_typing import BlockIdentifier
 from etherscan_labels import Addresses
 
 from strings import _
@@ -97,10 +97,12 @@ async def get_pdao_delegates() -> dict[str, str]:
 async def el_explorer_url(
     target: str,
     name: str = "",
-    prefix: str | Literal[-1] = "",
+    prefix: str | None = "",
     name_fmt: Callable[[str], str] | None = None,
-    block="latest",
+    block: BlockIdentifier = "latest",
 ):
+    _prefix = ""
+
     if w3.is_address(target):
         # sanitize address
         target = w3.to_checksum_address(target)
@@ -109,50 +111,41 @@ async def el_explorer_url(
         chain = cfg.rocketpool.chain
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
 
+        n_key = f"addresses.{target}"
+        if not name and (n := _(n_key)) != n_key:
+            name = n
+
         if await rp.is_node(target):
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", target
             )
             if megapool_address != "0x0000000000000000000000000000000000000000":
                 url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
-
-        if await rp.is_megapool(target):
+            if await rp.call(
+                "rocketNodeManager.getSmoothingPoolRegistrationState",
+                target,
+                block=block,
+            ):
+                _prefix += ":cup_with_straw:"
+            if not name:
+                if member_id := await rp.call(
+                    "rocketDAONodeTrusted.getMemberID", target, block=block
+                ):
+                    _prefix += "🔮"
+                    name = member_id
+                elif member_id := await rp.call(
+                    "rocketDAOSecurity.getMemberID", target, block=block
+                ):
+                    _prefix += "🔒"
+                    name = member_id
+                elif delegate_name := (await get_pdao_delegates()).get(target):
+                    _prefix += "🏛️"
+                    name = delegate_name
+        elif await rp.is_megapool(target):
             url = f"https://saturn-1.net/megapool/{target}{dashboard_network}"
-
-        if await rp.is_minipool(target):
-            pass  # TODO add explorer url once supported
-
-        n_key = f"addresses.{target}"
-        if not name and (n := _(n_key)) != n_key:
-            name = n
-
-        if prefix != -1 and await rp.call(
-            "rocketNodeManager.getSmoothingPoolRegistrationState", target, block=block
-        ):
-            prefix += ":cup_with_straw:"
-
-        if not name and (
-            member_id := await rp.call(
-                "rocketDAONodeTrusted.getMemberID", target, block=block
-            )
-        ):
-            if prefix != -1:
-                prefix += "🔮"
-            name = member_id
-
-        if not name and (
-            member_id := await rp.call(
-                "rocketDAOSecurity.getMemberID", target, block=block
-            )
-        ):
-            if prefix != -1:
-                prefix += "🔒"
-            name = member_id
-
-        if not name and (delegate_name := (await get_pdao_delegates()).get(target)):
-            if prefix != -1:
-                prefix += "🏛️"
-            name = delegate_name
+        elif await rp.is_minipool(target):
+            if chain == "mainnet":
+                url = f"https://rocketexplorer.net/validator/{target}"
 
         if not name and cfg.rocketpool.chain != "mainnet":
             name = s_hex(target)
@@ -172,12 +165,10 @@ async def el_explorer_url(
             ):
                 name = a.name
         if not name:
-            # not an odao member, try to get their ens
             name = await ens.get_name(target)
 
         if code := await w3.eth.get_code(target):
-            if prefix != -1:
-                prefix += "📄"
+            _prefix += "📄"
             if (not name) and (
                 w3.keccak(text=code.hex()).hex() in cfg.other.mev_hashes
             ):
@@ -233,8 +224,8 @@ async def el_explorer_url(
         name = s_hex(target)
     if name_fmt:
         name = name_fmt(name)
-    if prefix == -1:
-        prefix = ""
+
+    prefix = "" if (prefix is None) else prefix + _prefix
     return f"{prefix}[{name}]({url})"
 
 
@@ -284,7 +275,7 @@ async def prepare_args(args):
             elif arg_key == "cow_uid":
                 args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
             else:
-                args[arg_key] = await el_explorer_url(arg_value, prefix=prefix)
+                args[arg_key] = await el_explorer_url(arg_value, _prefix=prefix)
                 args[f"{arg_key}_clean"] = await el_explorer_url(arg_value)
                 if len(arg_value) == 66:
                     args[f"{arg_key}_small"] = await el_explorer_url(

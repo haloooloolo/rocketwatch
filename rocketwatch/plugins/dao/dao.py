@@ -233,7 +233,7 @@ class OnchainDAO(Cog):
                 self._voter_list[from_idx : (to_idx + 1)], start=from_idx
             ):
                 name = (
-                    (await el_explorer_url(voter.voter, prefix=-1))
+                    (await el_explorer_url(voter.voter, prefix=None))
                     .split("[")[1]
                     .split("]")[0]
                 )
