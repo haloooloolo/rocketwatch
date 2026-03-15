@@ -104,7 +104,7 @@ class RocketPool:
     @staticmethod
     def _normalize_calls(calls, default_require_success):
         """Normalize calls to (fn, allow_failure) pairs. Each call may be a
-        plain ContractFunction or a (ContractFunction, require_success) tuple."""
+        plain AsyncContractFunction or an (fn, require_success) tuple."""
         fns, flags = [], []
         for call in calls:
             if isinstance(call, tuple):
@@ -115,14 +115,18 @@ class RocketPool:
             flags.append(not req)
         return fns, flags
 
-    async def multicall(self, calls, require_success=True) -> list:
-        """Multicall accepting ContractFunction objects or (fn, require_success) tuples."""
+    async def multicall(
+        self, calls, require_success=True, block: BlockIdentifier = "latest"
+    ) -> list:
+        """Multicall accepting AsyncContractFunction objects or (fn, require_success) tuples."""
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [
             (fn.address, af, fn._encode_transaction_data())
             for fn, af in zip(fns, flags, strict=False)
         ]
-        results = await self._multicall.functions.aggregate3(encoded).call()
+        results = await self._multicall.functions.aggregate3(encoded).call(
+            block_identifier=block
+        )
         return [
             RocketPool._decode_fn_output(fns[i], data) if success else None
             for i, (success, data) in enumerate(results)
