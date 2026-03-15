@@ -275,7 +275,7 @@ async def prepare_args(args):
             elif arg_key == "cow_uid":
                 args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
             else:
-                args[arg_key] = await el_explorer_url(arg_value, _prefix=prefix)
+                args[arg_key] = await el_explorer_url(arg_value, prefix=prefix)
                 args[f"{arg_key}_clean"] = await el_explorer_url(arg_value)
                 if len(arg_value) == 66:
                     args[f"{arg_key}_small"] = await el_explorer_url(
