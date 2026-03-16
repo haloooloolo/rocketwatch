@@ -20,7 +20,7 @@ from utils.embeds import Embed, el_explorer_url
 from utils.event import Event, EventPlugin
 from utils.image import Color, FontVariant, Image, ImageCanvas
 from utils.readable import pretty_time
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 from utils.visibility import is_hidden
 
@@ -34,7 +34,7 @@ class Snapshot(EventPlugin):
         self.vote_db = bot.db.snapshot_votes
 
     @staticmethod
-    @retry_async(tries=3, delay=1)
+    @retry(tries=3, delay=1)
     async def _query_api(query: Query) -> list[dict] | dict | None:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")

@@ -19,7 +19,7 @@ from utils.block_time import block_to_ts
 from utils.cached_ens import CachedEns
 from utils.config import cfg
 from utils.readable import advanced_tnx_url, cl_explorer_url, s_hex
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 from utils.sea_creatures import get_sea_creature_for_address
 from utils.shared_w3 import w3
@@ -80,7 +80,7 @@ _pdao_delegates: dict[str, str] = {}
 
 
 @cached(ttl=900)
-@retry_async(tries=3, delay=1)
+@retry(tries=3, delay=1)
 async def get_pdao_delegates() -> dict[str, str]:
     global _pdao_delegates
     try:

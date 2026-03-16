@@ -10,7 +10,7 @@ from discord.ext import commands
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.forum")
@@ -81,7 +81,7 @@ class Forum(commands.Cog):
         return topics
 
     @staticmethod
-    @retry_async(tries=3, delay=2, backoff=2)
+    @retry(tries=3, delay=2, backoff=2)
     async def get_popular_topics(period: Period) -> list[Topic]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"{Forum.DOMAIN}/top.json?period={period}")
@@ -90,7 +90,7 @@ class Forum(commands.Cog):
         return Forum._parse_topics(data["topic_list"]["topics"])
 
     @staticmethod
-    @retry_async(tries=3, delay=2, backoff=2)
+    @retry(tries=3, delay=2, backoff=2)
     async def get_recent_topics() -> list[Topic]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"{Forum.DOMAIN}/latest.json")
@@ -99,7 +99,7 @@ class Forum(commands.Cog):
         return Forum._parse_topics(data["topic_list"]["topics"])
 
     @staticmethod
-    @retry_async(tries=3, delay=2, backoff=2)
+    @retry(tries=3, delay=2, backoff=2)
     async def get_top_users(period: Period, order_by: UserMetric) -> list[User]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(

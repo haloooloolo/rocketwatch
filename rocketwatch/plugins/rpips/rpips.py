@@ -9,7 +9,7 @@ from discord.ext.commands import Cog
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
-from utils.retry import retry_async
+from utils.retry import retry
 
 log = logging.getLogger("rocketwatch.rpips")
 
@@ -65,7 +65,7 @@ class RPIPs(Cog):
             return self.full_title
 
         @cached(ttl=300, key_builder=lambda _, rpip: rpip.number)
-        @retry_async(tries=3, delay=1)
+        @retry(tries=3, delay=1)
         async def fetch_details(self) -> dict:
             async with (
                 aiohttp.ClientSession() as session,
@@ -115,7 +115,7 @@ class RPIPs(Cog):
 
     @staticmethod
     @cached(ttl=60)
-    @retry_async(tries=3, delay=1)
+    @retry(tries=3, delay=1)
     async def get_all_rpips() -> list["RPIPs.RPIP"]:
         async with (
             aiohttp.ClientSession() as session,

@@ -13,7 +13,7 @@ from utils.config import cfg
 from utils.embeds import assemble, prepare_args
 from utils.event import Event, EventPlugin
 from utils.readable import cl_explorer_url
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
 from utils.solidity import beacon_block_to_date, date_to_beacon_block
@@ -144,7 +144,7 @@ class BeaconEvents(EventPlugin):
 
         return events
 
-    @retry_async(tries=5, delay=10, backoff=2, max_delay=30)
+    @retry(tries=5, delay=10, backoff=2, max_delay=30)
     async def _get_proposal(self, beacon_block: dict) -> Event | None:
         if not (payload := beacon_block["body"].get("execution_payload")):
             # no proposed block

@@ -17,7 +17,7 @@ from pymongo import AsyncMongoClient
 
 from utils.command_tree import RWCommandTree
 from utils.config import cfg
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch.bot")
@@ -143,8 +143,6 @@ class RocketWatch(Bot):
         try:
             channel = await self.get_or_fetch_channel(cfg.discord.channels["errors"])
             file = File(io.StringIO(err_trace), "exception.txt")
-            await retry_async(tries=5, delay=5)(channel.send)(
-                err_description, file=file
-            )
+            await retry(tries=5, delay=5)(channel.send)(err_description, file=file)
         except Exception:
             log.exception("Failed to send message. Max retries reached.")

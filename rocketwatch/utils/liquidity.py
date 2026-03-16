@@ -9,7 +9,7 @@ import aiohttp
 import numpy as np
 from eth_typing import ChecksumAddress, HexStr
 
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
@@ -70,7 +70,7 @@ class CEX(Exchange, ABC):
         """Extract mapping of price to major-denominated ask liquidity from API response"""
         pass
 
-    @retry_async(tries=3, delay=1)
+    @retry(tries=3, delay=1)
     async def _get_order_book(
         self, market: Market, session: aiohttp.ClientSession
     ) -> tuple[dict[float, float], dict[float, float]]:

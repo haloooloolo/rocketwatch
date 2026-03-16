@@ -13,7 +13,7 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import ts_to_block
 from utils.embeds import Embed, resolve_ens
-from utils.retry import retry_async
+from utils.retry import retry
 from utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch.rewards")
@@ -35,7 +35,7 @@ class Rewards(commands.Cog):
         eth_rewards: float
         system_weight: float
 
-    @retry_async(tries=3, delay=1)
+    @retry(tries=3, delay=1)
     async def _make_request(self, address) -> dict:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
