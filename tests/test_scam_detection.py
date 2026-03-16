@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import regex as re
+from discord import Thread
 
 from utils.config import Config, cfg
 
@@ -111,23 +111,6 @@ def _case_id(case):
     return case["content"][:100]
 
 
-THREAD_PATTERN = re.compile(r"(-|\u2013|\u2014)\d{3,}")
-
-
-def _check_thread(name: str) -> bool:
-    lower = name.strip().lower()
-    return (
-        any(kw in lower for kw in ("\U0001f3ab", "\U0001f39f\ufe0f", "assistance"))
-        or "tick" in lower
-        or ("support" in lower and len(name.strip()) < 25)
-        or (
-            bool(m := THREAD_PATTERN.search(name))
-            and (m.end() >= len(name.strip()) - 2 or len(name.strip()) < 30)
-        )
-        or lower in (".", "!", "///")
-    )
-
-
 class TestMessageDetection:
     @pytest.mark.parametrize("case", TEST_CASES["messages"]["unsafe"], ids=_case_id)
     def test_unsafe_message_detected(self, detector, case):
@@ -156,21 +139,53 @@ class TestMessageDetection:
         assert reasons, f"Scam not detected: {case['content'][:100]!r}"
 
 
-class TestThreadDetection:
-    @pytest.mark.parametrize("name", TEST_CASES["threads"]["unsafe"])
-    def test_unsafe_thread_detected(self, name):
-        assert _check_thread(name), f"Unsafe thread name not detected: {name!r}"
+class TestThreadStarterDeleted:
+    @pytest.fixture()
+    def detector(self):
+        return _make_detector()
 
-    @pytest.mark.parametrize("name", TEST_CASES["threads"]["safe"])
-    def test_safe_thread_not_flagged(self, name):
-        assert not _check_thread(name), f"Safe thread name falsely flagged: {name!r}"
+    def _make_thread(self, thread_id, owner_id, guild_id):
+        thread = MagicMock(spec=Thread)
+        thread.id = thread_id
+        thread.owner_id = owner_id
+        thread.guild.id = guild_id
+        thread.guild.get_member.return_value = MagicMock(
+            bot=False,
+            guild_permissions=MagicMock(moderate_members=False),
+            roles=[],
+            id=owner_id,
+        )
+        return thread
 
-    @pytest.mark.parametrize("name", TEST_CASES["threads"]["known_false_positives"])
-    @pytest.mark.xfail(reason="known false positive", strict=True)
-    def test_known_false_positive(self, name):
-        assert not _check_thread(name), f"Falsely flagged: {name!r}"
+    @pytest.mark.asyncio
+    async def test_on_thread_create_tracks_thread(self, detector):
+        thread = self._make_thread(123, 999, cfg.rocketpool.support.server_id)
+        await detector.on_thread_create(thread)
+        assert 123 in detector._thread_creation_messages
 
-    @pytest.mark.parametrize("name", TEST_CASES["threads"]["known_false_negatives"])
-    @pytest.mark.xfail(reason="known false negative", strict=True)
-    def test_known_false_negative(self, name):
-        assert _check_thread(name), f"Scam thread not detected: {name!r}"
+    @pytest.mark.asyncio
+    async def test_on_thread_create_ignores_other_guilds(self, detector):
+        thread = self._make_thread(123, 999, 0)
+        await detector.on_thread_create(thread)
+        assert 123 not in detector._thread_creation_messages
+
+    @pytest.mark.asyncio
+    async def test_starter_deleted_reports_thread(self, detector):
+        thread_id = 123
+        thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
+        detector._thread_creation_messages.add(thread_id)
+        detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
+        detector.report_thread = AsyncMock()
+
+        await detector._check_thread_starter_deleted(thread_id)
+
+        detector.report_thread.assert_awaited_once_with(
+            thread, "Attempt to hide thread from main channel"
+        )
+        assert thread_id not in detector._thread_creation_messages
+
+    @pytest.mark.asyncio
+    async def test_starter_deleted_ignores_untracked(self, detector):
+        detector.report_thread = AsyncMock()
+        await detector._check_thread_starter_deleted(456)
+        detector.report_thread.assert_not_awaited()

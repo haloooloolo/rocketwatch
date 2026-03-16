@@ -21,7 +21,6 @@ from discord import (
     RawBulkMessageDeleteEvent,
     RawMessageDeleteEvent,
     RawThreadDeleteEvent,
-    RawThreadUpdateEvent,
     Reaction,
     Thread,
     User,
@@ -139,6 +138,7 @@ class ScamDetection(Cog):
         self._thread_report_lock = asyncio.Lock()
         self._user_report_lock = asyncio.Lock()
         self._message_react_cache = TTLCache(maxsize=1000, ttl=300)
+        self._thread_creation_messages: set[int] = set()
         self.markdown_link_pattern = re.compile(
             r"(?<=\[)([^/\] ]*).+?(?<=\(https?:\/\/)([^/\)]*)"
         )
@@ -228,7 +228,7 @@ class ScamDetection(Cog):
             log.info(f"Found existing report for message {message.id} in database")
             return None
 
-        warning = Embed(title="🚨 Possible Scam Detected")
+        warning = Embed(title="🚨 Likely Scam Detected")
         warning.color = self.Color.ALERT
         warning.description = f"**Reason**: {reason}\n"
 
@@ -267,7 +267,7 @@ class ScamDetection(Cog):
             log.info(f"Found existing report for thread {thread.id} in database")
             return None
 
-        warning = Embed(title="🚨 Possible Scam Detected")
+        warning = Embed(title="🚨 Likely Scam Detected")
         warning.color = self.Color.ALERT
         warning.description = f"**Reason**: {reason}\n"
 
@@ -275,6 +275,7 @@ class ScamDetection(Cog):
         warning.set_footer(
             text=(
                 "There is no ticket system for support on this server.\n"
+                "Don't engage in conversation outside of the public #support channel.\n"
                 "Ignore this thread and any invites or DMs you may receive."
             )
         )
@@ -680,6 +681,7 @@ class ScamDetection(Cog):
         )
 
     async def _on_message_delete(self, message_id: int) -> None:
+        await self._check_thread_starter_deleted(message_id)
         async with self._message_report_lock:
             db_filter = {"type": "message", "message_id": message_id, "removed": False}
             if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
@@ -696,6 +698,20 @@ class ScamDetection(Cog):
             await self.bot.db.scam_reports.update_one(
                 db_filter, {"$set": {"warning_id": None, "removed": True}}
             )
+
+    async def _check_thread_starter_deleted(self, message_id: int) -> None:
+        if message_id not in self._thread_creation_messages:
+            return
+
+        self._thread_creation_messages.remove(message_id)
+
+        try:
+            thread = await self.bot.get_or_fetch_channel(message_id)
+        except (errors.NotFound, errors.Forbidden):
+            return
+
+        if isinstance(thread, Thread):
+            await self.report_thread(thread, "Attempt to hide thread from main channel")
 
     @Cog.listener()
     async def on_member_ban(self, guild: Guild, user: User) -> None:
@@ -763,39 +779,9 @@ class ScamDetection(Cog):
 
     @Cog.listener()
     async def on_thread_create(self, thread: Thread) -> None:
-        if thread.guild.id != cfg.rocketpool.support.server_id:
-            log.warning(f"Ignoring thread creation in {thread.guild.id}")
-            return
-
-        lower = thread.name.strip().lower()
-        scam_thread = (
-            # Ticket emoji or "assistance" — always scam
-            any(kw in lower for kw in ("🎫", "🎟️", "assistance"))
-            # "ticket"/"tick" — no real ticket system
-            or "tick" in lower
-            # "support" — only in short names (long ones are legit discussions)
-            or ("support" in lower and len(thread.name.strip()) < 25)
-            # Dash-digits near end of name (scam: "user-0816"; skip: "RIP-1559: ...")
-            or (
-                (m := re.search(r"(-|–|—)\d{3,}", thread.name))  # noqa: RUF001
-                and (
-                    m.end() >= len(thread.name.strip()) - 2
-                    or len(thread.name.strip()) < 30
-                )
-            )
-            # Exact suspicious names
-            or lower in (".", "!", "///")
-        )
-        if scam_thread:
-            await self.report_thread(thread, "Illegitimate support thread")
-            return
-
-        log.debug(f"Ignoring thread creation (id: {thread.id}, name: {thread.name})")
-
-    @Cog.listener()
-    async def on_raw_thread_update(self, event: RawThreadUpdateEvent) -> None:
-        thread: Thread = await self.bot.get_or_fetch_channel(event.thread_id)
-        await self.on_thread_create(thread)
+        if thread.guild.id == cfg.rocketpool.support.server_id:
+            # system message and thread share the same ID
+            self._thread_creation_messages.add(thread.id)
 
     @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
