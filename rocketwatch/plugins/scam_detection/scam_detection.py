@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import io
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from urllib import parse
@@ -191,25 +192,20 @@ class ScamDetection(Cog):
         )
 
     @staticmethod
-    def _get_message_content(
-        message: Message, *, preserve_formatting: bool = False
-    ) -> str:
+    def _get_message_content(message: Message) -> str:
         text = ""
         if message.content:
             content = message.content
-            if not preserve_formatting:
-                content = content.replace("\n> ", "")
-                content = content.replace("\n", "")
+            content = content.replace("\n> ", "")
+            content = content.replace("\n", "")
             text += content + "\n"
         if message.embeds:
             for embed in message.embeds:
                 text += f"---\n Embed: {embed.title}\n{embed.description}\n---\n"
 
-        if not preserve_formatting:
-            text = parse.unquote(text)
-            text = anyascii(text)
-            text = text.lower()
-
+        text = parse.unquote(text)
+        text = anyascii(text)
+        text = text.lower()
         return text
 
     async def _generate_message_report(
@@ -247,9 +243,27 @@ class ScamDetection(Cog):
             "Please review and take appropriate action."
         )
 
-        text = self._get_message_content(message, preserve_formatting=True)
-        with io.StringIO(text) as f:
-            attachment = File(f, filename="original_message.txt")
+        message_structure = json.dumps(
+            {
+                "content": message.content,
+                **(
+                    {
+                        "embeds": [
+                            {
+                                "title": e.title,
+                                "description": e.description,
+                            }
+                            for e in message.embeds
+                        ]
+                    }
+                    if message.embeds
+                    else {}
+                ),
+            },
+            indent=2,
+        )
+        with io.StringIO(message_structure) as f:
+            attachment = File(f, filename="message.json")
 
         return warning, report, attachment
 
@@ -450,6 +464,7 @@ class ScamDetection(Cog):
                 ":tickets:",
                 "m0d",
                 "tlcket",
+                "relate your issue",
             ),
             [("relay"), ("query", "question", "inquiry")],
             [("instant", "live"), "chat"],
@@ -470,6 +485,18 @@ class ScamDetection(Cog):
         content_only_txt = content_txt.split("---")[0]  # strip embed text
         if len(content_only_txt) > 500:
             return None
+
+        ticket_keywords = [
+            ("support", "open", "create", "raise", "raisse"),
+            "ticket",
+        ]
+        # For short messages, also check full text (including embeds) for ticket keywords.
+        # Scammers use embeds (via X posts, Discord invites) to carry ticket/support language.
+        # Only use the ticket pattern here; the contact+admin pattern is too broad for embed text
+        # (e.g. "administration" in news articles matches "admin").
+        if len(content_only_txt) <= 200 and self.__txt_contains(txt, ticket_keywords):
+            return default_reason
+
         trusted_url_domains = (
             "youtu.be",
             "youtube.com",
