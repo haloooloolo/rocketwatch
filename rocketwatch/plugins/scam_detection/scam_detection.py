@@ -233,7 +233,7 @@ class ScamDetection(Cog):
             text="This message will be deleted once the suspicious message is removed."
         )
 
-        report.description += (
+        report.description = warning.description + (
             "\n"
             f"User ID:    `{message.author.id}` ({message.author.mention})\n"
             f"Message ID: `{message.id}` ({message.jump_url})\n"
@@ -294,7 +294,7 @@ class ScamDetection(Cog):
             )
         )
         thread_owner = await self.bot.get_or_fetch_user(thread.owner_id)
-        report.description += (
+        report.description = warning.description + (
             "\n"
             f"Thread Name: `{thread.name}`\n"
             f"User ID:     `{thread_owner.id}` ({thread_owner.mention})\n"
@@ -470,7 +470,8 @@ class ScamDetection(Cog):
             [("instant", "live"), "chat"],
             [("submit"), ("question", "issue", "query")],
         )
-        if self.__txt_contains(txt, strong_keywords):
+        txt_no_urls = re.sub(r"https?://\S+", "", txt)
+        if self.__txt_contains(txt_no_urls, strong_keywords):
             return default_reason
 
         # Short directive messages with a URL ("ask here", "get help here")
