@@ -163,22 +163,25 @@ class UserDistribute(commands.Cog):
             mp["address"] = w3.to_checksum_address(mp["address"])
             storage = await w3.eth.get_storage_at(mp["address"], 0x17)
             user_distribute_time: int = int.from_bytes(storage, "big")
-
-            if user_distribute_time == 0:
-                continue  # already distributed
-
             elapsed_time = current_time - user_distribute_time
-            if elapsed_time >= ud_window_end:
-                eligible.append(mp)
-            elif elapsed_time < ud_window_start:
+
+            if elapsed_time < ud_window_start:
                 mp["ud_window_open"] = user_distribute_time + ud_window_start
                 pending.append(mp)
-            # double check, DB may lag behind
-            elif not await rp.call(
-                "rocketMinipoolDelegate.getUserDistributed", address=mp["address"]
-            ):
+            elif elapsed_time < ud_window_end:
                 mp["ud_window_close"] = user_distribute_time + ud_window_end
                 distributable.append(mp)
+            else:
+                # double check, DB may lag behind
+                minipool_contract = await rp.assemble_contract(
+                    "rocketMinipool", address=mp["address"]
+                )
+                if await minipool_contract.functions.getUserDistributed().call():
+                    continue
+                if await minipool_contract.functions.getFinalised().call():
+                    continue
+
+                eligible.append(mp)
 
         pending.sort(key=itemgetter("ud_window_open"))
         distributable.sort(key=itemgetter("ud_window_close"))
