@@ -39,8 +39,8 @@ class InstructionsView(ui.View):
             )[2:]
         )
 
-        calls = [(mp["address"], True, dist_calldata) for mp in self.distributable]
-        calls += [(mp["address"], True, bud_calldata) for mp in self.eligible]
+        calls = [(mp["address"], False, dist_calldata) for mp in self.distributable]
+        calls += [(mp["address"], False, bud_calldata) for mp in self.eligible]
 
         multicall_contract = await rp.get_contract_by_name("multicall3")
         gas_used = await multicall_contract.functions.aggregate3(calls).estimate_gas()
@@ -50,7 +50,7 @@ class InstructionsView(ui.View):
         tuple_strs = []
         for address, allow_failure, calldata in calls:
             tuple_strs.append(
-                f'["{address}", {str(allow_failure).lower()}, 0x{calldata.hex()}]'
+                f'["{address}", {str(allow_failure).lower()}, "0x{calldata.hex()}"]'
             )
 
         input_data = "[" + ",".join(tuple_strs) + "]"
