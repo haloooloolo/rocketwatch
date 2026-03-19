@@ -163,8 +163,11 @@ class UserDistribute(commands.Cog):
             mp["address"] = w3.to_checksum_address(mp["address"])
             storage = await w3.eth.get_storage_at(mp["address"], 0x17)
             user_distribute_time: int = int.from_bytes(storage, "big")
-            elapsed_time = current_time - user_distribute_time
 
+            if user_distribute_time == 0:
+                continue  # already distributed
+
+            elapsed_time = current_time - user_distribute_time
             if elapsed_time >= ud_window_end:
                 eligible.append(mp)
             elif elapsed_time < ud_window_start:
