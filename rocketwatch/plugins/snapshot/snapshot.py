@@ -289,7 +289,7 @@ class Snapshot(EventPlugin):
             )
 
         async def create_end_event(self) -> Event:
-            max_for, max_against = 0, 0
+            max_for, max_against = 0.0, 0.0
             for choice, score in zip(self.choices, self.scores, strict=False):
                 if "against" in choice.lower():
                     max_against = max(max_against, score)
@@ -311,20 +311,20 @@ class Snapshot(EventPlugin):
                 image=self.create_image(include_title=True),
             )
 
+    type SingleChoice = int
+    type MultiChoice = list[int]
+    # weighted votes use strings as keys for some reason
+    type WeightedChoice = dict[str, int]
+    type Choice = SingleChoice | MultiChoice | WeightedChoice
+
     @dataclass(frozen=True, slots=True)
     class Vote:
-        SingleChoice = int
-        MultiChoice = list[SingleChoice]
-        # weighted votes use strings as keys for some reason
-        WeightedChoice = dict[str, int]
-        Choice = SingleChoice | MultiChoice | WeightedChoice
-
         proposal: "Snapshot.Proposal"
         id: str
         voter: ChecksumAddress
         created: int
         vp: float
-        choice: Choice
+        choice: "Snapshot.Choice"
         reason: str
 
         def pretty_print(self) -> str | None:
@@ -339,11 +339,11 @@ class Snapshot(EventPlugin):
                     log.error(f"Unknown vote type: {raw_choice}")
                     return None
 
-        def _label_choice(self, raw_vote: SingleChoice) -> str:
+        def _label_choice(self, raw_vote: "Snapshot.SingleChoice") -> str:
             # vote choice represented as 1-based index
             return self.proposal.choices[raw_vote - 1]
 
-        def _format_single_choice(self, choice: SingleChoice):
+        def _format_single_choice(self, choice: "Snapshot.SingleChoice"):
             label = self._label_choice(choice)
             match label.lower():
                 case "for":
@@ -354,13 +354,13 @@ class Snapshot(EventPlugin):
                     label = "⚪ Abstain"
             return f"`{label}`"
 
-        def _format_multiple_choice(self, choice: MultiChoice) -> str:
+        def _format_multiple_choice(self, choice: "Snapshot.MultiChoice") -> str:
             labels = [self._label_choice(c) for c in choice]
             if len(labels) == 1:
                 return f"`{labels[0]}`"
             return "**" + "\n".join([f"- {c}" for c in labels]) + "**"
 
-        def _format_weighted_choice(self, choice: WeightedChoice) -> str:
+        def _format_weighted_choice(self, choice: "Snapshot.WeightedChoice") -> str:
             labels = {self._label_choice(int(c)): w for c, w in choice.items()}
             total_weight = sum(labels.values())
             choice_perc = [
@@ -395,6 +395,8 @@ class Snapshot(EventPlugin):
                 embed.description = separator.join([f"{voter} voted", vote_fmt])
             elif self.choice != prev_vote.choice:
                 prev_vote_fmt = prev_vote.pretty_print()
+                if prev_vote_fmt is None:
+                    return None
                 parts = [
                     f"{voter} changed their vote from",
                     prev_vote_fmt,

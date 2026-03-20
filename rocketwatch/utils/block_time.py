@@ -2,6 +2,7 @@ import logging
 import math
 
 from aiocache import cached
+from eth_typing import BlockNumber
 from web3.types import BlockData
 
 from utils.shared_w3 import w3
@@ -15,11 +16,11 @@ async def block_to_ts(block_number: int) -> int:
     return block.get("timestamp", 0)
 
 
-async def ts_to_block(target_ts: int) -> int:
+async def ts_to_block(target_ts: int) -> BlockNumber:
     log.debug(f"Looking for block at timestamp {target_ts}")
     if target_ts < await block_to_ts(1):
         # genesis block doesn't have a timestamp
-        return 0
+        return BlockNumber(0)
 
     lo = 1
     hi = await w3.eth.get_block_number() - 1
@@ -35,7 +36,7 @@ async def ts_to_block(target_ts: int) -> int:
             hi = mid - 1
         elif ts == target_ts:
             log.debug(f"Exact match: block {mid} @ {ts}")
-            return mid
+            return BlockNumber(mid)
 
     # l == r, highest block number below target
     block = hi
@@ -45,4 +46,4 @@ async def ts_to_block(target_ts: int) -> int:
         block += 1
 
     log.debug(f"Closest match: block {block} @ {await block_to_ts(block)}")
-    return block
+    return BlockNumber(block)
