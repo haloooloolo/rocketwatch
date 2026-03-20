@@ -2,6 +2,7 @@ import json
 import logging
 
 from pydantic import BaseModel
+from web3.datastructures import MutableAttributeDict
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -77,7 +78,9 @@ class Milestones(EventPlugin):
                     f"Goal for milestone {milestone.id} has increased. Triggering Milestone!"
                 )
                 embed = await assemble(
-                    {"event_name": milestone.id, "result_value": value}
+                    MutableAttributeDict(
+                        {"event_name": milestone.id, "result_value": value}
+                    )
                 )
                 payload.append(
                     Event(
