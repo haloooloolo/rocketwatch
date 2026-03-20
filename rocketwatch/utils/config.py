@@ -78,7 +78,6 @@ class EventsConfig(BaseModel):
 class SecretsConfig(BaseModel):
     wakatime: str = ""
     cronitor: str = ""
-    anthropic: str = ""
 
 
 class OtherConfig(BaseModel):

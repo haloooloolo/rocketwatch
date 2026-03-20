@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from discord import Interaction
 from discord.app_commands import command, guilds
@@ -33,7 +33,7 @@ class PinnedMessages(commands.Cog):
         for message in messages:
             # if it's older than 6 hours and not disabled, mark as disabled
             if (
-                message["created_at"] + timedelta(hours=6) < datetime.utcnow()
+                message["created_at"] + timedelta(hours=6) < datetime.now(UTC)
                 and not message["disabled"]
             ):
                 await self.bot.db.pinned_messages.update_one(
@@ -107,7 +107,7 @@ class PinnedMessages(commands.Cog):
                         "disabled": False,
                         "cleaned_up": False,
                         "message_id": None,
-                        "created_at": datetime.utcnow(),
+                        "created_at": datetime.now(UTC),
                     }
                 },
             )
@@ -123,7 +123,7 @@ class PinnedMessages(commands.Cog):
                 "content": description,
                 "disabled": False,
                 "cleaned_up": False,
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(UTC),
             }
         )
         # rest is done by the run_loop

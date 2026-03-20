@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from discord import Interaction
@@ -31,7 +31,7 @@ class RWCommandTree(CommandTree["RocketWatch"]):
             return
 
         cmd_name = interaction.command.name if interaction.command else "unknown"
-        timestamp = datetime.utcnow()
+        timestamp = datetime.now(UTC)
 
         channel_name = _channel_name(interaction)
 
@@ -82,7 +82,7 @@ class RWCommandTree(CommandTree["RocketWatch"]):
                     {
                         "$set": {
                             "status": "error",
-                            "took": (datetime.utcnow() - timestamp).total_seconds(),
+                            "took": (datetime.now(UTC) - timestamp).total_seconds(),
                             "error": str(error),
                         }
                     },
@@ -102,7 +102,7 @@ class RWCommandTree(CommandTree["RocketWatch"]):
                 {
                     "$set": {
                         "status": "completed",
-                        "took": (datetime.utcnow() - timestamp).total_seconds(),
+                        "took": (datetime.now(UTC) - timestamp).total_seconds(),
                     }
                 },
             )

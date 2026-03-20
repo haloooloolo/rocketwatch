@@ -41,12 +41,12 @@ class EventPlugin(commands.Cog):
         self.bot = bot
         self.rate_limit = rate_limit
         self.lookback_distance: int = cfg.events.lookback_distance
-        self.last_served_block: int = cfg.events.genesis - 1
-        self._pending_block: int = self.last_served_block
+        self.last_served_block = BlockNumber(cfg.events.genesis - 1)
+        self._pending_block = self.last_served_block
         self._last_run = datetime.now() - rate_limit
 
     def start_tracking(self, block: BlockNumber) -> None:
-        self.last_served_block = block - 1
+        self.last_served_block = BlockNumber(block - 1)
 
     async def get_new_events(self) -> list[Event]:
         now = datetime.now()

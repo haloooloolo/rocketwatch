@@ -1,7 +1,7 @@
 import json
 import logging
 
-from web3.datastructures import MutableAttributeDict as aDict
+from pydantic import BaseModel
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -12,36 +12,45 @@ from utils.rocketpool import rp
 log = logging.getLogger("rocketwatch.milestones")
 
 
+class MilestoneConfig(BaseModel):
+    id: str
+    function: str
+    args: list[str]
+    formatter: str
+    min: int
+    step_size: int
+
+
 class Milestones(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
-        self.collection = bot.db.milestones
+        self._reset()
+
+    def _reset(self) -> None:
+        self.collection = self.bot.db.milestones
         self.state = "OK"
 
         with open("./plugins/milestones/milestones.json") as f:
-            self.milestones = json.load(f)
+            self.milestones = [MilestoneConfig(**m) for m in json.load(f)]
 
     async def _get_new_events(self) -> list[Event]:
         if self.state == "RUNNING":
             log.error(
                 "Milestones plugin was interrupted while running. Re-initializing..."
             )
-            self.__init__(self.bot)
+            self._reset()
 
         self.state = "RUNNING"
         result = await self.check_for_new_events()
         self.state = "OK"
         return result
 
-    # noinspection PyTypeChecker
     async def check_for_new_events(self):
         log.info("Checking Milestones")
         payload = []
 
         for milestone in self.milestones:
-            milestone = aDict(milestone)
-
-            state = await self.collection.find_one({"_id": milestone["id"]})
+            state = await self.collection.find_one({"_id": milestone.id})
 
             value = await getattr(rp, milestone.function)(*milestone.args)
             if milestone.formatter:
@@ -60,7 +69,7 @@ class Milestones(EventPlugin):
                     f"First time we have processed Milestones for milestone {milestone.id}. Adding it to the Database."
                 )
                 await self.collection.insert_one(
-                    {"_id": milestone["id"], "current_goal": latest_goal}
+                    {"_id": milestone.id, "current_goal": latest_goal}
                 )
                 previous_milestone = milestone.min
             if previous_milestone < latest_goal:
@@ -68,7 +77,7 @@ class Milestones(EventPlugin):
                     f"Goal for milestone {milestone.id} has increased. Triggering Milestone!"
                 )
                 embed = await assemble(
-                    aDict({"event_name": milestone.id, "result_value": value})
+                    {"event_name": milestone.id, "result_value": value}
                 )
                 payload.append(
                     Event(
@@ -81,7 +90,7 @@ class Milestones(EventPlugin):
                 )
                 # update the current goal in collection
                 await self.collection.update_one(
-                    {"_id": milestone["id"]}, {"$set": {"current_goal": latest_goal}}
+                    {"_id": milestone.id}, {"$set": {"current_goal": latest_goal}}
                 )
 
         log.debug("Finished Checking Milestones")

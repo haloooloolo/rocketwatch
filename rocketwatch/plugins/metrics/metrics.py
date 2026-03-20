@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 
 from bson import SON
@@ -30,7 +30,7 @@ class Metrics(commands.Cog):
             e = Embed(title="Metrics from the last 7 days")
             desc = "```\n"
             # last 7 days
-            start = datetime.utcnow() - timedelta(days=7)
+            start = datetime.now(UTC) - timedelta(days=7)
 
             # get the total number of processed events from the event_queue in the last 7 days
             total_events_processed = await self.bot.db.event_queue.count_documents(
@@ -84,7 +84,7 @@ class Metrics(commands.Cog):
                     ]
                 )
             ).to_list(length=5)
-            desc += "Top 5 Commands based on usage:\n"
+            desc += "Command Usage:\n"
             for command in most_used_commands:
                 desc += f" - {command['_id']}: {command['count']}\n"
 
@@ -98,7 +98,7 @@ class Metrics(commands.Cog):
                     ]
                 )
             ).to_list(length=5)
-            desc += "\nTop 5 Channels based on commands handled:\n"
+            desc += "\nCommand Usage By Channel:\n"
             for channel in top_channels:
                 desc += f" - {channel['_id']['name']}: {channel['count']}\n"
             e.description = desc + "```"
