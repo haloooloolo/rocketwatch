@@ -1,4 +1,5 @@
 import logging
+from typing import Literal, TypedDict
 
 from discord import Interaction
 from discord.app_commands import command
@@ -14,13 +15,21 @@ from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.lottery")
 
+Period = Literal["latest", "next"]
+
+
+class ValidatorEntry(TypedDict):
+    validator: int
+    pubkey: str
+    node_operator: str
+
 
 class Lottery(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.did_check = False
 
-    async def _check_indexes(self):
+    async def _check_indexes(self) -> None:
         if self.did_check:
             return
         log.debug("Checking indexes")
@@ -32,7 +41,7 @@ class Lottery(commands.Cog):
         log.debug("Indexes checked")
 
     @timerun_async
-    async def load_sync_committee(self, period):
+    async def load_sync_committee(self, period: Period) -> None:
         assert period in ["latest", "next"]
         await self._check_indexes()
         h = await bacon.get_block("head")
@@ -65,7 +74,9 @@ class Lottery(commands.Cog):
                 await col.delete_many({})
                 await col.bulk_write(payload)
 
-    async def get_validators_for_sync_committee_period(self, period):
+    async def get_validators_for_sync_committee_period(
+        self, period: Period
+    ) -> list[ValidatorEntry]:
         data = await self.bot.db[f"sync_committee_{period}"].aggregate(
             [
                 {
@@ -91,11 +102,13 @@ class Lottery(commands.Cog):
         )
         return await data.to_list()
 
-    async def generate_sync_committee_description(self, period):
+    async def generate_sync_committee_description(self, period: Period) -> str:
         await self.load_sync_committee(period)
         validators = await self.get_validators_for_sync_committee_period(period)
         # get stats about the current period
         stats = await self.bot.db.sync_committee_stats.find_one({"period": period})
+        if stats is None:
+            return "No data available for this period."
         perc = len(validators) / 512
         description = (
             f"_Rocket Pool Participation:_ {len(validators)}/512 ({perc:.2%})\n"
@@ -114,20 +127,20 @@ class Lottery(commands.Cog):
         )
         # node operators
         # gather count per
-        node_operators = {}
+        node_operator_counts: dict[str, int] = {}
         for v in validators:
-            if v["node_operator"] not in node_operators:
-                node_operators[v["node_operator"]] = 0
-            node_operators[v["node_operator"]] += 1
+            if v["node_operator"] not in node_operator_counts:
+                node_operator_counts[v["node_operator"]] = 0
+            node_operator_counts[v["node_operator"]] += 1
         # sort by count
-        node_operators = sorted(
-            node_operators.items(), key=lambda x: x[1], reverse=True
+        sorted_operators = sorted(
+            node_operator_counts.items(), key=lambda x: x[1], reverse=True
         )
         description += "_Node Operators:_ "
         description += ", ".join(
             [
                 f"{count}x {await el_explorer_url(node_operator)}"
-                for node_operator, count in node_operators
+                for node_operator, count in sorted_operators
             ]
         )
         return description
@@ -151,5 +164,5 @@ class Lottery(commands.Cog):
         await interaction.followup.send(embeds=embeds)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Lottery(bot))
