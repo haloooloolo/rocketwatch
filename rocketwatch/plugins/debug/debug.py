@@ -2,10 +2,13 @@ import logging
 import random
 import time
 from datetime import UTC
+from typing import cast
 
 from discord import Interaction
+from discord.abc import Messageable
 from discord.app_commands import command, guilds
 from discord.ext.commands import Cog, is_owner
+from eth_typing import HexStr
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
@@ -40,10 +43,8 @@ class Debug(Cog):
         """Get members of a role"""
         await interaction.response.defer(ephemeral=True)
         try:
-            guild = self.bot.get_guild(int(guild_id))
-            log.debug(guild)
-            role = guild.get_role(int(role_id))
-            log.debug(role)
+            guild = await self.bot.get_or_fetch_guild(int(guild_id))
+            role = await self.bot.get_or_fetch_role(int(guild_id), int(role_id))
             # print name + identifier and id of each member
             members = [
                 f"{member.name}#{member.discriminator}, ({member.id})"
@@ -68,6 +69,7 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         try:
             guild = self.bot.get_guild(int(guild_id))
+            assert guild is not None
             log.debug(guild)
             # print name + identifier and id of each member
             roles = [f"{role.name}, ({role.id})" for role in guild.roles]
@@ -88,6 +90,7 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        assert isinstance(channel, Messageable)
         msg = await channel.fetch_message(int(message_id))
         await msg.delete()
         await interaction.followup.send(content="Done")
@@ -101,6 +104,7 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        assert isinstance(channel, Messageable)
         msg = await channel.fetch_message(int(message_id))
         embed = msg.embeds[0]
         embed.description = new_description
@@ -115,7 +119,7 @@ class Debug(Cog):
         Try to return the revert reason of a transaction.
         """
         await interaction.response.defer(ephemeral=True)
-        transaction_receipt = await w3.eth.get_transaction(tnx_hash)
+        transaction_receipt = await w3.eth.get_transaction(HexStr(tnx_hash))
         if revert_reason := await rp.get_revert_reason(transaction_receipt):
             await interaction.followup.send(
                 content=f"```Revert reason: {revert_reason}```"
@@ -153,24 +157,26 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def talk(self, interaction: Interaction, channel: str, message: str):
+    async def talk(self, interaction: Interaction, channel_id: str, message: str):
         """
         Send a message to a channel.
         """
         await interaction.response.defer(ephemeral=True)
-        channel = await self.bot.get_or_fetch_channel(int(channel))
+        channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        assert isinstance(channel, Messageable)
         await channel.send(message)
         await interaction.followup.send(content="Done")
 
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def announce(self, interaction: Interaction, channel: str, message: str):
+    async def announce(self, interaction: Interaction, channel_id: str, message: str):
         """
         Send a message to a channel.
         """
         await interaction.response.defer(ephemeral=True)
-        channel = await self.bot.get_or_fetch_channel(int(channel))
+        channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        assert isinstance(channel, Messageable)
         e = Embed(title="Announcement", description=message)
         e.add_field(
             name="Timestamp",
@@ -188,10 +194,12 @@ class Debug(Cog):
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
+        assert isinstance(channel, Messageable)
 
         msg = await channel.fetch_message(int(message_id))
         template_embed = msg.embeds[0]
         template_title = template_embed.title
+        assert template_embed.description is not None
         template_description = "\n".join(template_embed.description.splitlines()[:-2])
 
         import re
@@ -201,6 +209,12 @@ class Debug(Cog):
         match = re.search(
             r"Last Edited by <@(?P<user>[0-9]+)> <t:(?P<ts>[0-9]+):R>", edit_line
         )
+        if match is None:
+            await interaction.followup.send(
+                "Failed to restore support template. The provided message doesn't match the expected format."
+            )
+            return
+
         user_id = int(match.group("user"))
         ts = int(match.group("ts"))
 
@@ -236,17 +250,17 @@ class Debug(Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        events_plugin: Events = self.bot.cogs["Events"]
+        events_plugin = cast(Events, self.bot.cogs["Events"])
 
         filtered_events = []
-        for event_log in (await w3.eth.get_transaction_receipt(tx_hash)).logs:
+        for event_log in (await w3.eth.get_transaction_receipt(HexStr(tx_hash))).logs:
             if ("topics" in event_log) and (
                 event_log["topics"][0].hex() in events_plugin.topic_map
             ):
                 filtered_events.append(event_log)
 
         channels = cfg.discord.channels
-        events, _ = events_plugin.process_events(filtered_events)
+        events, _ = await events_plugin.process_events(filtered_events)
         for event in events:
             channel_candidates = [
                 value
@@ -265,8 +279,9 @@ class Debug(Cog):
                     "block_number": event.block_number,
                     "score": event.get_score(),
                     "time_seen": datetime.now(),
-                    "attachment": pickle.dumps(event.attachment)
-                    if event.attachment
+                    "image": pickle.dumps(event.image) if event.image else None,
+                    "thumbnail": pickle.dumps(event.thumbnail)
+                    if event.thumbnail
                     else None,
                     "channel_id": channel_id,
                     "message_id": None,
