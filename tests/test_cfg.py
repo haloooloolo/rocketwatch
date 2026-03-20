@@ -137,7 +137,6 @@ class TestSecretsConfig:
         s = SecretsConfig()
         assert s.wakatime == ""
         assert s.cronitor == ""
-        assert s.anthropic == ""
 
     def test_partial_override(self):
         s = SecretsConfig(wakatime="my-key")

@@ -5,7 +5,6 @@ requires-python = ">=3.12"
 dependencies = [
     "aiohttp==3.13.3",
     "aiocache==0.12.3",
-    "anthropic==0.84.0",
     "anyascii==0.3.3",
     "beautifulsoup4==4.14.3",
     "bidict==0.23.1",
