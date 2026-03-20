@@ -29,7 +29,7 @@ async def get_logs(
                 argument_filters=arg_filters,
             )
         )
-        chunk_start = chunk_end + 1
+        chunk_start = BlockNumber(chunk_end + 1)
 
     results = await asyncio.gather(*tasks)
     return [log_entry for chunk in results for log_entry in chunk]

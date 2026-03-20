@@ -12,6 +12,7 @@ from discord import Color
 from ens import InvalidName
 from eth_typing import BlockIdentifier
 from etherscan_labels import Addresses
+from web3.constants import ADDRESS_ZERO
 
 from strings import _
 from utils import solidity
@@ -119,7 +120,7 @@ async def el_explorer_url(
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", target
             )
-            if megapool_address != "0x0000000000000000000000000000000000000000":
+            if megapool_address != ADDRESS_ZERO:
                 url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
             if await rp.call(
                 "rocketNodeManager.getSmoothingPoolRegistrationState",

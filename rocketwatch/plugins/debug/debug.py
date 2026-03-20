@@ -1,16 +1,16 @@
-import io
 import logging
 import random
 import time
 from datetime import UTC
 
-from discord import File, Interaction
+from discord import Interaction
 from discord.app_commands import command, guilds
 from discord.ext.commands import Cog, is_owner
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
 from utils.embeds import Embed
+from utils.file import TextFile
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
@@ -54,7 +54,7 @@ class Debug(Cog):
                 f"Members of {role.name} ({role.id}) in {guild.name} ({guild.id})\n\n"
                 + "\n".join(members)
             )
-            file = File(io.StringIO(content), "members.txt")
+            file = TextFile(content, "members.txt")
             await interaction.followup.send(file=file)
         except Exception as err:
             await interaction.followup.send(content=f"```{err!r}```")
@@ -73,7 +73,7 @@ class Debug(Cog):
             roles = [f"{role.name}, ({role.id})" for role in guild.roles]
             # generate a file with a header that mentions what role and guild the members are from
             content = f"Roles of {guild.name} ({guild.id})\n\n" + "\n".join(roles)
-            file = File(io.StringIO(content), filename="roles.txt")
+            file = TextFile(content, "roles.txt")
             await interaction.followup.send(file=file)
         except Exception as err:
             await interaction.followup.send(content=f"```{err!r}```")

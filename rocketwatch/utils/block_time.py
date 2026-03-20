@@ -2,6 +2,7 @@ import logging
 import math
 
 from aiocache import cached
+from web3.types import BlockData
 
 from utils.shared_w3 import w3
 
@@ -10,7 +11,8 @@ log = logging.getLogger("rocketwatch.block_time")
 
 @cached()
 async def block_to_ts(block_number: int) -> int:
-    return (await w3.eth.get_block(block_number)).timestamp
+    block: BlockData = await w3.eth.get_block(block_number)
+    return block.get("timestamp", 0)
 
 
 async def ts_to_block(target_ts: int) -> int:

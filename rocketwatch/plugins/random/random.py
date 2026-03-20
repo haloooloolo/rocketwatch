@@ -1,4 +1,3 @@
-import io
 import logging
 from datetime import datetime
 
@@ -6,7 +5,7 @@ import aiohttp
 import dice
 import humanize
 import pytz
-from discord import File, Interaction
+from discord import Interaction
 from discord.app_commands import Choice, command
 from discord.ext import commands
 
@@ -15,6 +14,7 @@ from utils import solidity
 from utils.block_time import block_to_ts, ts_to_block
 from utils.config import cfg
 from utils.embeds import Embed, el_explorer_url, ens
+from utils.file import TextFile
 from utils.readable import prettify_json_string, pretty_time, s_hex
 from utils.rocketpool import rp
 from utils.sea_creatures import (
@@ -46,7 +46,7 @@ class Random(commands.Cog):
         e.title = f"🎲 {dice_string}"
         if len(str(result)) >= 2000:
             e.description = "Result too long to display, attaching as file."
-            file = File(io.StringIO(str(result)), filename="dice_result.txt")
+            file = TextFile(str(result), "dice_result.txt")
             await interaction.followup.send(embed=e, file=file)
         else:
             e.description = f"Result: `{result}`"
@@ -377,9 +377,7 @@ class Random(commands.Cog):
         )
         try:
             abi = prettify_json_string(await rp.uncached_get_abi_by_name(contract))
-            file = File(
-                io.StringIO(abi), f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json"
-            )
+            file = TextFile(abi, f"{contract}.{cfg.rocketpool.chain.lower()}.abi.json")
             await interaction.followup.send(file=file)
         except Exception as err:
             await interaction.followup.send(content=f"```Exception: {err!r}```")

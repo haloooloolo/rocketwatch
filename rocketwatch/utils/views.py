@@ -65,7 +65,7 @@ class PageView(ui.View):
         def __init__(self, view: "PageView"):
             super().__init__()
             self.view = view
-            self.position_field = ui.TextInput(
+            self.position_field: ui.TextInput[PageView.JumpToModal] = ui.TextInput(
                 label="Position", placeholder="Enter position to jump to", required=True
             )
             self.add_item(self.position_field)

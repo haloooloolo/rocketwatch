@@ -1,11 +1,15 @@
+from __future__ import annotations
+
 from abc import abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
 from discord.ext import commands
 from eth_typing import BlockNumber
 
-from rocketwatch import RocketWatch
+if TYPE_CHECKING:
+    from rocketwatch.rocketwatch import RocketWatch
 from utils.config import cfg
 from utils.embeds import Embed
 from utils.image import Image

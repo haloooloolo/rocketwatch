@@ -1,16 +1,16 @@
 import contextlib
-import io
 import json
 import logging
 
 import humanize
-from discord import File, Interaction
+from discord import Interaction
 from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 from discord.ui import Modal, TextInput
 
 from rocketwatch import RocketWatch
 from utils import solidity
+from utils.file import TextFile
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.visibility import is_hidden_role_controlled
@@ -177,7 +177,7 @@ class Call(Cog):
         if len(text + str(v)) > 2000:
             text += "too long, attached as file`"
             await interaction.followup.send(
-                text, file=File(io.StringIO(str(v)), "exception.txt")
+                text, file=TextFile(str(v), "exception.txt")
             )
         else:
             text += f"{v!s}`"

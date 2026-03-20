@@ -14,7 +14,7 @@ def prettify_json_string(data):
     return json.dumps(json.loads(data), indent=4)
 
 
-def decode_abi(compressed_string):
+def decode_abi(compressed_string: str) -> str:
     decompress = zlib.decompressobj(15)
     data = base64.b64decode(compressed_string)
     inflated = decompress.decompress(data)
@@ -168,15 +168,14 @@ def render_tree(data: dict, name: str, max_depth: int = 0) -> str:
             strict=False,
         ),
     )
-    max_right_len, max_left_len = [], []
     # longest string offset per depth
-    max_left_len = max(
+    max_left_len: int = max(
         max(len(s) for s, d in zip(lines, depths, strict=False) if d == depth)
         for depth in set(depths)
     )
 
     # same for right
-    max_right_len = max(
+    max_right_len: int = max(
         max(len(str(v)) for v, d in zip(values, depths, strict=False) if d == depth)
         for depth in set(depths)
     )

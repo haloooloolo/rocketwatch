@@ -1,12 +1,15 @@
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-import eth_abi
 from bidict import bidict
 from cachetools import FIFOCache
+from eth_abi import abi
 from eth_typing import BlockIdentifier, ChecksumAddress
+from web3.constants import ADDRESS_ZERO
+from web3.contract import AsyncContract
+from web3.contract.async_contract import AsyncContractFunction
 from web3.exceptions import ContractLogicError
 
 from utils import solidity
@@ -22,12 +25,12 @@ class NoAddressFound(Exception):
 
 
 class RocketPool:
-    ADDRESS_CACHE = FIFOCache(maxsize=2048)
-    ABI_CACHE = FIFOCache(maxsize=2048)
-    CONTRACT_CACHE = FIFOCache(maxsize=2048)
+    ADDRESS_CACHE: FIFOCache[str, ChecksumAddress] = FIFOCache(maxsize=2048)
+    ABI_CACHE: FIFOCache[str, str] = FIFOCache(maxsize=2048)
+    CONTRACT_CACHE: FIFOCache[tuple, AsyncContract] = FIFOCache(maxsize=2048)
 
     def __init__(self):
-        self.addresses = bidict()
+        self.addresses: bidict[str, ChecksumAddress] = bidict()
         self._multicall = None
 
     async def async_init(self):
@@ -44,7 +47,7 @@ class RocketPool:
     async def _init_contract_addresses(self) -> None:
         manual_addresses = cfg.rocketpool.manual_addresses
         for name, address in manual_addresses.items():
-            self.addresses[name] = address
+            self.addresses[name] = w3.to_checksum_address(address)
 
         self._multicall = await self.get_contract_by_name("multicall3")
 
@@ -60,24 +63,26 @@ class RocketPool:
 
         try:
             cs_dir, cs_prefix = "ConstellationDirectory", "Constellation"
-            self.addresses |= {
-                f"{cs_prefix}.SuperNodeAccount": await self.call(
-                    f"{cs_dir}.getSuperNodeAddress"
-                ),
-                f"{cs_prefix}.OperatorDistributor": await self.call(
-                    f"{cs_dir}.getOperatorDistributorAddress"
-                ),
-                f"{cs_prefix}.Whitelist": await self.call(
-                    f"{cs_dir}.getWhitelistAddress"
-                ),
-                f"{cs_prefix}.ETHVault": await self.call(
-                    f"{cs_dir}.getWETHVaultAddress"
-                ),
-                f"{cs_prefix}.RPLVault": await self.call(
-                    f"{cs_dir}.getRPLVaultAddress"
-                ),
-                "WETH": await self.call(f"{cs_dir}.getWETHAddress"),
-            }
+            self.addresses.update(
+                {
+                    f"{cs_prefix}.SuperNodeAccount": await self.call(
+                        f"{cs_dir}.getSuperNodeAddress"
+                    ),
+                    f"{cs_prefix}.OperatorDistributor": await self.call(
+                        f"{cs_dir}.getOperatorDistributorAddress"
+                    ),
+                    f"{cs_prefix}.Whitelist": await self.call(
+                        f"{cs_dir}.getWhitelistAddress"
+                    ),
+                    f"{cs_prefix}.ETHVault": await self.call(
+                        f"{cs_dir}.getWETHVaultAddress"
+                    ),
+                    f"{cs_prefix}.RPLVault": await self.call(
+                        f"{cs_dir}.getRPLVaultAddress"
+                    ),
+                    "WETH": await self.call(f"{cs_dir}.getWETHAddress"),
+                }
+            )
         except NoAddressFound:
             log.warning("Failed to find address for Constellation contracts")
 
@@ -98,14 +103,19 @@ class RocketPool:
         if not outputs:
             return None
         types = [RocketPool._abi_type_str(o) for o in outputs]
-        decoded = eth_abi.decode(types, data)
+        decoded = abi.decode(types, data)
         return decoded[0] if len(decoded) == 1 else decoded
 
+    CallInput = AsyncContractFunction | tuple[AsyncContractFunction, bool]
+
     @staticmethod
-    def _normalize_calls(calls, default_require_success):
+    def _normalize_calls(
+        calls: list[CallInput], default_require_success: bool
+    ) -> tuple[list[AsyncContractFunction], list[bool]]:
         """Normalize calls to (fn, allow_failure) pairs. Each call may be a
         plain AsyncContractFunction or an (fn, require_success) tuple."""
-        fns, flags = [], []
+        fns: list[AsyncContractFunction] = []
+        flags: list[bool] = []
         for call in calls:
             if isinstance(call, tuple):
                 fn, req = call
@@ -116,14 +126,18 @@ class RocketPool:
         return fns, flags
 
     async def multicall(
-        self, calls, require_success=True, block: BlockIdentifier = "latest"
-    ) -> list:
+        self,
+        calls: list[CallInput],
+        require_success: bool = True,
+        block: BlockIdentifier = "latest",
+    ) -> list[Any]:
         """Multicall accepting AsyncContractFunction objects or (fn, require_success) tuples."""
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [
             (fn.address, af, fn._encode_transaction_data())
             for fn, af in zip(fns, flags, strict=False)
         ]
+        assert self._multicall is not None
         results = await self._multicall.functions.aggregate3(encoded).call(
             block_identifier=block
         )
@@ -132,7 +146,7 @@ class RocketPool:
             for i, (success, data) in enumerate(results)
         ]
 
-    async def get_address_by_name(self, name):
+    async def get_address_by_name(self, name: str) -> ChecksumAddress:
         if name in self.ADDRESS_CACHE:
             return self.ADDRESS_CACHE[name]
         if name in self.addresses:
@@ -142,14 +156,16 @@ class RocketPool:
         self.ADDRESS_CACHE[name] = address
         return address
 
-    async def uncached_get_address_by_name(self, name, block="latest"):
+    async def uncached_get_address_by_name(
+        self, name: str, block: BlockIdentifier = "latest"
+    ) -> ChecksumAddress:
         log.debug(f"Retrieving address for {name} Contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
         storage = await self.get_contract_by_name(
             "rocketStorage", historical=block != "latest"
         )
         address = await storage.functions.getAddress(sha3).call(block_identifier=block)
-        if not w3.to_int(hexstr=address):
+        if address == ADDRESS_ZERO:
             raise NoAddressFound(f"No address found for {name} Contract")
         self.addresses[name] = address
         log.debug(f"Retrieved address for {name} Contract: {address}")
@@ -196,25 +212,29 @@ class RocketPool:
         version_string = await self.get_string("protocol.version")
         return tuple(map(int, version_string.split(".")))
 
-    async def get_abi_by_name(self, name):
+    async def get_abi_by_name(self, name) -> str:
         if name in self.ABI_CACHE:
             return self.ABI_CACHE[name]
         abi = await self.uncached_get_abi_by_name(name)
         self.ABI_CACHE[name] = abi
         return abi
 
-    async def uncached_get_abi_by_name(self, name):
-        log.debug(f"Retrieving abi for {name} Contract")
+    async def uncached_get_abi_by_name(self, name) -> str:
+        log.debug(f"Retrieving abi for {name} contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.abi", name])
         storage = await self.get_contract_by_name("rocketStorage")
         compressed_string = await storage.functions.getString(sha3).call()
         if not compressed_string:
-            raise Exception(f"No abi found for {name} Contract")
+            raise Exception(f"No abi found for {name} contract")
         return decode_abi(compressed_string)
 
     async def assemble_contract(
-        self, name, address=None, historical=False, mainnet=False
-    ):
+        self,
+        name: str,
+        address: ChecksumAddress | None = None,
+        historical: bool = False,
+        mainnet: bool = False,
+    ) -> AsyncContract:
         cache_key = (name, address, historical, mainnet)
         if cache_key in self.CONTRACT_CACHE:
             return self.CONTRACT_CACHE[cache_key]
@@ -238,27 +258,35 @@ class RocketPool:
         else:
             contract = w3.eth.contract(address=address, abi=abi)
 
+        contract = cast(AsyncContract, contract)
         self.CONTRACT_CACHE[cache_key] = contract
         return contract
 
-    def get_name_by_address(self, address):
+    def get_name_by_address(self, address: ChecksumAddress) -> str | None:
         return self.addresses.inverse.get(address, None)
 
-    async def get_contract_by_name(self, name, historical=False, mainnet=False):
+    async def get_contract_by_name(
+        self, name: str, historical: bool = False, mainnet: bool = False
+    ) -> AsyncContract:
         address = await self.get_address_by_name(name)
         return await self.assemble_contract(
             name, address, historical=historical, mainnet=mainnet
         )
 
-    async def get_contract_by_address(self, address):
+    async def get_contract_by_address(
+        self, address: ChecksumAddress
+    ) -> AsyncContract | None:
         """
         **WARNING**: only call after contract has been previously retrieved using its name
         """
-        name = self.get_name_by_address(address)
+        if not (name := self.get_name_by_address(address)):
+            return None
         return await self.assemble_contract(name, address)
 
-    async def estimate_gas_for_call(self, path, *args, block="latest"):
-        log.debug(f"Estimating gas for {path} (block={block})")
+    async def estimate_gas_for_call(
+        self, path: str, *args, block: BlockIdentifier = "latest"
+    ) -> int:
+        log.debug(f"Estimating gas for {path} (block={block!r})")
         name, function = path.rsplit(".", 1)
         contract = await self.get_contract_by_name(name)
         return await contract.functions[function](*args).estimate_gas(
@@ -266,8 +294,13 @@ class RocketPool:
         )
 
     async def get_function(
-        self, path, *args, historical=False, address=None, mainnet=False
-    ):
+        self,
+        path: str,
+        *args,
+        historical: bool = False,
+        address: ChecksumAddress | None = None,
+        mainnet: bool = False,
+    ) -> AsyncContractFunction:
         name, function = path.rsplit(".", 1)
         if not address:
             address = await self.get_address_by_name(name)
@@ -280,32 +313,34 @@ class RocketPool:
 
     async def call(
         self,
-        path,
+        path: str,
         *args,
         block: BlockIdentifier = "latest",
-        address=None,
-        mainnet=False,
-    ):
-        log.debug(f"Calling {path} (block={block})")
+        address: ChecksumAddress | None = None,
+        mainnet: bool = False,
+    ) -> Any:
+        log.debug(f"Calling {path} (block={block!r})")
         fn = await self.get_function(
             path, *args, historical=block != "latest", address=address, mainnet=mainnet
         )
         return await fn.call(block_identifier=block)
 
-    async def get_annual_rpl_inflation(self):
-        inflation_per_interval = solidity.to_float(
+    async def get_annual_rpl_inflation(self) -> float:
+        inflation_per_interval: float = solidity.to_float(
             await self.call("rocketTokenRPL.getInflationIntervalRate")
         )
         if not inflation_per_interval:
             return 0
-        seconds_per_interval = await self.call(
+        seconds_per_interval: int = await self.call(
             "rocketTokenRPL.getInflationIntervalTime"
         )
         intervals_per_year = solidity.years / seconds_per_interval
         return (inflation_per_interval**intervals_per_year) - 1
 
-    async def get_percentage_rpl_swapped(self):
-        value = solidity.to_float(await self.call("rocketTokenRPL.totalSwappedRPL"))
+    async def get_percentage_rpl_swapped(self) -> float:
+        value: float = solidity.to_float(
+            await self.call("rocketTokenRPL.totalSwappedRPL")
+        )
         percentage = (value / 18_000_000) * 100
         return round(percentage, 2)
 

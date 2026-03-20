@@ -10,6 +10,7 @@ from discord.app_commands import command, guilds
 from discord.ext.commands import is_owner
 from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
+from web3.constants import ADDRESS_ZERO
 from web3.datastructures import MutableAttributeDict as aDict
 from web3.logs import DISCARD
 from web3.types import EventData, LogReceipt
@@ -932,7 +933,7 @@ class Events(EventPlugin):
                 args.upgradeProposalID,
                 block=event.blockNumber,
             )
-            if args.contractAddress == "0x0000000000000000000000000000000000000000":
+            if args.contractAddress == ADDRESS_ZERO:
                 del args.contractAddress
                 event_name = "upgrade_pending_abi_event"
         elif event_name == "sdao_upgrade_vetoed_event":
@@ -974,7 +975,7 @@ class Events(EventPlugin):
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", args.node
             )
-            if megapool_address != "0x0000000000000000000000000000000000000000":
+            if megapool_address != ADDRESS_ZERO:
                 validator_count += await rp.call(
                     "rocketMegapoolDelegate.getActiveValidatorCount",
                     address=megapool_address,

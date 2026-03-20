@@ -2,7 +2,7 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import aiohttp
@@ -696,7 +696,7 @@ class DEX(Exchange, ABC):
         async def get_liquidity(self) -> Liquidity | None:
             pass
 
-    def __init__(self, pools: list[LiquidityPool]):
+    def __init__(self, pools: Sequence[LiquidityPool]):
         self.pools = pools
 
     async def get_liquidity(self) -> dict[LiquidityPool, Liquidity]:
@@ -771,7 +771,7 @@ class UniswapV3(DEX):
     MAX_TICK = 887_272
 
     @staticmethod
-    def tick_to_price(tick: int) -> float:
+    def tick_to_price(tick: float) -> float:
         return 1.0001**tick
 
     @staticmethod
@@ -845,7 +845,7 @@ class UniswapV3(DEX):
             return ticks
 
         def liquidity_to_tokens(
-            self, liquidity: int, tick_lower: int, tick_upper: int
+            self, liquidity: float, tick_lower: float, tick_upper: float
         ) -> tuple[float, float]:
             sqrtp_lower = math.sqrt(UniswapV3.tick_to_price(tick_lower))
             sqrtp_upper = math.sqrt(UniswapV3.tick_to_price(tick_upper))
@@ -882,7 +882,7 @@ class UniswapV3(DEX):
             log.debug(f"Found {len(ticks)} initialized ticks!")
 
             async def get_cumulative_liquidity(_ticks: list[int]) -> list[float]:
-                cumulative_liquidity = 0
+                cumulative_liquidity: float = 0
                 last_tick = calculated_tick
                 active_liquidity = initial_liquidity
 
@@ -910,19 +910,20 @@ class UniswapV3(DEX):
 
                 return liquidity
 
-            ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [
+            _ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [
                 UniswapV3.MIN_TICK
             ]
-            ask_liquidity = [0] + await get_cumulative_liquidity(ask_ticks)
-            ask_ticks.insert(0, calculated_tick)
+            ask_liquidity = [0.0] + await get_cumulative_liquidity(_ask_ticks)
+            ask_ticks: list[int | float] = [calculated_tick, *_ask_ticks]
 
-            bid_ticks = [t for t in ticks if t > current_tick] + [UniswapV3.MAX_TICK]
-            bid_liquidity = [0] + await get_cumulative_liquidity(bid_ticks)
-            bid_ticks.insert(0, calculated_tick)
+            _bid_ticks = [t for t in ticks if t > current_tick] + [UniswapV3.MAX_TICK]
+            bid_liquidity = [0.0] + await get_cumulative_liquidity(_bid_ticks)
+            bid_ticks: list[int | float] = [calculated_tick, *_bid_ticks]
 
             balance_norm = 10 ** (self.token_1.decimals - self.token_0.decimals)
 
             def depth_at(_price: float) -> float:
+                tick: float
                 if _price <= 0:
                     tick = UniswapV3.MAX_TICK
                 else:

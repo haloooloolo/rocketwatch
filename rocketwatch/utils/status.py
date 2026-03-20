@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from abc import abstractmethod
+from typing import TYPE_CHECKING
 
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
+if TYPE_CHECKING:
+    from rocketwatch.rocketwatch import RocketWatch
 from utils.embeds import Embed
 
 

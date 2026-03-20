@@ -19,3 +19,11 @@ jobs:
         with:
           args: "format --check"
           src: "rocketwatch"
+  typecheck:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --extra dev
+      - run: uv run mypy rocketwatch/

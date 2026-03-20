@@ -145,7 +145,9 @@ class DefaultDAO(DAO):
             ]
         )
 
-        proposals = {state: [] for state in DefaultDAO.ProposalState}
+        proposals: dict[DefaultDAO.ProposalState, list[int]] = {
+            state: [] for state in DefaultDAO.ProposalState
+        }
         for proposal_id, state in zip(
             relevant_proposals, proposal_states, strict=False
         ):
@@ -194,7 +196,8 @@ class DefaultDAO(DAO):
             votes_required=solidity.to_float(votes_required_raw),
         )
 
-    def _build_vote_graph(self, proposal: Proposal) -> str:
+    def _build_vote_graph(self, proposal: DAO.Proposal) -> str:
+        assert isinstance(proposal, DefaultDAO.Proposal)
         votes_for = proposal.votes_for
         votes_against = proposal.votes_against
         votes_required = math.ceil(proposal.votes_required)
@@ -267,7 +270,9 @@ class ProtocolDAO(DAO):
             ]
         )
 
-        proposals = {state: [] for state in ProtocolDAO.ProposalState}
+        proposals: dict[ProtocolDAO.ProposalState, list[int]] = {
+            state: [] for state in ProtocolDAO.ProposalState
+        }
         for proposal_id in range(1, num_proposals + 1):
             state = proposal_states[proposal_id - 1]
             proposals[state].append(proposal_id)
@@ -327,7 +332,8 @@ class ProtocolDAO(DAO):
             veto_quorum=solidity.to_float(veto_quorum_raw),
         )
 
-    def _build_vote_graph(self, proposal: Proposal) -> str:
+    def _build_vote_graph(self, proposal: DAO.Proposal) -> str:
+        assert isinstance(proposal, ProtocolDAO.Proposal)
         graph = tpl.figure()
         graph.barh(
             [
@@ -341,7 +347,7 @@ class ProtocolDAO(DAO):
         )
         main_quorum_perc = proposal.votes_total / proposal.quorum
 
-        lines = graph.get_string().split("\n")[:-1]
+        lines = str(graph.get_string()).split("\n")[:-1]
         lines.append(
             f"Quorum: {main_quorum_perc:.2%}{' ✔' if (main_quorum_perc >= 1) else ''}"
         )

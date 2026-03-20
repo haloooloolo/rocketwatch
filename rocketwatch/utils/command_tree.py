@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from discord import Interaction
 from discord.app_commands import AppCommandError, CommandTree
@@ -14,19 +15,28 @@ from discord.app_commands.errors import (
 
 from utils.config import cfg
 
+if TYPE_CHECKING:
+    from rocketwatch.rocketwatch import RocketWatch
+
 log = logging.getLogger("rocketwatch.command_tree")
 
 
-class RWCommandTree(CommandTree):
-    async def _call(self, interaction: Interaction) -> None:
+def _channel_name(interaction: Interaction) -> str:
+    return getattr(interaction.channel, "name", None) or "DM"
+
+
+class RWCommandTree(CommandTree["RocketWatch"]):
+    async def _call(self, interaction: Interaction["RocketWatch"]) -> None:
         if not cfg.modules.enable_commands:
             return
 
         cmd_name = interaction.command.name if interaction.command else "unknown"
         timestamp = datetime.utcnow()
 
+        channel_name = _channel_name(interaction)
+
         log.info(
-            f"/{cmd_name} triggered by {interaction.user} in #{interaction.channel.name} ({interaction.guild})"
+            f"/{cmd_name} triggered by {interaction.user} in #{channel_name} ({interaction.guild})"
         )
         try:
             await self.client.db.command_metrics.insert_one(
@@ -48,8 +58,10 @@ class RWCommandTree(CommandTree):
                     else None,
                     "channel": {
                         "id": interaction.channel.id,
-                        "name": interaction.channel.name,
-                    },
+                        "name": channel_name,
+                    }
+                    if interaction.channel
+                    else None,
                     "timestamp": timestamp,
                     "status": "pending",
                 }
@@ -62,7 +74,7 @@ class RWCommandTree(CommandTree):
             await super()._call(interaction)
         except Exception as error:
             log.info(
-                f"/{cmd_name} called by {interaction.user} in #{interaction.channel.name} ({interaction.guild}) failed"
+                f"/{cmd_name} called by {interaction.user} in #{channel_name} ({interaction.guild}) failed"
             )
             try:
                 await self.client.db.command_metrics.update_one(
@@ -82,7 +94,7 @@ class RWCommandTree(CommandTree):
 
         log.info(
             f"/{cmd_name} called by {interaction.user} in"
-            f" #{interaction.channel.name} ({interaction.guild}) completed successfully"
+            f" #{channel_name} ({interaction.guild}) completed successfully"
         )
         try:
             await self.client.db.command_metrics.update_one(
@@ -98,10 +110,13 @@ class RWCommandTree(CommandTree):
             log.error(f"Failed to update command status to completed: {e}")
             await self.client.report_error(e)
 
-    async def on_error(self, interaction: Interaction, error: AppCommandError) -> None:
+    async def on_error(
+        self, interaction: Interaction["RocketWatch"], error: AppCommandError
+    ) -> None:
         cmd_name = interaction.command.name if interaction.command else "unknown"
+        channel_name = _channel_name(interaction)
         log.error(
-            f"/{cmd_name} called by {interaction.user} in #{interaction.channel.name} ({interaction.guild}) failed"
+            f"/{cmd_name} called by {interaction.user} in #{channel_name} ({interaction.guild}) failed"
         )
 
         if isinstance(error, CommandOnCooldown):
@@ -124,5 +139,3 @@ class RWCommandTree(CommandTree):
             await interaction.followup.send(content=msg, ephemeral=True)
         except Exception:
             log.exception("Failed to alert user")
-
-        await self.client.on_app_command_error(interaction, error)

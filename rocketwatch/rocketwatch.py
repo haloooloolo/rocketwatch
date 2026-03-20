@@ -1,22 +1,22 @@
-import io
 import logging
 import traceback
 from pathlib import Path
 
 from discord import (
-    File,
     Guild,
     Intents,
     Interaction,
     Thread,
     User,
 )
-from discord.abc import GuildChannel, PrivateChannel
+from discord.abc import GuildChannel, Messageable, PrivateChannel
 from discord.ext.commands import Bot
 from pymongo import AsyncMongoClient
+from pymongo.asynchronous.database import AsyncDatabase
 
 from utils.command_tree import RWCommandTree
 from utils.config import cfg
+from utils.file import TextFile
 from utils.retry import retry
 from utils.rocketpool import rp
 
@@ -26,7 +26,7 @@ log = logging.getLogger("rocketwatch.bot")
 class RocketWatch(Bot):
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
-        self.db = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
+        self.db: AsyncDatabase = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
 
     async def _load_plugins(self):
         chain = cfg.rocketpool.chain
@@ -84,6 +84,7 @@ class RocketWatch(Bot):
             self.tree.clear_commands(guild=guild)
 
     async def on_ready(self):
+        assert self.user is not None
         log.info(f"Logged in as {self.user.name} ({self.user.id})")
         commands_enabled = cfg.modules.enable_commands
         if not commands_enabled:
@@ -142,7 +143,10 @@ class RocketWatch(Bot):
 
         try:
             channel = await self.get_or_fetch_channel(cfg.discord.channels["errors"])
-            file = File(io.StringIO(err_trace), "exception.txt")
+            file = TextFile(err_trace, "exception.txt")
+            assert isinstance(channel, Messageable), (
+                f"Error channel {channel} is not messageable"
+            )
             await retry(tries=5, delay=5)(channel.send)(err_description, file=file)
         except Exception:
-            log.exception("Failed to send message. Max retries reached.")
+            log.exception("Failed to send message.")
