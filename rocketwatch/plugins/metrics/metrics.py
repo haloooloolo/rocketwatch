@@ -88,6 +88,19 @@ class Metrics(commands.Cog):
             for command in most_used_commands:
                 desc += f" - {command['_id']}: {command['count']}\n"
 
+            top_users = await (
+                await self.collection.aggregate(
+                    [
+                        {"$match": {"timestamp": {"$gte": start}}},
+                        {"$group": {"_id": "$user", "count": {"$sum": 1}}},
+                        {"$sort": {"count": -1}},
+                    ]
+                )
+            ).to_list(length=5)
+            desc += "\nCommand Count By User:\n"
+            for user in top_users:
+                desc += f" - {user['_id']['name']}: {user['count']}\n"
+
             # get the top 5 channels of the last 7 days
             top_channels = await (
                 await self.collection.aggregate(
@@ -98,7 +111,7 @@ class Metrics(commands.Cog):
                     ]
                 )
             ).to_list(length=5)
-            desc += "\nCommand Usage By Channel:\n"
+            desc += "\nCommand Count By Channel:\n"
             for channel in top_channels:
                 desc += f" - {channel['_id']['name']}: {channel['count']}\n"
             e.description = desc + "```"
