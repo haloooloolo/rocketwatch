@@ -1,21 +1,17 @@
 import logging
-from typing import Literal, TypedDict
+from typing import TypedDict
 
 from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
-from pymongo import InsertOne
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed, el_explorer_url
 from utils.shared_w3 import bacon
 from utils.solidity import BEACON_EPOCH_LENGTH, BEACON_START_DATE
-from utils.time_debug import timerun_async
 from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.lottery")
-
-Period = Literal["latest", "next"]
 
 
 class ValidatorEntry(TypedDict):
@@ -24,115 +20,66 @@ class ValidatorEntry(TypedDict):
     node_operator: str
 
 
+class SyncCommittee(TypedDict):
+    start_epoch: int
+    end_epoch: int
+    validators: list[ValidatorEntry]
+
+
 class Lottery(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.did_check = False
 
-    async def _check_indexes(self) -> None:
-        if self.did_check:
-            return
-        log.debug("Checking indexes")
-        for period in ["latest", "next"]:
-            col = self.bot.db[f"sync_committee_{period}"]
-            await col.create_index("validator", unique=True)
-            await col.create_index("index", unique=True)
-        self.did_check = True
-        log.debug("Indexes checked")
-
-    @timerun_async
-    async def load_sync_committee(self, period: Period) -> None:
-        assert period in ["latest", "next"]
-        await self._check_indexes()
+    async def get_sync_committee_data(self, period: str) -> SyncCommittee:
         h = await bacon.get_block("head")
         sync_period = int(h["data"]["message"]["slot"]) // 32 // 256
         if period == "next":
             sync_period += 1
         data = (await bacon.get_sync_committee(sync_period * 256))["data"]
-        await self.bot.db.sync_committee_stats.replace_one(
-            {"period": period},
-            {
-                "period": period,
-                "start_epoch": sync_period * 256,
-                "end_epoch": (sync_period + 1) * 256,
-                "sync_period": sync_period * 256,
-            },
-            upsert=True,
-        )
+        validators = [int(v) for v in data["validators"]]
+        projection = {"_id": 0, "validator_index": 1, "pubkey": 1, "node_operator": 1}
+        query = {"validator_index": {"$in": validators}}
+        minipool_results = await self.bot.db.minipools.find(query, projection).to_list()
+        megapool_results = await self.bot.db.megapool_validators.find(
+            query, projection
+        ).to_list()
+        results = minipool_results + megapool_results
+        return {
+            "start_epoch": sync_period * 256,
+            "end_epoch": (sync_period + 1) * 256,
+            "validators": [
+                {
+                    "validator": r["validator_index"],
+                    "pubkey": r["pubkey"],
+                    "node_operator": r["node_operator"],
+                }
+                for r in results
+                if r.get("node_operator") is not None
+            ],
+        }
+
+    async def generate_sync_committee_description(self, period: str) -> str:
+        data = await self.get_sync_committee_data(period)
         validators = data["validators"]
-        col = self.bot.db[f"sync_committee_{period}"]
-        # get unique validators from collection
-        validators_in_db = await col.distinct("validator")
-        if set(validators) == set(validators_in_db):
-            return
-        payload = [
-            InsertOne({"index": i, "validator": int(validator)})
-            for i, validator in enumerate(validators)
-        ]
-        async with self.bot.db.client.start_session() as session:  # noqa: SIM117
-            async with await session.start_transaction():
-                await col.delete_many({})
-                await col.bulk_write(payload)
-
-    async def get_validators_for_sync_committee_period(
-        self, period: Period
-    ) -> list[ValidatorEntry]:
-        data = await self.bot.db[f"sync_committee_{period}"].aggregate(
-            [
-                {
-                    "$lookup": {
-                        "from": "minipools",
-                        "localField": "validator",
-                        "foreignField": "validator_index",
-                        "as": "entry",
-                    }
-                },
-                {"$match": {"entry": {"$ne": []}}},
-                {"$replaceRoot": {"newRoot": {"$first": "$entry"}}},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "validator": "$validator_index",
-                        "pubkey": 1,
-                        "node_operator": 1,
-                    }
-                },
-                {"$match": {"node_operator": {"$ne": None}}},
-            ]
-        )
-        return await data.to_list()
-
-    async def generate_sync_committee_description(self, period: Period) -> str:
-        await self.load_sync_committee(period)
-        validators = await self.get_validators_for_sync_committee_period(period)
-        # get stats about the current period
-        stats = await self.bot.db.sync_committee_stats.find_one({"period": period})
-        if stats is None:
-            return "No data available for this period."
         perc = len(validators) / 512
         description = (
             f"_Rocket Pool Participation:_ {len(validators)}/512 ({perc:.2%})\n"
         )
         start_timestamp = BEACON_START_DATE + (
-            stats["start_epoch"] * BEACON_EPOCH_LENGTH
+            data["start_epoch"] * BEACON_EPOCH_LENGTH
         )
-        description += f"_Start:_ Epoch {stats['start_epoch']} <t:{start_timestamp}> (<t:{start_timestamp}:R>)\n"
-        end_timestamp = BEACON_START_DATE + (stats["end_epoch"] * BEACON_EPOCH_LENGTH)
-        description += f"_End:_ Epoch {stats['end_epoch']} <t:{end_timestamp}> (<t:{end_timestamp}:R>)\n"
-        # validators (called minipools here)
-        # sort validators
+        description += f"_Start:_ Epoch {data['start_epoch']} <t:{start_timestamp}> (<t:{start_timestamp}:R>)\n"
+        end_timestamp = BEACON_START_DATE + (data["end_epoch"] * BEACON_EPOCH_LENGTH)
+        description += f"_End:_ Epoch {data['end_epoch']} <t:{end_timestamp}> (<t:{end_timestamp}:R>)\n"
         validators.sort(key=lambda x: x["validator"])
         description += (
-            f"_Minipools:_ `{', '.join(str(v['validator']) for v in validators)}`\n"
+            f"_Validators:_ `{', '.join(str(v['validator']) for v in validators)}`\n"
         )
-        # node operators
-        # gather count per
         node_operator_counts: dict[str, int] = {}
         for v in validators:
             if v["node_operator"] not in node_operator_counts:
                 node_operator_counts[v["node_operator"]] = 0
             node_operator_counts[v["node_operator"]] += 1
-        # sort by count
         sorted_operators = sorted(
             node_operator_counts.items(), key=lambda x: x[1], reverse=True
         )
@@ -153,11 +100,11 @@ class Lottery(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         embeds = [
             Embed(
-                title="Current sync committee:",
+                title="Current Sync Committee",
                 description=await self.generate_sync_committee_description("latest"),
             ),
             Embed(
-                title="Next sync committee:",
+                title="Next Sync Committee",
                 description=await self.generate_sync_committee_description("next"),
             ),
         ]
