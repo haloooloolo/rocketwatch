@@ -2,6 +2,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 
 from discord import Interaction
+from discord.abc import Messageable
 from discord.app_commands import command, guilds
 from discord.ext import commands, tasks
 from discord.ext.commands import is_owner
@@ -44,7 +45,9 @@ class PinnedMessages(commands.Cog):
                 # check if it's marked as disabled but not cleaned_up
                 if message["disabled"] and not message["cleaned_up"]:
                     # get channel
-                    channel = self.bot.get_channel(message["channel_id"])
+                    channel = await self.bot.get_or_fetch_channel(message["channel_id"])
+                    if not isinstance(channel, Messageable):
+                        continue
                     # get message
                     msg = await channel.fetch_message(message["message_id"])
                     # delete message
@@ -56,6 +59,8 @@ class PinnedMessages(commands.Cog):
                 elif not message["disabled"]:
                     # delete and resend message
                     channel = self.bot.get_channel(message["channel_id"])
+                    if not isinstance(channel, Messageable):
+                        continue
                     # check if we have message sent already and if its the latest message in the channel
                     if message.get("message_id"):
                         messages = [
