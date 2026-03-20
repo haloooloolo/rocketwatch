@@ -110,7 +110,7 @@ class UserDistribute(commands.Cog):
         next_window_close = distributable[0]["ud_window_close"]
         embed.description = (
             f"There {'are' if count != 1 else 'is'} **{count}**"
-            f" minipool{'s' if count != 1 else ''} eligible for distribution.\n"
+            f" minipool{'s' if count != 1 else ''} ready for distribution.\n"
             f"The next window closes <t:{next_window_close}:R>!"
         )
 
@@ -234,7 +234,7 @@ class UserDistribute(commands.Cog):
             await interaction.followup.send(
                 embed=embed,
                 view=InstructionsView(
-                    eligible[:50], distributable[:100], instruction_timeout=300
+                    eligible[:50], distributable[:100], instruction_timeout=1800
                 ),
             )
         else:
