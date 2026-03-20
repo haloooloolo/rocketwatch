@@ -13,6 +13,7 @@ from eth_typing import ChecksumAddress, HexStr
 from matplotlib import figure, ticker
 from matplotlib import font_manager as fm
 from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
 
 from rocketwatch import RocketWatch
 from utils.embeds import Embed
@@ -101,8 +102,8 @@ class Wall(commands.Cog):
         return self.dex
 
     @staticmethod
-    def _get_market_depth_and_liquidity(
-        markets: dict[Market | DEX.LiquidityPool, Liquidity],
+    def _get_market_depth_and_liquidity[K](
+        markets: dict[K, Liquidity],
         x: np.ndarray,
         rpl_usd: float,
     ) -> tuple[np.ndarray, float]:
@@ -131,14 +132,14 @@ class Wall(commands.Cog):
                 await asyncio.gather(*requests, return_exceptions=True),
                 strict=False,
             ):
-                if not isinstance(result, Exception):
-                    cex, markets = result
+                cex, maybe_markets = result
+                if not isinstance(maybe_markets, BaseException):
+                    markets: dict[Market, Liquidity] = maybe_markets
                     depth[cex], liquidity[cex] = self._get_market_depth_and_liquidity(
                         markets, x, rpl_usd
                     )
-                else:
-                    log.error(f"Failed to get liquidity data for {cex}")
-                    await self.bot.report_error(result)
+                elif isinstance(maybe_markets, Exception):
+                    await self.bot.report_error(maybe_markets)
 
         return OrderedDict(
             sorted(depth.items(), key=lambda e: liquidity[e[0]], reverse=True)
@@ -161,8 +162,8 @@ class Wall(commands.Cog):
         )
 
     @staticmethod
-    def _label_exchange_data(
-        data: OrderedDict[Exchange, np.ndarray], max_unique: int, color_other: str
+    def _label_exchange_data[E: Exchange](
+        data: OrderedDict[E, np.ndarray], max_unique: int, color_other: str
     ) -> list[tuple[np.ndarray, str, str]]:
         ret = []
         for exchange, depth in list(data.items())[:max_unique]:
@@ -214,7 +215,7 @@ class Wall(commands.Cog):
                 y.append(y_values)
                 labels.append(f"{label:\u00a0<{max_label_length}}")
                 colors.append(color)
-                handles.append(plt.Rectangle((0, 0), 1, 1, color=color))
+                handles.append(Rectangle((0, 0), 1, 1, color=color))
 
             nonlocal y_offset
             legend = ax.legend(
@@ -341,7 +342,8 @@ class Wall(commands.Cog):
         x = np.arange(min_price, max_price + step_size, step_size)
 
         source_desc = []
-        cex_data, dex_data = {}, {}
+        cex_data: OrderedDict[CEX, np.ndarray] = OrderedDict()
+        dex_data: OrderedDict[DEX, np.ndarray] = OrderedDict()
 
         try:
             if sources != "CEX":

@@ -1,5 +1,6 @@
 import logging
-from typing import cast
+from collections.abc import Mapping
+from typing import Any, cast
 
 import aiohttp
 import eth_utils
@@ -27,7 +28,7 @@ class BeaconEvents(EventPlugin):
         self.finality_delay_threshold = 3
 
     async def _get_new_events(self) -> list[Event]:
-        from_block = self.last_served_block + 1 - self.lookback_distance
+        from_block = BlockNumber(self.last_served_block + 1 - self.lookback_distance)
         return await self.get_past_events(from_block, self._pending_block)
 
     async def get_past_events(
@@ -35,10 +36,14 @@ class BeaconEvents(EventPlugin):
     ) -> list[Event]:
         from_slot = max(
             0,
-            date_to_beacon_block((await w3.eth.get_block(from_block - 1)).timestamp)
+            date_to_beacon_block(
+                (await w3.eth.get_block(from_block - 1)).get("timestamp", 0)
+            )
             + 1,
         )
-        to_slot = date_to_beacon_block((await w3.eth.get_block(to_block)).timestamp)
+        to_slot = date_to_beacon_block(
+            (await w3.eth.get_block(to_block)).get("timestamp", 0)
+        )
         log.info(
             f"Checking for new beacon chain events in slot range [{from_slot}, {to_slot}]"
         )
@@ -82,7 +87,7 @@ class BeaconEvents(EventPlugin):
     async def _get_slashings(self, beacon_block: dict) -> list[Event]:
         slot = int(beacon_block["slot"])
         timestamp = beacon_block_to_date(slot)
-        slashings = []
+        slashings: list[dict[str, str | int]] = []
 
         for slash in beacon_block["body"]["attester_slashings"]:
             att_1 = set(slash["attestation_1"]["attesting_indices"])
@@ -92,7 +97,6 @@ class BeaconEvents(EventPlugin):
                     "slashing_type": "Attestation",
                     "validator": index,
                     "slasher": beacon_block["proposer_index"],
-                    "timestamp": timestamp,
                 }
                 for index in att_1.intersection(att_2)
             )
@@ -102,41 +106,50 @@ class BeaconEvents(EventPlugin):
                 "slashing_type": "Proposal",
                 "validator": slash["signed_header_1"]["message"]["proposer_index"],
                 "slasher": beacon_block["proposer_index"],
-                "timestamp": timestamp,
             }
             for slash in beacon_block["body"]["proposer_slashings"]
         )
 
-        events = []
+        events: list[Event] = []
         for slash in slashings:
-            minipool = await self.bot.db.minipools.find_one(
-                {"validator_index": int(slash["validator"])}
+            validator = int(slash["validator"])
+            slasher = slash["slasher"]
+            minipool: Mapping[str, Any] | None = await self.bot.db.minipools.find_one(
+                {"validator_index": validator}
             )
-            megapool = await self.bot.db.megapool_validators.find_one(
-                {"validator_index": int(slash["validator"])}
+            megapool: (
+                Mapping[str, Any] | None
+            ) = await self.bot.db.megapool_validators.find_one(
+                {"validator_index": validator}
             )
-            if not (minipool or megapool):
-                log.info(f"Skipping slashing of unknown validator {slash['validator']}")
+            rp_pool = minipool or megapool
+            if rp_pool is None:
+                log.info(f"Skipping slashing of unknown validator {validator}")
                 continue
 
             unique_id = (
-                f"slash-{slash['validator']}"
-                f":slasher-{slash['slasher']}"
+                f"slash-{validator}"
+                f":slasher-{slasher}"
                 f":slashing-type-{slash['slashing_type']}"
                 f":{timestamp}"
             )
-            slash["validator"] = await cl_explorer_url(slash["validator"])
-            slash["slasher"] = await cl_explorer_url(slash["slasher"])
-            slash["node_operator"] = (minipool or megapool)["node_operator"]
-            slash["event_name"] = "validator_slash_event"
-
-            args = await prepare_args(aDict(slash))
+            args = aDict(
+                {
+                    "event_name": "validator_slash_event",
+                    "slashing_type": slash["slashing_type"],
+                    "validator": await cl_explorer_url(validator),
+                    "slasher": await cl_explorer_url(slasher),
+                    "node_operator": rp_pool["node_operator"],
+                    "timestamp": timestamp,
+                }
+            )
+            args = await prepare_args(args)
             if embed := await assemble(args):
                 events.append(
                     Event(
                         topic="beacon_events",
                         embed=embed,
-                        event_name=slash["event_name"],
+                        event_name="validator_slash_event",
                         unique_id=unique_id,
                         block_number=await ts_to_block(timestamp),
                     )
@@ -155,13 +168,16 @@ class BeaconEvents(EventPlugin):
             return None
 
         validator_index = int(beacon_block["proposer_index"])
-        minipool = await self.bot.db.minipools.find_one(
+        minipool: Mapping[str, Any] | None = await self.bot.db.minipools.find_one(
             {"validator_index": validator_index}
         )
-        megapool = await self.bot.db.megapool_validators.find_one(
+        megapool: (
+            Mapping[str, Any] | None
+        ) = await self.bot.db.megapool_validators.find_one(
             {"validator_index": validator_index}
         )
-        if not (minipool or megapool):
+        rp_pool = minipool or megapool
+        if not rp_pool:
             # not proposed by RP validator
             return None
 
@@ -195,14 +211,14 @@ class BeaconEvents(EventPlugin):
             fee_recipient = proposal_data["feeRecipient"]
 
         args = {
-            "node_operator": (minipool or megapool)["node_operator"],
+            "node_operator": rp_pool["node_operator"],
             "validator": await cl_explorer_url(validator_index),
             "slot": int(beacon_block["slot"]),
             "reward_amount": block_reward_eth,
             "timestamp": timestamp,
         }
 
-        if eth_utils.is_same_address(
+        if eth_utils.address.is_same_address(
             fee_recipient, await rp.get_address_by_name("rocketSmoothingPool")
         ):
             args["event_name"] = "mev_proposal_smoothie_event"

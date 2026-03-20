@@ -58,7 +58,7 @@ class About(commands.Cog):
         e.add_field(
             name="Bot Statistics",
             value=f"{len(g)} guilds joined and "
-            f"{humanize.intcomma(sum(guild.member_count for guild in g))} members reached!",
+            f"{humanize.intcomma(sum(guild.member_count or 0 for guild in g))} members reached!",
             inline=False,
         )
 

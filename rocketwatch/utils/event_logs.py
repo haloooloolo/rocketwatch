@@ -4,7 +4,7 @@ from typing import Any
 
 from eth_typing import BlockNumber
 from web3.contract.async_contract import AsyncContractEvent
-from web3.types import LogReceipt
+from web3.types import EventData
 
 log = logging.getLogger("rocketwatch.event_logs")
 
@@ -14,7 +14,7 @@ async def get_logs(
     from_block: BlockNumber,
     to_block: BlockNumber,
     arg_filters: dict[str, Any] | None = None,
-) -> list[LogReceipt]:
+) -> list[EventData]:
     log.debug(f"Fetching event logs in [{from_block}, {to_block}]")
 
     chunk_size = 50_000

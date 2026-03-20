@@ -1,10 +1,9 @@
 import logging
 import time
-from io import StringIO
 from operator import itemgetter
 
-import discord
 from discord import ButtonStyle, Interaction, ui
+from discord.abc import Messageable
 from discord.app_commands import command
 from discord.ext import commands, tasks
 from pymongo import ASCENDING
@@ -12,6 +11,7 @@ from pymongo import ASCENDING
 from rocketwatch import RocketWatch
 from utils.config import cfg
 from utils.embeds import Embed
+from utils.file import TextFile
 from utils.rocketpool import rp
 from utils.shared_w3 import bacon, w3
 from utils.visibility import is_hidden
@@ -80,7 +80,7 @@ class InstructionsView(ui.View):
 
         await interaction.response.send_message(
             embed=embed,
-            file=discord.File(StringIO(input_data), filename="input_data.txt"),
+            file=TextFile(input_data, "input_data.txt"),
             ephemeral=True,
         )
 
@@ -100,6 +100,7 @@ class UserDistribute(commands.Cog):
             return
 
         channel = await self.bot.get_or_fetch_channel(channel_id)
+        assert isinstance(channel, Messageable)
 
         _, _, distributable = await self._fetch_minipools()
         if not distributable:
@@ -126,7 +127,8 @@ class UserDistribute(commands.Cog):
         await self.bot.wait_until_ready()
 
     @task.error
-    async def on_task_error(self, err: Exception):
+    async def on_task_error(self, err: BaseException):
+        assert isinstance(err, Exception)
         await self.bot.report_error(err)
 
     async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:

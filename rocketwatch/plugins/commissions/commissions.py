@@ -37,7 +37,7 @@ class Commissions(commands.Cog):
         ygrid = list(reversed(range(5, 21)))
         step_size = int(len(minipools) / len(ygrid) / 2)
 
-        data = [[0] * len(ygrid)]
+        data: list[list[int]] = [[0] * len(ygrid)]
         for pool in minipools:
             if sum(data[-1]) > step_size:
                 # normalize data
@@ -49,8 +49,10 @@ class Commissions(commands.Cog):
         # normalize data
         # data[-1] = [x / max(data[-1]) for x in data[-1]]
         # heatmap distribution over time
-        data = np.array(data).T
-        ax = sns.heatmap(data, cmap="viridis", yticklabels=ygrid, xticklabels=False)
+        data_array = np.array(data).T
+        ax = sns.heatmap(
+            data_array, cmap="viridis", yticklabels=ygrid, xticklabels=False
+        )
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
         # set y ticks
         ax.set_ylabel("Node Fee")

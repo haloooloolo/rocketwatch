@@ -254,11 +254,11 @@ class Proposals(commands.Cog):
     @timerun_async
     async def gather_attribute(self, attribute, remove_allnodes=False):
         # Build the match stage to filter out Allnodes if needed
-        match_stage = {}
+        match_stage: dict = {}
         if remove_allnodes:
             match_stage["$match"] = {"latest_proposal.type": {"$ne": "Allnodes"}}
 
-        pipeline = [
+        pipeline: list[dict] = [
             {
                 "$project": {
                     "attribute": f"$latest_proposal.{attribute}",
@@ -300,6 +300,8 @@ class Proposals(commands.Cog):
                     d[key] = entry
             return d
 
+    type Color = str | tuple[float, float, float, float]
+
     @command()
     @describe(days="how many days to show history for")
     async def version_chart(self, interaction: Interaction, days: int = 90):
@@ -323,7 +325,7 @@ class Proposals(commands.Cog):
                     "version": {"$exists": 1},
                     "slot": {
                         "$gt": date_to_beacon_block(
-                            (datetime.now() - timedelta(days=days)).timestamp()
+                            int((datetime.now() - timedelta(days=days)).timestamp())
                         )
                     },
                 }
@@ -352,7 +354,7 @@ class Proposals(commands.Cog):
         data = {}
         versions = []
         proposal_buffer = []
-        tmp_data = {}
+        tmp_data: dict[str, float] = {}
         for proposal in proposals:
             proposal_buffer.append(proposal)
             if proposal["version"] not in versions:
@@ -373,19 +375,19 @@ class Proposals(commands.Cog):
 
         # use plt.stackplot to stack the data
         x = list(data.keys())
-        y = {v: [] for v in versions}
+        y: dict[str, list[float]] = {v: [] for v in versions}
         for _date, value_ in data.items():
             for version in versions:
                 y[version].append(value_.get(version, 0))
 
         # generate enough distinct colors for all recent versions
-        cmap = plt.cm.tab20
+        cmap = plt.colormaps["tab20"]
         recent_colors = [
             cmap(i / max(len(recent_versions) - 1, 1))
             for i in range(len(recent_versions))
         ]
         # generate color mapping
-        colors = ["darkgray"] * len(versions)
+        colors: list[Proposals.Color] = ["darkgray"] * len(versions)
         for i, version in enumerate(versions):
             if version in recent_versions:
                 colors[i] = recent_colors[recent_versions.index(version)]
@@ -407,7 +409,7 @@ class Proposals(commands.Cog):
         handles, legend_labels = ax.get_legend_handles_labels()
         ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
         # add a thin line at current time from y=0 to y=1 with a width of 0.5
-        plt.plot([max(x), max(x)], [0, 1], color="white", alpha=0.25)
+        plt.plot([max(x), max(x)], [0, 1], color="white", alpha=0.25)  # type: ignore[arg-type]
         # calculate future point to make latest data more visible
         future_point = x[-1] + timedelta(days=window_length)
         last_y_values = [[yy[-1]] * 2 for yy in y.values()]

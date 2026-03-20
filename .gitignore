@@ -109,11 +109,9 @@ venv.bak/
 .dmypy.json
 dmypy.json
 
-# Pyre type checker
-.pyre/
-
-# Pycharm project stuff
+# IDE files
 .idea/
+.vscode
 
 # state
 state.db

@@ -253,7 +253,9 @@ class Debug(Cog):
         events_plugin = cast(Events, self.bot.cogs["Events"])
 
         filtered_events = []
-        for event_log in (await w3.eth.get_transaction_receipt(HexStr(tx_hash))).logs:
+        for event_log in (await w3.eth.get_transaction_receipt(HexStr(tx_hash)))[
+            "logs"
+        ]:
             if ("topics" in event_log) and (
                 event_log["topics"][0].hex() in events_plugin.topic_map
             ):

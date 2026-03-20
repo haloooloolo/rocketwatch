@@ -43,7 +43,8 @@ class RichActivity(commands.Cog):
         await self.bot.wait_until_ready()
 
     @task.error
-    async def on_error(self, err: Exception):
+    async def on_error(self, err: BaseException):
+        assert isinstance(err, Exception)
         await self.bot.report_error(err)
 
 

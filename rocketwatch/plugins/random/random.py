@@ -8,6 +8,9 @@ import pytz
 from discord import Interaction
 from discord.app_commands import Choice, command
 from discord.ext import commands
+from eth_typing import HexStr
+from web3.contract import AsyncContract
+from web3.types import TxData
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -31,7 +34,7 @@ log = logging.getLogger("rocketwatch.random")
 class Random(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.contract_names = []
+        self.contract_names: list[str] = []
 
     @commands.Cog.listener()
     async def on_ready(self):
@@ -145,9 +148,12 @@ class Random(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         if address is not None:
+            address = address.strip()
             try:
-                if ".eth" in address:
+                if address.endswith(".eth"):
                     address = await ens.resolve_name(address)
+                if address is None:
+                    raise ValueError("unresolved ENS")
                 address = w3.to_checksum_address(address)
             except (ValueError, TypeError):
                 e.description = "Invalid address"
@@ -267,13 +273,15 @@ class Random(commands.Cog):
         if not data:
             await interaction.followup.send("no minipools found", ephemeral=True)
             return
-        data = {d["_id"]: d for d in data}
+        data_by_id = {d["_id"]: d for d in data}
         # node counts
-        total_node_count = data[True]["node_count"] + data[False]["node_count"]
-        smoothie_node_count = data[True]["node_count"]
+        total_node_count = (
+            data_by_id[True]["node_count"] + data_by_id[False]["node_count"]
+        )
+        smoothie_node_count = data_by_id[True]["node_count"]
         # minipool counts
-        total_minipool_count = data[True]["count"] + data[False]["count"]
-        smoothie_minipool_count = data[True]["count"]
+        total_minipool_count = data_by_id[True]["count"] + data_by_id[False]["count"]
+        smoothie_minipool_count = data_by_id[True]["count"]
         d = datetime.now().timestamp() - await rp.call(
             "rocketRewardsPool.getClaimIntervalTimeStart"
         )
@@ -288,7 +296,7 @@ class Random(commands.Cog):
         )
         lines = [
             f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}"
-            for d in data[True]["counts"][: min(smoothie_node_count, 5)]
+            for d in data_by_id[True]["counts"][: min(smoothie_node_count, 5)]
         ]
         e.description += "\n".join(lines)
         await interaction.followup.send(embed=e)
@@ -301,7 +309,7 @@ class Random(commands.Cog):
         # get challenges made
         events = list(
             c.events["ActionChallengeMade"].get_logs(
-                from_block=(await w3.eth.get_block("latest")).number
+                from_block=(await w3.eth.get_block("latest")).get("number", 0)
                 - 7 * 24 * 60 * 60 // 12
             )
         )
@@ -325,7 +333,9 @@ class Random(commands.Cog):
         )
         for event in events:
             latest_block = await w3.eth.get_block("latest")
-            time_left = challenge_period - (latest_block.timestamp - event.args.time)
+            time_left = challenge_period - (
+                latest_block.get("timestamp", 0) - event.args.time
+            )
             time_left = pretty_time(time_left)
             challenged = await el_explorer_url(event.args.nodeChallengedAddress)
             challenger = await el_explorer_url(event.args.nodeChallengerAddress)
@@ -416,12 +426,14 @@ class Random(commands.Cog):
         await interaction.response.defer(
             ephemeral=is_hidden_role_controlled(interaction)
         )
-        tnx = await w3.eth.get_transaction(tnx_hash)
+        tnx: TxData = await w3.eth.get_transaction(HexStr(tnx_hash))
+        contract: AsyncContract | None = None
         if contract_name:
             contract = await rp.get_contract_by_name(contract_name)
-        else:
-            contract = await rp.get_contract_by_address(tnx.to)
-        data = contract.decode_function_input(tnx.input)
+        elif "to" in tnx:
+            contract = await rp.get_contract_by_address(tnx["to"])
+        assert contract is not None
+        data = contract.decode_function_input(tnx.get("input"))
         await interaction.followup.send(content=f"```Input:\n{data}```")
 
     # --------- AUTOCOMPLETE --------- #

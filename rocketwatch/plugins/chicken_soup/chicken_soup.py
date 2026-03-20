@@ -11,11 +11,12 @@ class ChickenSoup(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.duration = timedelta(minutes=5)
-        self.dispense_end = {}
+        self.dispense_end: dict[int, datetime] = {}
 
     @command()
     async def chicken_soup(self, interaction: Interaction):
-        self.dispense_end[interaction.channel_id] = datetime.now() + self.duration
+        if interaction.channel_id is not None:
+            self.dispense_end[interaction.channel_id] = datetime.now() + self.duration
         await interaction.response.send_message(
             "https://tenor.com/view/muppets-muppet-show-swedish-chef-chicken-pot-gif-9362214582988742217"
         )

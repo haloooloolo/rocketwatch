@@ -3,8 +3,8 @@ import logging
 import operator
 from io import BytesIO
 
-import inflect
 import matplotlib as mpl
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
@@ -22,8 +22,6 @@ from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.collateral")
 
-p = inflect.engine()
-
 
 def get_percentiles(percentiles, counts):
     for p in percentiles:
@@ -35,7 +33,9 @@ async def collateral_distribution_raw(interaction: Interaction, distribution):
     e.title = "Collateral Distribution"
     description = "```\n"
     for collateral, nodes in distribution:
-        description += f"{collateral:>5}%: {nodes:>4} {p.plural('node', nodes)}\n"
+        description += (
+            f"{collateral:>5}%: {nodes:>4} {'node' if nodes == 1 else 'nodes'}\n"
+        )
     description += "```"
     e.description = description
     await interaction.followup.send(embed=e)
@@ -106,7 +106,7 @@ async def get_average_collateral_percentage_per_node(
         np.argmin([abs(effective_bound / 30 - s) for s in possible_step_sizes])
     ]
 
-    result = {}
+    result: dict[float, list[float]] = {}
     for rpl_stake, percentage in node_collaterals:
         percentage = step_size * (percentage * 10 // (step_size * 10))
         if percentage not in result:
@@ -180,7 +180,7 @@ class Collateral(commands.Cog):
         paths = ax.scatter(x, y, c=c, alpha=0.25, norm="log")
         polys = ax2.hexbin(x, y, gridsize=20, bins="log", xscale="log", cmap="viridis")
         # fill the background in with the default color.
-        ax2.set_facecolor(mpl.colors.to_rgba(mpl.colormaps["viridis"](0), 0.9))
+        ax2.set_facecolor(mcolors.to_rgba(mpl.colormaps["viridis"](0), 0.9))
         max_nodes = max(polys.get_array())
 
         # log-scale the X-axis to account for thomas
@@ -261,7 +261,7 @@ class Collateral(commands.Cog):
             (collateral, len(nodes))
             for collateral, nodes in sorted(data.items(), key=lambda x: x[0])
         ]
-        counts = functools.reduce(
+        counts: list[float] = functools.reduce(
             operator.iadd,
             ([collateral] * num_nodes for collateral, num_nodes in distribution),
             [],
@@ -278,9 +278,10 @@ class Collateral(commands.Cog):
         fig, ax = plt.subplots()
         ax2 = ax.twinx()
 
-        bars = dict(distribution)
-        x_keys = [str(x) for x in bars]
-        rects = ax.bar(x_keys, bars.values(), color=str(e.color), align="edge")
+        x_keys = [str(x) for x, _ in distribution]
+        rects = ax.bar(
+            x_keys, [y for _, y in distribution], color=str(e.color), align="edge"
+        )
         ax.bar_label(rects)
 
         ax.set_xticklabels(x_keys, rotation="vertical")

@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 
 import aiohttp
@@ -100,7 +100,7 @@ class Rewards(commands.Cog):
         """
         await interaction.response.defer(ephemeral=True)
         display_name, address = await resolve_ens(interaction, node_address)
-        if display_name is None:
+        if (display_name is None) or (address is None):
             return
 
         rewards = await self.get_estimated_rewards(interaction, address)
@@ -115,8 +115,11 @@ class Rewards(commands.Cog):
             proj_factor = (rewards.end_time - reward_start_time) / (
                 rewards.data_time - reward_start_time
             )
-            rewards.rpl_rewards *= proj_factor
-            rewards.eth_rewards *= proj_factor
+            rewards = replace(
+                rewards,
+                rpl_rewards=rewards.rpl_rewards * proj_factor,
+                eth_rewards=rewards.eth_rewards * proj_factor,
+            )
 
         modifier = "Projected" if extrapolate else "Estimated Ongoing"
         title = f"{modifier} Rewards for {display_name}"
@@ -145,7 +148,7 @@ class Rewards(commands.Cog):
         """
         await interaction.response.defer(ephemeral=True)
         display_name, address = await resolve_ens(interaction, node_address)
-        if display_name is None:
+        if (display_name is None) or (address is None):
             return
 
         rewards = await self.get_estimated_rewards(interaction, address)
@@ -227,7 +230,7 @@ class Rewards(commands.Cog):
         ) -> None:
             step_size = max(1, (x_max - x_min) // 1000)
             x = np.arange(x_min, x_max, step_size, dtype=int)
-            y = np.array([rewards_at(x, _borrowed_eth) for x in x])
+            y = np.array([rewards_at(int(x), _borrowed_eth) for x in x])
             ax.plot(x, y, color=_color, linestyle=_line_style, label=_label)
 
             def plot_point(_pt_color: str, _pt_label: str, _x: int) -> None:

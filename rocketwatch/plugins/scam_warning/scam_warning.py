@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timedelta
 
 from discord import errors
+from discord.abc import Messageable
 from discord.ext import commands
 
 from rocketwatch import RocketWatch
@@ -28,6 +29,9 @@ class ScamWarning(commands.Cog):
         resource_channel = await self.bot.get_or_fetch_channel(
             cfg.discord.channels["resources"]
         )
+        assert isinstance(support_channel, Messageable)
+        assert isinstance(report_channel, Messageable)
+        assert isinstance(resource_channel, Messageable)
 
         embed = Embed()
         embed.title = "**Stay Safe on Rocket Pool Discord**"

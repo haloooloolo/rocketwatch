@@ -196,7 +196,7 @@ class DBUpkeepTask(commands.Cog):
                 ]
             calls = [(e[1], e[2]) for e in expanded]
             results = await rp.multicall(calls)
-            updates = defaultdict(dict)
+            updates: dict[Any, dict[str, Any]] = defaultdict(dict)
             for e, value in zip(expanded, results, strict=False):
                 addr, transform, field = e[0], e[3], e[4]
                 if transform is not None and value is not None:
@@ -224,7 +224,7 @@ class DBUpkeepTask(commands.Cog):
         if latest_db >= latest_rp:
             log.debug("No new nodes")
             return
-        data = {}
+        data: dict[int, Any] = {}
         for index_batch in as_chunks(
             range(latest_db + 1, latest_rp + 1), self.batch_size
         ):

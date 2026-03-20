@@ -182,7 +182,7 @@ class OnchainDAO(Cog):
         def __init__(self, proposal: ProtocolDAO.Proposal):
             super().__init__(page_size=25)
             self.proposal = proposal
-            self._voter_list = None
+            self._voter_list: list[OnchainDAO.Vote] | None = None
 
         async def _ensure_voter_list(self):
             if self._voter_list is not None:
@@ -227,6 +227,7 @@ class OnchainDAO(Cog):
 
         async def _load_content(self, from_idx: int, to_idx: int) -> tuple[int, str]:
             await self._ensure_voter_list()
+            assert self._voter_list is not None
             headers = ["#", "Voter", "Choice", "Weight"]
             data = []
             for i, voter in enumerate(

@@ -28,9 +28,9 @@ class CallModal(Modal):
         self.address = address
         self.raw_output = raw_output
         self.abi_inputs = abi_inputs
-        self.param_inputs = []
+        self.param_inputs: list[TextInput] = []
         for inp in abi_inputs:
-            text_input = TextInput(
+            text_input: TextInput = TextInput(
                 label=f"{inp['name']} ({inp['type']})"[:45], required=True
             )
             self.add_item(text_input)
@@ -86,7 +86,7 @@ class CallModal(Modal):
 class Call(Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.function_names = []
+        self.function_names: list[str] = []
 
     @Cog.listener()
     async def on_ready(self):
@@ -97,9 +97,11 @@ class Call(Cog):
             try:
                 c = await rp.get_contract_by_name(contract)
                 for entry in c.abi:
-                    if entry.get("type") == "function" and entry.get(
-                        "stateMutability"
-                    ) in ("view", "pure"):
+                    if (
+                        entry.get("type") == "function"
+                        and "name" in entry
+                        and entry.get("stateMutability") in ("view", "pure")
+                    ):
                         func_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
                         self.function_names.append(f"{contract}.{func_id}")
             except Exception:
@@ -116,8 +118,7 @@ class Call(Cog):
         raw_output: bool = False,
     ):
         """Manually call a function on a protocol contract"""
-        if block.isnumeric():
-            block = int(block)
+        block_id: int | str = int(block) if block.isnumeric() else block
 
         # Look up ABI inputs for the function
         abi_inputs = []
@@ -125,7 +126,7 @@ class Call(Cog):
             contract_name, func_id = function.rsplit(".", 1)
             contract = await rp.get_contract_by_name(contract_name)
             for entry in contract.abi:
-                if entry.get("type") == "function":
+                if entry.get("type") == "function" and "name" in entry:
                     entry_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
                     if entry_id == func_id:
                         abi_inputs = entry.get("inputs", [])
@@ -134,14 +135,14 @@ class Call(Cog):
             pass
 
         if abi_inputs:
-            modal = CallModal(self, function, block, address, raw_output, abi_inputs)
+            modal = CallModal(self, function, block_id, address, raw_output, abi_inputs)
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer(
                 ephemeral=is_hidden_role_controlled(interaction)
             )
             await self._execute_call(
-                interaction, function, [], block, address, raw_output
+                interaction, function, [], block_id, address, raw_output
             )
 
     async def _execute_call(

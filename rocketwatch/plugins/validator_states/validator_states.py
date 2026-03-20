@@ -172,12 +172,14 @@ class ValidatorStates(commands.Cog):
 
             node_operators = []
             for valis in (exiting_valis, withdrawn_valis):
-                valis_no = {}
+                valis_no: dict[str, int] = {}
                 for v in valis:
                     no = v["node_operator"]
                     valis_no[no] = valis_no.get(no, 0) + 1
-                valis_no = sorted(valis_no.items(), key=lambda x: x[1], reverse=True)
-                node_operators.append(valis_no)
+                valis_no_sorted = sorted(
+                    valis_no.items(), key=lambda x: x[1], reverse=True
+                )
+                node_operators.append(valis_no_sorted)
 
             exiting_node_operators, withdrawn_node_operators = node_operators
             max_total_list_length = 16

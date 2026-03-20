@@ -131,7 +131,7 @@ class Forum(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         if isinstance(period, Choice):
-            period: Forum.Period = cast(Forum.Period, period.value)
+            period = cast(Forum.Period, period.value)
 
         embed = Embed(title=f"Top Forum Posts ({period})")
         embed.description = ""

@@ -1,8 +1,8 @@
 import logging
 import re
 from io import BytesIO
+from typing import Any
 
-import inflect
 import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
@@ -14,7 +14,6 @@ from utils.embeds import Embed
 from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.minipool_distribution")
-p = inflect.engine()
 
 
 def get_percentiles(percentiles, counts):
@@ -27,8 +26,9 @@ async def minipool_distribution_raw(interaction: Interaction, distribution):
     e.title = "Minipool Distribution"
     description = "```\n"
     for minipools, nodes in distribution:
+        minipool_str = f"{minipools} {'minipool' if minipools == 1 else 'minipools'}"
         description += (
-            f"{p.no('minipool', minipools):>14}: {nodes:>4} {p.plural('node', nodes)}\n"
+            f"{minipool_str:>14}: {nodes:>4} {'node' if nodes == 1 else 'nodes'}\n"
         )
     description += "```"
     e.description = description
@@ -46,7 +46,7 @@ class MinipoolDistribution(commands.Cog):
         # 1 node has 1 minipool
         # 1 node has 2 minipools
         # 3 nodes have 3 minipools
-        pipeline = [
+        pipeline: list[dict[str, Any]] = [
             {
                 "$match": {
                     "beacon.status": {"$not": re.compile(r"(?:withdraw|exit|init)")},
@@ -56,7 +56,9 @@ class MinipoolDistribution(commands.Cog):
             {"$group": {"_id": "$node_operator", "count": {"$sum": 1}}},
             {"$sort": {"count": 1}},
         ]
-        return [x["count"] async for x in self.bot.db.minipools.aggregate(pipeline)]
+        return [
+            x["count"] async for x in await self.bot.db.minipools.aggregate(pipeline)
+        ]
 
     @command()
     @describe(raw="Show the raw Distribution Data")
@@ -82,10 +84,9 @@ class MinipoolDistribution(commands.Cog):
         fig, ax = plt.subplots(1, 1)
 
         # First chart is sorted bars showing total minipools provided by nodes with x minipools per node
-        bars = {x: x * y for x, y in distribution}
         # Remove the 0,0 value, since it doesn't provide any insight
-        x_keys = [str(x) for x in bars]
-        rects = ax.bar(x_keys, bars.values(), color=str(e.color))
+        x_keys = [str(x) for x, _ in distribution]
+        rects = ax.bar(x_keys, [x * y for x, y in distribution], color=str(e.color))
         ax.bar_label(rects, rotation=90, padding=3, fontsize=7)
         ax.set_ylabel("Total Minipools")
         # tilt the x axis labels
@@ -104,12 +105,12 @@ class MinipoolDistribution(commands.Cog):
         e.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")
         percentile_strings = [
-            f"{x[0]}th percentile: {p.no('minipool', int(x[1]))} per node"
+            f"{x[0]}th percentile: {x[1]} minipools per node"
             for x in get_percentiles([50, 75, 90, 99], counts)
             if x[1]
         ]
         percentile_strings.append(f"Max: {distribution[-1][0]} minipools per node")
-        percentile_strings.append(f"Total: {p.no('minipool', sum(counts))}")
+        percentile_strings.append(f"Total: {sum(counts)} minipools")
         e.set_footer(text="\n".join(percentile_strings))
         await interaction.followup.send(embed=e, files=[f])
         img.close()
@@ -173,7 +174,7 @@ class MinipoolDistribution(commands.Cog):
             x_pos = x[index]
             percentage = round(100 * threshold)
             x_ticks.append(x_pos)
-            ax.axvline(x=x_pos, linestyle="--", c=color, label=f"{percentage}%")
+            ax.axvline(x=float(x_pos), linestyle="--", c=color, label=f"{percentage}%")
 
         draw_threshold(1 / 3, "tab:green")
         draw_threshold(0.5, "tab:olive")

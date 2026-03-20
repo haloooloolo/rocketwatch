@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
+from eth_typing import BlockNumber
 from matplotlib.dates import DateFormatter
 from pymongo import InsertOne
 
@@ -35,7 +36,7 @@ class RockSolid(Cog):
         else:
             last_checked_block = self.deployment_block
 
-        b_from = last_checked_block + 1
+        b_from = BlockNumber(last_checked_block + 1)
         b_to = await w3.eth.get_block_number()
 
         updates = []
@@ -47,8 +48,8 @@ class RockSolid(Cog):
         for event_log in await get_logs(
             vault_contract.events.TotalAssetsUpdated, b_from, b_to
         ):
-            ts = await block_to_ts(event_log.blockNumber)
-            assets = solidity.to_float(event_log.args.totalAssets)
+            ts = await block_to_ts(event_log["blockNumber"])
+            assets = solidity.to_float(event_log["args"]["totalAssets"])
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
 
@@ -125,10 +126,11 @@ class RockSolid(Cog):
         fig, ax = plt.subplots(figsize=(6, 2))
         ax.grid()
 
-        ax.plot(x, y, color="#50b1f7")
+        # matplotlib stubs don't allow dates
+        ax.plot(x, y, color="#50b1f7")  # type: ignore[arg-type]
         ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
         ax.set_ylabel("AUM (rETH)")
-        ax.set_xlim((x[0], x[-1]))
+        ax.set_xlim((x[0], x[-1]))  # type: ignore[arg-type]
         ax.set_ylim((y[0], y[-1] * 1.01))
 
         img = BytesIO()

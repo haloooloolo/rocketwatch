@@ -58,7 +58,7 @@ class PinnedMessages(commands.Cog):
                     )
                 elif not message["disabled"]:
                     # delete and resend message
-                    channel = self.bot.get_channel(message["channel_id"])
+                    channel = await self.bot.get_or_fetch_channel(message["channel_id"])
                     if not isinstance(channel, Messageable):
                         continue
                     # check if we have message sent already and if its the latest message in the channel
