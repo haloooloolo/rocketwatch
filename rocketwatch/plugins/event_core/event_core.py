@@ -198,12 +198,12 @@ class EventCore(commands.Cog):
             log.debug("No pending events in queue")
             return
 
-        def try_load(_entry: dict, _key: str) -> Any | None:
+        async def try_load(_entry: dict, _key: str) -> Any | None:
             try:
                 serialized = _entry.get(_key)
                 return pickle.loads(serialized) if serialized else None
             except Exception as err:
-                self.bot.report_error(err)
+                await self.bot.report_error(err)
                 return None
 
         for channel_id in channels:
@@ -226,15 +226,15 @@ class EventCore(commands.Cog):
                 await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
 
             for event_entry in db_events:
-                embed: Embed | None = try_load(event_entry, "embed")
+                embed: Embed | None = await try_load(event_entry, "embed")
                 files = []
 
-                if embed and (image := try_load(event_entry, "image")):
+                if embed and (image := await try_load(event_entry, "image")):
                     file_name = f"{event_entry['event_name']}_img.png"
                     files.append(image.to_file(file_name))
                     embed.set_image(url=f"attachment://{file_name}")
 
-                if embed and (thumbnail := try_load(event_entry, "thumbnail")):
+                if embed and (thumbnail := await try_load(event_entry, "thumbnail")):
                     file_name = f"{event_entry['event_name']}_thumb.png"
                     files.append(thumbnail.to_file(file_name))
                     embed.set_thumbnail(url=f"attachment://{file_name}")
