@@ -144,7 +144,9 @@ class Random(commands.Cog):
         await interaction.response.send_message(embed=e)
 
     @command()
-    async def sea_creatures(self, interaction: Interaction, address: str | None = None):
+    async def sea_creatures(
+        self, interaction: Interaction, address: str | None = None
+    ) -> None:
         """List all sea creatures with their required minimum holding."""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
@@ -194,7 +196,7 @@ class Random(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def smoothie(self, interaction: Interaction):
+    async def smoothie(self, interaction: Interaction) -> None:
         """Show smoothing pool information"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
@@ -303,7 +305,7 @@ class Random(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def odao_challenges(self, interaction: Interaction):
+    async def odao_challenges(self, interaction: Interaction) -> None:
         """Shows the current oDAO challenges"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         c = await rp.get_contract_by_name("rocketDAONodeTrustedActions")
@@ -345,7 +347,7 @@ class Random(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def asian_restaurant_name(self, interaction: Interaction):
+    async def asian_restaurant_name(self, interaction: Interaction) -> None:
         """
         Randomly generated Asian restaurant name
         """
@@ -360,7 +362,7 @@ class Random(commands.Cog):
         await interaction.followup.send(a)
 
     @command()
-    async def mexican_restaurant_name(self, interaction: Interaction):
+    async def mexican_restaurant_name(self, interaction: Interaction) -> None:
         """
         Randomly generated Mexican restaurant name
         """
@@ -443,6 +445,82 @@ class Random(commands.Cog):
             ]
         )
         await interaction.response.send_message(f"{prefix} {middle} {suffix}")
+
+    @command()
+    async def austrian_restaurant_name(self, interaction: Interaction) -> None:
+        """
+        Randomly generated Austrian restaurant name
+        """
+        venues = [
+            "Gasthaus",
+            "Gasthof",
+            "Wirtshaus",
+            "Beisl",
+            "Stüberl",
+            "Heuriger",
+            "Landgasthof",
+            "Alpengasthof",
+            "Berggasthof",
+            "Café-Restaurant",
+            "Braugasthof",
+            "Jausenstation",
+        ]
+        # (noun, gender): m = masculine, f = feminine, n = neuter
+        nouns = [
+            ("Adler", "m"),
+            ("Hirsch", "m"),
+            ("Bär", "m"),
+            ("Ochse", "m"),
+            ("Löwe", "m"),
+            ("Hahn", "m"),
+            ("Schwan", "m"),
+            ("Fuchs", "m"),
+            ("Wolf", "m"),
+            ("Steinbock", "m"),
+            ("Falke", "m"),
+            ("Auerhahn", "m"),
+            ("Gamsbock", "m"),
+            ("Dachs", "m"),
+            ("Lamm", "n"),
+            ("Rößl", "n"),
+            ("Murmeltier", "n"),
+            ("Kreuz", "n"),
+            ("Krone", "f"),
+            ("Forelle", "f"),
+            ("Linde", "f"),
+            ("Rose", "f"),
+            ("Gams", "f"),
+        ]
+        adj_stems = [
+            "golden",
+            "schwarz",
+            "weiß",
+            "grün",
+            "wild",
+            "alt",
+            "klein",
+            "groß",
+            "lustig",
+            "brav",
+            "fein",
+            "rot",
+        ]
+        nom_endings = {"m": "er", "f": "e", "n": "es"}
+
+        noun, gender = random.choice(nouns)
+        stem = random.choice(adj_stems)
+
+        # 30% chance for "Zum/Zur" style (dative), otherwise "Venue" style (nominative)
+        if random.random() < 0.3:
+            article = "Zur" if gender == "f" else "Zum"
+            adj = stem.capitalize() + "en"
+            name = f"{article} {adj} {noun}"
+        else:
+            venue = random.choice(venues)
+            adj = stem.capitalize() + nom_endings[gender]
+            name = f"{venue} {adj} {noun}"
+
+        await interaction.response.send_message(name)
 
     @command()
     async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
