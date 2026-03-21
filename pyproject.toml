@@ -66,7 +66,6 @@ warn_unused_ignores = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
-# Heavy web3 MutableAttributeDict usage — almost all errors are false positives
 [[tool.mypy.overrides]]
 module = [
     "rocketwatch.plugins.events.*",
