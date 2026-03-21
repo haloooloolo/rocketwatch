@@ -329,7 +329,7 @@ class SupportUtils(GroupCog, name="support"):
             Choice(name="Last Edited Date", value="last_edited_date"),
         ]
     )
-    async def list(self, interaction: Interaction, order_by: Choice[str] | str = "_id"):
+    async def list(self, interaction: Interaction, order_by: Choice[str] = "_id"):  # type: ignore[assignment]
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
         templates = await (
