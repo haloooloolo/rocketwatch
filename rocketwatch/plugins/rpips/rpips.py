@@ -66,7 +66,7 @@ class RPIPs(Cog):
 
         @cached(ttl=300, key_builder=lambda _, rpip: rpip.number)
         @retry(tries=3, delay=1)
-        async def fetch_details(self) -> dict:
+        async def fetch_details(self) -> dict[str, str | list[str] | None]:
             async with (
                 aiohttp.ClientSession() as session,
                 session.get(self.url) as resp,
@@ -74,25 +74,34 @@ class RPIPs(Cog):
                 html = await resp.text()
 
             soup = BeautifulSoup(html, "html.parser")
-            metadata = {}
+            if not soup.main:
+                return {}
 
-            for field in soup.main.find("table", {"class": "rpip-preamble"}).find_all(
-                "tr"
-            ):
-                match field_name := field.th.text:
-                    case "Discussion":
-                        metadata[field_name] = field.td.a["href"]
-                    case "Author":
-                        metadata[field_name] = [a.text for a in field.td.find_all("a")]
-                    case _:
-                        metadata[field_name] = field.td.text
+            preamble = soup.main.find("table", {"class": "rpip-preamble"})
+            if not preamble:
+                return {}
 
+            metadata: dict[str, str | list[str]] = {}
+            for field in preamble.find_all("tr"):
+                if field.th and field.td:
+                    match field_name := field.th.text:
+                        case "Discussion":
+                            if field.td.a:
+                                metadata[field_name] = field.td.a["href"]
+                        case "Author":
+                            metadata[field_name] = [
+                                a.text for a in field.td.find_all("a")
+                            ]
+                        case _:
+                            metadata[field_name] = field.td.text
+
+            description_tag = soup.find("big", {"class": "rpip-description"})
             return {
                 "type": metadata.get("Type"),
                 "authors": metadata.get("Author"),
                 "created": metadata.get("Created"),
                 "discussion": metadata.get("Discussion"),
-                "description": soup.find("big", {"class": "rpip-description"}).text,
+                "description": description_tag.text if description_tag else None,
             }
 
         @property
@@ -124,13 +133,20 @@ class RPIPs(Cog):
             html = await resp.text()
 
         soup = BeautifulSoup(html, "html.parser")
-        rpips: list[RPIPs.RPIP] = []
+        if not soup.table:
+            return []
 
+        rpips: list[RPIPs.RPIP] = []
         for row in soup.table.find_all("tr", recursive=False):
-            title = row.find("td", {"class": "title"}).text.strip()
-            rpip_num = int(row.find("td", {"class": "rpipnum"}).text)
-            status = row.find("td", {"class": "status"}).text.strip()
-            rpips.append(RPIPs.RPIP(title, rpip_num, status))
+            title_td = row.find("td", {"class": "title"})
+            num_td = row.find("td", {"class": "rpipnum"})
+            status_td = row.find("td", {"class": "status"})
+            if title_td and num_td and status_td:
+                rpips.append(
+                    RPIPs.RPIP(
+                        title_td.text.strip(), int(num_td.text), status_td.text.strip()
+                    )
+                )
 
         return rpips
 
