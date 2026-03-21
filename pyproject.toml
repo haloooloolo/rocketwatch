@@ -76,14 +76,6 @@ module = [
 ]
 disable_error_code = ["attr-defined", "union-attr", "index"]
 
-# Matplotlib/numpy stub gaps
-[[tool.mypy.overrides]]
-module = [
-    "rocketwatch.plugins.apr.*",
-    "rocketwatch.plugins.proposals.*",
-]
-disable_error_code = ["attr-defined"]
-
 [tool.ruff]
 target-version = "py312"
 

@@ -4,10 +4,12 @@ from decimal import Decimal
 from io import BytesIO
 
 import matplotlib.pyplot as plt
+import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands, tasks
 from matplotlib.dates import DateFormatter
+from matplotlib.ticker import FuncFormatter
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -49,7 +51,7 @@ class APR(commands.Cog):
         # get latest block update from the db
         latest_db_block = await self.bot.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
-        cursor_block = (await w3_archive.eth.get_block("latest"))["number"]
+        cursor_block = (await w3_archive.eth.get_block("latest")).get("number", 0)
         while True:
             # get address of rocketNetworkBalances contract at cursor block
             address = await rp.uncached_get_address_by_name(
@@ -62,7 +64,7 @@ class APR(commands.Cog):
             )
             if balance_block == latest_db_block:
                 break
-            block_time = (await w3.eth.get_block(balance_block))["timestamp"]
+            block_time = (await w3.eth.get_block(balance_block)).get("timestamp", 0)
             # abort if the blocktime is older than 120 days
             if block_time < (datetime.now().timestamp() - 120 * 24 * 60 * 60):
                 break
@@ -91,7 +93,8 @@ class APR(commands.Cog):
         await self.bot.wait_until_ready()
 
     @task.error
-    async def on_error(self, err: Exception):
+    async def on_error(self, err: BaseException):
+        assert isinstance(err, Exception)
         await self.bot.report_error(err)
 
     @command()
@@ -209,12 +212,13 @@ class APR(commands.Cog):
             value=f"{y_7d_virtual[-1]:.2%}",
             inline=False,
         )
+        x_arr = np.array(x)
         fig = plt.figure()
         ax1 = plt.gca()
-        ax2 = plt.twinx()
+        ax2: plt.Axes = plt.twinx()  # type: ignore[assignment]
 
         ax2.plot(
-            x,
+            x_arr,
             y,
             marker="+",
             linestyle="",
@@ -222,24 +226,24 @@ class APR(commands.Cog):
             alpha=0.6,
             color="orange",
         )
-        # ax2.plot(x, y_virtual, marker="x", linestyle="", label="Period Average (Virtual)", alpha=0.4)
-        # ax2.plot(x, y_node_operators, marker="+", linestyle="", label="Node Operator APR", alpha=0.4)
+        # ax2.plot(x_arr, y_virtual, marker="x", linestyle="", label="Period Average (Virtual)", alpha=0.4)
+        # ax2.plot(x_arr, y_node_operators, marker="+", linestyle="", label="Node Operator APR", alpha=0.4)
         ax2.plot(
-            x,
+            x_arr,
             y_7d,
             linestyle="-",
             label=f"{y_7d_claim:.1f} Day Average",
             color="orange",
         )
         ax2.plot(
-            x,
+            x_arr,
             y_7d_virtual,
             linestyle="-",
             label=f"{y_7d_claim:.1f} Day Average (Virtual)",
             color="green",
         )
         ax1.plot(
-            x,
+            x_arr,
             y_effectiveness,
             linestyle="--",
             label="Effectiveness",
@@ -250,13 +254,13 @@ class APR(commands.Cog):
         plt.title("Observed rETH APR values")
         plt.xlabel("Date")
         plt.grid(True)
-        plt.xlim(left=x[38])
+        plt.xlim(left=x_arr[38])
         plt.xticks(rotation=45)
         old_formatter = plt.gca().xaxis.get_major_formatter()
         plt.gca().xaxis.set_major_formatter(DateFormatter("%b %d"))
 
-        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
+        ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.set_ylabel("Effectiveness")
         ax2.set_ylabel("APR")
         ax1.set_ylim(top=1)
@@ -424,12 +428,13 @@ class APR(commands.Cog):
             inline=False,
         )
 
+        x_arr = np.array(x)
         fig = plt.figure()
         ax1 = plt.gca()
 
         # solo apr
         ax1.plot(
-            x,
+            x_arr,
             y_7d_node_operators_leb8_14,
             linestyle="-.",
             label=f"{y_7d_claim:.1f} Day Average (leb8 14%)",
@@ -438,7 +443,7 @@ class APR(commands.Cog):
         )
         # use area to show region between leb16 20% and leb16 5%. use a spare dotted fill to show the region between
         ax1.fill_between(
-            x,
+            x_arr,
             y_7d_node_operators_leb16_20,
             y_7d_node_operators_leb16_05,
             alpha=0.2,
@@ -447,7 +452,7 @@ class APR(commands.Cog):
         )
         # plot the leb16 14% line
         ax1.plot(
-            x,
+            x_arr,
             y_7d_node_operators_leb16_14,
             linestyle="--",
             label=f"{y_7d_claim:.1f} Day Average (leb16 14%)",
@@ -455,7 +460,7 @@ class APR(commands.Cog):
             alpha=0.5,
         )
         ax1.plot(
-            x,
+            x_arr,
             y_7d_solo,
             linestyle=":",
             label=f"{y_7d_claim:.1f} Day Average (solo)",
@@ -465,13 +470,13 @@ class APR(commands.Cog):
 
         plt.title("Observed NO APR values")
         plt.grid(True)
-        plt.xlim(left=x[38])
+        plt.xlim(left=x_arr[38])
         plt.xticks(rotation=0)
         plt.ylim(bottom=0.02)
         old_formatter = plt.gca().xaxis.get_major_formatter()
         plt.gca().xaxis.set_major_formatter(DateFormatter("%m.%d"))
 
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, loc: f"{x:.1%}"))
+        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.legend(loc="lower left")
 
         img = BytesIO()

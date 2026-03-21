@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 import matplotlib.pyplot as plt
+import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
@@ -126,11 +127,11 @@ class RockSolid(Cog):
         fig, ax = plt.subplots(figsize=(6, 2))
         ax.grid()
 
-        # matplotlib stubs don't allow dates
-        ax.plot(x, y, color="#50b1f7")  # type: ignore[arg-type]
+        x_arr = np.array(x)
+        ax.plot(x_arr, y, color="#50b1f7")
         ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
         ax.set_ylabel("AUM (rETH)")
-        ax.set_xlim((x[0], x[-1]))  # type: ignore[arg-type]
+        ax.set_xlim((x_arr[0], x_arr[-1]))
         ax.set_ylim((y[0], y[-1] * 1.01))
 
         img = BytesIO()

@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from io import BytesIO
 
+import numpy as np
 from aiohttp.client_exceptions import ClientResponseError
 from cronitor import Monitor
 from discord import File, Interaction
@@ -399,8 +400,9 @@ class Proposals(commands.Cog):
             for v in versions
         ]
         # add percentage to labels
+        x_arr = np.array(x)
         ax = plt.subplot(111, frameon=False)
-        plt.stackplot(x, *y.values(), labels=labels, colors=colors)
+        plt.stackplot(x_arr, *y.values(), labels=labels, colors=colors)
         # hide y axis
         plt.tick_params(
             axis="y", which="both", left=False, right=False, labelleft=False
@@ -409,11 +411,13 @@ class Proposals(commands.Cog):
         handles, legend_labels = ax.get_legend_handles_labels()
         ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
         # add a thin line at current time from y=0 to y=1 with a width of 0.5
-        plt.plot([max(x), max(x)], [0, 1], color="white", alpha=0.25)  # type: ignore[arg-type]
+        plt.plot([x_arr[-1], x_arr[-1]], [0, 1], color="white", alpha=0.25)
         # calculate future point to make latest data more visible
         future_point = x[-1] + timedelta(days=window_length)
         last_y_values = [[yy[-1]] * 2 for yy in y.values()]
-        plt.stackplot([x[-1], future_point], *last_y_values, colors=colors)
+        plt.stackplot(
+            [x_arr[-1], np.datetime64(future_point)], *last_y_values, colors=colors
+        )
         plt.tight_layout()
 
         # respond with image
