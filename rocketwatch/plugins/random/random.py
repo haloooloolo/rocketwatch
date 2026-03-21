@@ -206,20 +206,29 @@ class Random(commands.Cog):
                 await rp.get_address_by_name("rocketSmoothingPool")
             )
         )
+        inactive_statuses = [
+            "exited_unslashed",
+            "exited_slashed",
+            "withdrawal_possible",
+            "withdrawal_done",
+            "pending_initialized",
+        ]
         data = await (
             await self.bot.db.minipools.aggregate(
                 [
+                    {"$match": {"beacon.status": {"$nin": inactive_statuses}}},
+                    {"$project": {"node_operator": 1}},
                     {
-                        "$match": {
-                            "beacon.status": {
-                                "$nin": [
-                                    "exited_unslashed",
-                                    "exited_slashed",
-                                    "withdrawal_possible",
-                                    "withdrawal_done",
-                                    "pending_initialized",
-                                ]
-                            }
+                        "$unionWith": {
+                            "coll": "megapool_validators",
+                            "pipeline": [
+                                {
+                                    "$match": {
+                                        "beacon.status": {"$nin": inactive_statuses}
+                                    }
+                                },
+                                {"$project": {"node_operator": 1}},
+                            ],
                         }
                     },
                     {"$group": {"_id": "$node_operator", "count": {"$sum": 1}}},
@@ -274,31 +283,31 @@ class Random(commands.Cog):
             )
         ).to_list()
         if not data:
-            await interaction.followup.send("no minipools found", ephemeral=True)
+            await interaction.followup.send("No validators found.", ephemeral=True)
             return
+
         data_by_id = {d["_id"]: d for d in data}
         # node counts
         total_node_count = (
             data_by_id[True]["node_count"] + data_by_id[False]["node_count"]
         )
         smoothie_node_count = data_by_id[True]["node_count"]
-        # minipool counts
-        total_minipool_count = data_by_id[True]["count"] + data_by_id[False]["count"]
-        smoothie_minipool_count = data_by_id[True]["count"]
+        # validator counts
+        total_validator_count = data_by_id[True]["count"] + data_by_id[False]["count"]
+        smoothie_validator_count = data_by_id[True]["count"]
         d = datetime.now().timestamp() - await rp.call(
             "rocketRewardsPool.getClaimIntervalTimeStart"
         )
         e.description = (
             f"`{smoothie_node_count}/{total_node_count}` nodes (`{smoothie_node_count / total_node_count:.2%}`)"
             f" have joined the smoothing pool.\n"
-            f" That is `{smoothie_minipool_count}/{total_minipool_count}` minipools "
-            f"(`{smoothie_minipool_count / total_minipool_count:.2%}`).\n"
-            f"The current (not overall) balance is **`{smoothie_eth:,.2f}` ETH.**\n"
-            f"This is over a span of `{pretty_time(d)}`.\n\n"
+            f" That is `{smoothie_validator_count}/{total_validator_count}`"
+            f" (`{smoothie_validator_count / total_validator_count:.2%}`) validators.\n"
+            f"The current balance is **`{smoothie_eth:,.2f}` ETH**, {pretty_time(d)} into the reward period.\n\n"
             f"{min(smoothie_node_count, 5)} largest nodes:\n"
         )
         lines = [
-            f"- `{d['count']:>4}` minipools - {await el_explorer_url(d['address'])}"
+            f"- `{d['count']:>4}` validators - {await el_explorer_url(d['address'])}"
             for d in data_by_id[True]["counts"][: min(smoothie_node_count, 5)]
         ]
         e.description += "\n".join(lines)
