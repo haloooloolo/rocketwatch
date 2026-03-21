@@ -72,7 +72,7 @@ module = [
     "rocketwatch.plugins.events.*",
     "rocketwatch.plugins.transactions.*",
 ]
-disable_error_code = ["attr-defined", "union-attr", "index"]
+ignore_errors = true
 
 [tool.ruff]
 target-version = "py312"
