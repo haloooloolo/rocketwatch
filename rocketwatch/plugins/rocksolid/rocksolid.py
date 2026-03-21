@@ -132,7 +132,7 @@ class RockSolid(Cog):
         ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
         ax.set_ylabel("AUM (rETH)")
         ax.set_xlim((x_arr[0], x_arr[-1]))
-        ax.set_ylim((y[0], y[-1] * 1.01))
+        ax.set_ylim((y[0], y[-1] * 1.05))
 
         img = BytesIO()
         fig.tight_layout()
