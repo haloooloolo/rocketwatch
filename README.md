@@ -99,6 +99,12 @@ uv run ruff check rocketwatch/
 
 Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort), `RUF`, `SIM`, `UP` (pyupgrade), `W` (warnings).
 
+### Type checking
+
+```sh
+uv run mypy rocketwatch/
+```
+
 ### Testing
 
 ```sh
@@ -162,9 +168,9 @@ Plugins can be selectively loaded via the `modules.include` / `modules.exclude` 
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| [Lint](.github/workflows/lint.yml) | Push & PR to main | Ruff linting |
+| [Lint](.github/workflows/lint.yml) | Push & PR to main | Ruff linting & mypy type checking |
 | [Test](.github/workflows/test.yml) | Push & PR to main | pytest suite |
-| [Docker CI](.github/workflows/docker-ci.yml) | Push to main | Build & push image to DockerHub |
+| [Build](.github/workflows/build.yml) | Push to main | Build & push image to DockerHub |
 
 ## License
 
