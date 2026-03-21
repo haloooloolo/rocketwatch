@@ -1,4 +1,5 @@
 import logging
+import random
 from datetime import datetime
 
 import aiohttp
@@ -346,7 +347,7 @@ class Random(commands.Cog):
     @command()
     async def asian_restaurant_name(self, interaction: Interaction):
         """
-        Randomly generated Asian restaurant names
+        Randomly generated Asian restaurant name
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         async with (
@@ -357,6 +358,91 @@ class Random(commands.Cog):
         ):
             a = (await resp.json())["name"]
         await interaction.followup.send(a)
+
+    @command()
+    async def mexican_restaurant_name(self, interaction: Interaction):
+        """
+        Randomly generated Mexican restaurant name
+        """
+        prefix = random.choice(
+            [
+                "El",
+                "La",
+                "Los",
+                "Las",
+                "Casa",
+                "Don",
+                "Doña",
+                "Taco",
+                "Señor",
+                "Mi",
+                "Tres",
+                "Dos",
+                "El Gran",
+                "La Casa de",
+                "Rancho",
+                "Hacienda",
+                "Cocina",
+                "Pueblo",
+                "Villa",
+                "Cantina",
+            ]
+        )
+        middle = random.choice(
+            [
+                "Fuego",
+                "Sol",
+                "Luna",
+                "Loco",
+                "Grande",
+                "Diablo",
+                "Oro",
+                "Rojo",
+                "Verde",
+                "Azteca",
+                "Maya",
+                "Jalisco",
+                "Oaxaca",
+                "Baja",
+                "Bravo",
+                "Charro",
+                "Gordo",
+                "Amigo",
+                "Hermano",
+                "Fiesta",
+                "Coyote",
+                "Tigre",
+                "Águila",
+                "Toro",
+                "Mariposa",
+                "Cielo",
+                "Sombrero",
+                "Guapo",
+                "Rico",
+                "Caliente",
+                "Bonito",
+                "Fresco",
+            ]
+        )
+        suffix = random.choice(
+            [
+                "Cantina",
+                "Grill",
+                "Kitchen",
+                "Cocina",
+                "Taqueria",
+                "Restaurante",
+                "Mexican Grill",
+                "Tex-Mex",
+                "Cocina & Bar",
+                "Street Tacos",
+                "Cantina & Grill",
+                "Mexican Kitchen",
+                "Burrito Bar",
+                "",
+            ]
+        )
+        await interaction.response.send_message(f"{prefix} {middle} {suffix}")
 
     @command()
     async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
