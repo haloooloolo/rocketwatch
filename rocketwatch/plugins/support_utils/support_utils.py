@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime
+from operator import itemgetter
 
 from bson import CodecOptions
 from discord import ButtonStyle, Interaction, Member, TextStyle, User, app_commands, ui
@@ -329,7 +330,7 @@ class SupportUtils(GroupCog, name="support"):
             Choice(name="Last Edited Date", value="last_edited_date"),
         ]
     )
-    async def list(self, interaction: Interaction, order_by: Choice[str] = "_id"):  # type: ignore[assignment]
+    async def list(self, interaction: Interaction, order_by: str = "_id"):
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
         templates = await (
@@ -353,9 +354,7 @@ class SupportUtils(GroupCog, name="support"):
             )
         ).to_list()
         # sort the templates by the specified order
-        if isinstance(order_by, Choice):
-            order_by = order_by.value
-        templates.sort(key=lambda x: x[order_by])
+        templates.sort(key=itemgetter(order_by))
         # create the embed
         embed = Embed(title="Templates")
         embed.description = (
