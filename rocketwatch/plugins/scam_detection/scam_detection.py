@@ -470,8 +470,18 @@ class ScamDetection(Cog):
             [("instant", "live"), "chat"],
             [("submit"), ("question", "issue", "query")],
         )
-        txt_no_urls = re.sub(r"https?://\S+", "", txt)
-        if self.__txt_contains(txt_no_urls, strong_keywords):
+        content_only = txt.split("---")[0]
+        # Auto-generated embeds from video platforms may contain event/ticket
+        # language (e.g. YouTube 🎫 TICKETS) — only check content for those.
+        rich_embed_domains = ("youtube.com", "youtu.be", "twitch.tv")
+        content_urls = list(self.basic_url_pattern.finditer(content_only))
+        if content_urls and all(
+            any(d in m.group(0) for d in rich_embed_domains) for m in content_urls
+        ):
+            strong_check_text = re.sub(r"https?://\S+", "", content_only)
+        else:
+            strong_check_text = re.sub(r"https?://\S+", "", txt)
+        if self.__txt_contains(strong_check_text, strong_keywords):
             return default_reason
 
         # Short directive messages with a URL ("ask here", "get help here")
