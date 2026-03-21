@@ -24,8 +24,8 @@
         "function": "get_percentage_rpl_swapped",
         "args": [],
         "formatter": "",
-        "min": 1,
-        "step_size": 5
+        "min": 90,
+        "step_size": 1
     },
     {
         "id": "milestone_registered_nodes",
