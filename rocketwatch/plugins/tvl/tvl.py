@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import humanize
 from colorama import Style
@@ -59,7 +60,7 @@ class TVL(Cog):
         Show the total value locked in the protocol
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
-        data = {
+        data: dict[str, Any] = {
             "Total RPL Locked": {
                 "Staked RPL": {
                     "Minipools": {},  # accurate, live
