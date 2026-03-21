@@ -1,11 +1,14 @@
 import contextlib
 import logging
-from datetime import UTC, datetime, timedelta
+from typing import Any, TypedDict, cast
 
-import aiohttp
 from discord import Interaction
 from discord.app_commands import command
+from eth_typing import BlockNumber, ChecksumAddress
+from hexbytes import HexBytes
+from web3.contract import AsyncContract
 from web3.datastructures import MutableAttributeDict as aDict
+from web3.types import EventData
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -18,17 +21,38 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.cow_orders")
 
 
-class CowOrders(EventPlugin):
-    def __init__(self, bot: RocketWatch):
-        super().__init__(bot, timedelta(minutes=5))
-        self.state = "OK"
-        self.collection = bot.db.cow_orders
-        self._did_setup = False
-        self.tokens = None
+class CoWTradeArgs(TypedDict):
+    owner: ChecksumAddress
+    sellToken: ChecksumAddress
+    buyToken: ChecksumAddress
+    sellAmount: int
+    buyAmount: int
+    feeAmount: int
+    orderUid: bytes
+
+
+class CoWOrders(EventPlugin):
+    def __init__(self, bot: RocketWatch) -> None:
+        super().__init__(bot)
+        self._settlement: AsyncContract | None = None
+        self._trade_topic: HexBytes | None = None
+        self._tokens: list[str] | None = None
+
+    async def _ensure_setup(self) -> None:
+        if self._settlement is None:
+            self._settlement = await rp.get_contract_by_name("GPv2Settlement")
+            # Trade(address,address,address,uint256,uint256,uint256,bytes)
+            self._trade_topic = w3.keccak(
+                text="Trade(address,address,address,uint256,uint256,uint256,bytes)"
+            )
+        if self._tokens is None:
+            self._tokens = [
+                str(await rp.get_address_by_name("rocketTokenRPL")).lower(),
+                str(await rp.get_address_by_name("rocketTokenRETH")).lower(),
+            ]
 
     @command()
-    async def cow(self, interaction: Interaction, tnx: str):
-        # https://etherscan.io/tx/0x47d96c6310f08b473f2c9948d6fbeef1084f0b393c2263d2fc8d5dc624f97fe3
+    async def cow(self, interaction: Interaction, tnx: str) -> None:
         if "etherscan.io/tx/" not in tnx:
             await interaction.response.send_message("nop", ephemeral=True)
             return
@@ -38,235 +62,119 @@ class CowOrders(EventPlugin):
         embed = Embed(description=f"[cow explorer]({url})")
         await interaction.followup.send(embed=embed)
 
-    async def _setup_collection(self):
-        if self._did_setup:
-            return
-        if "cow_orders" not in await self.bot.db.list_collection_names():
-            await self.bot.db.create_collection("cow_orders", capped=True, size=10_000)
-        await self.collection.create_index("order_uid", unique=True)
-        self._did_setup = True
-
-    async def _ensure_tokens(self):
-        if self.tokens is None:
-            self.tokens = [
-                str(await rp.get_address_by_name("rocketTokenRPL")).lower(),
-                str(await rp.get_address_by_name("rocketTokenRETH")).lower(),
-            ]
-
     async def _get_new_events(self) -> list[Event]:
-        await self._ensure_tokens()
-        await self._setup_collection()
-        if self.state == "RUNNING":
-            log.error(
-                "Cow Orders plugin was interrupted while running. Re-initializing..."
-            )
-            self.__init__(self.bot)
-        self.state = "RUNNING"
-        try:
-            result = await self.check_for_new_events()
-            self.state = "OK"
-        except Exception as e:
-            log.error(f"Error while checking for new Cow Orders: {e}")
-            result = []
-            self.state = "ERROR"
-        return result
+        from_block = self.last_served_block + 1 - self.lookback_distance
+        return await self.get_past_events(BlockNumber(from_block), self._pending_block)
 
-    # noinspection PyTypeChecker
-    async def check_for_new_events(self):
-        log.info("Checking Cow Orders")
-        payload = []
+    async def get_past_events(
+        self, from_block: BlockNumber, to_block: BlockNumber
+    ) -> list[Event]:
+        await self._ensure_setup()
+        assert self._settlement is not None
+        assert self._trade_topic is not None
+        assert self._tokens is not None
 
-        # get all pending orders from the cow api (https://api.cow.fi/mainnet/api/v1/auction)
+        logs = await w3.eth.get_logs(
+            {
+                "address": self._settlement.address,
+                "topics": [self._trade_topic],
+                "fromBlock": from_block,
+                "toBlock": to_block,
+            }
+        )
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get("https://api.cow.fi/mainnet/api/v1/auction") as response,
-        ):
-            if response.status != 200:
-                text = await response.text()
-                log.error("Cow API returned non-200 status code: %s", text)
-                raise Exception("Cow API returned non-200 status code")
-            cow_orders = (await response.json())["orders"]
-
-        """
-         entity example:
-        {
-          "creationDate": "2023-01-25T04:48:02.751347Z",
-          "owner": "0x40586600a136652f6d0a6cc6a62b6bd1bef7ae9a",
-          "uid": "0x...",
-          "availableBalance": "108475037",
-          "executedBuyAmount": "0",
-          "executedSellAmount": "0",
-          "executedSellAmountBeforeFees": "0",
-          "executedFeeAmount": "0",
-          "invalidated": false,
-          "status": "open",
-          "class": "limit",
-          "surplusFee": "10050959",
-          "surplusFeeTimestamp": "2023-01-26T14:51:51.453450Z",
-          "executedSurplusFee": null,
-          "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
-          "fullFeeAmount": "13254445",
-          "isLiquidityOrder": false,
-          "sellToken": "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-          "buyToken": "0x347a96a5bd06d2e15199b032f46fb724d6c73047",
-          "receiver": "0x40586600a136652f6d0a6cc6a62b6bd1bef7ae9a",
-          "sellAmount": "20000000",
-          "buyAmount": "17091759130902",
-          "validTo": 1675226872,
-          "appData": "0xc1164815465bff632c198b8455e9a421c07e8ce426c8cd1b59eef7b305b8ca90",
-          "feeAmount": "0",
-          "kind": "sell",
-          "partiallyFillable": false,
-          "sellTokenBalance": "erc20",
-          "buyTokenBalance": "erc20",
-          "signingScheme": "eip712",
-          "signature": "0x...",
-          "interactions": {
-            "pre": [
-            ]
-          }
-        },
-        """
-
-        # filter all orders that do not contain RPL
-        cow_orders = [
-            order
-            for order in cow_orders
-            if order["sellToken"] in self.tokens or order["buyToken"] in self.tokens
-        ]
-
-        # filter all orders that are not open
-        cow_orders = [order for order in cow_orders if order["executed"] == "0"]
-
-        # efficiently check if the orders are already in the database
-        order_uids = [order["uid"] for order in cow_orders]
-        existing_orders = self.collection.find({"order_uid": {"$in": order_uids}})
-        existing_order_uids = [order["order_uid"] async for order in existing_orders]
-
-        # filter all orders that are already in the database
-        cow_orders = [
-            order for order in cow_orders if order["uid"] not in existing_order_uids
-        ]
-
-        if not cow_orders:
+        if not logs:
             return []
-        # get rpl price in dai
+
+        # decode logs into Trade events
+        trades: list[EventData] = [
+            self._settlement.events.Trade().process_log(raw_log) for raw_log in logs
+        ]
+
+        # filter for RPL/rETH trades
+        trades = [
+            t
+            for t in trades
+            if t["args"]["sellToken"].lower() in self._tokens
+            or t["args"]["buyToken"].lower() in self._tokens
+        ]
+
+        if not trades:
+            return []
+
+        # get prices for USD threshold
         rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         reth_ratio = solidity.to_float(await rp.call("rocketTokenRETH.getExchangeRate"))
         eth_usdc_price = await rp.get_eth_usdc_price()
         rpl_price = rpl_ratio * eth_usdc_price
         reth_price = reth_ratio * eth_usdc_price
 
-        # generate payloads
-        for order in cow_orders:
-            data = aDict({})
+        events: list[Event] = []
+        for trade in trades:
+            args = cast(CoWTradeArgs, trade["args"])
+            data: aDict[str, Any] = aDict({})
 
-            data["cow_uid"] = order["uid"]
-            data["cow_owner"] = w3.to_checksum_address(order["owner"])
-            decimals = 18
-            # base the event_name depending on if its buying or selling RPL
-            if order["sellToken"] in self.tokens:
-                token = "reth" if order["sellToken"] == self.tokens[1] else "rpl"
-                data["event_name"] = f"cow_order_sell_{token}_found"
-                # token/token ratio
-                data["ratio"] = int(order["sellAmount"]) / int(order["buyAmount"])
-                # store rpl and other token amount
-                data["ourAmount"] = solidity.to_float(int(order["sellAmount"]))
-                s = await rp.assemble_contract(
-                    name="ERC20", address=w3.to_checksum_address(order["buyToken"])
-                )
+            data["cow_uid"] = f"0x{args['orderUid'].hex()}"
+            data["cow_owner"] = w3.to_checksum_address(args["owner"])
+            data["transactionHash"] = trade["transactionHash"].to_0x_hex()
+
+            sell_token: str = args["sellToken"].lower()
+            buy_token: str = args["buyToken"].lower()
+
+            if sell_token in self._tokens:
+                token = "reth" if sell_token == self._tokens[1] else "rpl"
+                data["event_name"] = f"cow_order_sell_{token}"
+                data["ourAmount"] = solidity.to_float(args["sellAmount"])
+                other_address = w3.to_checksum_address(args["buyToken"])
+                decimals = 18
+                s = await rp.assemble_contract(name="ERC20", address=other_address)
                 with contextlib.suppress(Exception):
                     decimals = await s.functions.decimals().call()
-                data["otherAmount"] = solidity.to_float(
-                    int(order["buyAmount"]), decimals
-                )
+                data["otherAmount"] = solidity.to_float(args["buyAmount"], decimals)
             else:
-                token = "reth" if order["buyToken"] == self.tokens[1] else "rpl"
-                data["event_name"] = f"cow_order_buy_{token}_found"
-                # store rpl and other token amount
-                data["ourAmount"] = solidity.to_float(int(order["buyAmount"]))
-                s = await rp.assemble_contract(
-                    name="ERC20", address=w3.to_checksum_address(order["sellToken"])
-                )
+                token = "reth" if buy_token == self._tokens[1] else "rpl"
+                data["event_name"] = f"cow_order_buy_{token}"
+                data["ourAmount"] = solidity.to_float(args["buyAmount"])
+                other_address = w3.to_checksum_address(args["sellToken"])
+                decimals = 18
+                s = await rp.assemble_contract(name="ERC20", address=other_address)
                 with contextlib.suppress(Exception):
                     decimals = await s.functions.decimals().call()
-                data["otherAmount"] = solidity.to_float(
-                    int(order["sellAmount"]), decimals
-                )
-            # our/other ratio
+                data["otherAmount"] = solidity.to_float(args["sellAmount"], decimals)
+
             data["ratioAmount"] = data["otherAmount"] / data["ourAmount"]
+
+            # skip trades under minimum value
+            if ((token == "rpl") and (data["ourAmount"] * rpl_price < 10_000)) or (
+                (token == "reth") and (data["ourAmount"] * reth_price < 100_000)
+            ):
+                continue
+
             try:
                 data["otherToken"] = await s.functions.symbol().call()
             except Exception:
                 data["otherToken"] = "UNKWN"
-                if s.address == w3.to_checksum_address(
+                if other_address == w3.to_checksum_address(
                     "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ):
                     data["otherToken"] = "ETH"
-            data["deadline"] = int(order["validTo"])
-            # if the rpl value in usd is less than 25k, ignore it
-            if (
-                data["ourAmount"] * (rpl_price if token == "rpl" else reth_price)
-                < 25000
-            ):
-                continue
-
-            # request more data from the api
-            try:
-                async with (
-                    aiohttp.ClientSession() as session,
-                    session.get(
-                        f"https://cow-proxy.invis.workers.dev/mainnet/api/v1/orders/{order['uid']}"
-                    ) as t,
-                ):
-                    if t.status != 200:
-                        log.error(
-                            f"Failed to get more data from the cow api for order {order['uid']}: {await t.text()}"
-                        )
-                        continue
-                    extra = await t.json()
-            except Exception as e:
-                log.error(
-                    f"Failed to get more data from the cow api for order {order['uid']}: {e}"
-                )
-                continue
-
-            if extra:
-                if extra["invalidated"]:
-                    log.info(f"Order {order['uid']} is invalidated, skipping")
-                    continue
-                created = datetime.fromisoformat(
-                    extra["creationDate"].replace("Z", "+00:00")
-                )
-                if datetime.now(UTC) - created > timedelta(minutes=15):
-                    log.info(f"Order {order['uid']} is older than 15 minutes, skipping")
-                    continue
-                data["timestamp"] = int(created.timestamp())
 
             data = await prepare_args(data)
             embed = await assemble(data)
-            payload.append(
+            events.append(
                 Event(
                     embed=embed,
-                    topic="cow_orders",
-                    block_number=self._pending_block,
+                    topic="cow_trade",
+                    block_number=BlockNumber(trade["blockNumber"]),
                     event_name=data["event_name"],
-                    unique_id=f"cow_order_found_{order['uid']}",
+                    unique_id=f"cow_trade_{trade['transactionHash'].hex()}:{trade['logIndex']}",
+                    transaction_index=trade["transactionIndex"],
+                    event_index=trade["logIndex"],
                 )
             )
-        # don't emit if the db collection is empty - this is to prevent the bot from spamming the channel with stale data
-        if not await self.collection.count_documents({}):
-            payload = []
 
-        # insert all new orders into the database
-        await self.collection.insert_many(
-            [{"order_uid": order["uid"]} for order in cow_orders]
-        )
-
-        log.debug("Finished Checking Cow Orders")
-        return payload
+        return events
 
 
-async def setup(bot):
-    await bot.add_cog(CowOrders(bot))
+async def setup(bot: RocketWatch) -> None:
+    await bot.add_cog(CoWOrders(bot))

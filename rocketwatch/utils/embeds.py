@@ -270,7 +270,6 @@ async def prepare_args(args):
                 address = w3.to_checksum_address(arg_value)
                 prefix = await get_sea_creature_for_address(address)
 
-            # handle validators
             if arg_key == "pubkey":
                 args[arg_key] = await cl_explorer_url(arg_value)
             elif arg_key == "cow_uid":
@@ -291,17 +290,20 @@ async def prepare_args(args):
 
 async def assemble(args) -> Embed:
     e = Embed()
-    if args.event_name in ["service_interrupted", "finality_delay_event"]:
-        e.colour = Color.from_rgb(235, 86, 86)
-    if "sell_rpl" in args.event_name:
-        e.colour = Color.from_rgb(235, 86, 86)
     if (
+        args.event_name in ["service_interrupted", "finality_delay_event"]
+        or "sell_rpl" in args.event_name
+        or "sell_reth" in args.event_name
+    ):
+        e.colour = Color.from_rgb(235, 86, 86)  # red
+    elif (
         "buy_rpl" in args.event_name
+        or "buy_reth" in args.event_name
         or "finality_delay_recover_event" in args.event_name
     ):
-        e.colour = Color.from_rgb(86, 235, 86)
-    if "price_update_event" in args.event_name:
-        e.colour = Color.from_rgb(86, 235, 235)
+        e.colour = Color.from_rgb(86, 235, 86)  # green
+    elif "price_update_event" in args.event_name:
+        e.colour = Color.from_rgb(86, 235, 235)  # pink
 
     # do this here before the amounts are converted to a string
     amount = args.get("amount") or args.get("ethAmount", 0)
@@ -425,7 +427,7 @@ async def assemble(args) -> Embed:
     e.description = _(f"embeds.{args.event_name}.description", **args)
 
     if "cow_uid" in args:
-        e.add_field(name="Cow Order", value=args.cow_uid, inline=False)
+        e.add_field(name="CoW Order", value=args.cow_uid, inline=False)
 
     if "exchangeRate" in args:
         e.add_field(
