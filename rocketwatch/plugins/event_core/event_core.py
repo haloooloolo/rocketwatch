@@ -9,8 +9,9 @@ from typing import Any
 import discord
 import pymongo
 from cronitor import Monitor
+from discord.abc import Messageable
 from discord.ext import commands, tasks
-from eth_typing import BlockIdentifier, BlockNumber
+from eth_typing import BlockNumber
 from web3.datastructures import MutableAttributeDict
 
 from plugins.support_utils.support_utils import generate_template_embed
@@ -36,9 +37,10 @@ class EventCore(commands.Cog):
         self.bot = bot
         self.state = self.State.OK
         self.channels = cfg.discord.channels
-        self.head_block: BlockIdentifier = cfg.events.genesis
-        self.block_batch_size = cfg.events.block_batch_size
-        self.monitor = Monitor("gather-new-events", api_key=cfg.other.secrets.cronitor)
+        self.head_block: BlockNumber = BlockNumber(cfg.events.genesis)
+        self.at_head: bool = False
+        self.block_batch_size: int = cfg.events.block_batch_size
+        self.monitor = Monitor("event-core", api_key=cfg.other.secrets.cronitor)
         self.task.start()
 
     async def cog_unload(self) -> None:
@@ -89,12 +91,13 @@ class EventCore(commands.Cog):
         ]
         log.debug(f"Running {len(submodules)} submodules")
 
-        if self.head_block == "latest":
+        if self.at_head:
             # already caught up to head, just fetch new events
-            target_block = "latest"
+            close_to_head = True
             to_block = latest_block
             coroutines = [sm.get_new_events() for sm in submodules]
             # prevent losing state if process is interrupted before updating db
+            self.at_head = False
             self.head_block = cfg.events.genesis
         else:
             # behind chain head, let's see how far
@@ -117,14 +120,14 @@ class EventCore(commands.Cog):
 
             if (latest_block - self.head_block) < self.block_batch_size:
                 # close enough to catch up in a single request
-                target_block = "latest"
+                close_to_head = True
                 to_block = latest_block
             else:
                 # too far, advance one batch
-                target_block = self.head_block + self.block_batch_size
-                to_block = target_block
+                close_to_head = False
+                to_block = BlockNumber(self.head_block + self.block_batch_size)
 
-            from_block: BlockNumber = self.head_block + 1
+            from_block = BlockNumber(self.head_block + 1)
             if to_block < from_block:
                 log.warning(f"Skipping empty block range [{from_block}, {to_block}]")
                 return
@@ -136,10 +139,10 @@ class EventCore(commands.Cog):
                 coroutines.append(
                     sm.get_past_events(from_block=from_block, to_block=to_block)
                 )
-                if target_block == "latest":
-                    sm.start_tracking(to_block + 1)
+                if close_to_head:
+                    sm.start_tracking(BlockNumber(to_block + 1))
 
-        log.debug(f"{target_block = }")
+        log.debug(f"{close_to_head = }, {to_block = }")
 
         results = await asyncio.gather(*coroutines)
 
@@ -183,7 +186,8 @@ class EventCore(commands.Cog):
         if events:
             await self.bot.db.event_queue.insert_many(events)
 
-        self.head_block = target_block
+        self.head_block = to_block
+        self.at_head = close_to_head
         await self.bot.db.last_checked_block.replace_one(
             {"_id": "events"}, {"_id": "events", "block": to_block}, upsert=True
         )
@@ -217,6 +221,7 @@ class EventCore(commands.Cog):
 
             log.debug(f"Found {len(db_events)} events for channel {channel_id}.")
             channel = await self.bot.get_or_fetch_channel(channel_id)
+            assert isinstance(channel, Messageable)
 
             for state_message in await self.bot.db.state_messages.find(
                 {"channel_id": channel_id}
@@ -227,6 +232,9 @@ class EventCore(commands.Cog):
 
             for event_entry in db_events:
                 embed: Embed | None = await try_load(event_entry, "embed")
+                if not embed:
+                    continue
+
                 files = []
 
                 if embed and (image := await try_load(event_entry, "image")):
@@ -274,7 +282,8 @@ class EventCore(commands.Cog):
 
         if not (embed := await generate_template_embed(self.bot.db, "announcement")):
             try:
-                plugin: StatusPlugin = self.bot.cogs.get(config.plugin)
+                plugin = self.bot.cogs.get(config.plugin)
+                assert isinstance(plugin, StatusPlugin)
                 embed = await plugin.get_status()
             except Exception as err:
                 await self.bot.report_error(err)
@@ -310,6 +319,7 @@ class EventCore(commands.Cog):
         if embed and prev_status and (prev_status["channel_id"] == target_channel_id):
             log.debug(f"Replacing existing status message for channel {target_channel}")
             channel = await self.bot.get_or_fetch_channel(target_channel_id)
+            assert isinstance(channel, Messageable)
             try:
                 msg = await channel.fetch_message(prev_status["message_id"])
                 await msg.edit(embed=embed)
@@ -326,6 +336,7 @@ class EventCore(commands.Cog):
         if prev_status:
             log.debug(f"Deleting status message for channel {target_channel}")
             channel = await self.bot.get_or_fetch_channel(prev_status["channel_id"])
+            assert isinstance(channel, Messageable)
             msg = await channel.fetch_message(prev_status["message_id"])
             await msg.delete()
             await self.bot.db.state_messages.delete_one(prev_status)
@@ -333,6 +344,7 @@ class EventCore(commands.Cog):
         if embed:
             log.debug(f"Creating new status message for channel {target_channel}")
             channel = await self.bot.get_or_fetch_channel(target_channel_id)
+            assert isinstance(channel, Messageable)
             msg = await channel.send(embed=embed, silent=True)
             await self.bot.db.state_messages.insert_one(
                 {
