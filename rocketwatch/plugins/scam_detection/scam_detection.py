@@ -132,9 +132,10 @@ class ScamDetection(Cog):
 
             async with required_lock:
                 report = await self.plugin.bot.db.scam_reports.find_one(db_filter)
-                await self.plugin._update_report(
-                    report, f"This has been marked as safe by {user_repr}."
-                )
+                if report is not None:
+                    await self.plugin._update_report(
+                        report, f"This has been marked as safe by {user_repr}."
+                    )
                 await self.plugin.bot.db.scam_reports.update_one(
                     db_filter, {"$set": {"warning_id": None}}
                 )
@@ -326,7 +327,7 @@ class ScamDetection(Cog):
         await self.bot.db.scam_reports.insert_one(
             {
                 "type": "message",
-                "guild_id": message.guild if message.guild else None,
+                "guild_id": message.guild.id if message.guild else None,
                 "channel_id": message.channel.id,
                 "message_id": message.id,
                 "user_id": message.author.id,
@@ -693,10 +694,14 @@ class ScamDetection(Cog):
             self._bio_redirect,
             self._spam_wall,
         ]
-        for check in checks:
-            if reason := check(message):
-                await self.report_message(message, reason)
-                return
+
+        try:
+            for check in checks:
+                if reason := check(message):
+                    await self.report_message(message, reason)
+                    return
+        except Exception as e:
+            await self.bot.report_error(e)
 
     @Cog.listener()
     async def on_message_edit(self, before: Message, after: Message) -> None:
@@ -780,9 +785,7 @@ class ScamDetection(Cog):
                     report, {"$set": {"user_banned": True}}
                 )
 
-    async def _update_report(self, report: dict | None, note: str) -> None:
-        if report is None:
-            return
+    async def _update_report(self, report: dict, note: str) -> None:
         report_channel = await self._get_report_channel()
         try:
             message = await report_channel.fetch_message(report["report_id"])
@@ -811,20 +814,23 @@ class ScamDetection(Cog):
 
             report_channel = await self._get_report_channel()
             report_msg = await report_channel.send(embed=report)
-            await self.bot.db.scam_reports.insert_one(
-                {
-                    "type": "thread",
-                    "guild_id": thread.guild.id,
-                    "channel_id": thread.id,
-                    "user_id": thread.owner_id,
-                    "reason": reason,
-                    "content": thread.name,
-                    "warning_id": warning_msg.id if warning_msg else None,
-                    "report_id": report_msg.id,
-                    "user_banned": False,
-                    "removed": False,
-                }
-            )
+            try:
+                await self.bot.db.scam_reports.insert_one(
+                    {
+                        "type": "thread",
+                        "guild_id": thread.guild.id,
+                        "channel_id": thread.id,
+                        "user_id": thread.owner_id,
+                        "reason": reason,
+                        "content": thread.name,
+                        "warning_id": warning_msg.id if warning_msg else None,
+                        "report_id": report_msg.id,
+                        "user_banned": False,
+                        "removed": False,
+                    }
+                )
+            except Exception as e:
+                await self.bot.report_error(e)
 
     @Cog.listener()
     async def on_thread_create(self, thread: Thread) -> None:
@@ -868,18 +874,21 @@ class ScamDetection(Cog):
 
             report_channel = await self._get_report_channel()
             report_msg = await report_channel.send(embed=report)
-            await self.bot.db.scam_reports.insert_one(
-                {
-                    "type": "user",
-                    "guild_id": user.guild.id,
-                    "user_id": user.id,
-                    "reason": reason,
-                    "content": user.display_name,
-                    "warning_id": None,
-                    "report_id": report_msg.id,
-                    "user_banned": False,
-                }
-            )
+            try:
+                await self.bot.db.scam_reports.insert_one(
+                    {
+                        "type": "user",
+                        "guild_id": user.guild.id,
+                        "user_id": user.id,
+                        "reason": reason,
+                        "content": user.display_name,
+                        "warning_id": None,
+                        "report_id": report_msg.id,
+                        "user_banned": False,
+                    }
+                )
+            except Exception as e:
+                await self.bot.report_error(e)
             await interaction.followup.send(content="Thanks for reporting!")
 
     async def _generate_user_report(self, user: Member, reason: str) -> Embed | None:
