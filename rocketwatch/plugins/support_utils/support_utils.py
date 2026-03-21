@@ -1,15 +1,15 @@
-import io
 import logging
 from datetime import UTC, datetime
 
 from bson import CodecOptions
-from discord import ButtonStyle, File, Interaction, TextStyle, User, app_commands, ui
+from discord import ButtonStyle, Interaction, Member, TextStyle, User, app_commands, ui
 from discord.app_commands import Choice, Group, choices
 from discord.ext.commands import Cog, GroupCog
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
 from utils.embeds import Embed
+from utils.file import TextFile
 
 log = logging.getLogger("rocketwatch.support_utils")
 
@@ -23,10 +23,11 @@ async def generate_template_embed(db, template_name: str):
         codec_options=CodecOptions(tz_aware=True)
     )
     last_edit = await dumps_col.find_one({"template": template_name}, sort=[("ts", -1)])
-    e = Embed(title=template["title"], description=template["description"])
+    embed = Embed(title=template["title"])
+    embed.description = template["description"] or ""
     if last_edit and template_name != "announcement":
-        e.description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
-    return e
+        embed.description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
+    return embed
 
 
 # Define a simple View that gives us a counter button
@@ -48,13 +49,15 @@ class AdminView(ui.View):
 
 
 class DeletableView(ui.View):
-    def __init__(self, user: User):
+    def __init__(self, user: User | Member):
         super().__init__(timeout=None)
         self.user = user
 
     @ui.button(emoji="<:delete:1364953621191721002>", style=ButtonStyle.gray)
     async def delete(self, interaction: Interaction, button: ui.Button):
-        if (interaction.user == self.user) or has_perms(interaction):
+        if (
+            (interaction.user == self.user) or has_perms(interaction)
+        ) and interaction.message:
             await interaction.message.delete()
             log.warning(
                 f"Support template message deleted by {interaction.user} in {interaction.channel}"
@@ -68,10 +71,10 @@ class AdminModal(ui.Modal, title="Change Template Message"):
         self.old_title = old_title
         self.old_description = old_description
         self.template_name = template_name
-        self.title_field = ui.TextInput(
+        self.title_field: ui.TextInput[AdminModal] = ui.TextInput(
             label="Title", placeholder="Enter a title", default=old_title
         )
-        self.description_field = ui.TextInput(
+        self.description_field: ui.TextInput[AdminModal] = ui.TextInput(
             label="Description",
             placeholder="Enter a description",
             default=old_description,
@@ -100,9 +103,8 @@ class AdminModal(ui.Modal, title="Change Template Message"):
                 )
             )
             a = await interaction.original_response()
-            file = File(
-                io.StringIO(self.description_field.value),
-                f"{self.title_field.value}.txt",
+            file = TextFile(
+                self.description_field.value, f"{self.title_field.value}.txt"
             )
             await a.add_files(file)
             return
@@ -145,18 +147,22 @@ class AdminModal(ui.Modal, title="Change Template Message"):
         )
 
 
-def has_perms(interaction: Interaction):
-    return any(
-        [
-            interaction.user.id in cfg.rocketpool.support.user_ids,
-            any(
-                r.id in cfg.rocketpool.support.role_ids for r in interaction.user.roles
-            ),
-            cfg.discord.owner.user_id == interaction.user.id,
-            interaction.user.guild_permissions.moderate_members
-            and interaction.guild.id == cfg.rocketpool.support.server_id,
-        ]
-    )
+def has_perms(interaction: Interaction) -> bool:
+    user = interaction.user
+    if user.id in cfg.rocketpool.support.user_ids:
+        return True
+    if cfg.discord.owner.user_id == user.id:
+        return True
+    if isinstance(user, Member):
+        if any(r.id in cfg.rocketpool.support.role_ids for r in user.roles):
+            return True
+        if (
+            user.guild_permissions.moderate_members
+            and interaction.guild
+            and interaction.guild.id == cfg.rocketpool.support.server_id
+        ):
+            return True
+    return False
 
 
 async def _use(db, interaction: Interaction, name: str, mention: User | None):
@@ -323,7 +329,7 @@ class SupportUtils(GroupCog, name="support"):
             Choice(name="Last Edited Date", value="last_edited_date"),
         ]
     )
-    async def list(self, interaction: Interaction, order_by: Choice[str] = "_id"):
+    async def list(self, interaction: Interaction, order_by: Choice[str] | str = "_id"):
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
         templates = await (
