@@ -1,4 +1,5 @@
 import logging
+import sys
 import traceback
 from pathlib import Path
 
@@ -76,6 +77,12 @@ class RocketWatch(Bot):
         self.tree.clear_commands(guild=None)
         for guild in self.guilds:
             self.tree.clear_commands(guild=guild)
+
+    async def on_error(self, event_method: str, /, *args, **kwargs) -> None:
+        exc = sys.exc_info()[1]
+        if isinstance(exc, Exception):
+            log.error(f"Error in listener {event_method}")
+            await self.report_error(exc)
 
     async def on_ready(self):
         assert self.user is not None
