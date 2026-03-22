@@ -1,7 +1,7 @@
-import json
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
-from pydantic import BaseModel
 from web3.datastructures import MutableAttributeDict
 
 from rocketwatch import RocketWatch
@@ -13,49 +13,76 @@ from utils.rocketpool import rp
 log = logging.getLogger("rocketwatch.milestones")
 
 
-class MilestoneConfig(BaseModel):
+@dataclass(frozen=True, slots=True)
+class Milestone:
     id: str
-    function: str
-    args: list[str]
-    formatter: str
     min: int
     step_size: int
+    call: Callable[[], Awaitable[float | int]]
+
+
+def contract_call(
+    path: str, formatter: Callable[[int], float] | None = None
+) -> Callable[[], Awaitable[float | int]]:
+    async def call():
+        value = await rp.call(path)
+        return formatter(value) if formatter else value
+
+    return call
+
+
+async def _get_percentage_rpl_swapped() -> float:
+    value = solidity.to_float(await rp.call("rocketTokenRPL.totalSwappedRPL"))
+    return round((value / 18_000_000) * 100, 2)
+
+
+MILESTONES: list[Milestone] = [
+    Milestone(
+        id="milestone_rpl_stake",
+        min=10_000,
+        step_size=100_000,
+        call=contract_call("rocketNodeStaking.getTotalStakedRPL", solidity.to_float),
+    ),
+    Milestone(
+        id="milestone_reth_supply",
+        min=1_000,
+        step_size=5_000,
+        call=contract_call("rocketTokenRETH.totalSupply", solidity.to_float),
+    ),
+    Milestone(
+        id="milestone_rpl_swapped",
+        min=90,
+        step_size=1,
+        call=_get_percentage_rpl_swapped,
+    ),
+    Milestone(
+        id="milestone_registered_nodes",
+        min=50,
+        step_size=100,
+        call=contract_call("rocketNodeManager.getNodeCount"),
+    ),
+    Milestone(
+        id="milestone_rocksolid_tvl",
+        min=0,
+        step_size=5000,
+        call=contract_call("RockSolidVault.totalAssets", solidity.to_float),
+    ),
+]
 
 
 class Milestones(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
-        self._reset()
-
-    def _reset(self) -> None:
         self.collection = self.bot.db.milestones
-        self.state = "OK"
-
-        with open("./plugins/milestones/milestones.json") as f:
-            self.milestones = [MilestoneConfig(**m) for m in json.load(f)]
 
     async def _get_new_events(self) -> list[Event]:
-        if self.state == "RUNNING":
-            log.error(
-                "Milestones plugin was interrupted while running. Re-initializing..."
-            )
-            self._reset()
-
-        self.state = "RUNNING"
-        result = await self.check_for_new_events()
-        self.state = "OK"
-        return result
-
-    async def check_for_new_events(self):
-        log.info("Checking Milestones")
+        log.info("Checking milestones")
         payload = []
 
-        for milestone in self.milestones:
+        for milestone in MILESTONES:
             state = await self.collection.find_one({"_id": milestone.id})
 
-            value = await getattr(rp, milestone.function)(*milestone.args)
-            if milestone.formatter:
-                value = getattr(solidity, milestone.formatter)(value)
+            value = await milestone.call()
             log.debug(f"{milestone.id}:{value}")
             if value < milestone.min:
                 continue
@@ -96,7 +123,7 @@ class Milestones(EventPlugin):
                     {"_id": milestone.id}, {"$set": {"current_goal": latest_goal}}
                 )
 
-        log.debug("Finished Checking Milestones")
+        log.debug("Finished checking milestones")
         return payload
 
 

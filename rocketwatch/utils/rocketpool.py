@@ -337,13 +337,6 @@ class RocketPool:
         intervals_per_year = solidity.years / seconds_per_interval
         return (inflation_per_interval**intervals_per_year) - 1
 
-    async def get_percentage_rpl_swapped(self) -> float:
-        value: float = solidity.to_float(
-            await self.call("rocketTokenRPL.totalSwappedRPL")
-        )
-        percentage = (value / 18_000_000) * 100
-        return round(percentage, 2)
-
     async def is_node(self, address: ChecksumAddress) -> bool:
         return await self.call("rocketNodeManager.getNodeExists", address)
 
