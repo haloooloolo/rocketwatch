@@ -443,8 +443,8 @@ class ScamDetection(Cog):
         # Fullwidth/homoglyph dots in domain
         if self.homoglyph_url_pattern.search(message.content):
             return default_reason
-        # Heavily percent-encoded domain
-        if re.search(r"https?://[^\s]*(?:%[0-9a-fA-F]{2}){5}", message.content):
+        # Heavily percent-encoded ASCII in URL (encoding ASCII is suspicious; non-ASCII like Cyrillic is normal)
+        if re.search(r"https?://[^\s]*(?:%[0-7][0-9a-fA-F]){5}", message.content):
             return default_reason
         # Markdown link where visible text looks like a different domain than the actual URL
         content = parse.unquote(message.content)
