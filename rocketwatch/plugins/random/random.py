@@ -206,27 +206,17 @@ class Random(commands.Cog):
                 await rp.get_address_by_name("rocketSmoothingPool")
             )
         )
-        inactive_statuses = [
-            "exited_unslashed",
-            "exited_slashed",
-            "withdrawal_possible",
-            "withdrawal_done",
-            "pending_initialized",
-        ]
+        active_statuses = ["active_ongoing", "active_exiting"]
         data = await (
             await self.bot.db.minipools.aggregate(
                 [
-                    {"$match": {"beacon.status": {"$nin": inactive_statuses}}},
+                    {"$match": {"beacon.status": {"$in": active_statuses}}},
                     {"$project": {"node_operator": 1}},
                     {
                         "$unionWith": {
                             "coll": "megapool_validators",
                             "pipeline": [
-                                {
-                                    "$match": {
-                                        "beacon.status": {"$nin": inactive_statuses}
-                                    }
-                                },
+                                {"$match": {"beacon.status": {"$in": active_statuses}}},
                                 {"$project": {"node_operator": 1}},
                             ],
                         }
@@ -301,8 +291,8 @@ class Random(commands.Cog):
         e.description = (
             f"`{smoothie_node_count}/{total_node_count}` nodes (`{smoothie_node_count / total_node_count:.2%}`)"
             f" have joined the smoothing pool.\n"
-            f" That is `{smoothie_validator_count}/{total_validator_count}`"
-            f" (`{smoothie_validator_count / total_validator_count:.2%}`) validators.\n"
+            f" That is `{smoothie_validator_count}/{total_validator_count}` validators"
+            f" (`{smoothie_validator_count / total_validator_count:.2%}`).\n"
             f"The current balance is **`{smoothie_eth:,.2f}` ETH**, {pretty_time(d)} into the reward period.\n\n"
             f"{min(smoothie_node_count, 5)} largest nodes:\n"
         )
