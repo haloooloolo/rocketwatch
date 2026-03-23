@@ -291,10 +291,7 @@ class APR(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         e.title = "Current NO APR"
-        e.description = (
-            "Dashed red lines above and below the solid red one are leb8 and leb16 respectively. "
-            "The solid line is the protocol average."
-        )
+        e.description = ""
 
         # get the last 30 datapoints
         datapoints = (
@@ -364,92 +361,85 @@ class APR(commands.Cog):
         node_fee = tmp[0]["average"] if len(tmp) > 0 else 0.2
         peth_share = tmp[0]["used_pETH_share"] if len(tmp) > 0 else 0.75
 
+        network_settings = await rp.get_contract_by_name(
+            "rocketDAOProtocolSettingsNetwork"
+        )
+        leb4_commission = solidity.to_float(
+            await network_settings.functions.getNodeShare().call()
+        )
+
         datapoints = sorted(datapoints, key=lambda x: x["time"])
         x = []
-        y_7d = []
         y_7d_claim = None
         y_7d_virtual = []
+        y_7d_node_operators_leb4 = []
+        y_7d_node_operators_leb8_05 = []
         y_7d_node_operators_leb8_14 = []
-        y_7d_node_operators_leb16_05 = []
-        y_7d_node_operators_leb16_14 = []
-        y_7d_node_operators_leb16_20 = []
         y_7d_solo = []
         for i in range(1, len(datapoints)):
-            # add the data of the datapoint to the x values, need to parse it to a datetime object
             x.append(datetime.fromtimestamp(datapoints[i]["time"]))
 
-            # calculate the 7 day average
             if i > 8:
-                y_7d.append(to_apr(datapoints[i - 9], datapoints[i]))
                 y_7d_virtual.append(
                     to_apr(datapoints[i - 9], datapoints[i], effective=False)
                 )
                 bare_apr = y_7d_virtual[-1] / Decimal(1 - node_fee)
                 y_7d_solo.append(bare_apr)
+                peth_share_leb4 = 0.875
+                y_7d_node_operators_leb4.append(
+                    bare_apr
+                    * Decimal(
+                        1 + (leb4_commission * peth_share_leb4 / (1 - peth_share_leb4))
+                    )
+                )
                 peth_share_leb8 = 0.75
+                y_7d_node_operators_leb8_05.append(
+                    bare_apr
+                    * Decimal(1 + (0.05 * peth_share_leb8 / (1 - peth_share_leb8)))
+                )
                 y_7d_node_operators_leb8_14.append(
                     bare_apr
                     * Decimal(1 + (0.14 * peth_share_leb8 / (1 - peth_share_leb8)))
                 )
-                peth_share_leb16 = 0.5
-                y_7d_node_operators_leb16_05.append(
-                    bare_apr
-                    * Decimal(1 + (0.05 * peth_share_leb16 / (1 - peth_share_leb16)))
-                )
-                y_7d_node_operators_leb16_14.append(
-                    bare_apr
-                    * Decimal(1 + (0.14 * peth_share_leb16 / (1 - peth_share_leb16)))
-                )
-                y_7d_node_operators_leb16_20.append(
-                    bare_apr
-                    * Decimal(1 + (0.20 * peth_share_leb16 / (1 - peth_share_leb16)))
-                )
-                y_7d_claim = get_duration(datapoints[i - 9], datapoints[i]) / (
-                    60 * 60 * 24
+                y_7d_claim = round(
+                    get_duration(datapoints[i - 9], datapoints[i]) / (60 * 60 * 24)
                 )
             else:
-                # if we dont have enough data, we dont show it
                 y_7d_solo.append(None)
+                y_7d_node_operators_leb4.append(None)
+                y_7d_node_operators_leb8_05.append(None)
                 y_7d_node_operators_leb8_14.append(None)
-                y_7d_node_operators_leb16_05.append(None)
-                y_7d_node_operators_leb16_14.append(None)
-                y_7d_node_operators_leb16_20.append(None)
         e.add_field(
-            name=f"{y_7d_claim:.1f} Day Average Node Operator APR:",
-            value=f"**leb8:** `{y_7d_node_operators_leb8_14[-1]:.2%}`\n"
-            f"**leb16 5%:** `{y_7d_node_operators_leb16_05[-1]:.2%}` | "
-            f"**leb16 14%:** `{y_7d_node_operators_leb16_14[-1]:.2%}` | "
-            f"**leb16 20%:** `{y_7d_node_operators_leb16_20[-1]:.2%}`",
+            name=f"{y_7d_claim} Day Average Node Operator APR:",
+            value=f"**leb4 {leb4_commission:.0%}:** `{y_7d_node_operators_leb4[-1]:.2%}`\n"
+            f"**leb8 5%:** `{y_7d_node_operators_leb8_05[-1]:.2%}` | "
+            f"**leb8 14%:** `{y_7d_node_operators_leb8_14[-1]:.2%}`",
             inline=False,
         )
 
         x_arr = np.array(x)
         fig, ax1 = plt.subplots()
 
-        # solo apr
+        ax1.plot(
+            x_arr,
+            y_7d_node_operators_leb4,
+            linestyle="-",
+            label=f"{y_7d_claim} Day Average (leb4 {leb4_commission:.0%})",
+            color="orange",
+        )
+        ax1.plot(
+            x_arr,
+            y_7d_node_operators_leb8_05,
+            linestyle="--",
+            label=f"{y_7d_claim} Day Average (leb8 5%)",
+            color="red",
+            alpha=0.7,
+        )
         ax1.plot(
             x_arr,
             y_7d_node_operators_leb8_14,
             linestyle="-.",
             label=f"{y_7d_claim:.1f} Day Average (leb8 14%)",
-            color="red",
-            alpha=0.5,
-        )
-        # use area to show region between leb16 20% and leb16 5%. use a spare dotted fill to show the region between
-        ax1.fill_between(
-            x_arr,
-            y_7d_node_operators_leb16_20,
-            y_7d_node_operators_leb16_05,
-            alpha=0.2,
-            color="red",
-            label=f"{y_7d_claim:.1f} Day Average (leb16 5-20%)",
-        )
-        # plot the leb16 14% line
-        ax1.plot(
-            x_arr,
-            y_7d_node_operators_leb16_14,
-            linestyle="--",
-            label=f"{y_7d_claim:.1f} Day Average (leb16 14%)",
             color="red",
             alpha=0.5,
         )
