@@ -121,7 +121,7 @@ async def el_explorer_url(
                 "rocketNodeManager.getMegapoolAddress", target
             )
             if megapool_address != ADDRESS_ZERO:
-                url = f"https://saturn-1.net/megapool/{megapool_address}{dashboard_network}"
+                url = f"https://rocketdash.net/megapool/{megapool_address}{dashboard_network}"
             if await rp.call(
                 "rocketNodeManager.getSmoothingPoolRegistrationState",
                 target,
@@ -143,7 +143,7 @@ async def el_explorer_url(
                     _prefix += "🏛️"
                     name = delegate_name
         elif await rp.is_megapool(target):
-            url = f"https://saturn-1.net/megapool/{target}{dashboard_network}"
+            url = f"https://rocketdash.net/megapool/{target}{dashboard_network}"
         elif await rp.is_minipool(target):
             if chain == "mainnet":
                 url = f"https://rocketexplorer.net/validator/{target}"
