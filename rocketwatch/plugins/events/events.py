@@ -102,7 +102,9 @@ class Events(EventPlugin):
 
             partial_filters.append(build_direct_filter)
 
-        # generate filters for global events
+        # generate filter for global events
+        global_topics: set[HexBytes] = set()
+        global_topic_decoders: dict[str, type] = {}
         for group in config["global"]:
             try:
                 contract = await rp.get_contract_by_name(name=group["contract_name"])
@@ -111,33 +113,42 @@ class Events(EventPlugin):
                 continue
 
             for event in group["events"]:
-                event_map[event["event_name"]] = event["name"]
+                event_name = event["event_name"]
+                event_map[event_name] = event["name"]
 
-                def super_builder(_contract, _event) -> PartialFilter:
-                    # this is needed to pin nonlocal variables
-                    async def build_topic_filter(
-                        _from: BlockNumber, _to: BlockNumber | Literal["latest"]
-                    ) -> list[EventData]:
-                        event_cls = _contract.events[_event["event_name"]]
-                        event_abi = event_cls.abi
-                        input_types = ",".join(i["type"] for i in event_abi["inputs"])
-                        topic0 = w3.keccak(
-                            text=f"{_event['event_name']}({input_types})"
-                        ).hex()
-                        raw_logs = await w3.eth.get_logs(
-                            {
-                                "topics": [topic0],
-                                "fromBlock": _from,
-                                "toBlock": _to,
-                            }
-                        )
-                        return [
-                            event_cls().process_log(raw_log) for raw_log in raw_logs
-                        ]
+                try:
+                    event_cls = contract.events[event_name]
+                    event_abi = event_cls.abi
+                    input_types = ",".join(i["type"] for i in event_abi["inputs"])
+                    topic = w3.keccak(text=f"{event_name}({input_types})").hex()
+                except Exception as e:
+                    log.exception(e)
+                    log.warning(f"Couldn't find global event {event_name}")
+                    continue
 
-                    return build_topic_filter
+                global_topics.add(topic)
+                global_topic_decoders[topic] = event_cls
 
-                partial_filters.append(super_builder(contract, event))
+        if global_topics:
+
+            async def build_global_filter(
+                _from: BlockNumber, _to: BlockNumber | Literal["latest"]
+            ) -> list[EventData]:
+                raw_logs = await w3.eth.get_logs(
+                    {
+                        "topics": [list(global_topics)],
+                        "fromBlock": _from,
+                        "toBlock": _to,
+                    }
+                )
+                return [
+                    global_topic_decoders[raw_log["topics"][0].hex()]().process_log(
+                        raw_log
+                    )
+                    for raw_log in raw_logs
+                ]
+
+            partial_filters.append(build_global_filter)
 
         return partial_filters, event_map, topic_map
 
