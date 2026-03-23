@@ -284,13 +284,13 @@ class Rewards(commands.Cog):
 
         handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles, strict=False))
-        plt.legend(by_label.values(), by_label.keys(), loc="lower right")
+        ax.legend(by_label.values(), by_label.keys(), loc="lower right")
         fig.tight_layout()
 
         img = BytesIO()
         fig.savefig(img, format="png")
         img.seek(0)
-        plt.close()
+        plt.close(fig)
 
         sim_info = []
         if rpl_stake > 0:

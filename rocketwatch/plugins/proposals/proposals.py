@@ -401,30 +401,28 @@ class Proposals(commands.Cog):
         ]
         # add percentage to labels
         x_arr = np.array(x)
-        ax = plt.subplot(111, frameon=False)
-        plt.stackplot(x_arr, *y.values(), labels=labels, colors=colors)
+        fig, ax = plt.subplots()
+        ax.stackplot(x_arr, *y.values(), labels=labels, colors=colors)
         # hide y axis
-        plt.tick_params(
-            axis="y", which="both", left=False, right=False, labelleft=False
-        )
-        plt.gcf().autofmt_xdate()
+        ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
+        fig.autofmt_xdate()
         handles, legend_labels = ax.get_legend_handles_labels()
         ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
         # add a thin line at current time from y=0 to y=1 with a width of 0.5
-        plt.plot([x_arr[-1], x_arr[-1]], [0, 1], color="white", alpha=0.25)
+        ax.plot([x_arr[-1], x_arr[-1]], [0, 1], color="white", alpha=0.25)
         # calculate future point to make latest data more visible
         future_point = x[-1] + timedelta(days=window_length)
         last_y_values = [[yy[-1]] * 2 for yy in y.values()]
-        plt.stackplot(
+        ax.stackplot(
             [x_arr[-1], np.datetime64(future_point)], *last_y_values, colors=colors
         )
-        plt.tight_layout()
+        fig.tight_layout()
 
         # respond with image
         img = BytesIO()
-        plt.savefig(img, format="png", bbox_inches="tight", dpi=300)
+        fig.savefig(img, format="png", bbox_inches="tight", dpi=300)
         img.seek(0)
-        plt.close()
+        plt.close(fig)
         e.set_image(url="attachment://chart.png")
 
         # send data
@@ -559,9 +557,9 @@ class Proposals(commands.Cog):
 
         # respond with image
         img = BytesIO()
-        plt.savefig(img, format="png")
+        fig.savefig(img, format="png")
         img.seek(0)
-        plt.close()
+        plt.close(fig)
         e.set_image(url=f"attachment://{attribute}.png")
 
         # send data

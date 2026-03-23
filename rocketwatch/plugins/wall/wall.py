@@ -366,7 +366,7 @@ class Wall(commands.Cog):
         buffer = BytesIO()
         fig = self._plot_data(x, rpl_usd, rpl_eth, cex_data, dex_data)
         fig.savefig(buffer, format="png")
-        fig.clf()
+        plt.close(fig)
         buffer.seek(0)
 
         embed.set_author(name="🔗 Data from CEX APIs and Mainnet")

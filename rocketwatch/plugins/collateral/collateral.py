@@ -188,12 +188,12 @@ class Collateral(commands.Cog):
 
         # Add a legend for the color-coding on the scatter plot
         formatToInt = "{x:.0f}"
-        cb = plt.colorbar(mappable=paths, ax=ax, format=formatToInt)
+        cb = fig.colorbar(mappable=paths, ax=ax, format=formatToInt)
         cb.set_label("Minipools")
         cb.set_ticks([1, 10, 100, max_minipools])
 
         # Add a legend for the color-coding on the hex distribution
-        cb = plt.colorbar(mappable=polys, ax=ax2, format=formatToInt)
+        cb = fig.colorbar(mappable=polys, ax=ax2, format=formatToInt)
         cb.set_label("Nodes")
         cb.set_ticks([1, 10, 100, max_nodes - 1])
 
@@ -324,7 +324,7 @@ class Collateral(commands.Cog):
             f"{x[0]}th percentile: {int(x[1])}% collateral"
             for x in get_percentiles([50, 75, 90, 99], counts)
         ]
-        e.description = f"Total Effective Staked RPL: {sum(bars.values()):,}"
+        e.description = f"Total Staked RPL: {sum(bars.values()):,.0f}"
         e.set_footer(text="\n".join(percentile_strings))
         await interaction.followup.send(embed=e, files=[f])
         img.close()

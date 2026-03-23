@@ -159,7 +159,7 @@ class Metrics(commands.Cog):
         ).to_list(None)
 
         # create a new figure
-        _fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
         # plot the command usage as bars
         ax1.bar(
@@ -184,16 +184,15 @@ class Metrics(commands.Cog):
         )
 
         # use minimal whitespace
-        plt.tight_layout()
+        fig.tight_layout()
 
         # store the graph in an file object
         file = BytesIO()
-        plt.savefig(file, format="png")
+        fig.savefig(file, format="png")
         file.seek(0)
 
         # clear plot from memory
-        plt.clf()
-        plt.close()
+        plt.close(fig)
 
         e = Embed(title="Command Usage and Event ")
         e.set_image(url="attachment://metrics.png")

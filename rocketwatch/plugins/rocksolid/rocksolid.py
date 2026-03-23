@@ -138,7 +138,7 @@ class RockSolid(Cog):
         fig.tight_layout()
         fig.savefig(img, format="png")
         img.seek(0)
-        plt.clf()
+        plt.close(fig)
 
         ca_reth = await rp.get_address_by_name("rocketTokenRETH")
         ca_rock_reth = await rp.get_address_by_name("RockSolidVault")

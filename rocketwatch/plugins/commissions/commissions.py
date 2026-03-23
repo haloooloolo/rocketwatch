@@ -50,24 +50,20 @@ class Commissions(commands.Cog):
         # data[-1] = [x / max(data[-1]) for x in data[-1]]
         # heatmap distribution over time
         data_array = np.array(data).T
-        ax = sns.heatmap(
-            data_array, cmap="viridis", yticklabels=ygrid, xticklabels=False
+        fig, ax = plt.subplots()
+        sns.heatmap(
+            data_array, cmap="viridis", yticklabels=ygrid, xticklabels=False, ax=ax
         )
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
         # set y ticks
         ax.set_ylabel("Node Fee")
-        plt.tight_layout()
-
-        # save figure to buffer
-        buf = BytesIO()
-        plt.savefig(buf, format="png")
-        buf.seek(0)
+        fig.tight_layout()
 
         # respond with image
         img = BytesIO()
-        plt.savefig(img, format="png")
+        fig.savefig(img, format="png")
         img.seek(0)
-        plt.close()
+        plt.close(fig)
         e.set_image(url="attachment://chart.png")
         e.add_field(name="Total Minipools", value=len(minipools))
         e.add_field(name="Bar Width", value=f"{step_size} minipools")

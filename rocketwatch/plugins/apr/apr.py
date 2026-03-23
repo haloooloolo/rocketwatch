@@ -213,9 +213,8 @@ class APR(commands.Cog):
             inline=False,
         )
         x_arr = np.array(x)
-        fig = plt.figure()
-        ax1 = plt.gca()
-        ax2: plt.Axes = plt.twinx()  # type: ignore[assignment]
+        fig, ax1 = plt.subplots()
+        ax2: plt.Axes = ax1.twinx()  # type: ignore[assignment]
 
         ax2.plot(
             x_arr,
@@ -251,13 +250,12 @@ class APR(commands.Cog):
             color="royalblue",
         )
 
-        plt.title("Observed rETH APR values")
-        plt.xlabel("Date")
-        plt.grid(True)
-        plt.xlim(left=x_arr[38])
-        plt.xticks(rotation=45)
-        old_formatter = plt.gca().xaxis.get_major_formatter()
-        plt.gca().xaxis.set_major_formatter(DateFormatter("%b %d"))
+        ax1.set_title("Observed rETH APR values")
+        ax1.set_xlabel("Date")
+        ax1.grid(True)
+        ax1.set_xlim(left=x_arr[38])
+        ax1.tick_params(axis="x", rotation=45)
+        ax1.xaxis.set_major_formatter(DateFormatter("%b %d"))
 
         ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
@@ -271,11 +269,7 @@ class APR(commands.Cog):
         fig.tight_layout()
         fig.savefig(img, format="png")
         img.seek(0)
-        fig.clear()
-        plt.close()
-
-        # reset the x axis formatter
-        plt.gca().xaxis.set_major_formatter(old_formatter)
+        plt.close(fig)
 
         e.set_image(url="attachment://reth_apr.png")
 
@@ -429,8 +423,7 @@ class APR(commands.Cog):
         )
 
         x_arr = np.array(x)
-        fig = plt.figure()
-        ax1 = plt.gca()
+        fig, ax1 = plt.subplots()
 
         # solo apr
         ax1.plot(
@@ -468,13 +461,12 @@ class APR(commands.Cog):
             alpha=0.5,
         )
 
-        plt.title("Observed NO APR values")
-        plt.grid(True)
-        plt.xlim(left=x_arr[38])
-        plt.xticks(rotation=0)
-        plt.ylim(bottom=0.02)
-        old_formatter = plt.gca().xaxis.get_major_formatter()
-        plt.gca().xaxis.set_major_formatter(DateFormatter("%m.%d"))
+        ax1.set_title("Observed NO APR values")
+        ax1.grid(True)
+        ax1.set_xlim(left=x_arr[38])
+        ax1.tick_params(axis="x", rotation=0)
+        ax1.set_ylim(bottom=0.02)
+        ax1.xaxis.set_major_formatter(DateFormatter("%m.%d"))
 
         ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
         ax1.legend(loc="lower left")
@@ -483,11 +475,7 @@ class APR(commands.Cog):
         fig.tight_layout()
         fig.savefig(img, format="png")
         img.seek(0)
-        fig.clear()
-        plt.close()
-
-        # reset the x axis formatter
-        plt.gca().xaxis.set_major_formatter(old_formatter)
+        plt.close(fig)
 
         e.add_field(
             name="Current Average Effective Commission:",

@@ -162,38 +162,38 @@ class RPL(commands.Cog):
         embed = Embed()
 
         # plot the data
-        plt.plot(x, y, color=str(embed.color))
-        plt.plot(rpl_eth_price, current_withdrawable_rpl, "bo")
-        plt.xlim(min(x), max(x))
+        fig, ax = plt.subplots()
+        ax.plot(x, y, color=str(embed.color))
+        ax.plot(rpl_eth_price, current_withdrawable_rpl, "bo")
+        ax.set_xlim(min(x), max(x))
 
-        plt.annotate(
+        ax.annotate(
             f"{rpl_eth_price:.4f}",
             (rpl_eth_price, current_withdrawable_rpl),
             textcoords="offset points",
             xytext=(-10, -5),
             ha="right",
         )
-        plt.annotate(
+        ax.annotate(
             f"{current_withdrawable_rpl / 1000000:.2f} million RPL withdrawable",
             (rpl_eth_price, current_withdrawable_rpl),
             textcoords="offset points",
             xytext=(10, -5),
             ha="left",
         )
-        plt.grid()
+        ax.grid()
 
-        ax = plt.gca()
         ax.set_ylabel("Withdrawable RPL")
         ax.set_xlabel("RPL / ETH ratio")
         ax.yaxis.set_major_formatter(lambda x, _: f"{x / 1000000:.1f}m")
         ax.xaxis.set_major_formatter(lambda x, _: f"{x:.4f}")
 
         img = BytesIO()
-        plt.tight_layout()
-        plt.savefig(img, format="png")
+        fig.tight_layout()
+        fig.savefig(img, format="png")
         img.seek(0)
 
-        plt.close()
+        plt.close(fig)
 
         embed.title = "Available RPL Liquidity"
         embed.set_image(url="attachment://graph.png")
