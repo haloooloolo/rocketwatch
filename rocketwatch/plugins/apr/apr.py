@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
 
+import matplotlib.axes
 import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
@@ -214,7 +215,7 @@ class APR(commands.Cog):
         )
         x_arr = np.array(x)
         fig, ax1 = plt.subplots()
-        ax2: plt.Axes = ax1.twinx()  # type: ignore[assignment]
+        ax2: matplotlib.axes.Axes = ax1.twinx()
 
         ax2.plot(
             x_arr,
