@@ -17,8 +17,9 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.embeds import Embed, resolve_ens
+from utils.embeds import Embed, ens, resolve_ens
 from utils.rocketpool import rp
+from utils.shared_w3 import w3
 from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.collateral")
@@ -350,14 +351,27 @@ class Collateral(commands.Cog):
         img.close()
 
     @command()
+    @describe(node_address="Node Address or ENS to highlight")
     async def voter_share_distribution(
         self,
         interaction: Interaction,
+        node_address: str | None = None,
     ) -> None:
         """
         Show the distribution of RPL staked per borrowed ETH for megapool validators.
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
+
+        address, display_name = None, None
+        if node_address is not None:
+            if "." in node_address:
+                display_name = node_address
+                address = await ens.resolve_name(node_address)
+            elif w3.is_address(address):
+                address = w3.to_checksum_address(node_address)
+                display_name = address
+
+        log.info(f"{address =}, {display_name = }")
 
         pipeline: list[dict[str, Any]] = [
             {
@@ -369,6 +383,7 @@ class Collateral(commands.Cog):
             },
             {
                 "$project": {
+                    "address": 1,
                     "rpl_stake": "$rpl.megapool_stake",
                     "borrowed": "$megapool.user_capital",
                     "validators": "$megapool.active_validator_count",
@@ -377,9 +392,10 @@ class Collateral(commands.Cog):
         ]
         results = await (await self.bot.db.node_operators.aggregate(pipeline)).to_list()
 
+        e = Embed()
+        e.title = "Megapool RPL per Borrowed ETH"
+
         if not results:
-            e = Embed()
-            e.title = "RPL per Borrowed ETH Distribution (Megapools)"
             e.description = "No data available."
             return await interaction.followup.send(embed=e)
 
@@ -418,7 +434,6 @@ class Collateral(commands.Cog):
             [],
         )
 
-        e = Embed()
         img = BytesIO()
         fig, ax = plt.subplots()
 
@@ -442,6 +457,25 @@ class Collateral(commands.Cog):
             label=f"LEB8 14% Breakeven ({leb8_14_breakeven_ratio:.1f})",
         )
 
+        # Highlight target node if provided
+        if address is not None:
+            target = await self.bot.db.node_operators.find_one(
+                {"address": address},
+                {"rpl.megapool_stake": 1, "megapool.user_capital": 1},
+            )
+            if target is not None:
+                rpl_stake = (target.get("rpl") or {}).get("megapool_stake", 0)
+                borrowed = (target.get("megapool") or {}).get("user_capital", 0)
+                target_ratio = (rpl_stake / borrowed) if (borrowed > 0) else 0
+                target_pos = min(target_ratio, cap) / step_size
+                ax.axvline(
+                    target_pos,
+                    color="black",
+                    linestyle="-",
+                    zorder=3,
+                    label=f"{display_name} ({target_ratio:.1f})",
+                )
+
         # Match decimal places to step size precision
         decimals = (
             len(f"{step_size:.10f}".rstrip("0").split(".")[1]) if step_size % 1 else 0
@@ -453,7 +487,7 @@ class Collateral(commands.Cog):
         ax.bar_label(rects)
 
         ax.set_xticklabels(x_keys, rotation="vertical")
-        ax.set_xlabel("RPL per Borrowed ETH")
+        ax.set_xlabel("RPL per borrowed ETH")
 
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
         ax.set_ylabel("Validators")
@@ -473,11 +507,10 @@ class Collateral(commands.Cog):
         fig.clear()
         plt.close()
 
-        e.title = "Megapool RPL per Borrowed ETH"
         e.set_image(url="attachment://voter_share_distribution.png")
         f = File(img, filename="voter_share_distribution.png")
         percentile_strings = [
-            f"{x[0]}th percentile: {x[1]:.1f} RPL/ETH"
+            f"{x[0]}th percentile: {x[1]:.{decimals}f} RPL/ETH"
             for x in get_percentiles([50, 75, 90, 99], counts)
         ]
         e.set_footer(text="\n".join(percentile_strings))

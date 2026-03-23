@@ -22,3 +22,6 @@ class CachedEns:
     async def resolve_name(self, name: str) -> ChecksumAddress | None:
         log.debug(f"Resolving ENS name {name}")
         return await self.ens.address(name)
+
+
+ens = CachedEns()

@@ -8,7 +8,7 @@ import aiohttp
 import discord
 import humanize
 from aiocache import cached
-from discord import Color
+from discord import Color, Interaction
 from ens import InvalidName
 from eth_typing import BlockIdentifier
 from etherscan_labels import Addresses
@@ -17,15 +17,13 @@ from web3.constants import ADDRESS_ZERO
 from strings import _
 from utils import solidity
 from utils.block_time import block_to_ts
-from utils.cached_ens import CachedEns
+from utils.cached_ens import ens
 from utils.config import cfg
 from utils.readable import advanced_tnx_url, cl_explorer_url, s_hex
 from utils.retry import retry
 from utils.rocketpool import rp
 from utils.sea_creatures import get_sea_creature_for_address
 from utils.shared_w3 import w3
-
-ens = CachedEns()
 
 log = logging.getLogger("rocketwatch.embeds")
 
@@ -48,7 +46,7 @@ class Embed(discord.Embed):
 # If an ens name is provided, it will be used as the display name.
 # If an address is provided, the display name will either be the reverse record or the address.
 # If the user input isn't sanitary, send an error message back to the user and return None, None.
-async def resolve_ens(interaction, node_address):
+async def resolve_ens(interaction: Interaction, node_address: str):
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
         try:
