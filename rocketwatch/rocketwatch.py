@@ -81,8 +81,10 @@ class RocketWatch(Bot):
     async def on_error(self, event_method: str, /, *args, **kwargs) -> None:
         exc = sys.exc_info()[1]
         if isinstance(exc, Exception):
-            log.error(f"Error in listener {event_method}")
+            log.exception(f"Error in listener {event_method}")
             await self.report_error(exc)
+        else:
+            log.exception("Ignoring BaseException in error handler")
 
     async def on_ready(self):
         assert self.user is not None
