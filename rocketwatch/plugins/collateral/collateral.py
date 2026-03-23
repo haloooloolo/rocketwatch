@@ -148,7 +148,7 @@ class Collateral(commands.Cog):
 
     @command()
     @describe(
-        node_address="Node Address or ENS to highlight",
+        node_address="Address or ENS of node to highlight",
         bonded="Calculate collateral as a percent of bonded eth instead of borrowed",
     )
     async def node_tvl_vs_collateral(

@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from datetime import timedelta
 from typing import Any
 
@@ -10,6 +10,7 @@ import pymongo
 from cronitor import Monitor
 from discord.ext import commands
 from discord.utils import as_chunks
+from eth_typing import BlockNumber
 from pymongo import UpdateMany, UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
 
@@ -164,7 +165,7 @@ class DBUpkeepTask(commands.Cog):
         self,
         collection: AsyncCollection,
         query: dict[str, Any],
-        call_fn: Callable[[dict[str, Any]], list[tuple]],
+        call_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, list[tuple]]],
         projection: dict[str, Any],
         label: str | None,
     ) -> None:
@@ -173,11 +174,7 @@ class DBUpkeepTask(commands.Cog):
             return
 
         total = len(items)
-        first_calls = (
-            await call_fn(items[0])
-            if asyncio.iscoroutinefunction(call_fn)
-            else call_fn(items[0])
-        )
+        first_calls = await call_fn(items[0])
         batch_size = self.batch_size // len(first_calls)
         for i, batch in enumerate(as_chunks(items, batch_size)):
             if label:
@@ -185,15 +182,10 @@ class DBUpkeepTask(commands.Cog):
                 end = min((i + 1) * batch_size, total)
                 log.debug(f"Processing {label} [{start}, {end}]/{total}")
             # call_fn(item) returns a list of (fn, require_success, transform, field)
-            if asyncio.iscoroutinefunction(call_fn):
-                expanded = []
-                for item in batch:
-                    for t in await call_fn(item):
-                        expanded.append((item["address"], *t))
-            else:
-                expanded = [
-                    (item["address"], *t) for item in batch for t in call_fn(item)
-                ]
+            expanded = []
+            for item in batch:
+                for t in await call_fn(item):
+                    expanded.append((item["address"], *t))
             calls = [(e[1], e[2]) for e in expanded]
             results = await rp.multicall(calls)
             updates: dict[Any, dict[str, Any]] = defaultdict(dict)
@@ -241,7 +233,7 @@ class DBUpkeepTask(commands.Cog):
         df = await rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
 
-        def get_calls(n):
+        async def get_calls(n):
             return [
                 (
                     df.functions.getProxyAddress(n["address"]),
@@ -279,7 +271,7 @@ class DBUpkeepTask(commands.Cog):
         ns = await rp.get_contract_by_name("rocketNodeStaking")
         mc = await rp.get_contract_by_name("multicall3")
 
-        def get_calls(n):
+        async def get_calls(n):
             return [
                 (
                     nm.functions.getNodeWithdrawalAddress(n["address"]),
@@ -575,8 +567,12 @@ class DBUpkeepTask(commands.Cog):
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
 
         for minipool_batch in as_chunks(minipools, self.batch_size):
-            block_start = await ts_to_block(minipool_batch[0]["status_time"]) - 1
-            block_end = await ts_to_block(minipool_batch[-1]["status_time"]) + 1
+            block_start = BlockNumber(
+                await ts_to_block(minipool_batch[0]["status_time"]) - 1
+            )
+            block_end = BlockNumber(
+                await ts_to_block(minipool_batch[-1]["status_time"]) + 1
+            )
             log.debug(f"Processing deposit data for blocks {block_start}..{block_end}")
             addresses = {m["address"] for m in minipool_batch}
 
@@ -833,7 +829,7 @@ class DBUpkeepTask(commands.Cog):
             return
 
         dp = await rp.get_contract_by_name("rocketDepositPool")
-        saturn_upgrade_block = 24479994
+        saturn_upgrade_block = BlockNumber(24_479_994)
         to_block = await w3.eth.get_block_number()
 
         by_megapool = defaultdict(list)

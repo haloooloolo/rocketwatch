@@ -1,5 +1,6 @@
 import logging
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 
@@ -110,7 +111,7 @@ class RocketPool:
 
     @staticmethod
     def _normalize_calls(
-        calls: list[CallInput], default_require_success: bool
+        calls: Sequence[CallInput], default_require_success: bool
     ) -> tuple[list[AsyncContractFunction], list[bool]]:
         """Normalize calls to (fn, allow_failure) pairs. Each call may be a
         plain AsyncContractFunction or an (fn, require_success) tuple."""
@@ -127,7 +128,7 @@ class RocketPool:
 
     async def multicall(
         self,
-        calls: list[CallInput],
+        calls: Sequence[CallInput],
         require_success: bool = True,
         block: BlockIdentifier = "latest",
     ) -> list[Any]:
