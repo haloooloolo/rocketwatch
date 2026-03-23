@@ -2,6 +2,7 @@ import functools
 import logging
 import operator
 from io import BytesIO
+from typing import Any
 
 import matplotlib as mpl
 import matplotlib.colors as mcolors
@@ -10,9 +11,9 @@ import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
-from discord.utils import as_chunks
 from eth_typing import ChecksumAddress
 from matplotlib.ticker import FuncFormatter
+from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -41,63 +42,87 @@ async def collateral_distribution_raw(interaction: Interaction, distribution):
     await interaction.followup.send(embed=e)
 
 
-async def get_node_minipools_and_collateral() -> dict[ChecksumAddress, dict[str, int]]:
-    node_staking = await rp.get_contract_by_name("rocketNodeStaking")
-    minipool_manager = await rp.get_contract_by_name("rocketMinipoolManager")
-    eb16s, eb8s, rpl_stakes = [], [], []
-
-    nodes = await rp.call("rocketNodeManager.getNodeAddresses", 0, 10_000)
-    for node_batch in as_chunks(nodes, 500):
-        eb16s += await rp.multicall(
-            [
-                minipool_manager.functions.getNodeStakingMinipoolCountBySize(
-                    node, 16 * 10**18
-                )
-                for node in node_batch
-            ]
-        )
-        eb8s += await rp.multicall(
-            [
-                minipool_manager.functions.getNodeStakingMinipoolCountBySize(
-                    node, 8 * 10**18
-                )
-                for node in node_batch
-            ]
-        )
-        rpl_stakes += await rp.multicall(
-            [node_staking.functions.getNodeStakedRPL(node) for node in node_batch]
-        )
-
+async def get_node_collateral_data(
+    db: AsyncDatabase,
+) -> dict[ChecksumAddress, dict[str, int | float]]:
+    pipeline: list[dict[str, Any]] = [
+        {
+            "$match": {
+                "$or": [
+                    {"staking_minipool_count": {"$gt": 0}},
+                    {"megapool.active_validator_count": {"$gt": 0}},
+                ]
+            }
+        },
+        {
+            "$project": {
+                "address": 1,
+                "rpl_stake": {"$ifNull": ["$rpl.total_stake", 0]},
+                "bonded": {
+                    "$add": [
+                        {
+                            "$multiply": [
+                                {"$ifNull": ["$effective_node_share", 0]},
+                                {"$ifNull": ["$staking_minipool_count", 0]},
+                                32,
+                            ]
+                        },
+                        {"$ifNull": ["$megapool.node_bond", 0]},
+                    ]
+                },
+                "borrowed": {
+                    "$add": [
+                        {
+                            "$multiply": [
+                                {
+                                    "$subtract": [
+                                        1,
+                                        {"$ifNull": ["$effective_node_share", 0]},
+                                    ]
+                                },
+                                {"$ifNull": ["$staking_minipool_count", 0]},
+                                32,
+                            ]
+                        },
+                        {"$ifNull": ["$megapool.user_capital", 0]},
+                    ]
+                },
+                "validators": {
+                    "$add": [
+                        {"$ifNull": ["$staking_minipool_count", 0]},
+                        {"$ifNull": ["$megapool.active_validator_count", 0]},
+                    ]
+                },
+            }
+        },
+    ]
+    results = await (await db.node_operators.aggregate(pipeline)).to_list()
     return {
-        nodes[i]: {"eb8s": eb8s[i], "eb16s": eb16s[i], "rplStaked": rpl_stakes[i]}
-        for i in range(len(nodes))
+        doc["address"]: {
+            "bonded": doc["bonded"],
+            "borrowed": doc["borrowed"],
+            "rpl_stake": doc["rpl_stake"],
+            "validators": doc["validators"],
+        }
+        for doc in results
     }
 
 
 async def get_average_collateral_percentage_per_node(
-    collateral_cap: int | None, bonded: bool
+    db: AsyncDatabase, collateral_cap: int | None, bonded: bool
 ):
-    # get stakes for each node
-    stakes = list((await get_node_minipools_and_collateral()).values())
-    # get the current rpl price
+    stakes = list((await get_node_collateral_data(db)).values())
     rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
 
     node_collaterals = []
     for node in stakes:
-        # get the minipool eth value
-        minipool_value = int(node["eb16s"]) * 16 + int(node["eb8s"]) * (
-            8 if bonded else 24
-        )
-        if not minipool_value:
+        eth_value = node["bonded"] if bonded else node["borrowed"]
+        if not eth_value:
             continue
-        # rpl stake value
-        rpl_stake = solidity.to_float(node["rplStaked"])
-        rpl_stake_value = rpl_stake * rpl_price
-        # cap rpl stake at x% of minipool_value using collateral_cap
-        collateral = rpl_stake_value / minipool_value * 100
+        rpl_stake = node["rpl_stake"]
+        collateral = rpl_stake * rpl_price / eth_value * 100
         if collateral_cap:
             collateral = min(collateral, collateral_cap)
-        # calculate percentage
         node_collaterals.append((rpl_stake, collateral))
 
     effective_bound = max(perc for rpl, perc in node_collaterals)
@@ -130,7 +155,7 @@ class Collateral(commands.Cog):
         interaction: Interaction,
         node_address: str | None = None,
         bonded: bool = False,
-    ):
+    ) -> None:
         """
         Show a scatter plot of collateral ratios for given node TVLs
         """
@@ -144,32 +169,24 @@ class Collateral(commands.Cog):
                 return
 
         rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
-        data = await get_node_minipools_and_collateral()
-
-        # Calculate each node's tvl and collateral and add it to the data
-        def node_tvl(node):
-            return int(node["eb8s"]) * 8 + int(node["eb16s"]) * 16
+        data = await get_node_collateral_data(self.bot.db)
 
         def node_collateral(node):
-            eth = int(node["eb16s"]) * 16 + int(node["eb8s"]) * (8 if bonded else 24)
+            eth = node["bonded"] if bonded else node["borrowed"]
             if not eth:
                 return 0
-            return 100 * (solidity.to_float(node["rplStaked"]) * rpl_price) / eth
-
-        def node_minipools(node):
-            return int(node["eb16s"]) + int(node["eb8s"])
+            return 100 * node["rpl_stake"] * rpl_price / eth
 
         x, y, c = [], [], []
-        max_minipools = 0
+        max_validators = 0
         for node in data.values():
-            minis = node_minipools(node)
-            if minis <= 0:
+            if not node["bonded"]:
                 continue
 
-            x.append(node_tvl(node))
+            x.append(node["bonded"])
             y.append(node_collateral(node))
-            c.append(minis)
-            max_minipools = max(max_minipools, minis)
+            c.append(int(node["validators"]))
+            max_validators = max(max_validators, int(node["validators"]))
 
         e = Embed()
         img = BytesIO()
@@ -189,8 +206,8 @@ class Collateral(commands.Cog):
         # Add a legend for the color-coding on the scatter plot
         formatToInt = "{x:.0f}"
         cb = fig.colorbar(mappable=paths, ax=ax, format=formatToInt)
-        cb.set_label("Minipools")
-        cb.set_ticks([1, 10, 100, max_minipools])
+        cb.set_label("Validators")
+        cb.set_ticks([1, 10, 100, max_validators])
 
         # Add a legend for the color-coding on the hex distribution
         cb = fig.colorbar(mappable=polys, ax=ax2, format=formatToInt)
@@ -212,12 +229,12 @@ class Collateral(commands.Cog):
             # Print a vline and hline through the requested node
             try:
                 target_node = data[address]
-                ax.plot(node_tvl(target_node), node_collateral(target_node), "ro")
-                ax2.plot(node_tvl(target_node), node_collateral(target_node), "ro")
+                ax.plot(target_node["bonded"], node_collateral(target_node), "ro")
+                ax2.plot(target_node["bonded"], node_collateral(target_node), "ro")
                 e.description = f"Showing location of {display_name}"
             except KeyError:
                 await interaction.followup.send(
-                    f"{display_name} not found in data set - it must have at least one minipool"
+                    f"{display_name} not found in data set - it must have at least one validator"
                 )
                 return
 
@@ -241,7 +258,8 @@ class Collateral(commands.Cog):
 
     @command()
     @describe(
-        raw="Show Raw Distribution Data",
+        raw="Show raw distribution data",
+        collateral_cap="Bound the plot at a specific collateral percentage",
         bonded="Calculate collateral as percent of bonded eth instead of borrowed",
     )
     async def collateral_distribution(
@@ -250,13 +268,15 @@ class Collateral(commands.Cog):
         raw: bool = False,
         collateral_cap: int = 15,
         bonded: bool = False,
-    ):
+    ) -> None:
         """
         Show the distribution of collateral across nodes.
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
-        data = await get_average_collateral_percentage_per_node(collateral_cap, bonded)
+        data = await get_average_collateral_percentage_per_node(
+            self.bot.db, collateral_cap, bonded
+        )
         distribution = [
             (collateral, len(nodes))
             for collateral, nodes in sorted(data.items(), key=lambda x: x[0])
@@ -310,16 +330,16 @@ class Collateral(commands.Cog):
 
         fig.tight_layout()
         ax.legend(rects, ["Node Operators"], loc="upper left")
-        ax2.legend(line, ["Effective Staked RPL"], loc="upper right")
+        ax2.legend(line, ["Staked RPL"], loc="upper right")
         fig.savefig(img, format="png")
         img.seek(0)
 
         fig.clear()
         plt.close()
 
-        e.title = "Average Collateral Distribution"
-        e.set_image(url="attachment://graph.png")
-        f = File(img, filename="graph.png")
+        e.title = "RPL Collateral Distribution"
+        e.set_image(url="attachment://collateral_distribution.png")
+        f = File(img, filename="collateral_distribution.png")
         percentile_strings = [
             f"{x[0]}th percentile: {int(x[1])}% collateral"
             for x in get_percentiles([50, 75, 90, 99], counts)
