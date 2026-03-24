@@ -22,7 +22,7 @@ class Commissions(commands.Cog):
     @command()
     async def commission_history(self, interaction: Interaction):
         """
-        Show the history of commissions.
+        Show the history of minipool commissions.
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
@@ -52,7 +52,11 @@ class Commissions(commands.Cog):
         data_array = np.array(data).T
         fig, ax = plt.subplots()
         sns.heatmap(
-            data_array, cmap="viridis", yticklabels=ygrid, xticklabels=False, ax=ax
+            data_array,
+            cmap="viridis",
+            yticklabels=list(map(str, ygrid)),
+            xticklabels=False,
+            ax=ax,
         )
         ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
         # set y ticks
