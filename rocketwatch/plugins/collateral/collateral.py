@@ -360,7 +360,9 @@ class Collateral(commands.Cog):
         """
         Show the distribution of RPL staked per borrowed ETH for megapool validators.
         """
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
+        await interaction.response.defer(
+            ephemeral=(is_hidden(interaction) or (node_address is not None))
+        )
 
         address, display_name = None, None
         if node_address is not None:
