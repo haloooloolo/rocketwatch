@@ -23,7 +23,7 @@ class Metrics(commands.Cog):
     @command()
     async def metrics(self, interaction: Interaction):
         """
-        Show various metrics about the bot.
+        Show a summary of event and command statistics
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         try:

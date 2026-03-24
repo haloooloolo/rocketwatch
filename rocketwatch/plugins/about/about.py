@@ -29,36 +29,15 @@ class About(commands.Cog):
 
     @command()
     async def about(self, interaction: Interaction):
-        """Bot and server information"""
+        """Show bot and server information"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         g = self.bot.guilds
-        code_time = None
 
-        if api_key := cfg.other.secrets.wakatime:
-            try:
-                async with (
-                    aiohttp.ClientSession() as session,
-                    session.get(
-                        "https://wakatime.com/api/v1/users/current/all_time_since_today",
-                        params={"project": "rocketwatch", "api_key": api_key},
-                    ) as resp,
-                ):
-                    code_time = (await resp.json())["data"]["text"]
-            except Exception as err:
-                await self.bot.report_error(err)
-
-        if code_time:
-            e.add_field(
-                name="Project Statistics",
-                value=f"An estimate of {code_time} has been spent developing this bot!",
-                inline=False,
-            )
-
+        members_reached = sum(guild.member_count or 0 for guild in g)
         e.add_field(
             name="Bot Statistics",
-            value=f"{len(g)} guilds joined and "
-            f"{humanize.intcomma(sum(guild.member_count or 0 for guild in g))} members reached!",
+            value=f"{len(g)} guilds joined and {members_reached:,} members reached!",
             inline=False,
         )
 
@@ -80,11 +59,16 @@ class About(commands.Cog):
             value=f"{humanize.naturalsize(self.process.memory_info().rss)} used",
         )
 
-        load = [x / psutil.cpu_count() for x in psutil.getloadavg()]
-        e.add_field(name="Host Load", value=" / ".join(f"{pct:.0%}" for pct in load))
+        if cpu_count := psutil.cpu_count():
+            load = [x / cpu_count for x in psutil.getloadavg()]
+            e.add_field(
+                name="Host Load", value=" / ".join(f"{pct:.0%}" for pct in load)
+            )
 
-        system_uptime = uptime.uptime()
-        e.add_field(name="Host Uptime", value=f"{readable.pretty_time(system_uptime)}")
+        if system_uptime := uptime.uptime():
+            e.add_field(
+                name="Host Uptime", value=f"{readable.pretty_time(system_uptime)}"
+            )
 
         bot_uptime = time.time() - BOOT_TIME
         e.add_field(name="Bot Uptime", value=f"{readable.pretty_time(bot_uptime)}")

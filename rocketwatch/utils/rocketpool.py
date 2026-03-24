@@ -133,6 +133,9 @@ class RocketPool:
         block: BlockIdentifier = "latest",
     ) -> list[Any]:
         """Multicall accepting AsyncContractFunction objects or (fn, require_success) tuples."""
+        if not calls:
+            return []
+
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [
             (fn.address, af, fn._encode_transaction_data())

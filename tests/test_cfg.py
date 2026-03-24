@@ -69,7 +69,7 @@ class TestConfigConstruction:
         assert cfg.modules.exclude == []
         assert cfg.modules.enable_commands is None
         assert cfg.other == OtherConfig()
-        assert cfg.other.secrets.wakatime == ""
+        assert cfg.other.secrets.cronitor == ""
         assert cfg.rocketpool.chain == "mainnet"
 
     def test_override_defaults(self):
@@ -135,13 +135,11 @@ class TestStatusMessageConfig:
 class TestSecretsConfig:
     def test_all_default_empty(self):
         s = SecretsConfig()
-        assert s.wakatime == ""
         assert s.cronitor == ""
 
-    def test_partial_override(self):
-        s = SecretsConfig(wakatime="my-key")
-        assert s.wakatime == "my-key"
-        assert s.cronitor == ""
+    def test_override(self):
+        s = SecretsConfig(cronitor="my-key")
+        assert s.cronitor == "my-key"
 
 
 class TestSampleConfig:
