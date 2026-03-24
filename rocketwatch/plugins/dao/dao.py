@@ -6,7 +6,7 @@ from typing import Literal
 from discord import Interaction
 from discord.app_commands import Choice, autocomplete, command, describe
 from discord.ext.commands import Cog
-from eth_typing import ChecksumAddress
+from eth_typing import BlockNumber, ChecksumAddress
 from tabulate import tabulate
 
 from rocketwatch import RocketWatch
@@ -198,26 +198,26 @@ class OnchainDAO(Cog):
 
             for vote_log in await get_logs(
                 proposal_contract.events.ProposalVoted,
-                await ts_to_block(proposal.start) - 1,
-                await ts_to_block(proposal.end_phase_2) + 1,
+                BlockNumber(await ts_to_block(proposal.start) - 1),
+                BlockNumber(await ts_to_block(proposal.end_phase_2) + 1),
                 {"proposalID": proposal.id},
             ):
                 vote = OnchainDAO.Vote(
-                    vote_log.args.voter,
-                    vote_log.args.direction,
-                    solidity.to_float(vote_log.args.votingPower),
-                    vote_log.args.time,
+                    vote_log["args"]["voter"],
+                    vote_log["args"]["direction"],
+                    solidity.to_float(vote_log["args"]["votingPower"]),
+                    vote_log["args"]["time"],
                 )
                 voters[vote.voter] = vote
 
             for override_log in await get_logs(
                 proposal_contract.events.ProposalVoteOverridden,
-                await ts_to_block(proposal.end_phase_1) - 1,
-                await ts_to_block(proposal.end_phase_2) + 1,
+                BlockNumber(await ts_to_block(proposal.end_phase_1) - 1),
+                BlockNumber(await ts_to_block(proposal.end_phase_2) + 1),
                 {"proposalID": proposal.id},
             ):
-                voting_power = solidity.to_float(override_log.args.votingPower)
-                voters[override_log.args.delegate].voting_power -= voting_power
+                voting_power = solidity.to_float(override_log["args"]["votingPower"])
+                voters[override_log["args"]["delegate"]].voting_power -= voting_power
 
             return sorted(voters.values(), key=attrgetter("voting_power"), reverse=True)
 
@@ -276,12 +276,12 @@ class OnchainDAO(Cog):
         ]
 
     @command()
-    @describe(proposal="proposal to show voters for")
-    @autocomplete(proposal=_get_recent_proposals)
-    async def voter_list(self, interaction: Interaction, proposal: int) -> None:
+    @describe(proposal_id="proposal to show voters for")
+    @autocomplete(proposal_id=_get_recent_proposals)
+    async def voter_list(self, interaction: Interaction, proposal_id: int) -> None:
         """Show the list of voters for a pDAO proposal"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
-        if not (proposal := await ProtocolDAO().fetch_proposal(proposal)):
+        if not (proposal := await ProtocolDAO().fetch_proposal(proposal_id)):
             return await interaction.followup.send("Invalid proposal ID.")
 
         view = OnchainDAO.VoterPageView(proposal)
