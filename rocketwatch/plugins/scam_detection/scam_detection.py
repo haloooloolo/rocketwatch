@@ -352,7 +352,10 @@ class ScamDetection(Cog):
             try:
                 view = self.RemovalVoteView(self, message)
                 warning_msg = await message.reply(
-                    embed=warning, view=view, mention_author=False
+                    content="<@828245338347405362>",
+                    embed=warning,
+                    view=view,
+                    mention_author=False,
                 )
             except errors.Forbidden:
                 warning_msg = None
