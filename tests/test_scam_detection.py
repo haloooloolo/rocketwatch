@@ -173,7 +173,7 @@ class TestThreadStarterDeleted:
     async def test_starter_deleted_reports_thread(self, detector):
         thread_id = 123
         thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
-        detector._thread_creation_messages.add(thread_id)
+        detector._thread_creation_messages[thread_id] = thread_id
         detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
         detector.report_thread = AsyncMock()
 

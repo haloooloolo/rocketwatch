@@ -19,6 +19,7 @@ from discord import (
     Interaction,
     Member,
     Message,
+    MessageType,
     PartialEmoji,
     RawBulkMessageDeleteEvent,
     RawMessageDeleteEvent,
@@ -151,7 +152,7 @@ class ScamDetection(Cog):
         self._message_react_cache: TTLCache[
             int, dict[PartialEmoji | Emoji | str, set[User | Member]]
         ] = TTLCache(maxsize=1000, ttl=300)
-        self._thread_creation_messages: set[int] = set()
+        self._thread_creation_messages: dict[int, int] = {}
         self.markdown_link_pattern = re.compile(
             r"(?<=\[)([^/\] ]*).+?(?<=\(https?:\/\/)([^/\)]*)"
         )
@@ -669,15 +670,24 @@ class ScamDetection(Cog):
             f' content="{message.content}", embeds={message.embeds})'
         )
 
-        if message.author.bot:
-            log.warning("Ignoring message sent by bot")
-            return
-
         if message.guild is None:
             return
 
         if message.guild.id != cfg.rocketpool.support.server_id:
             log.warning(f"Ignoring message in {message.guild.id})")
+            return
+
+        # Thread-created system messages (from existing messages) have a different
+        # ID than the thread. Map the system message ID to the thread ID so we can
+        # detect deletion of the starter message.
+        if message.type == MessageType.thread_created and message.reference:
+            thread_id = message.reference.channel_id
+            self._thread_creation_messages.pop(thread_id, None)
+            self._thread_creation_messages[message.id] = thread_id
+            return
+
+        if message.author.bot:
+            log.warning("Ignoring message sent by bot")
             return
 
         if isinstance(message.author, Member) and self.is_reputable(message.author):
@@ -753,14 +763,10 @@ class ScamDetection(Cog):
             )
 
     async def _check_thread_starter_deleted(self, message_id: int) -> None:
-        if message_id not in self._thread_creation_messages:
-            return
-
-        self._thread_creation_messages.remove(message_id)
-
         try:
-            thread = await self.bot.get_or_fetch_channel(message_id)
-        except (errors.NotFound, errors.Forbidden):
+            thread_id = self._thread_creation_messages.pop(message_id)
+            thread = await self.bot.get_or_fetch_channel(thread_id)
+        except (KeyError, errors.NotFound, errors.Forbidden):
             return
 
         if isinstance(thread, Thread):
@@ -829,8 +835,11 @@ class ScamDetection(Cog):
     @Cog.listener()
     async def on_thread_create(self, thread: Thread) -> None:
         if thread.guild.id == cfg.rocketpool.support.server_id:
-            # system message and thread share the same ID
-            self._thread_creation_messages.add(thread.id)
+            # For threads created along with their first message, the
+            # announcement system message will share an ID with the thread
+            # If this is a thread from an existing message, on_message will update
+            # the mapping with the actual system message ID.
+            self._thread_creation_messages[thread.id] = thread.id
 
     @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
