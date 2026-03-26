@@ -116,6 +116,7 @@ dmypy.json
 # state
 state.db
 */config.toml
+compose.override.yaml
 mongodb/
 
 # helper scripts

@@ -1,0 +1,16 @@
+[discord]
+token = ""
+
+[api]
+host = "0.0.0.0"
+port = 8080
+
+[[api.keys]]
+secret = ""
+allowed_server_ids = []
+max_message_age_seconds = 3600
+max_thread_age_seconds = 3600
+max_timeout_seconds = 86400
+allow_kick = false
+allow_ban = false
+max_actions_per_hour = 100

@@ -56,6 +56,12 @@ class RocketPoolConfig(BaseModel):
     dm_warning: DmWarningConfig
 
 
+class SentinelConfig(BaseModel):
+    api_url: str = ""
+    api_key: str = ""
+    timeout_seconds: int = 600
+
+
 class ModulesConfig(BaseModel):
     include: list[str] = []
     exclude: list[str] = []
@@ -92,6 +98,7 @@ class Config(BaseModel):
     mongodb: MongoDBConfig
     rocketpool: RocketPoolConfig
     modules: ModulesConfig = ModulesConfig()
+    sentinel: SentinelConfig = SentinelConfig()
     events: EventsConfig
     other: OtherConfig = OtherConfig()
 

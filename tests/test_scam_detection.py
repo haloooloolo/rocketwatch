@@ -77,6 +77,13 @@ def _make_message(case: dict) -> MagicMock:
     return msg
 
 
+def _make_checks():
+    cfg._instance = _get_test_cfg()
+    from plugins.scam_detection.checks import ScamChecks
+
+    return ScamChecks()
+
+
 def _make_detector():
     cfg._instance = _get_test_cfg()
     bot = MagicMock()
@@ -88,23 +95,23 @@ def _make_detector():
 
 
 @pytest.fixture(scope="module")
-def detector():
-    return _make_detector()
+def checks():
+    return _make_checks()
 
 
-def _check_message(detector, case: dict) -> list[str]:
+def _check_message(checks, case: dict) -> list[str]:
     msg = _make_message(case)
-    checks = [
-        detector._obfuscated_url,
-        detector._ticket_system,
-        detector._suspicious_x_account,
-        detector._suspicious_link,
-        detector._discord_invite,
-        detector._tap_on_this,
-        detector._bio_redirect,
-        detector._spam_wall,
+    results = [
+        checks._obfuscated_url,
+        checks._ticket_system,
+        checks._suspicious_x_account,
+        checks._suspicious_link,
+        checks._discord_invite,
+        checks._tap_on_this,
+        checks._bio_redirect,
+        checks._spam_wall,
     ]
-    return [r for check in checks if (r := check(msg))]
+    return [r for check in results if (r := check(msg))]
 
 
 def _case_id(case):
@@ -113,29 +120,29 @@ def _case_id(case):
 
 class TestMessageDetection:
     @pytest.mark.parametrize("case", TEST_CASES["messages"]["unsafe"], ids=_case_id)
-    def test_unsafe_message_detected(self, detector, case):
-        reasons = _check_message(detector, case)
+    def test_unsafe_message_detected(self, checks, case):
+        reasons = _check_message(checks, case)
         assert reasons, f"Unsafe message not detected: {case['content'][:100]!r}"
 
     @pytest.mark.parametrize("case", TEST_CASES["messages"]["safe"], ids=_case_id)
-    def test_safe_message_not_flagged(self, detector, case):
-        reasons = _check_message(detector, case)
+    def test_safe_message_not_flagged(self, checks, case):
+        reasons = _check_message(checks, case)
         assert not reasons, f"Safe message falsely flagged: {reasons}"
 
     @pytest.mark.parametrize(
         "case", TEST_CASES["messages"]["known_false_positives"], ids=_case_id
     )
     @pytest.mark.xfail(reason="known false positive", strict=True)
-    def test_known_false_positive(self, detector, case):
-        reasons = _check_message(detector, case)
+    def test_known_false_positive(self, checks, case):
+        reasons = _check_message(checks, case)
         assert not reasons, f"Falsely flagged: {reasons}"
 
     @pytest.mark.parametrize(
         "case", TEST_CASES["messages"]["known_false_negatives"], ids=_case_id
     )
     @pytest.mark.xfail(reason="known false negative", strict=True)
-    def test_known_false_negative(self, detector, case):
-        reasons = _check_message(detector, case)
+    def test_known_false_negative(self, checks, case):
+        reasons = _check_message(checks, case)
         assert reasons, f"Scam not detected: {case['content'][:100]!r}"
 
 

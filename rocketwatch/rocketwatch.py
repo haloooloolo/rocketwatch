@@ -47,8 +47,10 @@ class RocketWatch(Bot):
                 log.debug(f"Plugin {_plugin} implicitly included")
                 return True
 
-        for path in Path("plugins").glob("**/*.py"):
-            plugin_name = path.stem
+        for path in Path("plugins").iterdir():
+            if not path.is_dir() or not (path / f"{path.name}.py").exists():
+                continue
+            plugin_name = path.name
             if not should_load_plugin(plugin_name):
                 log.warning(f"Skipping plugin {plugin_name}")
                 continue
