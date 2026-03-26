@@ -165,6 +165,12 @@ class MyStatusPlugin(StatusPlugin):
 
 Plugins can be selectively loaded via the `modules.include` / `modules.exclude` config fields.
 
+## Sentinel
+
+[Sentinel](sentinel/) is a companion moderation bot that acts as a privilege escalation service for Rocket Watch. It exposes an authenticated HTTP API with per-key guardrails, so Rocket Watch itself doesn't need elevated Discord permissions.
+
+See the [Sentinel README](sentinel/README.md) for setup and API documentation.
+
 ## CI/CD
 
 | Workflow | Trigger | Purpose |

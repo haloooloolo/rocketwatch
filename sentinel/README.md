@@ -1,6 +1,6 @@
-# Sentinel
+# Rocket Watch Sentinel
 
-A lightweight Discord moderation bot that acts as a privilege escalation service for [Rocket Watch](https://github.com/haloooloolo/rocketwatch). It holds `manage_messages` and `moderate_members` permissions and exposes an authenticated HTTP API with configurable guardrails.
+A lightweight moderation companion bot that acts as a privilege escalation service for [Rocket Watch](../rocketwatch). It holds `manage_messages`, `manage_threads`, `moderate_members`, `kick_members`, and `ban_members` permissions and exposes an authenticated HTTP API with configurable guardrails.
 
 ## Setup
 
@@ -30,24 +30,24 @@ Generate an API key:
 openssl rand -base64 32
 ```
 
-| Key | Description |
-|-----|-------------|
-| `discord.token` | Bot token from the Discord developer portal |
-| `api.host` | Bind address for the HTTP server |
-| `api.port` | Port for the HTTP server |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `discord.token` | | Bot token from the Discord developer portal |
+| `api.host` | `0.0.0.0` | Bind address for the HTTP server |
+| `api.port` | `8080` | Port for the HTTP server |
 
 Each `[[api.keys]]` entry defines a key with its own guardrails:
 
-| Key | Description |
-|-----|-------------|
-| `secret` | The API key — Rocket Watch's `sentinel.api_key` must match one of these |
-| `allowed_server_ids` | Discord server IDs this key is allowed to act in |
-| `max_message_age_seconds` | Allow deleting messages younger than this; 0 to disable deletion |
-| `max_thread_age_seconds` | Allow locking threads younger than this; 0 to disable locking |
-| `max_timeout_seconds` | Maximum timeout duration; 0 to disable timeouts |
-| `allow_kick` | Enable the kick endpoint for this key |
-| `allow_ban` | Enable the ban endpoint for this key |
-| `max_actions_per_hour` | Rate limit for this key |
+| Key | Default | Description |
+|-----|---------|-------------|
+| `secret` | | The API key — Rocket Watch's `sentinel.api_key` must match one of these |
+| `allowed_server_ids` | `[]` | Discord server IDs this key is allowed to act in |
+| `max_message_age_seconds` | `3600` | Allow deleting messages younger than this; 0 to disable deletion |
+| `max_thread_age_seconds` | `3600` | Allow locking threads younger than this; 0 to disable locking |
+| `max_timeout_seconds` | `86400` | Maximum timeout duration; 0 to disable timeouts |
+| `allow_kick` | `false` | Enable the kick endpoint for this key |
+| `allow_ban` | `false` | Enable the ban endpoint for this key |
+| `max_actions_per_hour` | `100` | Rate limit for this key |
 
 ### 3. Deploy
 
