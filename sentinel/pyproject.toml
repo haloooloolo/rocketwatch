@@ -8,6 +8,16 @@ dependencies = [
     "pydantic>=2.0.0,<3.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
 [tool.ruff]
 target-version = "py312"
 
