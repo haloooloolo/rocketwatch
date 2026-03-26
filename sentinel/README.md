@@ -2,8 +2,6 @@
 
 A lightweight Discord moderation bot that acts as a privilege escalation service for [Rocket Watch](https://github.com/haloooloolo/rocketwatch). It holds `manage_messages` and `moderate_members` permissions and exposes an authenticated HTTP API with configurable guardrails.
 
-Rocket Watch detects scams and requests Sentinel to delete offending messages and timeout their authors. Sentinel validates each request against its guardrails before executing.
-
 ## Setup
 
 ### 1. Create a Discord bot
