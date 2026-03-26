@@ -19,7 +19,7 @@ class RichActivity(commands.Cog):
     async def cog_unload(self):
         self.task.cancel()
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(minutes=5)
     async def task(self):
         self.monitor.ping()
         log.debug("Updating Discord activity")
