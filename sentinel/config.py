@@ -10,7 +10,7 @@ class DiscordConfig(BaseModel):
 class KeyConfig(BaseModel):
     secret: str
     allowed_server_ids: list[int] = []
-    max_message_age_seconds: int = 3600
+    max_message_age_seconds: int = 900
     max_thread_age_seconds: int = 3600
     max_timeout_seconds: int = 86400
     allow_kick: bool = False

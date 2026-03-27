@@ -8,7 +8,7 @@ port = 8080
 [[api.keys]]
 secret = ""
 allowed_server_ids = []
-max_message_age_seconds = 3600
+max_message_age_seconds = 900
 max_thread_age_seconds = 3600
 max_timeout_seconds = 86400
 allow_kick = false
