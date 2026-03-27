@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict, deque
 from datetime import UTC, datetime
 
 from config import KeyConfig
@@ -6,20 +7,19 @@ from config import KeyConfig
 
 class RateLimiter:
     def __init__(self) -> None:
-        self._timestamps: dict[str, list[float]] = {}
+        self._timestamps: dict[str, deque[float]] = defaultdict(deque)
+        self._window = 3600.0
 
     def check(self, key: KeyConfig) -> int | None:
         """Return None if allowed, or seconds until next slot if rate limited."""
         now = time.monotonic()
-        window = 3600.0
-        timestamps = self._timestamps.get(key.secret, [])
-        timestamps = [t for t in timestamps if now - t < window]
+        cutoff = now - self._window
+        timestamps = self._timestamps[key.secret]
+        while timestamps and timestamps[0] <= cutoff:
+            timestamps.popleft()
         if len(timestamps) >= key.max_actions_per_hour:
-            oldest = timestamps[0]
-            self._timestamps[key.secret] = timestamps
-            return int(oldest + window - now) + 1
+            return int(timestamps[0] - cutoff) + 1
         timestamps.append(now)
-        self._timestamps[key.secret] = timestamps
         return None
 
 

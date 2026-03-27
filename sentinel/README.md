@@ -1,6 +1,6 @@
 # Rocket Watch Sentinel
 
-A lightweight moderation companion bot that acts as a privilege escalation service for [Rocket Watch](../rocketwatch). It holds `manage_messages`, `manage_threads`, `moderate_members`, `kick_members`, and `ban_members` permissions and exposes an authenticated HTTP API with configurable guardrails.
+A lightweight moderation companion bot that acts as a privilege escalation service for [Rocket Watch](../rocketwatch). It expects `manage_messages`, `manage_threads`, `moderate_members`, `kick_members`, and `ban_members` permissions and exposes an authenticated HTTP API with configurable guardrails.
 
 ## Setup
 
