@@ -136,6 +136,17 @@ class ScamDetection(Cog):
             self._thread_creation_messages[thread.id] = thread.id
 
     @Cog.listener()
+    async def on_thread_update(self, before: Thread, after: Thread) -> None:
+        if not before.locked and after.locked:
+            db_filter = {"type": "thread", "channel_id": after.id, "removed": False}
+            async with self._thread_report_lock:
+                if report := await self.bot.db.scam_reports.find_one(db_filter):
+                    await self._update_report(report, "Thread has been locked.")
+                    await self.bot.db.scam_reports.update_one(
+                        db_filter, {"$set": {"warning_id": None, "removed": True}}
+                    )
+
+    @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
         db_filter = {"type": "thread", "channel_id": event.thread_id, "removed": False}
         async with self._thread_report_lock:
