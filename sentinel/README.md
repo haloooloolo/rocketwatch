@@ -42,11 +42,12 @@ Each `[[api.keys]]` entry defines a key with its own guardrails:
 |-----|---------|-------------|
 | `secret` | | The API key — Rocket Watch's `sentinel.api_key` must match one of these |
 | `allowed_server_ids` | `[]` | Discord server IDs this key is allowed to act in |
-| `max_message_age_seconds` | `900` | Allow deleting messages younger than this; 0 to disable deletion |
-| `max_thread_age_seconds` | `3600` | Allow locking threads younger than this; 0 to disable locking |
-| `max_timeout_seconds` | `86400` | Maximum duration of user timeouts; 0 to disable timeouts |
-| `allow_kick` | `false` | Enable the kick endpoint for this key |
-| `allow_ban` | `false` | Enable the ban endpoint for this key |
+| `delete_message_max_age_seconds` | `900` | Allow deleting messages younger than this; 0 to disable deletion |
+| `lock_thread_max_age_seconds` | `3600` | Allow locking threads younger than this; 0 to disable locking |
+| `delete_thread_max_age_seconds` | `3600` | Allow deleting threads younger than this; 0 to disable thread deletion |
+| `timeout_member_max_duration_seconds` | `86400` | Maximum duration of user timeouts; 0 to disable timeouts |
+| `kick_max_member_age_seconds` | `604800` | Allow kicking members who joined less than this many seconds ago; 0 to disable kicks |
+| `ban_max_member_age_seconds` | `604800` | Allow banning members who joined less than this many seconds ago; 0 to disable bans |
 | `max_actions_per_hour` | `100` | Rate limit for this key |
 
 ### 3. Deploy
@@ -77,7 +78,7 @@ All endpoints require an `X-Api-Key` header matching a configured key. Guardrail
 {"guild_id": 123, "channel_id": 456, "message_id": 789, "reason": "..."}
 ```
 
-Guardrails: server must be in the allowlist, message must be younger than `max_message_age_seconds`.
+Guardrails: server must be in the allowlist, message must be younger than `delete_message_max_age_seconds`.
 
 ### `POST /lock_thread`
 
@@ -85,7 +86,15 @@ Guardrails: server must be in the allowlist, message must be younger than `max_m
 {"guild_id": 123, "thread_id": 456, "reason": "..."}
 ```
 
-Locks and archives the thread, preventing non-moderators from posting or unarchiving. Guardrails: server must be in the allowlist, thread must be younger than `max_thread_age_seconds`.
+Locks and archives the thread, preventing non-moderators from posting or unarchiving. Guardrails: server must be in the allowlist, thread must be younger than `lock_thread_max_age_seconds`.
+
+### `POST /delete_thread`
+
+```json
+{"guild_id": 123, "thread_id": 456, "reason": "..."}
+```
+
+Deletes the thread entirely. Guardrails: server must be in the allowlist, thread must be younger than `delete_thread_max_age_seconds`.
 
 ### `POST /timeout_member`
 
@@ -93,7 +102,7 @@ Locks and archives the thread, preventing non-moderators from posting or unarchi
 {"guild_id": 123, "user_id": 456, "duration_seconds": 600, "reason": "..."}
 ```
 
-Guardrails: server allowlist, duration capped at `max_timeout_seconds`, refuses to timeout moderators.
+Guardrails: server allowlist, duration capped at `timeout_member_max_duration_seconds`, refuses to timeout moderators.
 
 ### `POST /kick_member`
 
@@ -101,7 +110,7 @@ Guardrails: server allowlist, duration capped at `max_timeout_seconds`, refuses 
 {"guild_id": 123, "user_id": 456, "reason": "..."}
 ```
 
-Requires `allow_kick = true` in config. Guardrails: server allowlist, refuses to kick moderators.
+Guardrails: server allowlist, refuses to kick moderators, member must have joined less than `kick_max_member_age_seconds` ago; 0 to disable.
 
 ### `POST /ban_member`
 
@@ -109,7 +118,7 @@ Requires `allow_kick = true` in config. Guardrails: server allowlist, refuses to
 {"guild_id": 123, "user_id": 456, "reason": "..."}
 ```
 
-Requires `allow_ban = true` in config. Guardrails: server allowlist, refuses to ban moderators.
+Guardrails: server allowlist, refuses to ban moderators, member must have joined less than `ban_max_member_age_seconds` ago; 0 to disable.
 
 ### Error responses
 
@@ -119,7 +128,7 @@ Requires `allow_ban = true` in config. Guardrails: server allowlist, refuses to 
 | 403 | Sentinel lacks the required Discord permission, or action is disabled in config |
 | 404 | Server, channel, member, or message not found |
 | 409 | Member is already timed out |
-| 422 | Guardrail violation (message too old, duration too long, server not allowed, target is moderator) |
+| 422 | Guardrail violation (message too old, member too old, duration too long, server not allowed, target is moderator) |
 | 429 | Rate limited — `retry_after_seconds` included in response |
 
 ## Audit

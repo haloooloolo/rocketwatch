@@ -8,9 +8,10 @@ port = 8080
 [[api.keys]]
 secret = ""
 allowed_server_ids = []
-max_message_age_seconds = 900
-max_thread_age_seconds = 3600
-max_timeout_seconds = 86400
-allow_kick = false
-allow_ban = false
+delete_message_max_age_seconds = 900
+lock_thread_max_age_seconds = 3600
+delete_thread_max_age_seconds = 3600
+timeout_member_max_duration_seconds = 86400
+kick_max_member_age_seconds = 604800
+ban_max_member_age_seconds = 604800
 max_actions_per_hour = 100

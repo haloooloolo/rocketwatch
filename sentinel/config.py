@@ -10,11 +10,12 @@ class DiscordConfig(BaseModel):
 class KeyConfig(BaseModel):
     secret: str
     allowed_server_ids: list[int] = []
-    max_message_age_seconds: int = 900
-    max_thread_age_seconds: int = 3600
-    max_timeout_seconds: int = 86400
-    allow_kick: bool = False
-    allow_ban: bool = False
+    delete_message_max_age_seconds: int = 900
+    lock_thread_max_age_seconds: int = 3600
+    delete_thread_max_age_seconds: int = 3600
+    timeout_member_max_duration_seconds: int = 86400
+    kick_max_member_age_seconds: int = 604800
+    ban_max_member_age_seconds: int = 604800
     max_actions_per_hour: int = 100
 
 
