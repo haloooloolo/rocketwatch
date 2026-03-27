@@ -101,7 +101,7 @@ class ScamWarning(commands.Cog):
             try:
                 await self.send_warning(message.author)
                 last_failure_time = None
-            except errors.Forbidden:
+            except (errors.Forbidden, errors.HTTPException):
                 log.info(f"Unable to DM {message.author}, skipping warning.")
                 last_failure_time = msg_time
 
