@@ -296,7 +296,7 @@ class ScamDetection(Cog):
                 return
 
             if actions:
-                embed = Embed(title=":hammer: Moderation Action Taken")
+                embed = Embed(title=":hammer: Automated Moderation")
                 embed.color = ReportColor.ALERT
                 embed.description = (
                     f"{' and '.join(actions)}.\n"
@@ -359,7 +359,7 @@ class ScamDetection(Cog):
                 return
 
             if actions and isinstance(thread.parent, Messageable):
-                embed = Embed(title=":hammer: Moderation Action Taken")
+                embed = Embed(title=":hammer: Automated Moderation")
                 embed.color = ReportColor.ALERT
                 embed.description = (
                     f"{' and '.join(actions)}.\n"
