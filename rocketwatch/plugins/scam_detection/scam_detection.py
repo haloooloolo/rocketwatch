@@ -2,7 +2,9 @@ import asyncio
 import contextlib
 import json
 import logging
+from datetime import timedelta
 
+import humanize
 from discord import (
     AppCommandType,
     DeletedReferencedMessage,
@@ -275,12 +277,34 @@ class ScamDetection(Cog):
 
             # this might take a while with retries on failure
             # we'd rather be fast with the initial warning and then delete it after
+
+            actions = []
+            timeout_duration = timedelta(hours=24)
             try:
-                await self._sentinel.delete_message(message, reason)
-                if isinstance(message.author, Member):
-                    await self._sentinel.timeout_member(message.author, 86400, reason)
+                if await self._sentinel.delete_message(message, reason):
+                    actions.append("Message deleted")
+                if isinstance(message.author, Member):  # noqa: SIM102
+                    if await self._sentinel.timeout_member(
+                        message.author, int(timeout_duration.total_seconds()), reason
+                    ):
+                        duration = humanize.naturaldelta(timeout_duration)
+                        actions.append(
+                            f"{message.author.mention} timed out for {duration}"
+                        )
             except Exception as e:
                 await self.bot.report_error(e)
+                return
+
+            if actions:
+                embed = Embed(title=":hammer: Moderation Action Taken")
+                embed.color = ReportColor.ALERT
+                embed.description = (
+                    f"{' and '.join(actions)}.\n"
+                    f"**Reason**: Message Content - {reason}\n"
+                    f"[View report]({report_msg.jump_url})"
+                )
+                with contextlib.suppress(errors.Forbidden):
+                    await message.channel.send(embed=embed)
 
     async def report_thread(self, thread: Thread, reason: str) -> None:
         async with self._thread_report_lock:
@@ -316,14 +340,34 @@ class ScamDetection(Cog):
             if not self._sentinel:
                 return
 
+            actions = []
+            timeout_duration = timedelta(hours=24)
             try:
-                await self._sentinel.lock_thread(thread, reason)
-                if thread.owner_id and (
-                    member := thread.guild.get_member(thread.owner_id)
+                if await self._sentinel.lock_thread(thread, reason):
+                    actions.append("Thread locked")
+                if (
+                    thread.owner_id
+                    and (member := thread.guild.get_member(thread.owner_id))
+                    and await self._sentinel.timeout_member(
+                        member, int(timeout_duration.total_seconds()), reason
+                    )
                 ):
-                    await self._sentinel.timeout_member(member, 86400, reason)
+                    duration = humanize.naturaldelta(timeout_duration)
+                    actions.append(f"{member.mention} timed out for {duration}")
             except Exception as e:
                 await self.bot.report_error(e)
+                return
+
+            if actions and isinstance(thread.parent, Messageable):
+                embed = Embed(title=":hammer: Moderation Action Taken")
+                embed.color = ReportColor.ALERT
+                embed.description = (
+                    f"{' and '.join(actions)}.\n"
+                    f"**Reason**: {thread.jump_url} - {reason}\n"
+                    f"[View report]({report_msg.jump_url})"
+                )
+                with contextlib.suppress(errors.Forbidden):
+                    await thread.parent.send(embed=embed)
 
     # --- Report generation ---
 
