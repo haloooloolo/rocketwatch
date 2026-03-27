@@ -9,7 +9,9 @@ import termplotlib as tpl
 from eth_typing import ChecksumAddress
 
 from utils import solidity
+from utils.embeds import el_explorer_url
 from utils.rocketpool import rp
+from utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.dao")
 
@@ -372,3 +374,54 @@ class ProtocolDAO(DAO):
             )
 
         return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Formatting helpers for DAO governance embeds
+# ---------------------------------------------------------------------------
+
+
+def _share_repr(percentage: float, max_width: int = 35) -> str:
+    num_points = round(max_width * percentage / 100)
+    return "*" * num_points
+
+
+def build_claimer_description(args: dict[str, int]) -> str:
+    node_share = args["nodePercent"] / 10**16
+    pdao_share = args["protocolPercent"] / 10**16
+    odao_share = args["trustedNodePercent"] / 10**16
+
+    return "\n".join(
+        [
+            "Node Operator Share",
+            f"{_share_repr(node_share)} {node_share:.1f}%",
+            "Protocol DAO Share",
+            f"{_share_repr(pdao_share)} {pdao_share:.1f}%",
+            "Oracle DAO Share",
+            f"{_share_repr(odao_share)} {odao_share:.1f}%",
+        ]
+    )
+
+
+def decode_setting_multi(args: dict[str, list], values_list: list[bytes]) -> str:
+    description_parts = []
+    for i in range(len(args["settingContractNames"])):
+        value_raw = values_list[i]
+        match args["types"][i]:
+            case 0:
+                # SettingType.UINT256
+                value = w3.to_int(value_raw)
+            case 1:
+                # SettingType.BOOL
+                value = bool(value_raw)
+            case 2:
+                # SettingType.ADDRESS
+                value = w3.to_checksum_address(value_raw)
+            case _:
+                value = "???"
+        description_parts.append(f"`{args['settingPaths'][i]}` set to `{value}`")
+    return "\n".join(description_parts)
+
+
+async def wrap_member_address(address: ChecksumAddress, block: int) -> str:
+    return await el_explorer_url(address, block=block)

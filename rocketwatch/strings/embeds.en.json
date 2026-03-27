@@ -87,10 +87,6 @@
         "title": ":bulb: New oDAO Proposal",
         "description": "%{proposer} created **proposal #%{proposalID}**!\n```%{proposal_body}```"
     },
-    "odao_proposal_execute": {
-        "title": ":white_check_mark: oDAO Proposal Executed",
-        "description": "%{executor} executed **proposal #%{proposalID}**!\n```%{proposal_body}```"
-    },
     "odao_proposal_vote_event": {
         "title": ":ballot_box: oDAO Vote",
         "description": "%{voter} voted %{decision} **proposal #%{proposalID}**!\n```%{proposal_body}```"
@@ -111,14 +107,6 @@
         "title": ":boot: oDAO Member Kicked",
         "description": "%{nodeAddress} was kicked from the oDAO!"
     },
-    "odao_setting": {
-        "title": ":crystal_ball: oDAO Setting Modified",
-        "description": "Setting `%{settingPath}` set to `%{value_raw}`!"
-    },
-    "odao_upgrade": {
-        "title": ":crystal_ball: oDAO Contract Upgrade",
-        "description": "The contract `%{name}` has been upgraded to %{contractAddress}!"
-    },
     "odao_upgrade_pending_event": {
         "title": ":hourglass: Contract Upgrade Pending",
         "description": "The upgrade process for `%{contractName}` has been initiated.\nVeto window ends %{vetoDeadline}."
@@ -135,17 +123,9 @@
         "title": ":page_facing_up: Contract Upgraded",
         "description": "`%{contractName}` has been upgraded to %{newAddress}."
     },
-    "odao_member_invite": {
-        "title": ":crystal_ball: oDAO Invite",
-        "description": "**%{id}** (%{nodeAddress}) has been invited to join the oDAO!"
-    },
     "sdao_proposal_add_event": {
         "title": ":bulb: New Security Council Proposal",
         "description": "%{proposer} created **proposal #%{proposalID}**!\n```%{proposal_body}```"
-    },
-    "sdao_proposal_execute": {
-        "title": ":white_check_mark: Security Council Proposal Executed",
-        "description": "%{executor} executed **proposal #%{proposalID}**!\n```%{proposal_body}```"
     },
     "sdao_proposal_vote_event": {
         "title": ":ballot_box: Security Council Vote",
@@ -166,22 +146,6 @@
     "sdao_member_request_leave_event": {
         "title": ":door: Security Council Resignation Request",
         "description": "%{nodeAddress} has requested to leave the security council!"
-    },
-   "sdao_member_invite": {
-        "title": ":lock: Security Council Invite",
-        "description": "%{memberAddress} has been invited to join the security council!"
-    },
-    "sdao_member_kick": {
-        "title": ":boot: Security Council Expulsion",
-        "description": "%{memberAddress} has been kicked from the security council!"
-    },
-    "sdao_member_kick_multi": {
-        "title": ":boot: Security Council Mass Expulsion",
-        "description": "Multiple members have been kicked from the security council!\n%{member_list}"
-    },
-    "sdao_member_replace": {
-        "title": ":repeat: Security Council Replacement",
-        "description": "%{existingMemberAddress} has been replaced by %{newMemberAddress}!"
     },
     "node_register_event": {
         "title": ":mailbox_with_mail: Node Registered",
@@ -224,22 +188,6 @@
         "title": ":tada: Milestone Reached",
         "description": "%{result_value} rETH deposited into the RockSolid vault!"
     },
-    "bootstrap_odao_member": {
-        "title": ":satellite_orbital: oDAO Bootstrap Mode: Member Added",
-        "description": "%{nodeAddress} added as a new oDAO member!"
-    },
-    "bootstrap_odao_setting": {
-        "title": ":satellite_orbital: oDAO Bootstrap Mode: Setting Modified",
-        "description": "Setting `%{settingPath}` set to `%{value_raw}`!"
-    },
-    "bootstrap_odao_network_upgrade": {
-        "title": ":satellite_orbital: oDAO Bootstrap Mode: Network Upgrade",
-        "description": "%{description}"
-    },
-    "bootstrap_odao_disable": {
-        "title": ":satellite_orbital: oDAO Bootstrap Mode Disabled",
-        "description": "Bootstrap mode for the oDAO is now disabled! The guardian has handed off full control over the Oracle DAO to its members!"
-    },
     "bootstrap_pdao_setting_multi_event": {
         "title": ":satellite_orbital: pDAO Bootstrap Mode: Multiple Settings Modified",
         "description": "%{description}"
@@ -280,22 +228,6 @@
         "title": ":satellite_orbital: pDAO Bootstrap Mode: Kicked Security Council Member",
         "description": "%{memberAddress} has been removed from the security council!"
     },
-    "sdao_setting": {
-        "title": ":lock: Security Council Setting Modified",
-        "description": "Setting `%{settingPath}` set to `%{value_raw}`!"
-    },
-    "pdao_setting_multi": {
-        "title": ":classical_building: Protocol DAO: Multiple Settings Modified",
-        "description": "%{description}"
-    },
-    "pdao_setting": {
-        "title": ":classical_building: Protocol DAO: Setting Modified",
-        "description": "Setting `%{settingPath}` set to `%{value_raw}`!"
-    },
-    "pdao_claimer": {
-        "title": ":classical_building: Protocol DAO: Changed Reward Distribution",
-        "description": "```%{description}```"
-    },
     "pdao_proposal_add_event": {
         "title": ":bulb: New pDAO Proposal",
         "description": "%{proposer} created **proposal #%{proposalID}**!\n```%{proposal_body}```"
@@ -307,10 +239,6 @@
     "pdao_proposal_vote_override_event": {
         "title": ":person_gesturing_no: pDAO Delegate Override",
         "description": "**Proposal #%{proposalID}**:\n%{voter} overrode their delegate %{delegate} to vote `%{decision}` with a voting power of **%{votingPower}**!\n```%{proposal_body}```"
-    },
-    "pdao_proposal_execute": {
-        "title": ":white_check_mark: pDAO Proposal Executed",
-        "description": "%{executor} executed **proposal #%{proposalID}**!\n```%{proposal_body}```"
     },
     "pdao_proposal_finalise_event": {
         "title": ":x: pDAO Proposal Finalized",
@@ -331,27 +259,6 @@
     "pdao_proposal_bond_burn_event": {
         "title": ":fire: pDAO Proposal Bond Burned",
         "description": "**Proposal #%{proposalID}**:\nThe **%{amount} RPL** bond posted by %{proposer} has been burned!"
-    },
-    "pdao_set_delegate": {
-        "title": ":handshake: Large pDAO Delegation",
-        "description": "%{delegator} has delegated their voting power of **%{votingPower}** to %{delegate}!",
-        "description_small": ":handshake: %{delegator_clean} has delegated their voting power of **%{votingPower}** to %{delegate_clean}!"
-    },
-    "pdao_spend_treasury": {
-        "title": ":bank: DAO Treasury Spend",
-        "description": "**%{amount} RPL** from treasury sent to %{recipientAddress}!"
-    },
-    "pdao_spend_treasury_recurring_new": {
-        "title": ":bank: DAO Treasury: New Recurring Spend",
-        "description": "%{recipientAddress} will be awarded **%{numPeriods} x %{amountPerPeriod} RPL**!"
-    },
-    "pdao_spend_treasury_recurring_update": {
-        "title": ":bank: DAO Treasury: Updated Recurring Spend",
-        "description": "%{recipientAddress} will be awarded **%{numPeriods} x %{amountPerPeriod} RPL**!"
-    },
-    "pdao_spend_treasury_recurring_claim": {
-        "title": ":bank: DAO Treasury Contract Claim",
-        "description": "%{recipient_address} has claimed **%{amount} RPL** from `%{contract_name}`!\n%{contract_validity}"
     },
     "minipool_scrub_event": {
         "title": ":rotating_light: Minipool Scrubbed",
@@ -443,10 +350,6 @@
         "title": ":link: Solo Migration Initiated",
         "description": "Migration of solo validator %{pubkey} to minipool %{minipool} with a bond of **%{bondAmount} ETH** was initiated!"
     },
-    "minipool_failed_deposit": {
-        "title": ":fire: Failed Validator Deposit",
-        "description": ":fire_engine: %{node} burned **%{burnedValue} ETH** trying to create a validator! :fire_engine:"
-    },
     "validator_slash_event": {
         "title": ":rotating_light: Validator Slashed",
         "description": "Validtor %{validator} has been slashed by %{slasher}"
@@ -495,37 +398,9 @@
         "title": ":no_entry_sign: oDAO Member Challenge Rejected",
         "description": "%{nodeChallengedAddress_clean} has responded to the challenge, making it invalid!"
     },
-    "deposit_pool_queue_clear_full": {
-        "title": ":tada: Deposit Pool Queue Clear",
-        "description": "%{node} cleared %{count} minipools from the deposit pool queue!"
-    },
-    "deposit_pool_queue_clear_partial": {
-        "title": ":tada: Partial Deposit Pool Queue Clear",
-        "description": "%{node} cleared %{count} minipools from the deposit pool queue!"
-    },
     "odao_minipool_penalty_updated": {
         "title": ":rotating_light: Minipool Penalty",
         "description": "The maximum minipool penalty tate has been raised to %{rate_perc}%!"
-    },
-    "redstone_upgrade_triggered": {
-        "title": ":tada: Redstone Upgrade Complete!",
-        "description": ""
-    },
-    "atlas_upgrade_triggered": {
-        "title": ":tada: Atlas Upgrade Complete!",
-        "description": ""
-    },
-    "houston_upgrade_triggered": {
-        "title": ":tada: Houston Upgrade Complete!",
-        "description": ""
-    },
-    "houston_hotfix_upgrade_triggered": {
-        "title": ":tada: Houston Hotfix Upgrade Complete!",
-        "description": ""
-    },
-    "saturn_one_upgrade_triggered": {
-        "title": ":ringed_planet: Saturn 1 Upgrade Complete!",
-        "description": ""
     },
     "unsteth_withdrawal_requested_event": {
         "title": ":money_with_wings: Large stETH Withdrawal Requested",

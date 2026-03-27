@@ -19,7 +19,13 @@ from rocketwatch import RocketWatch
 from utils import solidity
 from utils.block_time import block_to_ts
 from utils.config import cfg
-from utils.dao import DefaultDAO, ProtocolDAO
+from utils.dao import (
+    DefaultDAO,
+    ProtocolDAO,
+    build_claimer_description,
+    decode_setting_multi,
+    wrap_member_address,
+)
 from utils.embeds import Embed, assemble, el_explorer_url, prepare_args
 from utils.event import Event, EventPlugin
 from utils.rocketpool import NoAddressFound, rp
@@ -594,46 +600,11 @@ class Events(EventPlugin):
             if not (ts < args.rewardPeriodEnd < earliest_next_update):
                 return None
         elif event_name == "bootstrap_pdao_setting_multi_event":
-            description_parts = []
-            for i in range(len(args.settingContractNames)):
-                value_raw = args.values[i]
-                match args.types[i]:
-                    case 0:
-                        # SettingType.UINT256
-                        value = w3.to_int(value_raw)
-                    case 1:
-                        # SettingType.BOOL
-                        value = bool(value_raw)
-                    case 2:
-                        # SettingType.ADDRESS
-                        value = w3.to_checksum_address(value_raw)
-                    case _:
-                        value = "???"
-                description_parts.append(f"`{args.settingPaths[i]}` set to `{value}`")
-            args.description = "\n".join(description_parts)
+            args.description = decode_setting_multi(args, args.values)
         elif event_name == "bootstrap_pdao_claimer_event":
-
-            def share_repr(percentage: float) -> str:
-                max_width = 35
-                num_points = round(max_width * percentage / 100)
-                return "*" * num_points
-
-            node_share = args.nodePercent / 10**16
-            pdao_share = args.protocolPercent / 10**16
-            odao_share = args.trustedNodePercent / 10**16
-
-            args.description = "\n".join(
-                [
-                    "Node Operator Share",
-                    f"{share_repr(node_share)} {node_share:.1f}%",
-                    "Protocol DAO Share",
-                    f"{share_repr(pdao_share)} {pdao_share:.1f}%",
-                    "Oracle DAO Share",
-                    f"{share_repr(odao_share)} {odao_share:.1f}%",
-                ]
-            )
+            args.description = build_claimer_description(args)
         elif event_name == "bootstrap_sdao_member_kick_event":
-            args.memberAddress = await el_explorer_url(
+            args.memberAddress = await wrap_member_address(
                 args.memberAddress, block=(event.blockNumber - 1)
             )
         elif event_name in [

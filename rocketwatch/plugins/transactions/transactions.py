@@ -1,97 +1,201 @@
+from __future__ import annotations
+
+import contextlib
 import json
 import logging
-import warnings
+from collections.abc import Sequence
+from typing import Any, get_args
 
 import web3.exceptions
 from discord import Interaction
-from discord.app_commands import command, guilds
+from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
+from discord.ui import Modal, TextInput
 from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress
-from web3.datastructures import MutableAttributeDict as aDict
+from hexbytes import HexBytes
+from web3.types import BlockData, TxData, TxReceipt
 
+from plugins.transactions.events import (
+    DAO_PROPOSAL_EVENTS,
+    TRANSACTION_REGISTRY,
+    DAOProposalExecuteEvent,
+    EventContext,
+    EventData,
+    ProposalExecuteEvent,
+    TransactionEvent,
+    UpgradeTriggeredEvent,
+)
 from rocketwatch import RocketWatch
-from utils import solidity
 from utils.config import cfg
 from utils.dao import DefaultDAO, ProtocolDAO
-from utils.embeds import Embed, assemble, el_explorer_url, prepare_args
+from utils.embeds import Embed
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.transactions")
 
+_DUMMY_TX_HASH = "0x" + "0" * 64
 
-class Transactions(EventPlugin):
-    def __init__(self, bot: RocketWatch):
-        super().__init__(bot)
-        self.addresses = None
-        self.function_map = None
 
-    async def _ensure_config(self):
-        if self.addresses is None:
-            self.addresses, self.function_map = await self._parse_transaction_config()
+def _get_event_fields(
+    event_cls: TransactionEvent,
+) -> list[tuple[str, bool]]:
+    """Return ``[(name, required), ...]`` for non-context fields of *event_cls*'s ArgsT."""
+    context_keys = set(EventContext.__annotations__)
+    for base in type(event_cls).__orig_bases__:
+        type_args = get_args(base)
+        if type_args and type_args[0] is not EventContext:
+            args_type = type_args[0]
+            return [
+                (name, name in args_type.__required_keys__)
+                for name in args_type.__annotations__
+                if name not in context_keys
+            ]
+    return []
 
-    @staticmethod
-    async def _parse_transaction_config() -> tuple[list[ChecksumAddress], dict]:
-        addresses: list[ChecksumAddress] = []
-        function_map = {}
 
-        with open("./plugins/transactions/functions.json") as f:
-            tx_config = json.load(f)
-
-        for contract_name, mapping in tx_config.items():
-            try:
-                address = await rp.get_address_by_name(contract_name)
-                addresses.append(address)
-                function_map[contract_name] = mapping
-            except Exception:
-                log.warning(f"Could not find address for contract {contract_name}")
-
-        return addresses, function_map
-
-    @command()
-    @guilds(cfg.discord.owner.server_id)
-    @is_owner()
-    async def trigger_tx(
+class TriggerTxModal(Modal):
+    def __init__(
         self,
-        interaction: Interaction,
-        contract: str,
+        event_cls: TransactionEvent,
         function: str,
-        json_args: str = "{}",
-        block_number: int = 0,
+        block_number: int,
+        fields: list[tuple[str, bool]],
     ) -> None:
-        await interaction.response.defer()
-        try:
-            event_obj = aDict(
-                {
-                    "hash": aDict(
-                        {"hex": lambda: "0x0000000000000000000000000000000000000000"}
-                    ),
-                    "blockNumber": block_number,
-                    "args": json.loads(json_args) | {"function_name": function},
-                }
-            )
-        except json.JSONDecodeError:
-            await interaction.followup.send(content="Invalid JSON args!")
-            return
+        super().__init__(title=event_cls.event_name[:45])
+        self.event_cls = event_cls
+        self.function = function
+        self.block_number = block_number
+        self.fields = fields
+        self.param_inputs: list[TextInput] = []
+        for name, required in fields:
+            text_input: TextInput = TextInput(label=name[:45], required=required)
+            self.add_item(text_input)
+            self.param_inputs.append(text_input)
 
-        event_name = self.function_map[contract][function]
-        if embeds := await self.create_embeds(event_name, event_obj):
+    async def on_submit(self, interaction: Interaction) -> None:
+        await interaction.response.defer()
+        parsed_args: dict[str, Any] = {}
+        for text_input, (name, _) in zip(self.param_inputs, self.fields, strict=True):
+            if text_input.value:
+                val: Any = text_input.value
+                with contextlib.suppress(json.JSONDecodeError, ValueError):
+                    val = json.loads(val)
+                parsed_args[name] = val
+
+        event_data: EventData = {
+            "hash": _DUMMY_TX_HASH,
+            "blockNumber": self.block_number,
+        }
+        args: dict[str, Any] = {
+            **parsed_args,
+            "function_name": self.function,
+            "event_name": self.event_cls.event_name,
+            "transactionHash": _DUMMY_TX_HASH,
+            "blockNumber": self.block_number,
+        }
+        if embeds := await self.event_cls.build_embeds(args, event_data, None):
             await interaction.followup.send(embeds=embeds)
         else:
             await interaction.followup.send(content="No events triggered.")
 
+
+class Transactions(EventPlugin):
+    def __init__(self, bot: RocketWatch) -> None:
+        super().__init__(bot)
+        self.addresses: list[ChecksumAddress] | None = None
+
+    async def _ensure_config(self) -> None:
+        if self.addresses is None:
+            self.addresses = await self._parse_transaction_config()
+
+    @staticmethod
+    async def _parse_transaction_config() -> list[ChecksumAddress]:
+        addresses: list[ChecksumAddress] = []
+        for contract_name in TRANSACTION_REGISTRY:
+            try:
+                addresses.append(await rp.get_address_by_name(contract_name))
+            except Exception:
+                log.warning("Could not find address for contract %s", contract_name)
+        return addresses
+
+    # --- Slash commands ---
+
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def replay_tx(self, interaction: Interaction, tx_hash: str):
+    async def preview(
+        self,
+        interaction: Interaction,
+        contract: str,
+        function: str,
+        block_number: int = 0,
+    ) -> None:
+        event_cls = TRANSACTION_REGISTRY.get(contract, {}).get(function)
+        if event_cls is None:
+            await interaction.response.send_message(
+                content="No event registered for that contract/function."
+            )
+            return
+
+        fields = _get_event_fields(event_cls)
+        if fields:
+            modal = TriggerTxModal(event_cls, function, block_number, fields)
+            await interaction.response.send_modal(modal)
+        else:
+            await interaction.response.defer()
+            event_data: EventData = {
+                "hash": _DUMMY_TX_HASH,
+                "blockNumber": block_number,
+            }
+            args: EventContext = {
+                "function_name": function,
+                "event_name": event_cls.event_name,
+                "transactionHash": _DUMMY_TX_HASH,
+                "blockNumber": block_number,
+            }
+            if embeds := await event_cls.build_embeds(args, event_data, None):
+                await interaction.followup.send(embeds=embeds)
+            else:
+                await interaction.followup.send(content="No events triggered.")
+
+    @preview.autocomplete("contract")
+    async def _autocomplete_contract(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
+        return [
+            Choice(name=name, value=name)
+            for name in TRANSACTION_REGISTRY
+            if current.lower() in name.lower()
+        ][:25]
+
+    @preview.autocomplete("function")
+    async def _autocomplete_function(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
+        contract = interaction.namespace.contract or ""
+        functions = TRANSACTION_REGISTRY.get(contract, {})
+        return [
+            Choice(name=name, value=name)
+            for name in functions
+            if current.lower() in name.lower()
+        ][:25]
+
+    @command()
+    @guilds(cfg.discord.owner.server_id)
+    @is_owner()
+    async def replay_tx(self, interaction: Interaction, tx_hash: str) -> None:
         await interaction.response.defer()
+        if not tx_hash.startswith("0x") or len(tx_hash) != 66:
+            await interaction.followup.send(content="Invalid transaction hash.")
+            return
         await self._ensure_config()
-        tnx = await w3.eth.get_transaction(tx_hash)
-        block = await w3.eth.get_block(tnx.blockHash)
+        tnx: TxData = await w3.eth.get_transaction(tx_hash)
+        block: BlockData = await w3.eth.get_block(tnx["blockHash"])
 
         responses: list[Event] = await self.process_transaction(
-            block, tnx, tnx.to, tnx.input
+            block, tnx, tnx["to"], tnx["input"]
         )
         if responses:
             await interaction.followup.send(
@@ -100,11 +204,15 @@ class Transactions(EventPlugin):
         else:
             await interaction.followup.send(content="No events found.")
 
+    # --- EventPlugin lifecycle ---
+
     async def _get_new_events(self) -> list[Event]:
         await self._ensure_config()
         old_addresses = self.addresses
         try:
-            from_block = self.last_served_block + 1 - self.lookback_distance
+            from_block = BlockNumber(
+                self.last_served_block + 1 - self.lookback_distance
+            )
             return await self.get_past_events(from_block, self._pending_block)
         except Exception as err:
             # rollback in case of contract upgrade
@@ -115,289 +223,209 @@ class Transactions(EventPlugin):
         self, from_block: BlockNumber, to_block: BlockNumber
     ) -> list[Event]:
         await self._ensure_config()
-        events = []
+        events: list[Event] = []
         for block in range(from_block, to_block):
             events.extend(await self.get_events_for_block(block))
         return events
 
     async def get_events_for_block(self, block_number: BlockIdentifier) -> list[Event]:
-        log.debug(f"Checking block {block_number}")
+        log.debug("Checking block %s", block_number)
         try:
-            block = await w3.eth.get_block(block_number, full_transactions=True)
+            block: BlockData = await w3.eth.get_block(
+                block_number, full_transactions=True
+            )
         except web3.exceptions.BlockNotFound:
-            log.error(f"Skipping block {block_number} as it can't be found")
+            log.error("Skipping block %s as it can't be found", block_number)
             return []
 
-        events = []
-        for tnx in block.transactions:
+        # full_transactions=True guarantees Sequence[TxData], not Sequence[HexBytes]
+        transactions: Sequence[TxData] = block.get("transactions", [])  # type: ignore[assignment]
+        events: list[Event] = []
+        for tnx in transactions:
             if "to" in tnx:
                 events.extend(
-                    await self.process_transaction(block, tnx, tnx.to, tnx.input)
+                    await self.process_transaction(block, tnx, tnx["to"], tnx["input"])
                 )
             else:
                 log.debug(
-                    f"Skipping transaction {tnx.hash.hex()} as it has no `to` parameter. "
-                    f"Possible contract creation."
+                    "Skipping transaction %s as it has no `to` parameter. "
+                    "Possible contract creation.",
+                    tnx["hash"].hex(),
                 )
 
         return events
 
-    async def create_embeds(self, event_name: str, event: aDict) -> list[Embed]:
-        # prepare args
-        args = aDict(event.args)
-
-        # store event_name in args
-        args.event_name = event_name
-
-        # add transaction hash and block number to args
-        args.transactionHash = event.hash.to_0x_hex()
-        args.blockNumber = event.blockNumber
-
-        # oDAO bootstrap doesn't emit an event
-        if "odao_disable" in event_name and not args.confirmDisableBootstrapMode:
-            return []
-        elif event_name == "pdao_set_delegate":
-            receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
-            args.delegator = receipt["from"]
-            args.delegate = args.get("delegate") or args.get("newDelegate")
-            args.votingPower = solidity.to_float(
-                await rp.call(
-                    "rocketNetworkVoting.getVotingPower",
-                    args.delegator,
-                    args.blockNumber,
-                )
-            )
-            if (args.votingPower < 50) or (args.delegate == args.delegator):
-                return []
-        elif "failed_deposit" in event_name:
-            receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
-            args.node = receipt["from"]
-            args.burnedValue = solidity.to_float(event.gasPrice * receipt.gasUsed)
-        elif "deposit_pool_queue" in event_name:
-            receipt = await w3.eth.get_transaction_receipt(args.transactionHash)
-            args.node = receipt["from"]
-            event = (
-                await rp.get_contract_by_name("rocketMinipoolQueue")
-            ).events.MinipoolDequeued()
-            # get the amount of dequeues that happened in this transaction using the event logs
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                processed_logs = event.process_receipt(receipt)
-            args.count = len(processed_logs)
-        elif "SettingBool" in args.function_name:
-            args.value = bool(args.value)
-        # this is duplicated for now because boostrap events are in events.py
-        # and there is no good spot in utils for it
-        elif event_name == "pdao_claimer":
-
-            def share_repr(percentage: float) -> str:
-                max_width = 35
-                num_points = round(max_width * percentage / 100)
-                return "*" * num_points
-
-            node_share = args.nodePercent / 10**16
-            pdao_share = args.protocolPercent / 10**16
-            odao_share = args.trustedNodePercent / 10**16
-
-            args.description = "\n".join(
-                [
-                    "Node Operator Share",
-                    f"{share_repr(node_share)} {node_share:.1f}%",
-                    "Protocol DAO Share",
-                    f"{share_repr(pdao_share)} {pdao_share:.1f}%",
-                    "Oracle DAO Share",
-                    f"{share_repr(odao_share)} {odao_share:.1f}%",
-                ]
-            )
-        elif event_name == "pdao_setting_multi":
-            description_parts = []
-            for i in range(len(args.settingContractNames)):
-                value_raw = args.data[i]
-                match args.types[i]:
-                    case 0:
-                        # SettingType.UINT256
-                        value = w3.to_int(value_raw)
-                    case 1:
-                        # SettingType.BOOL
-                        value = bool(value_raw)
-                    case 2:
-                        # SettingType.ADDRESS
-                        value = w3.to_checksum_address(value_raw)
-                    case _:
-                        value = "???"
-                description_parts.append(f"`{args.settingPaths[i]}` set to `{value}`")
-            args.description = "\n".join(description_parts)
-        elif event_name == "sdao_member_kick":
-            args.memberAddress = await el_explorer_url(
-                args.memberAddress, block=(args.blockNumber - 1)
-            )
-        elif event_name == "sdao_member_replace":
-            args.existingMemberAddress = await el_explorer_url(
-                args.existingMemberAddress, block=(args.blockNumber - 1)
-            )
-        elif event_name == "sdao_member_kick_multi":
-            args.member_list = ", ".join(
-                [
-                    await el_explorer_url(member_address, block=(args.blockNumber - 1))
-                    for member_address in args.memberAddresses
-                ]
-            )
-        elif event_name == "bootstrap_odao_network_upgrade":
-            if args.type == "addContract":
-                args.description = f"Contract `{args.name}` has been added!"
-            elif args.type == "upgradeContract":
-                args.description = f"Contract `{args.name}` has been upgraded!"
-            elif args.type == "addABI":
-                args.description = f"[ABI](https://ethereum.org/en/glossary/#abi) for Contract `{args.name}` has been added!"
-            elif args.type == "upgradeABI":
-                args.description = f"[ABI](https://ethereum.org/en/glossary/#abi) of Contract `{args.name}` has been upgraded!"
-            else:
-                raise Exception(f"Network Upgrade of type {args.type} is not known.")
-        elif event_name == "pdao_spend_treasury_recurring_claim":
-            embeds = []
-            for contract_name in args.contractNames:
-                # (recipient, amount, period_length, start, periods_total, periods_paid)
-                get_contract = await rp.get_function(
-                    "rocketClaimDAO.getContract", contract_name
-                )
-                contract_pre = await get_contract.call(
-                    block_identifier=(args.blockNumber - 1)
-                )
-                contract_post = await get_contract.call(
-                    block_identifier=args.blockNumber
-                )
-
-                args.contract_name = contract_name
-                args.periodLength = contract_post[2]
-
-                args.recipient_address = contract_post[0]
-                periods_claimed = contract_post[5] - contract_pre[5]
-                args.amount = periods_claimed * contract_post[1]
-
-                periods_left: int = contract_post[4] - contract_post[5]
-                if periods_left == 0:
-                    args.contract_validity = (
-                        "This was the final claim for this payment contract!"
-                    )
-                elif periods_left == 1:
-                    args.contract_validity = (
-                        "The contract is valid for one more period!"
-                    )
-                else:
-                    args.contract_validity = (
-                        f"The contract is valid for {periods_left} more periods."
-                    )
-
-                embed = await assemble(await prepare_args(args))
-                embeds.append(embed)
-
-            return embeds
-
-        args = await prepare_args(args)
-        return [await assemble(args)]
+    # --- Transaction processing ---
 
     async def process_transaction(
-        self, block, tnx, contract_address, fn_input
+        self,
+        block: BlockData,
+        tnx: TxData,
+        contract_address: ChecksumAddress,
+        fn_input: HexBytes,
     ) -> list[Event]:
+        assert self.addresses is not None
         if contract_address not in self.addresses:
             return []
 
         contract_name = rp.get_name_by_address(contract_address)
-        # get receipt and check if the transaction reverted using status attribute
-        receipt = await w3.eth.get_transaction_receipt(tnx.hash)
-        if contract_name == "rocketNodeDeposit" and receipt.status:
-            log.info(f"Skipping successful node deposit {tnx.hash.hex()}")
+        if contract_name is None:
+            return []
+        receipt: TxReceipt = await w3.eth.get_transaction_receipt(tnx["hash"])
+
+        if not self._should_process(contract_name, receipt, tnx):
             return []
 
-        if contract_name != "rocketNodeDeposit" and not receipt.status:
-            log.info(f"Skipping reverted transaction {tnx.hash.hex()}")
+        decoded = await self._decode_function(contract_address, fn_input, tnx)
+        if decoded is None:
             return []
+        event_cls, function_name, decoded_args = decoded
 
+        event: EventData = self._build_event(tnx, block, decoded_args, function_name)
+
+        child_responses: list[Event] = []
+        if isinstance(event_cls, ProposalExecuteEvent):
+            child_responses = await self._handle_dao_proposal(
+                event_cls, event, block, tnx
+            )
+
+        args: dict[str, Any] = {
+            **event["args"],
+            "event_name": event_cls.event_name,
+            "transactionHash": event["hash"].to_0x_hex(),
+            "blockNumber": event["blockNumber"],
+        }
+
+        embeds = await event_cls.build_embeds(args, event, receipt)
+
+        responses = self._wrap_embeds(
+            embeds, event_cls.event_name, tnx, event, child_responses
+        )
+
+        if isinstance(event_cls, UpgradeTriggeredEvent):
+            await self._handle_upgrade(event["blockNumber"])
+
+        return responses
+
+    @staticmethod
+    def _should_process(contract_name: str, receipt: TxReceipt, tnx: TxData) -> bool:
+        if contract_name == "rocketNodeDeposit" and receipt["status"]:
+            log.info("Skipping successful node deposit %s", tnx["hash"].hex())
+            return False
+        if contract_name != "rocketNodeDeposit" and not receipt["status"]:
+            log.info("Skipping reverted transaction %s", tnx["hash"].hex())
+            return False
+        return True
+
+    async def _decode_function(
+        self,
+        contract_address: ChecksumAddress,
+        fn_input: HexBytes,
+        tnx: TxData,
+    ) -> tuple[TransactionEvent, str, dict[str, Any]] | None:
         try:
             contract = await rp.get_contract_by_address(contract_address)
+            assert contract is not None
             decoded = contract.decode_function_input(fn_input)
         except ValueError:
-            log.error(f"Skipping transaction {tnx.hash.hex()} as it has invalid input")
-            return []
+            log.error(
+                "Skipping transaction %s as it has invalid input", tnx["hash"].hex()
+            )
+            return None
         log.debug(decoded)
 
-        function = decoded[0].abi_element_identifier
-        function_name = function.split("(")[0]
-        if (event_name := self.function_map[contract_name].get(function_name)) is None:
-            return []
+        function: str = decoded[0].abi_element_identifier
+        function_name: str = function.split("(")[0]
+        contract_name = rp.get_name_by_address(contract_address)
+        if contract_name is None:
+            return None
 
-        event = aDict(tnx)
-        event.args = {arg.lstrip("_"): value for arg, value in decoded[1].items()}
-        event.args["timestamp"] = block.timestamp
-        event.args["function_name"] = function_name
-        if not receipt.status:
-            event.args["reason"] = await rp.get_revert_reason(tnx)
-            # if revert reason includes the phrase "insufficient for pre deposit" filter out
-            if "insufficient for pre deposit" in event.args["reason"]:
-                log.info(f"Skipping Insufficient Pre Deposit {tnx.hash.hex()}")
-                return []
+        event_cls = TRANSACTION_REGISTRY.get(contract_name, {}).get(function_name)
+        if event_cls is None:
+            return None
 
-        if event_name == "dao_proposal_execute":
-            dao_name = await rp.call(
-                "rocketDAOProposal.getDAO", event.args["proposalID"]
+        decoded_args: dict[str, Any] = {
+            arg.lstrip("_"): value for arg, value in decoded[1].items()
+        }
+
+        # Resolve DAO proposal prefix: swap DAOProposalExecuteEvent for the
+        # appropriate odao/sdao ProposalExecuteEvent
+        if isinstance(event_cls, DAOProposalExecuteEvent):
+            dao_name: str = await rp.call(
+                "rocketDAOProposal.getDAO", decoded_args["proposalID"]
             )
-            # change prefix for DAO-specific event
-            event_name = event_name.replace(
-                "dao",
-                {
-                    "rocketDAONodeTrustedProposals": "odao",
-                    "rocketDAOSecurityProposals": "sdao",
-                }[dao_name],
+            event_cls = DAO_PROPOSAL_EVENTS[dao_name]
+
+        return event_cls, function_name, decoded_args
+
+    @staticmethod
+    def _build_event(
+        tnx: TxData,
+        block: BlockData,
+        decoded_args: dict[str, Any],
+        function_name: str,
+    ) -> EventData:
+        event: EventData = {**tnx}
+        event["args"] = decoded_args
+        event["args"]["timestamp"] = block["timestamp"]
+        event["args"]["function_name"] = function_name
+        return event
+
+    async def _handle_dao_proposal(
+        self,
+        event_cls: ProposalExecuteEvent,
+        event: EventData,
+        block: BlockData,
+        tnx: TxData,
+    ) -> list[Event]:
+        proposal_id: int = event["args"]["proposalID"]
+        dao: ProtocolDAO | DefaultDAO
+        if "pdao" in event_cls.event_name:
+            dao = ProtocolDAO()
+            payload: HexBytes = await rp.call(
+                "rocketDAOProtocolProposal.getPayload", proposal_id
             )
+        else:
+            dao = DefaultDAO(await rp.call("rocketDAOProposal.getDAO", proposal_id))
+            payload = await rp.call("rocketDAOProposal.getPayload", proposal_id)
 
-        responses = []
+        event["args"]["executor"] = event["from"]
+        proposal = await dao.fetch_proposal(proposal_id)
+        event["args"]["proposal_body"] = dao.build_proposal_body(
+            proposal, include_proposer=False
+        )
 
-        # proposal being executed, this will call another function
-        # use proposal payload to generate second event if applicable
-        if "dao_proposal_execute" in event_name:
-            proposal_id = event.args["proposalID"]
-            if "pdao" in event_name:
-                dao = ProtocolDAO()
-                payload = await rp.call(
-                    "rocketDAOProtocolProposal.getPayload", proposal_id
-                )
-            else:
-                dao = DefaultDAO(await rp.call("rocketDAOProposal.getDAO", proposal_id))
-                payload = await rp.call("rocketDAOProposal.getPayload", proposal_id)
+        dao_contract = await dao._get_contract()
+        dao_address: ChecksumAddress = dao_contract.address
+        return await self.process_transaction(block, tnx, dao_address, payload)
 
-            event.args["executor"] = event["from"]
-            proposal = await dao.fetch_proposal(proposal_id)
-            event.args["proposal_body"] = dao.build_proposal_body(
-                proposal, include_proposer=False
-            )
-
-            dao_address = dao.contract.address
-            responses = await self.process_transaction(block, tnx, dao_address, payload)
-
-        embeds = await self.create_embeds(event_name, event)
-        new_responses = []
-
+    @staticmethod
+    def _wrap_embeds(
+        embeds: list[Embed],
+        event_name: str,
+        tnx: TxData,
+        event: EventData,
+        child_responses: list[Event],
+    ) -> list[Event]:
+        responses: list[Event] = []
         for embed in embeds:
             response = Event(
                 topic="transactions",
                 embed=embed,
                 event_name=event_name,
-                unique_id=f"{tnx.hash.hex()}:{event_name}",
-                block_number=event.blockNumber,
-                transaction_index=event.transactionIndex,
-                event_index=(999 - len(responses) - len(embeds) + len(new_responses)),
+                unique_id=f"{tnx['hash'].hex()}:{event_name}",
+                block_number=event["blockNumber"],
+                transaction_index=event["transactionIndex"],
+                event_index=(999 - len(child_responses) - len(embeds) + len(responses)),
             )
-            new_responses.append(response)
+            responses.append(response)
+        return responses + child_responses
 
-        if "upgrade_triggered" in event_name:
-            log.info(
-                f"Detected contract upgrade at block {response.block_number}, reinitializing"
-            )
-            await rp.flush()
-            self.__init__(self.bot)
-
-        return new_responses + responses
+    async def _handle_upgrade(self, block_number: int) -> None:
+        log.info("Detected contract upgrade at block %s, reinitializing", block_number)
+        await rp.flush()
+        self.__init__(self.bot)  # type: ignore[misc]
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Transactions(bot))

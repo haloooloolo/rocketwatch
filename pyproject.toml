@@ -67,7 +67,6 @@ disallow_incomplete_defs = false
 [[tool.mypy.overrides]]
 module = [
     "rocketwatch.plugins.events.*",
-    "rocketwatch.plugins.transactions.*",
 ]
 ignore_errors = true
 
