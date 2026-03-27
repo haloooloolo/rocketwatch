@@ -62,6 +62,18 @@ class SentinelClient:
             },
         )
 
+    async def delete_thread(self, thread: Thread, reason: str) -> bool:
+        if thread.guild is None:
+            return False
+        return await self._request(
+            "/delete_thread",
+            {
+                "guild_id": thread.guild.id,
+                "thread_id": thread.id,
+                "reason": reason,
+            },
+        )
+
     async def timeout_member(
         self, member: Member, duration_seconds: int, reason: str
     ) -> bool:
@@ -71,6 +83,26 @@ class SentinelClient:
                 "guild_id": member.guild.id,
                 "user_id": member.id,
                 "duration_seconds": duration_seconds,
+                "reason": reason,
+            },
+        )
+
+    async def kick_member(self, member: Member, reason: str) -> bool:
+        return await self._request(
+            "/kick_member",
+            {
+                "guild_id": member.guild.id,
+                "user_id": member.id,
+                "reason": reason,
+            },
+        )
+
+    async def ban_member(self, member: Member, reason: str) -> bool:
+        return await self._request(
+            "/ban_member",
+            {
+                "guild_id": member.guild.id,
+                "user_id": member.id,
                 "reason": reason,
             },
         )
