@@ -55,7 +55,7 @@ def _get_event_fields(
     return []
 
 
-class TriggerTxModal(Modal):
+class PreviewTxModal(Modal):
     def __init__(
         self,
         event_cls: TransactionEvent,
@@ -141,7 +141,7 @@ class Transactions(EventPlugin):
 
         fields = _get_event_fields(event_cls)
         if fields:
-            modal = TriggerTxModal(event_cls, function, block_number, fields)
+            modal = PreviewTxModal(event_cls, function, block_number, fields)
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer()
