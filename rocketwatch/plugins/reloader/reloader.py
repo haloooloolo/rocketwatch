@@ -32,7 +32,11 @@ class Reloader(Cog):
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:
         loaded = {ext.split(".")[-1] for ext in self.bot.extensions}
-        all = {path.stem for path in Path("plugins").glob("**/*.py")}
+        all = {
+            path.name
+            for path in Path("plugins").iterdir()
+            if path.is_dir() and (path / f"{path.name}.py").exists()
+        }
         return [
             Choice(name=plugin, value=plugin)
             for plugin in (all - loaded)
