@@ -125,7 +125,7 @@ class Transactions(EventPlugin):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def preview(
+    async def preview_tx_event(
         self,
         interaction: Interaction,
         contract: str,
@@ -160,7 +160,7 @@ class Transactions(EventPlugin):
             else:
                 await interaction.followup.send(content="No events triggered.")
 
-    @preview.autocomplete("contract")
+    @preview_tx_event.autocomplete("contract")
     async def _autocomplete_contract(
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:
@@ -170,7 +170,7 @@ class Transactions(EventPlugin):
             if current.lower() in name.lower()
         ][:25]
 
-    @preview.autocomplete("function")
+    @preview_tx_event.autocomplete("function")
     async def _autocomplete_function(
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:
