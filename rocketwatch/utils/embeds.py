@@ -590,3 +590,35 @@ async def assemble(args) -> Embed:
         e.add_field(name="Transaction Fee", value=value, inline=False)
 
     return e
+
+
+async def finalize_embed(
+    embed: Embed,
+    tx_hash: str,
+    block_number: int,
+    reason: str | None = None,
+) -> Embed:
+    """Add universal transaction fields to an embed.
+
+    Unlike ``assemble()``, this performs no auto-detection or transformation —
+    it only appends the standard footer fields that every transaction embed
+    should have.
+    """
+    el_explorer = cfg.execution_layer.explorer
+
+    tx_link = await el_explorer_url(tx_hash)
+    tx_advanced = advanced_tnx_url(tx_hash)
+    embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
+
+    embed.add_field(
+        name="Block Number",
+        value=f"[{block_number}]({el_explorer}/block/{block_number})",
+    )
+
+    if reason:
+        embed.add_field(name="Likely Revert Reason", value=f"`{reason}`", inline=False)
+
+    ts = await block_to_ts(block_number)
+    embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
+
+    return embed
