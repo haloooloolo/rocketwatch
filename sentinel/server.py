@@ -8,10 +8,10 @@ from discord.ext.commands import Bot
 from audit import log_action
 from config import KeyConfig, cfg
 from guardrails import (
+    check_age,
     check_guild,
-    check_message_age,
+    check_member_age,
     check_moderator,
-    check_thread_age,
     check_timeout_duration,
     rate_limiter,
 )
@@ -24,6 +24,7 @@ def create_app(bot: Bot) -> web.Application:
     app["bot"] = bot
     app.router.add_post("/delete_message", handle_delete_message)
     app.router.add_post("/lock_thread", handle_lock_thread)
+    app.router.add_post("/delete_thread", handle_delete_thread)
     app.router.add_post("/timeout_member", handle_timeout_member)
     app.router.add_post("/kick_member", handle_kick_member)
     app.router.add_post("/ban_member", handle_ban_member)
@@ -76,7 +77,9 @@ async def handle_delete_message(request: web.Request) -> web.Response:
         log_action("delete_message", guild_id, message_id, reason, "not_found")
         return web.json_response({"error": "message_not_found"}, status=404)
 
-    if age_check := check_message_age(key, message.created_at):
+    if age_check := check_age(
+        key.delete_message_max_age_seconds, message.created_at, "message_too_old"
+    ):
         error, age, status = age_check
         log_action("delete_message", guild_id, message_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -123,7 +126,11 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
             log_action("lock_thread", guild_id, thread_id, reason, "not_found")
             return web.json_response({"error": "thread_not_found"}, status=404)
 
-    if thread.created_at and (age_check := check_thread_age(key, thread.created_at)):
+    if thread.created_at and (
+        age_check := check_age(
+            key.lock_thread_max_age_seconds, thread.created_at, "thread_too_old"
+        )
+    ):
         error, age, status = age_check
         log_action("lock_thread", guild_id, thread_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -137,6 +144,57 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
     log_action("lock_thread", guild_id, thread_id, reason, "success")
     return web.json_response(
         {"status": "ok", "action": "lock_thread", "thread_id": thread_id}
+    )
+
+
+async def handle_delete_thread(request: web.Request) -> web.Response:
+    bot = request.app["bot"]
+    key: KeyConfig = request["key"]
+    data = await request.json()
+
+    guild_id = data["guild_id"]
+    thread_id = data["thread_id"]
+    reason = data.get("reason", "")
+
+    if error := check_guild(key, guild_id):
+        return web.json_response({"error": error}, status=422)
+
+    if (retry_after := rate_limiter.check(key)) is not None:
+        log_action("delete_thread", guild_id, thread_id, reason, "rate_limited")
+        return web.json_response(
+            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+        )
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return web.json_response({"error": "guild_not_found"}, status=404)
+
+    thread = guild.get_thread(thread_id)
+    if thread is None:
+        try:
+            thread = await guild.fetch_channel(thread_id)
+        except discord.NotFound:
+            log_action("delete_thread", guild_id, thread_id, reason, "not_found")
+            return web.json_response({"error": "thread_not_found"}, status=404)
+
+    if thread.created_at and (
+        age_check := check_age(
+            key.delete_thread_max_age_seconds, thread.created_at, "thread_too_old"
+        )
+    ):
+        error, age, status = age_check
+        log_action("delete_thread", guild_id, thread_id, reason, error)
+        return web.json_response({"error": error, "age_seconds": age}, status=status)
+
+    try:
+        await thread.delete()
+    except discord.Forbidden:
+        log_action("delete_thread", guild_id, thread_id, reason, "forbidden")
+        return web.json_response({"error": "missing_permissions"}, status=403)
+
+    log_action("delete_thread", guild_id, thread_id, reason, "success")
+    return web.json_response(
+        {"status": "ok", "action": "delete_thread", "thread_id": thread_id}
     )
 
 
@@ -156,7 +214,8 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
     if result := check_timeout_duration(key, duration_seconds):
         error, status = result
         return web.json_response(
-            {"error": error, "max_seconds": key.max_timeout_seconds}, status=status
+            {"error": error, "max_seconds": key.timeout_member_max_duration_seconds},
+            status=status,
         )
 
     if (retry_after := rate_limiter.check(key)) is not None:
@@ -205,11 +264,8 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
 
 
 async def handle_kick_member(request: web.Request) -> web.Response:
-    key: KeyConfig = request["key"]
-    if not key.allow_kick:
-        return web.json_response({"error": "action_disabled"}, status=403)
-
     bot = request.app["bot"]
+    key: KeyConfig = request["key"]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -239,6 +295,11 @@ async def handle_kick_member(request: web.Request) -> web.Response:
         log_action("kick_member", guild_id, user_id, reason, "target_is_moderator")
         return web.json_response({"error": "target_is_moderator"}, status=422)
 
+    if age_check := check_member_age(key, member.joined_at, "kick"):
+        error, age, status = age_check
+        log_action("kick_member", guild_id, user_id, reason, error)
+        return web.json_response({"error": error, "age_seconds": age}, status=status)
+
     try:
         await member.kick(reason=reason)
     except discord.Forbidden:
@@ -252,11 +313,8 @@ async def handle_kick_member(request: web.Request) -> web.Response:
 
 
 async def handle_ban_member(request: web.Request) -> web.Response:
-    key: KeyConfig = request["key"]
-    if not key.allow_ban:
-        return web.json_response({"error": "action_disabled"}, status=403)
-
     bot = request.app["bot"]
+    key: KeyConfig = request["key"]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -285,6 +343,11 @@ async def handle_ban_member(request: web.Request) -> web.Response:
     if check_moderator(member):
         log_action("ban_member", guild_id, user_id, reason, "target_is_moderator")
         return web.json_response({"error": "target_is_moderator"}, status=422)
+
+    if age_check := check_member_age(key, member.joined_at, "ban"):
+        error, age, status = age_check
+        log_action("ban_member", guild_id, user_id, reason, error)
+        return web.json_response({"error": error, "age_seconds": age}, status=status)
 
     try:
         await member.ban(reason=reason)
