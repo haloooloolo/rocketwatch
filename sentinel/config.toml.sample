@@ -5,13 +5,15 @@ token = ""
 host = "0.0.0.0"
 port = 8080
 
+[api.defaults]
+delete_message_max_age = 900
+lock_thread_max_age = 3600
+delete_thread_max_age = 3600
+timeout_member_max_duration = 86400
+kick_member_max_age = 0
+ban_member_max_age = 0
+max_actions_per_hour = 100
+
 [[api.keys]]
 secret = ""
 allowed_server_ids = []
-delete_message_max_age_seconds = 900
-lock_thread_max_age_seconds = 3600
-delete_thread_max_age_seconds = 3600
-timeout_member_max_duration_seconds = 86400
-kick_max_member_age_seconds = 604800
-ban_max_member_age_seconds = 604800
-max_actions_per_hour = 100

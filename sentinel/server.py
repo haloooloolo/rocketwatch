@@ -8,10 +8,11 @@ from discord.ext.commands import Bot
 from audit import log_action
 from config import KeyConfig, cfg
 from guardrails import (
-    check_age,
     check_guild,
     check_member_age,
+    check_message_age,
     check_moderator,
+    check_thread_age,
     check_timeout_duration,
     rate_limiter,
 )
@@ -77,9 +78,7 @@ async def handle_delete_message(request: web.Request) -> web.Response:
         log_action("delete_message", guild_id, message_id, reason, "not_found")
         return web.json_response({"error": "message_not_found"}, status=404)
 
-    if age_check := check_age(
-        key.delete_message_max_age_seconds, message.created_at, "message_too_old"
-    ):
+    if age_check := check_message_age(key.delete_message_max_age, message):
         error, age, status = age_check
         log_action("delete_message", guild_id, message_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -126,11 +125,7 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
             log_action("lock_thread", guild_id, thread_id, reason, "not_found")
             return web.json_response({"error": "thread_not_found"}, status=404)
 
-    if thread.created_at and (
-        age_check := check_age(
-            key.lock_thread_max_age_seconds, thread.created_at, "thread_too_old"
-        )
-    ):
+    if age_check := check_thread_age(key.lock_thread_max_age, thread):
         error, age, status = age_check
         log_action("lock_thread", guild_id, thread_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -177,11 +172,7 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
             log_action("delete_thread", guild_id, thread_id, reason, "not_found")
             return web.json_response({"error": "thread_not_found"}, status=404)
 
-    if thread.created_at and (
-        age_check := check_age(
-            key.delete_thread_max_age_seconds, thread.created_at, "thread_too_old"
-        )
-    ):
+    if age_check := check_thread_age(key.delete_thread_max_age, thread):
         error, age, status = age_check
         log_action("delete_thread", guild_id, thread_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -214,7 +205,7 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
     if result := check_timeout_duration(key, duration_seconds):
         error, status = result
         return web.json_response(
-            {"error": error, "max_seconds": key.timeout_member_max_duration_seconds},
+            {"error": error, "max_seconds": key.timeout_member_max_duration},
             status=status,
         )
 
@@ -295,7 +286,7 @@ async def handle_kick_member(request: web.Request) -> web.Response:
         log_action("kick_member", guild_id, user_id, reason, "target_is_moderator")
         return web.json_response({"error": "target_is_moderator"}, status=422)
 
-    if age_check := check_member_age(key, member.joined_at, "kick"):
+    if age_check := check_member_age(key.kick_member_max_age, member):
         error, age, status = age_check
         log_action("kick_member", guild_id, user_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)
@@ -344,7 +335,7 @@ async def handle_ban_member(request: web.Request) -> web.Response:
         log_action("ban_member", guild_id, user_id, reason, "target_is_moderator")
         return web.json_response({"error": "target_is_moderator"}, status=422)
 
-    if age_check := check_member_age(key, member.joined_at, "ban"):
+    if age_check := check_member_age(key.ban_member_max_age, member):
         error, age, status = age_check
         log_action("ban_member", guild_id, user_id, reason, error)
         return web.json_response({"error": error, "age_seconds": age}, status=status)

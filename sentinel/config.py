@@ -1,28 +1,39 @@
 import tomllib
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class DiscordConfig(BaseModel):
     token: str
 
 
-class KeyConfig(BaseModel):
-    secret: str
-    allowed_server_ids: list[int] = []
-    delete_message_max_age_seconds: int = 900
-    lock_thread_max_age_seconds: int = 3600
-    delete_thread_max_age_seconds: int = 3600
-    timeout_member_max_duration_seconds: int = 86400
-    kick_max_member_age_seconds: int = 604800
-    ban_max_member_age_seconds: int = 604800
+class KeyDefaults(BaseModel):
+    delete_message_max_age: int = 900
+    lock_thread_max_age: int = 3600
+    delete_thread_max_age: int = 3600
+    timeout_member_max_duration: int = 86400
+    kick_member_max_age: int = 0
+    ban_member_max_age: int = 0
     max_actions_per_hour: int = 100
 
 
+class KeyConfig(KeyDefaults):
+    secret: str
+    allowed_server_ids: list[int] = []
+
+
 class ApiConfig(BaseModel):
+    defaults: KeyDefaults = Field(default_factory=KeyDefaults)
     keys: list[KeyConfig]
     host: str = "0.0.0.0"
     port: int = 8080
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_defaults(cls, data: dict) -> dict:
+        defaults = data.get("defaults", {})
+        data["keys"] = [{**defaults, **key} for key in data.get("keys", [])]
+        return data
 
 
 class Config(BaseModel):
