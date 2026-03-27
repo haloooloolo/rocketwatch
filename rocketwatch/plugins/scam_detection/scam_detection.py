@@ -307,13 +307,12 @@ class ScamDetection(Cog):
                 return
 
             if actions:
-                embed = Embed(title=":hammer: Automated Moderation")
-                embed.color = ReportColor.ALERT
-                embed.description = (
-                    f"{' and '.join(actions)}.\n"
-                    f"**Reason**: Message Content - {reason}\n"
-                    f"[View report]({report_msg.jump_url})"
+                embed = Embed(
+                    title=":hammer: Automated Moderation",
+                    url=report_msg.jump_url,
                 )
+                embed.color = ReportColor.ALERT
+                embed.description = f"{' and '.join(actions)}."
                 with contextlib.suppress(errors.Forbidden):
                     await message.channel.send(embed=embed)
 
@@ -370,13 +369,12 @@ class ScamDetection(Cog):
                 return
 
             if actions and isinstance(thread.parent, Messageable):
-                embed = Embed(title=":hammer: Automated Moderation")
-                embed.color = ReportColor.ALERT
-                embed.description = (
-                    f"{' and '.join(actions)}.\n"
-                    f"**Reason**: {thread.jump_url} - {reason}\n"
-                    f"[View report]({report_msg.jump_url})"
+                embed = Embed(
+                    title=":hammer: Automated Moderation",
+                    url=report_msg.jump_url,
                 )
+                embed.color = ReportColor.ALERT
+                embed.description = f"{' and '.join(actions)}."
                 with contextlib.suppress(errors.Forbidden):
                     await thread.parent.send(embed=embed)
 
@@ -465,8 +463,8 @@ class ScamDetection(Cog):
         report.description = warning.description + (
             "\n"
             f"Thread Name: `{thread.name}`\n"
-            f"User ID:     `{thread_owner.id}` ({thread_owner.mention})\n"
             f"Thread ID:   `{thread.id}` ({thread.jump_url})\n"
+            f"User ID:     `{thread_owner.id}` ({thread_owner.mention})\n"
             "\n"
             "Please review and take appropriate action."
         )
