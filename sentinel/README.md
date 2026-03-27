@@ -44,7 +44,7 @@ Each `[[api.keys]]` entry defines a key with its own guardrails:
 | `allowed_server_ids` | `[]` | Discord server IDs this key is allowed to act in |
 | `max_message_age_seconds` | `900` | Allow deleting messages younger than this; 0 to disable deletion |
 | `max_thread_age_seconds` | `3600` | Allow locking threads younger than this; 0 to disable locking |
-| `max_timeout_seconds` | `86400` | Maximum timeout duration; 0 to disable timeouts |
+| `max_timeout_seconds` | `86400` | Maximum duration of user timeouts; 0 to disable timeouts |
 | `allow_kick` | `false` | Enable the kick endpoint for this key |
 | `allow_ban` | `false` | Enable the ban endpoint for this key |
 | `max_actions_per_hour` | `100` | Rate limit for this key |
