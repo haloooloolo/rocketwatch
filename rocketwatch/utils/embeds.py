@@ -53,7 +53,7 @@ class Embed(discord.Embed):
         )
         self.set_footer_parts([])
 
-    def set_footer_parts(self, parts):
+    def set_footer_parts(self, parts: list[str]) -> None:
         footer_parts = ["Created by 0xinvis.eth, Developed by haloooloolo.eth"]
         if cfg.rocketpool.chain != "mainnet":
             footer_parts.append(f"Chain: {cfg.rocketpool.chain.capitalize()}")
