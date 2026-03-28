@@ -75,7 +75,8 @@ class DAO(ABC):
             try:
                 contract = await self._get_contract()
                 decoded = contract.decode_function_input(proposal.payload)
-                function_name = decoded[0].abi_element_identifier
+                function = decoded[0].abi_element_identifier
+                function_name = function.split("(")[0]
                 args = [f"  {arg} = {value}" for arg, value in decoded[1].items()]
                 payload_str = f"{function_name}(\n" + "\n".join(args) + "\n)"
                 body_repr += f"\n\nPayload:\n{payload_str}"

@@ -1,12 +1,11 @@
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-
-from web3.datastructures import MutableAttributeDict
+from datetime import datetime
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.embeds import assemble
+from utils.embeds import Embed, format_value
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
 
@@ -16,6 +15,7 @@ log = logging.getLogger("rocketwatch.milestones")
 @dataclass(frozen=True, slots=True)
 class Milestone:
     id: str
+    description: str
     min: int
     step_size: int
     call: Callable[[], Awaitable[float | int]]
@@ -39,30 +39,35 @@ async def _get_percentage_rpl_swapped() -> float:
 MILESTONES: list[Milestone] = [
     Milestone(
         id="milestone_rpl_stake",
+        description="{} RPL has been staked by node operators!",
         min=10_000,
         step_size=100_000,
         call=contract_call("rocketNodeStaking.getTotalStakedRPL", solidity.to_float),
     ),
     Milestone(
         id="milestone_reth_supply",
+        description="{} rETH has been issued!",
         min=1_000,
         step_size=5_000,
         call=contract_call("rocketTokenRETH.totalSupply", solidity.to_float),
     ),
     Milestone(
         id="milestone_rpl_swapped",
+        description="{}% of all RPL has been exchanged for the new version!",
         min=90,
         step_size=1,
         call=_get_percentage_rpl_swapped,
     ),
     Milestone(
         id="milestone_registered_nodes",
+        description="{} nodes have been registered!",
         min=50,
         step_size=100,
         call=contract_call("rocketNodeManager.getNodeCount"),
     ),
     Milestone(
         id="milestone_rocksolid_tvl",
+        description="{} rETH deposited into the RockSolid vault!",
         min=0,
         step_size=5000,
         call=contract_call("RockSolidVault.totalAssets", solidity.to_float),
@@ -104,10 +109,15 @@ class Milestones(EventPlugin):
                 log.info(
                     f"Goal for milestone {milestone.id} has increased. Triggering Milestone!"
                 )
-                embed = await assemble(
-                    MutableAttributeDict(
-                        {"event_name": milestone.id, "result_value": value}
-                    )
+                time = int(datetime.now().timestamp())
+                embed = Embed(
+                    title=":tada: Milestone Reached",
+                    description=milestone.description.format(format_value(value)),
+                )
+                embed.add_field(
+                    name="Timestamp",
+                    value=f"<t:{time}:R> (<t:{time}:f>)",
+                    inline=False,
                 )
                 payload.append(
                     Event(

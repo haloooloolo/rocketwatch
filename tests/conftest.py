@@ -22,8 +22,10 @@ _embeds_stub = ModuleType("utils.embeds")
 _embeds_stub.Embed = discord.Embed
 _embeds_stub.resolve_ens = MagicMock()
 _embeds_stub.el_explorer_url = MagicMock()
-_embeds_stub.prepare_args = MagicMock()
-_embeds_stub.assemble = MagicMock()
+_embeds_stub.format_value = MagicMock()
+_embeds_stub.build_event_embed = MagicMock()
+_embeds_stub.build_small_event_embed = MagicMock()
+_embeds_stub.build_rich_event_embed = MagicMock()
 sys.modules["utils.embeds"] = _embeds_stub
 
 # With the lazy proxy in utils.config, cfg is importable without loading a file.

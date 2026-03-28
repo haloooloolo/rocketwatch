@@ -1,14 +1,16 @@
 import contextlib
-import datetime
 import logging
 import math
 from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 
 import aiohttp
 import discord
 import humanize
 from aiocache import cached
 from discord import Color, Interaction
+from discord.types.embed import EmbedType
 from ens import InvalidName
 from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from etherscan_labels import Addresses
@@ -16,11 +18,10 @@ from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
 from strings import _
-from utils import solidity
 from utils.block_time import block_to_ts
 from utils.cached_ens import ens
 from utils.config import cfg
-from utils.readable import advanced_tnx_url, cl_explorer_url, s_hex
+from utils.readable import advanced_tnx_url, s_hex
 from utils.retry import retry
 from utils.rocketpool import rp
 from utils.sea_creatures import get_sea_creature_for_address
@@ -30,15 +31,32 @@ log = logging.getLogger("rocketwatch.embeds")
 
 
 class Embed(discord.Embed):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.colour = Color.from_rgb(235, 142, 85)
+    def __init__(
+        self,
+        *,
+        color: int | Color | None = None,
+        title: Any | None = None,
+        type: EmbedType = "rich",
+        url: Any | None = None,
+        description: Any | None = None,
+        timestamp: datetime | None = None,
+    ) -> None:
+        if color is None:
+            color = Color.from_rgb(235, 142, 85)
+        super().__init__(
+            color=color,
+            title=title,
+            type=type,
+            url=url,
+            description=description,
+            timestamp=timestamp,
+        )
         self.set_footer_parts([])
 
     def set_footer_parts(self, parts):
         footer_parts = ["Created by 0xinvis.eth, Developed by haloooloolo.eth"]
         if cfg.rocketpool.chain != "mainnet":
-            footer_parts.insert(-1, f"Chain: {cfg.rocketpool.chain.capitalize()}")
+            footer_parts.append(f"Chain: {cfg.rocketpool.chain.capitalize()}")
         footer_parts.extend(parts)
         self.set_footer(text=" · ".join(footer_parts))
 
@@ -47,7 +65,7 @@ class Embed(discord.Embed):
 EmbedField = tuple[str, str, bool]
 
 
-async def build_small_embed(description: str, tx_hash: HexStr) -> Embed:
+async def build_small_event_embed(description: str, tx_hash: HexStr) -> Embed:
     """Create a compact one-line embed with a ``[tnx]`` link and empty footer."""
     tx_link = await el_explorer_url(tx_hash, name="[tnx]")
     desc = f"{description} {tx_link}"
@@ -58,7 +76,7 @@ async def build_small_embed(description: str, tx_hash: HexStr) -> Embed:
     return embed
 
 
-async def build_embed(
+async def build_event_embed(
     *,
     tx_hash: HexStr,
     block_number: BlockNumber,
@@ -84,7 +102,7 @@ async def build_embed(
     return embed
 
 
-async def build_rich_embed(
+async def build_rich_event_embed(
     *,
     tx_hash: HexStr,
     block_number: BlockNumber,
@@ -137,6 +155,17 @@ async def build_rich_embed(
         embed.add_field(name="Transaction Fee", value=fee_str, inline=False)
 
     return embed
+
+
+def format_value(value: int | float) -> str:
+    """Format a numeric value for display: auto-decimal + comma separation."""
+    if value:
+        decimal = 5 - math.floor(math.log10(abs(value)))
+        decimal = max(0, min(5, decimal))
+        value = round(value, decimal)
+    if value == int(value):
+        value = int(value)
+    return humanize.intcomma(value)
 
 
 # Convert a user-provided string into a display name and address.
@@ -323,367 +352,3 @@ async def el_explorer_url(
 
     prefix = "" if (prefix is None) else prefix + _prefix
     return f"{prefix}[{name}]({url})"
-
-
-async def prepare_args(args):
-    for arg_key, arg_value in list(args.items()):
-        # store raw value
-        args[f"{arg_key}_raw"] = arg_value
-
-        # handle numbers
-        numeric_keywords = [
-            "amount",
-            "value",
-            "rate",
-            "totaleth",
-            "stakingeth",
-            "rethsupply",
-            "rplprice",
-            "profit",
-        ]
-        if any(
-            keyword in arg_key.lower() for keyword in numeric_keywords
-        ) and isinstance(arg_value, int):
-            args[arg_key] = arg_value / 10**18
-
-        # handle timestamps
-        if "deadline" in arg_key.lower() and isinstance(arg_value, int):
-            args[arg_key] = f"<t:{arg_value}:f> (<t:{arg_value}:R>)"
-
-        # handle percentages
-        if "perc" in arg_key.lower():
-            args[arg_key] = arg_value / 10**16
-        if arg_key.lower() in ["rate", "penalty"]:
-            args[f"{arg_key}_perc"] = arg_value / 10**16
-
-        # handle hex strings
-        if str(arg_value).startswith("0x"):
-            prefix = ""
-
-            if w3.is_address(arg_value):
-                # get rocketpool related holdings value for this address
-                address = w3.to_checksum_address(arg_value)
-                prefix = await get_sea_creature_for_address(address)
-
-            if arg_key == "pubkey":
-                args[arg_key] = await cl_explorer_url(arg_value)
-            elif arg_key == "cow_uid":
-                args[arg_key] = f"[ORDER](https://explorer.cow.fi/orders/{arg_value})"
-            else:
-                args[arg_key] = await el_explorer_url(arg_value, prefix=prefix)
-                args[f"{arg_key}_clean"] = await el_explorer_url(arg_value)
-                if len(arg_value) == 66:
-                    args[f"{arg_key}_small"] = await el_explorer_url(
-                        arg_value, name="[tnx]"
-                    )
-    if "from" in args:
-        args["fancy_from"] = args["from"]
-        if "caller" in args and args["from"] != args["caller"]:
-            args["fancy_from"] = f"{args['caller']} ({args['from']})"
-    return args
-
-
-async def assemble(args) -> Embed:
-    e = Embed()
-    if (
-        args.event_name in ["service_interrupted", "finality_delay_event"]
-        or "sell_rpl" in args.event_name
-        or "sell_reth" in args.event_name
-    ):
-        e.colour = Color.from_rgb(235, 86, 86)  # red
-    elif (
-        "buy_rpl" in args.event_name
-        or "buy_reth" in args.event_name
-        or "finality_delay_recover_event" in args.event_name
-    ):
-        e.colour = Color.from_rgb(86, 235, 86)  # green
-    elif "price_update_event" in args.event_name:
-        e.colour = Color.from_rgb(86, 235, 235)  # pink
-
-    # do this here before the amounts are converted to a string
-    amount = args.get("amount") or args.get("ethAmount", 0)
-    # raise Exception(str((args, args.assets, args.event_name)))
-    if ("pool_deposit" in args.event_name) and (amount >= 1000):
-        e.set_image(url="https://media.giphy.com/media/VIX2atZr8dCKk5jF6L/giphy.gif")
-    elif any(
-        kw in args.event_name
-        for kw in [
-            "_scrub_event",
-            "_dissolve_event",
-            "_slash_event",
-            "finality_delay_event",
-        ]
-    ):
-        e.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
-    elif "_penalty" in args.event_name:
-        e.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
-    elif "_proposal_smoothie_" in args.event_name:
-        e.set_image(
-            url="https://cdn.discordapp.com/attachments/812745786638336021/1106983677130461214/butta-commie-filter.png"
-        )
-    elif "sdao_member_kick" in args.event_name:
-        e.set_image(
-            url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
-        )
-
-    match args.event_name:
-        case "cs_max_validator_increase_event":
-            e.set_image(
-                url="https://media1.tenor.com/m/Yp6Yeiufb04AAAAd/piranhas-feeding.gif"
-            )
-        case "redstone_upgrade_triggered":
-            url = "https://cdn.dribbble.com/users/187497/screenshots/2284528/media/123903807d334c15aa105b44f2bd9252.gif"
-            e.set_image(url=url)
-        case "atlas_upgrade_triggered":
-            url = (
-                "https://cdn.discordapp.com/attachments/912434217118498876/1097528472567558227/"
-                "DALLE_2023-04-17_16.25.46_-_an_expresive_oil_painting_of_the_atlas_2_rocket_taking_off_moon_colorfull.png"
-            )
-            e.set_image(url=url)
-        case "houston_upgrade_triggered":
-            e.set_image(url="https://i.imgur.com/XT5qPWf.png")
-        case "houston_hotfix_upgrade_triggered":
-            e.set_image(url="https://i.imgur.com/JcQS3Sh.png")
-        case "saturn_one_upgrade_triggered":
-            e.set_image(url="https://i.imgur.com/n3wMCOA.png")
-
-    match args.event_name:
-        case "pdao_set_delegate":
-            use_large = args.votingPower >= 200
-        case "eth_deposit_event":
-            use_large = amount >= 32
-        case "rpl_stake_event":
-            use_large = amount >= (
-                (3 * 2.4)
-                / solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
-            )
-        case "rpl_migration_event":
-            use_large = amount >= 1000
-        case "cs_deposit_eth_event" | "cs_withdraw_eth_event":
-            use_large = args["assets"] >= 100
-        case "cs_deposit_rpl_event" | "cs_withdraw_rpl_event":
-            use_large = args["assets"] >= 16 / solidity.to_float(
-                await rp.call("rocketNetworkPrices.getRPLPrice")
-            )
-        case "rocksolid_deposit_event":
-            use_large = args["assets"] >= 50
-        case "rocksolid_withdrawal_event":
-            use_large = args["shares"] >= 50
-        case "validator_multi_deposit_event":
-            use_large = args["numberOfValidators"] >= 5
-        case _:
-            use_large = amount >= 100
-
-    # make numbers look nice
-    for arg_key, arg_value in list(args.items()):
-        if any(
-            keyword in arg_key.lower()
-            for keyword in [
-                "amount",
-                "value",
-                "total_supply",
-                "perc",
-                "tnx_fee",
-                "rate",
-                "votingpower",
-                "assets",
-                "shares",
-                "profit",
-            ]
-        ):
-            if not isinstance(arg_value, (int, float)) or "raw" in arg_key:
-                continue
-            if arg_value:
-                decimal = 5 - math.floor(math.log10(abs(arg_value)))
-                decimal = max(0, min(5, decimal))
-                arg_value = round(arg_value, decimal)
-            if arg_value == int(arg_value):
-                arg_value = int(arg_value)
-            args[arg_key] = humanize.intcomma(arg_value)
-
-    has_small = (
-        _(f"embeds.{args.event_name}.description_small")
-        != f"embeds.{args.event_name}.description_small"
-    )
-    has_large = (
-        _(f"embeds.{args.event_name}.description")
-        != f"embeds.{args.event_name}.description"
-    )
-
-    if has_small and not (has_large and use_large):
-        e.description = _(f"embeds.{args.event_name}.description_small", **args)
-        e.description += f" {args.transactionHash_small}"
-        if cfg.rocketpool.chain != "mainnet":
-            e.description += f" ({cfg.rocketpool.chain.capitalize()})"
-        e.set_footer(text="")
-        return e
-
-    e.title = _(f"embeds.{args.event_name}.title")
-    e.description = _(f"embeds.{args.event_name}.description", **args)
-
-    if "cow_uid" in args:
-        e.add_field(name="CoW Order", value=args.cow_uid, inline=False)
-
-    if "exchangeRate" in args:
-        e.add_field(
-            name="Exchange Rate",
-            value=f"`{args.exchangeRate} RPL/{args.otherToken}`"
-            + (
-                f" (`{args.discountAmount}%` Discount, oDAO: `{args.marketExchangeRate} RPL/ETH`)"
-                if "discountAmount" in args
-                else ""
-            ),
-            inline=False,
-        )
-
-    """
-    # show public key if we have one
-    if "pubkey" in args:
-        e.add_field(name="Validator",
-                    value=args.pubkey,
-                    inline=False)
-    """
-
-    if "epoch" in args:
-        e.add_field(
-            name="Epoch",
-            value=f"[{args.epoch}](https://{cfg.consensus_layer.explorer}/epoch/{args.epoch})",
-        )
-
-    if "timezone" in args:
-        e.add_field(name="Timezone", value=f"`{args.timezone}`", inline=False)
-
-    if "node_operator" in args:
-        e.add_field(name="Node Operator", value=args.node_operator)
-
-    if "slashing_type" in args:
-        e.add_field(name="Reason", value=f"`{args.slashing_type} Violation`")
-
-    """
-    if "commission" in args:
-        e.add_field(name="Commission Rate",
-                    value=f"{args.commission:.2%}",
-                    inline=False)
-    """
-
-    if "invoiceID" in args:
-        e.add_field(name="Invoice ID", value=f"`{args.invoiceID}`", inline=False)
-
-    if "settingContractName" in args:
-        e.add_field(
-            name="Contract", value=f"`{args.settingContractName}`", inline=False
-        )
-
-    if "periodLength" in args:
-        e.add_field(
-            name="Payment Interval",
-            value=humanize.naturaldelta(datetime.timedelta(seconds=args.periodLength)),
-            inline=False,
-        )
-        if "startTime" in args:
-            e.add_field(
-                name="First Payment",
-                value=f"<t:{args.startTime + args.periodLength}>",
-                inline=False,
-            )
-
-    if "index" in args:
-        e.add_field(name="Index", value=args.index, inline=True)
-
-    if "challengePeriod" in args:
-        e.add_field(
-            name="Challenge Period",
-            value=humanize.naturaldelta(
-                datetime.timedelta(seconds=args.challengePeriod)
-            ),
-            inline=True,
-        )
-
-    if "proposalBond" in args:
-        e.add_field(name="Proposal Bond", value=f"{args.proposalBond} RPL", inline=True)
-
-    if "challengeBond" in args:
-        e.add_field(
-            name="Challenge Bond", value=f"{args.challengeBond} RPL", inline=True
-        )
-
-    if "contractAddress" in args and "Contract" in args.get("type", ""):
-        e.add_field(name="Contract Address", value=args.contractAddress, inline=False)
-
-    if "url" in args:
-        e.add_field(name="URL", value=args.url, inline=False)
-
-    # show current inflation
-    if "inflation" in args:
-        e.add_field(name="Current Inflation", value=f"{args.inflation}%", inline=False)
-
-    if "submission" in args and "merkleTreeCID" in args.submission:
-        n = f"0x{s_hex(args.submission.merkleRoot.hex())}"
-        e.add_field(
-            name="Merkle Tree",
-            value=f"[{n}](https://gateway.ipfs.io/ipfs/{args.submission.merkleTreeCID})",
-        )
-
-    # show transaction hash if possible
-    if "transactionHash" in args:
-        content = f"{args.transactionHash}{advanced_tnx_url(args.transactionHash_raw)}"
-        e.add_field(name="Transaction Hash", value=content)
-
-    # show sender address
-    if senders := [
-        value for key, value in args.items() if key.lower() in ["sender", "from"]
-    ]:
-        sender = senders[0]
-        v = sender
-        # if args["origin"] is an address and does not match the sender, show both
-        if "caller" in args and args["caller"] != sender and "0x" in args["caller"]:
-            v = f"{args.caller} ({sender})"
-        e.add_field(name="Sender Address", value=v)
-
-    # show block number
-    el_explorer = cfg.execution_layer.explorer
-    if "block_number" in args:
-        e.add_field(
-            name="Block Number",
-            value=f"[{args.blockNumber}]({el_explorer}/block/{args.blockNumber})",
-        )
-
-    cl_explorer = cfg.consensus_layer.explorer
-    if "slot" in args:
-        e.add_field(name="Slot", value=f"[{args.slot}]({cl_explorer}/slot/{args.slot})")
-
-    if "smoothie_amount" in args:
-        e.add_field(
-            name="Smoothing Pool Balance", value=f"||{args.smoothie_amount}|| ETH"
-        )
-
-    if args.get("reason"):
-        e.add_field(name="Likely Revert Reason", value=f"`{args.reason}`", inline=False)
-
-    # show timestamp
-    if "time" in args:
-        times = [args["time"]]
-    else:
-        times = [value for key, value in args.items() if "time" in key.lower()]
-
-    if block := args.get("blockNumber"):
-        times += [await block_to_ts(block)]
-
-    time = times[0] if times else int(datetime.datetime.now().timestamp())
-    e.add_field(name="Timestamp", value=f"<t:{time}:R> (<t:{time}:f>)", inline=False)
-
-    # show the transaction fees
-    if "tnx_fee" in args:
-        tnx_fee_wei = args.tnx_fee_raw
-        if tnx_fee_wei >= 10**15:
-            tnx_fee_eth = round(tnx_fee_wei / 10**18, 3)
-            value = f"{tnx_fee_eth:,} ETH ({args.tnx_fee_usd} USDC)"
-        elif tnx_fee_wei >= 10**9:
-            tnx_fee_gwei = round(tnx_fee_wei / 10**9)
-            value = f"{tnx_fee_gwei:,} Gwei ({args.tnx_fee_usd} USDC)"
-        else:
-            value = f"{tnx_fee_wei:,} Wei ({args.tnx_fee_usd} USDC)"
-
-        e.add_field(name="Transaction Fee", value=value, inline=False)
-
-    return e

@@ -1,23 +1,46 @@
 import contextlib
 import logging
-from typing import Any, TypedDict, cast
+from typing import TypedDict, cast
 
-from discord import Interaction
+from discord import Color, Interaction
 from discord.app_commands import command
-from eth_typing import BlockNumber, ChecksumAddress
+from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.contract import AsyncContract
-from web3.datastructures import MutableAttributeDict as aDict
 from web3.types import EventData
 
 from rocketwatch import RocketWatch
 from utils import solidity
-from utils.embeds import Embed, assemble, prepare_args
+from utils.embeds import Embed, build_event_embed, el_explorer_url, format_value
 from utils.event import Event, EventPlugin
 from utils.rocketpool import rp
+from utils.sea_creatures import get_sea_creature_for_address
 from utils.shared_w3 import w3
 from utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.cow_orders")
+
+_COW_EVENTS: dict[str, tuple[Color, str, str]] = {
+    "cow_order_buy_rpl": (
+        Color.from_rgb(86, 235, 86),
+        ":cow: RPL Buy",
+        "{owner} bought **{our} RPL** for {other} {token}!",
+    ),
+    "cow_order_buy_reth": (
+        Color.from_rgb(86, 235, 86),
+        ":cow: rETH Buy",
+        "{owner} bought **{our} rETH** for {other} {token}!",
+    ),
+    "cow_order_sell_rpl": (
+        Color.from_rgb(235, 86, 86),
+        ":cow: RPL Sell",
+        "{owner} sold **{our} RPL** for {other} {token}!",
+    ),
+    "cow_order_sell_reth": (
+        Color.from_rgb(235, 86, 86),
+        ":cow: rETH Sell",
+        "{owner} sold **{our} rETH** for {other} {token}!",
+    ),
+}
 
 
 class CoWTradeArgs(TypedDict):
@@ -105,11 +128,6 @@ class CoWOrders(EventPlugin):
         events: list[Event] = []
         for trade in trades:
             args = cast(CoWTradeArgs, trade["args"])
-            data: aDict[str, Any] = aDict({})
-
-            data["cow_uid"] = f"0x{args['orderUid'].hex()}"
-            data["cow_owner"] = w3.to_checksum_address(args["owner"])
-            data["transactionHash"] = trade["transactionHash"].to_0x_hex()
 
             sell_token: ChecksumAddress = args["sellToken"]
             buy_token: ChecksumAddress = args["buyToken"]
@@ -118,17 +136,17 @@ class CoWOrders(EventPlugin):
                 token = "rETH" if buy_token == self._tokens[1] else "RPL"
                 token_amount, other_amount = args["buyAmount"], args["sellAmount"]
                 other_address = w3.to_checksum_address(args["sellToken"])
-                data["event_name"] = f"cow_order_buy_{token.lower()}"
+                event_name = f"cow_order_buy_{token.lower()}"
             else:
                 token = "rETH" if sell_token == self._tokens[1] else "RPL"
                 token_amount, other_amount = args["sellAmount"], args["buyAmount"]
                 other_address = w3.to_checksum_address(args["buyToken"])
-                data["event_name"] = f"cow_order_sell_{token.lower()}"
+                event_name = f"cow_order_sell_{token.lower()}"
 
-            data["ourAmount"] = solidity.to_float(token_amount, 18)
+            our_amount = solidity.to_float(token_amount, 18)
             # skip trades under minimum value
-            if ((token == "RPL") and (data["ourAmount"] * rpl_price < 10_000)) or (
-                (token == "rETH") and (data["ourAmount"] * reth_price < 100_000)
+            if ((token == "RPL") and (our_amount * rpl_price < 10_000)) or (
+                (token == "rETH") and (our_amount * reth_price < 100_000)
             ):
                 continue
 
@@ -137,26 +155,48 @@ class CoWOrders(EventPlugin):
             with contextlib.suppress(Exception):
                 decimals = await erc20.functions.decimals().call()
 
-            data["otherAmount"] = solidity.to_float(other_amount, decimals)
-            data["ratioAmount"] = data["otherAmount"] / data["ourAmount"]
+            other_amount_f = solidity.to_float(other_amount, decimals)
 
             try:
-                data["otherToken"] = await erc20.functions.symbol().call()
+                other_token = await erc20.functions.symbol().call()
             except Exception:
-                data["otherToken"] = "UNKWN"
+                other_token = "UNKWN"
                 if other_address == w3.to_checksum_address(
                     "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
                 ):
-                    data["otherToken"] = "ETH"
+                    other_token = "ETH"
 
-            data = await prepare_args(data)
-            embed = await assemble(data)
+            owner = w3.to_checksum_address(args["owner"])
+            sea = await get_sea_creature_for_address(owner)
+            owner_link = await el_explorer_url(owner, prefix=sea)
+            cow_uid = f"0x{args['orderUid'].hex()}"
+            cow_link = f"[ORDER](https://explorer.cow.fi/orders/{cow_uid})"
+            tx_hash = HexStr(trade["transactionHash"].to_0x_hex())
+            block_number = BlockNumber(trade["blockNumber"])
+
+            color, title, desc_template = _COW_EVENTS[event_name]
+            description = desc_template.format(
+                owner=owner_link,
+                our=format_value(our_amount),
+                other=format_value(other_amount_f),
+                token=other_token,
+            )
+
+            embed = await build_event_embed(
+                tx_hash=tx_hash,
+                block_number=block_number,
+                color=color,
+                title=title,
+                description=description,
+                fields=[("CoW Order", cow_link, False)],
+            )
+
             events.append(
                 Event(
                     embed=embed,
                     topic="cow_trade",
-                    block_number=BlockNumber(trade["blockNumber"]),
-                    event_name=data["event_name"],
+                    block_number=block_number,
+                    event_name=event_name,
                     unique_id=f"cow_trade_{trade['transactionHash'].hex()}:{trade['logIndex']}",
                     transaction_index=trade["transactionIndex"],
                     event_index=trade["logIndex"],

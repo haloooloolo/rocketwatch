@@ -9,15 +9,15 @@ from typing import Any
 import discord
 import pymongo
 from cronitor import Monitor
+from discord import Color
 from discord.abc import Messageable
 from discord.ext import commands, tasks
 from eth_typing import BlockNumber
-from web3.datastructures import MutableAttributeDict
 
 from plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch import RocketWatch
 from utils.config import cfg
-from utils.embeds import Embed, assemble
+from utils.embeds import Embed
 from utils.event import EventPlugin
 from utils.shared_w3 import w3
 from utils.status import StatusPlugin
@@ -339,8 +339,19 @@ class EventCore(commands.Cog):
         return embed
 
     async def show_service_interrupt(self) -> None:
-        embed = await assemble(
-            MutableAttributeDict({"event_name": "service_interrupted"})
+        time = int(datetime.now().timestamp())
+        embed = Embed(
+            color=Color.from_rgb(235, 86, 86),
+            title=":warning: Failure in Event Processing",
+            description=(
+                "The developer has automatically been notified of this error.\n"
+                "No further action is required."
+            ),
+        )
+        embed.add_field(
+            name="Timestamp",
+            value=f"<t:{time}:R> (<t:{time}:f>)",
+            inline=False,
         )
         for channel_name in cfg.events.status_message:
             state_message = await self.bot.db.state_messages.find_one(

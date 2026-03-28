@@ -285,9 +285,9 @@ class Transactions(EventPlugin):
 
         event: EventData = self._build_event(tnx, block, decoded_args, function_name)
 
-        child_responses: list[Event] = []
+        payload_events: list[Event] = []
         if isinstance(event_cls, ProposalExecuteEvent):
-            child_responses = await self._handle_dao_proposal(
+            payload_events = await self._handle_dao_proposal(
                 event_cls, event, block, tnx
             )
 
@@ -301,7 +301,7 @@ class Transactions(EventPlugin):
         embeds = await event_cls.build_embeds(args, event, receipt)
 
         responses = self._wrap_embeds(
-            embeds, event_cls.event_name, tnx, event, child_responses
+            embeds, event_cls.event_name, tnx, event, payload_events
         )
 
         if isinstance(event_cls, UpgradeTriggeredEvent):
@@ -393,7 +393,7 @@ class Transactions(EventPlugin):
 
         event["args"]["executor"] = event["from"]
         proposal = await dao.fetch_proposal(proposal_id)
-        event["args"]["proposal_body"] = dao.build_proposal_body(
+        event["args"]["proposal_body"] = await dao.build_proposal_body(
             proposal, include_proposer=False
         )
 

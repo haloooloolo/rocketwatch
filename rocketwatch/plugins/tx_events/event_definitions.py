@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any, ClassVar, NotRequired, TypedDict
@@ -15,7 +14,13 @@ from utils.dao import (
     build_claimer_description,
     decode_setting_multi,
 )
-from utils.embeds import Embed, build_embed, build_small_embed, el_explorer_url
+from utils.embeds import (
+    Embed,
+    build_event_embed,
+    build_small_event_embed,
+    el_explorer_url,
+    format_value,
+)
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
 from utils.type_markers import (
@@ -29,17 +34,6 @@ from utils.type_markers import (
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def format_value(value: int | float) -> str:
-    """Format a numeric value for display: auto-decimal + comma separation."""
-    if value:
-        decimal = 5 - math.floor(math.log10(abs(value)))
-        decimal = max(0, min(5, decimal))
-        value = round(value, decimal)
-    if value == int(value):
-        value = int(value)
-    return humanize.intcomma(value)
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +105,7 @@ class BootstrapODAOMemberEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":satellite_orbital: oDAO Bootstrap Mode: Member Added",
@@ -132,7 +126,7 @@ class BootstrapODAODisableEvent(TransactionEvent):
         if not args["confirmDisableBootstrapMode"]:
             return []
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":satellite_orbital: oDAO Bootstrap Mode Disabled",
@@ -156,7 +150,7 @@ class ODAOMemberInviteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":crystal_ball: oDAO Invite",
@@ -178,7 +172,7 @@ class SDAOMemberInviteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":lock: Security Council Invite",
@@ -203,7 +197,7 @@ class PDAOSpendTreasuryEvent(TransactionEvent):
         fmt = await self._fmt(args)
         amount = format_value(fmt["amount"])
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":bank: DAO Treasury Spend",
@@ -238,7 +232,7 @@ class SettingEvent(TransactionEvent):
         if "settingContractName" in args:
             fields.append(("Contract", f"`{args['settingContractName']}`", False))
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=self._title,
@@ -268,7 +262,7 @@ class ProposalExecuteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=self._title,
@@ -342,7 +336,7 @@ class TreasuryRecurringSpendEvent(TransactionEvent):
                 )
             )
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=self._title,
@@ -395,7 +389,7 @@ class TreasuryRecurringClaimEvent(TransactionEvent):
                 validity = f"The contract is valid for {periods_left} more periods."
 
             embeds.append(
-                await build_embed(
+                await build_event_embed(
                     tx_hash=args["transactionHash"],
                     block_number=args["blockNumber"],
                     title=":bank: DAO Treasury Contract Claim",
@@ -454,7 +448,7 @@ class BootstrapNetworkUpgradeEvent(TransactionEvent):
         if template is None:
             raise Exception(f"Network Upgrade of type {args['type']} is not known.")
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":satellite_orbital: oDAO Bootstrap Mode: Network Upgrade",
@@ -493,7 +487,7 @@ class PDAOSetDelegateEvent(TransactionEvent):
 
         if voting_power >= 200:
             return [
-                await build_embed(
+                await build_event_embed(
                     tx_hash=args["transactionHash"],
                     block_number=args["blockNumber"],
                     title=":handshake: Large pDAO Delegation",
@@ -507,7 +501,7 @@ class PDAOSetDelegateEvent(TransactionEvent):
             delegator_clean = await el_explorer_url(delegator, prefix=None)
             delegate_clean = await el_explorer_url(delegate, prefix=None)
             return [
-                await build_small_embed(
+                await build_small_event_embed(
                     f":handshake: {delegator_clean} has delegated their voting "
                     f"power of **{power_str}** to {delegate_clean}!",
                     args["transactionHash"],
@@ -527,7 +521,7 @@ class PDAOClaimerEvent(TransactionEvent):
         self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":classical_building: Protocol DAO: Changed Reward Distribution",
@@ -549,7 +543,7 @@ class PDAOSettingMultiEvent(TransactionEvent):
         self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":classical_building: Protocol DAO: Multiple Settings Modified",
@@ -570,7 +564,7 @@ class SDAOMemberKickEvent(TransactionEvent):
         member_link = await el_explorer_url(
             args["memberAddress"], block=(args["blockNumber"] - 1)
         )
-        embed = await build_embed(
+        embed = await build_event_embed(
             tx_hash=args["transactionHash"],
             block_number=args["blockNumber"],
             title=":boot: Security Council Expulsion",
@@ -596,7 +590,7 @@ class SDAOMemberKickMultiEvent(TransactionEvent):
             await el_explorer_url(addr, block=block) for addr in args["memberAddresses"]
         ]
         member_list = ", ".join(member_links)
-        embed = await build_embed(
+        embed = await build_event_embed(
             tx_hash=args["transactionHash"],
             block_number=args["blockNumber"],
             title=":boot: Security Council Mass Expulsion",
@@ -626,7 +620,7 @@ class SDAOMemberReplaceEvent(TransactionEvent):
         )
         fmt = await self._fmt(args)
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":repeat: Security Council Replacement",
@@ -654,7 +648,7 @@ class FailedDepositEvent(TransactionEvent):
         if reason:
             fields.append(("Likely Revert Reason", f"`{reason}`", False))
         return [
-            await build_embed(
+            await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
                 title=":fire: Failed Validator Deposit",
@@ -681,7 +675,7 @@ class UpgradeTriggeredEvent(TransactionEvent):
     async def build_embeds(
         self, args: Any, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        embed = await build_embed(
+        embed = await build_event_embed(
             tx_hash=args["transactionHash"],
             block_number=args["blockNumber"],
             title=self._title,
