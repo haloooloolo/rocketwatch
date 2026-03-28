@@ -37,4 +37,4 @@ if cfg.rocketpool.chain.lower() != "mainnet":
 if cfg.execution_layer.endpoint.archive is not None:
     w3_archive = _get_web3(cfg.execution_layer.endpoint.archive)
 
-bacon = Bacon(cfg.consensus_layer.endpoint)
+bacon = Bacon(cfg.consensus_layer.endpoint, request_timeout=60)

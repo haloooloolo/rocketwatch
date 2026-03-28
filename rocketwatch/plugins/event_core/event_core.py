@@ -38,7 +38,9 @@ class EventCore(commands.Cog):
         self.state = self.State.OK
         self.channels = cfg.discord.channels
         self.head_block: BlockNumber = BlockNumber(cfg.events.genesis)
+        self.latest_block: BlockNumber = BlockNumber(0)
         self.at_head: bool = False
+        self._catchup_start_block: BlockNumber | None = None
         self.block_batch_size: int = cfg.events.block_batch_size
         self.monitor = Monitor("event-core", api_key=cfg.other.secrets.cronitor)
         self.task.start()
@@ -86,6 +88,7 @@ class EventCore(commands.Cog):
         log.debug(f"{self.head_block = }")
 
         latest_block = await w3.eth.get_block_number()
+        self.latest_block = latest_block
         submodules = [
             cog for cog in self.bot.cogs.values() if isinstance(cog, EventPlugin)
         ]
@@ -101,6 +104,9 @@ class EventCore(commands.Cog):
             self.head_block = cfg.events.genesis
         else:
             # behind chain head, let's see how far
+            if self._catchup_start_block is None:
+                self._catchup_start_block = self.head_block
+
             last_event_entry = (
                 await self.bot.db.event_queue.find()
                 .sort("block_number", pymongo.DESCENDING)
@@ -188,6 +194,8 @@ class EventCore(commands.Cog):
 
         self.head_block = to_block
         self.at_head = close_to_head
+        if close_to_head:
+            self._catchup_start_block = None
         await self.bot.db.last_checked_block.replace_one(
             {"_id": "events"}, {"_id": "events", "block": to_block}, upsert=True
         )
@@ -271,7 +279,9 @@ class EventCore(commands.Cog):
 
     async def _update_status_message(self, channel_name: str, config) -> None:
         state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
-        if state_message:
+        is_far_behind = self.head_block < (self.latest_block - self.block_batch_size)
+
+        if state_message and not is_far_behind:
             age = datetime.now() - state_message["sent_at"]
             cooldown = timedelta(seconds=config.cooldown)
             if (age < cooldown) and (state_message["state"] == str(self.State.OK)):
@@ -281,13 +291,16 @@ class EventCore(commands.Cog):
                 return
 
         if not (embed := await generate_template_embed(self.bot.db, "announcement")):
-            try:
-                plugin = self.bot.cogs.get(config.plugin)
-                assert isinstance(plugin, StatusPlugin)
-                embed = await plugin.get_status()
-            except Exception as err:
-                await self.bot.report_error(err)
-                return
+            if is_far_behind:
+                embed = self._build_catching_up_embed()
+            else:
+                try:
+                    plugin = self.bot.cogs.get(config.plugin)
+                    assert isinstance(plugin, StatusPlugin)
+                    embed = await plugin.get_status()
+                except Exception as err:
+                    await self.bot.report_error(err)
+                    return
 
         embed.timestamp = datetime.now()
         embed.set_footer(
@@ -297,6 +310,33 @@ class EventCore(commands.Cog):
             embed.add_field(**field)
 
         await self._replace_or_add_status(channel_name, embed, state_message)
+
+    def _build_catching_up_embed(self) -> Embed:
+        start = self._catchup_start_block or self.head_block
+        total = self.latest_block - start
+        processed = self.head_block - start
+        remaining = self.latest_block - self.head_block
+        progress = (processed / total * 100) if total > 0 else 0
+
+        bar_length = 20
+        filled = round(bar_length * progress / 100)
+        bar = "\u2588" * filled + "\u2591" * (bar_length - filled)
+
+        embed = Embed()
+        embed.colour = discord.Color.from_rgb(235, 178, 86)
+        embed.title = "\u23f3 Catching Up"
+        embed.description = (
+            "Rocket Watch fell behind and is busy catching up to the head of the chain."
+        )
+        embed.add_field(
+            name="Progress",
+            value=f"`{bar}` {progress:.1f}%",
+            inline=False,
+        )
+        embed.add_field(name="Current Block", value=f"{self.head_block:,}")
+        embed.add_field(name="Chain Head", value=f"{self.latest_block:,}")
+        embed.add_field(name="Blocks Remaining", value=f"{remaining:,}")
+        return embed
 
     async def show_service_interrupt(self) -> None:
         embed = await assemble(
