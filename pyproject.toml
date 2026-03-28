@@ -52,6 +52,9 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
 
 [tool.mypy]
 python_version = "3.12"

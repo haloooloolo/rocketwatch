@@ -19,10 +19,14 @@ from guardrails import (
 
 log = logging.getLogger("sentinel.server")
 
+bot_key: web.AppKey[Bot] = web.AppKey("bot", Bot)
+keys_key: web.AppKey[dict] = web.AppKey("keys", dict)
+
 
 def create_app(bot: Bot) -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
-    app["bot"] = bot
+    app[bot_key] = bot
+    app[keys_key] = {key.secret: key for key in cfg.api.keys}
     app.router.add_post("/delete_message", handle_delete_message)
     app.router.add_post("/lock_thread", handle_lock_thread)
     app.router.add_post("/delete_thread", handle_delete_thread)
@@ -35,15 +39,14 @@ def create_app(bot: Bot) -> web.Application:
 @web.middleware
 async def auth_middleware(request: web.Request, handler) -> web.StreamResponse:
     api_key = request.headers.get("X-Api-Key")
-    for key in cfg.api.keys:
-        if key.secret == api_key:
-            request["key"] = key
-            return await handler(request)
+    if key := request.app[keys_key].get(api_key):
+        request["key"] = key
+        return await handler(request)
     return web.json_response({"error": "unauthorized"}, status=401)
 
 
 async def handle_delete_message(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
@@ -96,7 +99,7 @@ async def handle_delete_message(request: web.Request) -> web.Response:
 
 
 async def handle_lock_thread(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
@@ -143,7 +146,7 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
 
 
 async def handle_delete_thread(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
@@ -190,7 +193,7 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
 
 
 async def handle_timeout_member(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
@@ -255,7 +258,7 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
 
 
 async def handle_kick_member(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
@@ -304,7 +307,7 @@ async def handle_kick_member(request: web.Request) -> web.Response:
 
 
 async def handle_ban_member(request: web.Request) -> web.Response:
-    bot = request.app["bot"]
+    bot = request.app[bot_key]
     key: KeyConfig = request["key"]
     data = await request.json()
 
