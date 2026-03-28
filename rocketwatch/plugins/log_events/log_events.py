@@ -14,6 +14,7 @@ from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
 from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
+from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
 from web3.types import EventData, FilterParams, LogReceipt, TxReceipt
 
@@ -500,7 +501,12 @@ class Events(EventPlugin):
                 else:
                     receipt = await w3.eth.get_transaction_receipt(tx_hash)
 
-            embeds = await event_cls.build_embeds(args, event, receipt)
+            try:
+                embeds = await event_cls.build_embeds(args, event, receipt)
+            except BadFunctionCallOutput as e:
+                log.exception("Failed to build embeds for %s", event_name)
+                await self.bot.report_error(e)
+                continue
 
             # Event name may have been mutated by build_embeds
             event_name = args.get("event_name", event_name)
