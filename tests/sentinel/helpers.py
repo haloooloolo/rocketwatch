@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 from config import ApiConfig, Config, DiscordConfig
 
 TEST_KEY_SECRET = "test-secret-key"
@@ -54,7 +55,7 @@ def make_mock_message(message_id=2000, created_at=None):
 
 
 def make_mock_thread(thread_id=3000, created_at=None):
-    thread = MagicMock()
+    thread = MagicMock(spec=discord.Thread)
     thread.id = thread_id
     thread.created_at = created_at or (datetime.now(UTC) - timedelta(minutes=5))
     thread.edit = AsyncMock()
@@ -63,7 +64,7 @@ def make_mock_thread(thread_id=3000, created_at=None):
 
 
 def make_mock_channel(channel_id=4000):
-    channel = MagicMock()
+    channel = MagicMock(spec=discord.TextChannel)
     channel.id = channel_id
     channel.fetch_message = AsyncMock()
     return channel

@@ -75,6 +75,9 @@ async def handle_delete_message(request: web.Request) -> web.Response:
         except discord.NotFound:
             return web.json_response({"error": "channel_not_found"}, status=404)
 
+    if not isinstance(channel, discord.abc.Messageable):
+        return web.json_response({"error": "channel_not_found"}, status=404)
+
     try:
         message = await channel.fetch_message(message_id)
     except discord.NotFound:
@@ -123,10 +126,14 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
     thread = guild.get_thread(thread_id)
     if thread is None:
         try:
-            thread = await guild.fetch_channel(thread_id)
+            fetched = await guild.fetch_channel(thread_id)
         except discord.NotFound:
             log_action("lock_thread", guild_id, thread_id, reason, "not_found")
             return web.json_response({"error": "thread_not_found"}, status=404)
+        if not isinstance(fetched, discord.Thread):
+            log_action("lock_thread", guild_id, thread_id, reason, "not_found")
+            return web.json_response({"error": "thread_not_found"}, status=404)
+        thread = fetched
 
     if age_check := check_thread_age(key.lock_thread_max_age, thread):
         error, age, status = age_check
@@ -170,10 +177,14 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
     thread = guild.get_thread(thread_id)
     if thread is None:
         try:
-            thread = await guild.fetch_channel(thread_id)
+            fetched = await guild.fetch_channel(thread_id)
         except discord.NotFound:
             log_action("delete_thread", guild_id, thread_id, reason, "not_found")
             return web.json_response({"error": "thread_not_found"}, status=404)
+        if not isinstance(fetched, discord.Thread):
+            log_action("delete_thread", guild_id, thread_id, reason, "not_found")
+            return web.json_response({"error": "thread_not_found"}, status=404)
+        thread = fetched
 
     if age_check := check_thread_age(key.delete_thread_max_age, thread):
         error, age, status = age_check
@@ -233,10 +244,12 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
         return web.json_response({"error": "target_is_moderator"}, status=422)
 
     if member.is_timed_out():
-        until = member.timed_out_until.isoformat() if member.timed_out_until else None
+        timed_out_until = (
+            member.timed_out_until.isoformat() if member.timed_out_until else None
+        )
         log_action("timeout_member", guild_id, user_id, reason, "already_timed_out")
         return web.json_response(
-            {"error": "already_timed_out", "until": until}, status=409
+            {"error": "already_timed_out", "until": timed_out_until}, status=409
         )
 
     until = datetime.now(UTC) + timedelta(seconds=duration_seconds)
