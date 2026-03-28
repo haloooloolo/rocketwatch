@@ -4,18 +4,26 @@ import contextlib
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any, get_args
+from typing import Any
 
 import web3.exceptions
 from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
-from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress
+from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from hexbytes import HexBytes
 from web3.types import BlockData, TxData, TxReceipt
 
-from plugins.transactions.events import (
+from rocketwatch import RocketWatch
+from utils.config import cfg
+from utils.dao import DefaultDAO, ProtocolDAO
+from utils.embeds import Embed
+from utils.event import Event, EventPlugin
+from utils.rocketpool import rp
+from utils.shared_w3 import w3
+
+from .event_definitions import (
     DAO_PROPOSAL_EVENTS,
     TRANSACTION_REGISTRY,
     DAOProposalExecuteEvent,
@@ -25,34 +33,25 @@ from plugins.transactions.events import (
     TransactionEvent,
     UpgradeTriggeredEvent,
 )
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.dao import DefaultDAO, ProtocolDAO
-from utils.embeds import Embed
-from utils.event import Event, EventPlugin
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.transactions")
 
-_DUMMY_TX_HASH = "0x" + "0" * 64
+_DUMMY_TX_HASH = HexStr("0x" + "0" * 64)
 
 
 def _get_event_fields(
     event_cls: TransactionEvent,
 ) -> list[tuple[str, bool]]:
-    """Return ``[(name, required), ...]`` for non-context fields of *event_cls*'s ArgsT."""
+    """Return ``[(name, required), ...]`` for non-context fields of *event_cls*'s Args."""
+    args_type = type(event_cls).Args
+    if args_type is EventContext:
+        return []
     context_keys = set(EventContext.__annotations__)
-    for base in type(event_cls).__orig_bases__:
-        type_args = get_args(base)
-        if type_args and type_args[0] is not EventContext:
-            args_type = type_args[0]
-            return [
-                (name, name in args_type.__required_keys__)
-                for name in args_type.__annotations__
-                if name not in context_keys
-            ]
-    return []
+    return [
+        (name, name in args_type.__required_keys__)
+        for name in args_type.__annotations__
+        if name not in context_keys
+    ]
 
 
 class PreviewTxModal(Modal):
@@ -60,7 +59,7 @@ class PreviewTxModal(Modal):
         self,
         event_cls: TransactionEvent,
         function: str,
-        block_number: int,
+        block_number: BlockNumber,
         fields: list[tuple[str, bool]],
     ) -> None:
         super().__init__(title=event_cls.event_name[:45])
@@ -95,7 +94,8 @@ class PreviewTxModal(Modal):
             "transactionHash": _DUMMY_TX_HASH,
             "blockNumber": self.block_number,
         }
-        if embeds := await self.event_cls.build_embeds(args, event_data, None):
+        embeds = await self.event_cls.build_embeds(args, event_data, None)
+        if embeds:
             await interaction.followup.send(embeds=embeds)
         else:
             await interaction.followup.send(content="No events triggered.")
@@ -139,6 +139,7 @@ class Transactions(EventPlugin):
             )
             return
 
+        block_number = BlockNumber(block_number)
         fields = _get_event_fields(event_cls)
         if fields:
             modal = PreviewTxModal(event_cls, function, block_number, fields)
@@ -155,7 +156,8 @@ class Transactions(EventPlugin):
                 "transactionHash": _DUMMY_TX_HASH,
                 "blockNumber": block_number,
             }
-            if embeds := await event_cls.build_embeds(args, event_data, None):
+            embeds = await event_cls.build_embeds(args, event_data, None)
+            if embeds:
                 await interaction.followup.send(embeds=embeds)
             else:
                 await interaction.followup.send(content="No events triggered.")
@@ -185,7 +187,7 @@ class Transactions(EventPlugin):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def replay_tx(self, interaction: Interaction, tx_hash: str) -> None:
+    async def replay_tx_events(self, interaction: Interaction, tx_hash: str) -> None:
         await interaction.response.defer()
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
             await interaction.followup.send(content="Invalid transaction hash.")

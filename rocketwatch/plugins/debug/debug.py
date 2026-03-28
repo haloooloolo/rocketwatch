@@ -246,7 +246,7 @@ class Debug(Cog):
         import pickle
         from datetime import datetime
 
-        from plugins.events.events import Events
+        from plugins.log_events.log_events import Events
 
         await interaction.response.defer(ephemeral=True)
 
@@ -257,7 +257,7 @@ class Debug(Cog):
             "logs"
         ]:
             if ("topics" in event_log) and (
-                event_log["topics"][0].hex() in events_plugin.topic_map
+                event_log["topics"][0].hex() in events_plugin._topic_map
             ):
                 filtered_events.append(event_log)
 

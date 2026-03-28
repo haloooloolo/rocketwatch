@@ -3,21 +3,28 @@ from __future__ import annotations
 import datetime
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from typing import Any, ClassVar, NotRequired, TypedDict
 
 import humanize
-from eth_typing import ChecksumAddress
+from eth_typing import BlockNumber, HexStr
 from web3.types import TxReceipt
 
 from utils import solidity
 from utils.dao import (
     build_claimer_description,
     decode_setting_multi,
-    wrap_member_address,
 )
-from utils.embeds import Embed, el_explorer_url, finalize_embed
+from utils.embeds import Embed, build_embed, build_small_embed, el_explorer_url
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
+from utils.type_markers import (
+    ContractAddress,
+    NodeAddress,
+    WalletAddress,
+    Wei,
+    auto_format,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -36,106 +43,18 @@ def format_value(value: int | float) -> str:
 
 
 # ---------------------------------------------------------------------------
-# TypedDicts — args passed to each event's ``build_embeds``.
-# Each inherits from ``EventContext`` (fields injected by process_transaction)
-# and adds the decoded calldata fields specific to that event.
+# TypedDicts
 # ---------------------------------------------------------------------------
 
 
 class EventContext(TypedDict):
     """Fields injected into every args dict by ``process_transaction``."""
 
-    transactionHash: str
-    blockNumber: int
+    transactionHash: HexStr
+    blockNumber: BlockNumber
     event_name: str
     function_name: str
     timestamp: NotRequired[int]
-
-
-class BootstrapMemberArgs(EventContext):
-    nodeAddress: ChecksumAddress
-
-
-class SettingArgs(EventContext):
-    settingContractName: NotRequired[str]
-    settingPath: str
-    value: int | bool
-
-
-class BootstrapDisableArgs(EventContext):
-    confirmDisableBootstrapMode: bool
-
-
-class BootstrapNetworkUpgradeArgs(EventContext):
-    type: str
-    name: str
-    abi: str
-    address: ChecksumAddress
-
-
-class ProposalExecuteArgs(EventContext):
-    proposalID: int
-    executor: str
-    proposal_body: str
-
-
-class ODAOMemberInviteArgs(EventContext):
-    id: str
-    nodeAddress: ChecksumAddress
-
-
-class SDAOMemberInviteArgs(EventContext):
-    memberAddress: ChecksumAddress
-
-
-class SDAOMemberKickArgs(EventContext):
-    memberAddress: ChecksumAddress
-
-
-class SDAOMemberKickMultiArgs(EventContext):
-    memberAddresses: list[ChecksumAddress]
-
-
-class SDAOMemberReplaceArgs(EventContext):
-    existingMemberAddress: ChecksumAddress
-    newMemberAddress: ChecksumAddress
-
-
-class PDAOSettingMultiArgs(EventContext):
-    settingContractNames: list[str]
-    settingPaths: list[str]
-    types: list[int]
-    data: list[bytes]
-
-
-class PDAOClaimerArgs(EventContext):
-    nodePercent: int
-    protocolPercent: int
-    trustedNodePercent: int
-
-
-class PDAOSetDelegateArgs(EventContext):
-    delegate: NotRequired[ChecksumAddress]
-    newDelegate: NotRequired[ChecksumAddress]
-
-
-class PDAOSpendTreasuryArgs(EventContext):
-    invoiceID: str
-    recipientAddress: ChecksumAddress
-    amount: int
-
-
-class TreasuryRecurringSpendArgs(EventContext):
-    contractName: str
-    recipientAddress: ChecksumAddress
-    amountPerPeriod: int
-    periodLength: int
-    numPeriods: int
-    startTime: NotRequired[int]
-
-
-class TreasuryRecurringClaimArgs(EventContext):
-    contractNames: list[str]
 
 
 #: Transaction wrapper: dict(TxData) + injected "args" key.
@@ -147,20 +66,30 @@ EventData = dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
-class TransactionEvent[ArgsT: EventContext](ABC):
+class TransactionEvent(ABC):
     """Base class for transaction event types.
 
     Each subclass builds its own Discord embed(s) explicitly — no template
     lookup, no auto-transformation.  Return ``[]`` from ``build_embeds`` to
     filter the event out entirely.
+
+    Subclasses should define a nested ``Args`` TypedDict to declare the
+    expected fields and their formatting markers.
     """
 
     event_name: str
 
+    class Args(EventContext):
+        """Default args type — override in subclasses."""
+
+    async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Auto-format *args* using this class's nested ``Args`` TypedDict."""
+        return await auto_format(args, type(self).Args)
+
     @abstractmethod
     async def build_embeds(
         self,
-        args: ArgsT,
+        args: Any,
         event: EventData,
         receipt: TxReceipt | None,
     ) -> list[Embed]: ...
@@ -171,83 +100,116 @@ class TransactionEvent[ArgsT: EventContext](ABC):
 # ---------------------------------------------------------------------------
 
 
-class BootstrapODAOMemberEvent(TransactionEvent[BootstrapMemberArgs]):
+class BootstrapODAOMemberEvent(TransactionEvent):
     event_name = "bootstrap_odao_member"
 
+    class Args(EventContext):
+        nodeAddress: NodeAddress
+
     async def build_embeds(
-        self, args: BootstrapMemberArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        node_link = await el_explorer_url(args["nodeAddress"])
-        embed = Embed(title=":satellite_orbital: oDAO Bootstrap Mode: Member Added")
-        embed.description = f"{node_link} added as a new oDAO member!"
+        fmt = await self._fmt(args)
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":satellite_orbital: oDAO Bootstrap Mode: Member Added",
+                description=f"{fmt['nodeAddress']} added as a new oDAO member!",
+            )
         ]
 
 
-class BootstrapODAODisableEvent(TransactionEvent[BootstrapDisableArgs]):
+class BootstrapODAODisableEvent(TransactionEvent):
     event_name = "bootstrap_odao_disable"
 
+    class Args(EventContext):
+        confirmDisableBootstrapMode: bool
+
     async def build_embeds(
-        self, args: BootstrapDisableArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         if not args["confirmDisableBootstrapMode"]:
             return []
-        embed = Embed(title=":satellite_orbital: oDAO Bootstrap Mode Disabled")
-        embed.description = (
-            "Bootstrap mode for the oDAO is now disabled! The guardian has "
-            "handed off full control over the Oracle DAO to its members!"
-        )
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":satellite_orbital: oDAO Bootstrap Mode Disabled",
+                description=(
+                    "Bootstrap mode for the oDAO is now disabled! The guardian has "
+                    "handed off full control over the Oracle DAO to its members!"
+                ),
+            )
         ]
 
 
-class ODAOMemberInviteEvent(TransactionEvent[ODAOMemberInviteArgs]):
+class ODAOMemberInviteEvent(TransactionEvent):
     event_name = "odao_member_invite"
 
+    class Args(EventContext):
+        id: str
+        nodeAddress: NodeAddress
+
     async def build_embeds(
-        self, args: ODAOMemberInviteArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        node_link = await el_explorer_url(args["nodeAddress"])
-        embed = Embed(title=":crystal_ball: oDAO Invite")
-        embed.description = (
-            f"**{args['id']}** ({node_link}) has been invited to join the oDAO!"
-        )
+        fmt = await self._fmt(args)
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":crystal_ball: oDAO Invite",
+                description=(
+                    f"**{args['id']}** ({fmt['nodeAddress']}) has been invited to join the oDAO!"
+                ),
+            )
         ]
 
 
-class SDAOMemberInviteEvent(TransactionEvent[SDAOMemberInviteArgs]):
+class SDAOMemberInviteEvent(TransactionEvent):
     event_name = "sdao_member_invite"
 
+    class Args(EventContext):
+        memberAddress: NodeAddress
+
     async def build_embeds(
-        self, args: SDAOMemberInviteArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        member_link = await el_explorer_url(args["memberAddress"])
-        embed = Embed(title=":lock: Security Council Invite")
-        embed.description = (
-            f"{member_link} has been invited to join the security council!"
-        )
+        fmt = await self._fmt(args)
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":lock: Security Council Invite",
+                description=(
+                    f"{fmt['memberAddress']} has been invited to join the security council!"
+                ),
+            )
         ]
 
 
-class PDAOSpendTreasuryEvent(TransactionEvent[PDAOSpendTreasuryArgs]):
+class PDAOSpendTreasuryEvent(TransactionEvent):
     event_name = "pdao_spend_treasury"
 
+    class Args(EventContext):
+        invoiceID: str
+        recipientAddress: WalletAddress
+        amount: Wei
+
     async def build_embeds(
-        self, args: PDAOSpendTreasuryArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        amount = format_value(solidity.to_float(args["amount"]))
-        recipient_link = await el_explorer_url(args["recipientAddress"])
-        embed = Embed(title=":bank: DAO Treasury Spend")
-        embed.description = f"**{amount} RPL** from treasury sent to {recipient_link}!"
-        embed.add_field(name="Invoice ID", value=f"`{args['invoiceID']}`", inline=False)
+        fmt = await self._fmt(args)
+        amount = format_value(fmt["amount"])
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":bank: DAO Treasury Spend",
+                description=f"**{amount} RPL** from treasury sent to {fmt['recipientAddress']}!",
+                fields=[("Invoice ID", f"`{args['invoiceID']}`", False)],
+            )
         ]
 
 
@@ -256,27 +218,33 @@ class PDAOSpendTreasuryEvent(TransactionEvent[PDAOSpendTreasuryArgs]):
 # ---------------------------------------------------------------------------
 
 
-class SettingEvent(TransactionEvent[SettingArgs]):
+class SettingEvent(TransactionEvent):
+    class Args(EventContext):
+        settingContractName: NotRequired[str]
+        settingPath: str
+        value: int | bool
+
     def __init__(self, event_name: str, title: str) -> None:
         self.event_name = event_name
         self._title = title
 
     async def build_embeds(
-        self, args: SettingArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         value = args["value"]
         if "SettingBool" in args["function_name"]:
             value = bool(value)
-        embed = Embed(title=self._title)
-        embed.description = f"Setting `{args['settingPath']}` set to `{value}`!"
+        fields = []
         if "settingContractName" in args:
-            embed.add_field(
-                name="Contract",
-                value=f"`{args['settingContractName']}`",
-                inline=False,
-            )
+            fields.append(("Contract", f"`{args['settingContractName']}`", False))
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=self._title,
+                description=f"Setting `{args['settingPath']}` set to `{value}`!",
+                fields=fields or None,
+            )
         ]
 
 
@@ -285,26 +253,34 @@ class SettingEvent(TransactionEvent[SettingArgs]):
 # ---------------------------------------------------------------------------
 
 
-class ProposalExecuteEvent(TransactionEvent[ProposalExecuteArgs]):
+class ProposalExecuteEvent(TransactionEvent):
+    class Args(EventContext):
+        proposalID: int
+        executor: WalletAddress
+        proposal_body: str
+
     def __init__(self, event_name: str, title: str) -> None:
         self.event_name = event_name
         self._title = title
 
     async def build_embeds(
-        self, args: ProposalExecuteArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        executor_link = await el_explorer_url(args["executor"])
-        embed = Embed(title=self._title)
-        embed.description = (
-            f"{executor_link} executed **proposal #{args['proposalID']}**!\n"
-            f"```{args['proposal_body']}```"
-        )
+        fmt = await self._fmt(args)
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=self._title,
+                description=(
+                    f"{fmt['executor']} executed **proposal #{args['proposalID']}**!\n"
+                    f"```{args['proposal_body']}```"
+                ),
+            )
         ]
 
 
-class DAOProposalExecuteEvent(TransactionEvent[EventContext]):
+class DAOProposalExecuteEvent(TransactionEvent):
     """Placeholder for ``rocketDAOProposal.execute``.
 
     The DAO prefix (odao/sdao) is resolved by ``process_transaction`` which
@@ -315,7 +291,7 @@ class DAOProposalExecuteEvent(TransactionEvent[EventContext]):
     event_name = "dao_proposal_execute"
 
     async def build_embeds(
-        self, args: EventContext, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         raise RuntimeError(
             "DAOProposalExecuteEvent.build_embeds should not be called directly; "
@@ -328,7 +304,15 @@ class DAOProposalExecuteEvent(TransactionEvent[EventContext]):
 # ---------------------------------------------------------------------------
 
 
-class TreasuryRecurringSpendEvent(TransactionEvent[TreasuryRecurringSpendArgs]):
+class TreasuryRecurringSpendEvent(TransactionEvent):
+    class Args(EventContext):
+        contractName: str
+        recipientAddress: WalletAddress
+        amountPerPeriod: Wei
+        periodLength: int
+        numPeriods: int
+        startTime: NotRequired[int]
+
     def __init__(self, event_name: str, title: str, *, has_start_time: bool) -> None:
         self.event_name = event_name
         self._title = title
@@ -336,41 +320,50 @@ class TreasuryRecurringSpendEvent(TransactionEvent[TreasuryRecurringSpendArgs]):
 
     async def build_embeds(
         self,
-        args: TreasuryRecurringSpendArgs,
+        args: Args,
         event: EventData,
         receipt: TxReceipt | None,
     ) -> list[Embed]:
-        amount_per_period = format_value(solidity.to_float(args["amountPerPeriod"]))
-        recipient_link = await el_explorer_url(args["recipientAddress"])
-        embed = Embed(title=self._title)
-        embed.description = (
-            f"{recipient_link} will be awarded "
-            f"**{args['numPeriods']} x {amount_per_period} RPL**!"
-        )
-        embed.add_field(
-            name="Payment Interval",
-            value=humanize.naturaldelta(
-                datetime.timedelta(seconds=args["periodLength"])
+        fmt = await self._fmt(args)
+        amount_per_period = format_value(fmt["amountPerPeriod"])
+        fields: list[tuple[str, str, bool]] = [
+            (
+                "Payment Interval",
+                humanize.naturaldelta(datetime.timedelta(seconds=args["periodLength"])),
+                False,
             ),
-            inline=False,
-        )
+        ]
         if self._has_start_time:
-            embed.add_field(
-                name="First Payment",
-                value=f"<t:{args['startTime'] + args['periodLength']}>",
-                inline=False,
+            fields.append(
+                (
+                    "First Payment",
+                    f"<t:{args['startTime'] + args['periodLength']}>",
+                    False,
+                )
             )
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=self._title,
+                description=(
+                    f"{fmt['recipientAddress']} will be awarded "
+                    f"**{args['numPeriods']} x {amount_per_period} RPL**!"
+                ),
+                fields=fields,
+            )
         ]
 
 
-class TreasuryRecurringClaimEvent(TransactionEvent[TreasuryRecurringClaimArgs]):
+class TreasuryRecurringClaimEvent(TransactionEvent):
     event_name = "pdao_spend_treasury_recurring_claim"
+
+    class Args(EventContext):
+        contractNames: list[str]
 
     async def build_embeds(
         self,
-        args: TreasuryRecurringClaimArgs,
+        args: Args,
         event: EventData,
         receipt: TxReceipt | None,
     ) -> list[Embed]:
@@ -387,7 +380,7 @@ class TreasuryRecurringClaimEvent(TransactionEvent[TreasuryRecurringClaimArgs]):
             )
 
             period_length: int = contract_post[2]
-            recipient_address: str = contract_post[0]
+            recipient_address: WalletAddress = contract_post[0]
             periods_claimed: int = contract_post[5] - contract_pre[5]
             amount = format_value(solidity.to_float(periods_claimed * contract_post[1]))
 
@@ -401,19 +394,24 @@ class TreasuryRecurringClaimEvent(TransactionEvent[TreasuryRecurringClaimArgs]):
             else:
                 validity = f"The contract is valid for {periods_left} more periods."
 
-            embed = Embed(title=":bank: DAO Treasury Contract Claim")
-            embed.description = (
-                f"{recipient_link} has claimed **{amount} RPL** "
-                f"from `{contract_name}`!\n{validity}"
-            )
-            embed.add_field(
-                name="Payment Interval",
-                value=humanize.naturaldelta(datetime.timedelta(seconds=period_length)),
-                inline=False,
-            )
             embeds.append(
-                await finalize_embed(
-                    embed, args["transactionHash"], args["blockNumber"]
+                await build_embed(
+                    tx_hash=args["transactionHash"],
+                    block_number=args["blockNumber"],
+                    title=":bank: DAO Treasury Contract Claim",
+                    description=(
+                        f"{recipient_link} has claimed **{amount} RPL** "
+                        f"from `{contract_name}`!\n{validity}"
+                    ),
+                    fields=[
+                        (
+                            "Payment Interval",
+                            humanize.naturaldelta(
+                                datetime.timedelta(seconds=period_length)
+                            ),
+                            False,
+                        )
+                    ],
                 )
             )
         return embeds
@@ -424,8 +422,14 @@ class TreasuryRecurringClaimEvent(TransactionEvent[TreasuryRecurringClaimArgs]):
 # ---------------------------------------------------------------------------
 
 
-class BootstrapNetworkUpgradeEvent(TransactionEvent[BootstrapNetworkUpgradeArgs]):
+class BootstrapNetworkUpgradeEvent(TransactionEvent):
     event_name = "bootstrap_odao_network_upgrade"
+
+    class Args(EventContext):
+        type: str
+        name: str
+        abi: str
+        address: ContractAddress
 
     _DESCRIPTIONS: ClassVar[dict[str, str]] = {
         "addContract": "Contract `{name}` has been added!",
@@ -442,30 +446,37 @@ class BootstrapNetworkUpgradeEvent(TransactionEvent[BootstrapNetworkUpgradeArgs]
 
     async def build_embeds(
         self,
-        args: BootstrapNetworkUpgradeArgs,
+        args: Args,
         event: EventData,
         receipt: TxReceipt | None,
     ) -> list[Embed]:
         template = self._DESCRIPTIONS.get(args["type"])
         if template is None:
             raise Exception(f"Network Upgrade of type {args['type']} is not known.")
-        embed = Embed(title=":satellite_orbital: oDAO Bootstrap Mode: Network Upgrade")
-        embed.description = template.format(name=args["name"])
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":satellite_orbital: oDAO Bootstrap Mode: Network Upgrade",
+                description=template.format(name=args["name"]),
+            )
         ]
 
 
-class PDAOSetDelegateEvent(TransactionEvent[PDAOSetDelegateArgs]):
+class PDAOSetDelegateEvent(TransactionEvent):
     event_name = "pdao_set_delegate"
 
+    class Args(EventContext):
+        delegate: NotRequired[NodeAddress]
+        newDelegate: NotRequired[NodeAddress]
+
     async def build_embeds(
-        self, args: PDAOSetDelegateArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         if receipt is None:
             receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
-        delegator: str = receipt["from"]
-        delegate: str = args.get("delegate", "") or args.get("newDelegate", "")
+        delegator: NodeAddress = receipt["from"]
+        delegate: NodeAddress | None = args.get("delegate") or args.get("newDelegate")
         voting_power = solidity.to_float(
             await rp.call(
                 "rocketNetworkVoting.getVotingPower",
@@ -481,128 +492,154 @@ class PDAOSetDelegateEvent(TransactionEvent[PDAOSetDelegateArgs]):
         power_str = format_value(voting_power)
 
         if voting_power >= 200:
-            embed = Embed(title=":handshake: Large pDAO Delegation")
-            embed.description = (
-                f"{delegator_link} has delegated their voting power of "
-                f"**{power_str}** to {delegate_link}!"
-            )
             return [
-                await finalize_embed(
-                    embed, args["transactionHash"], args["blockNumber"]
+                await build_embed(
+                    tx_hash=args["transactionHash"],
+                    block_number=args["blockNumber"],
+                    title=":handshake: Large pDAO Delegation",
+                    description=(
+                        f"{delegator_link} has delegated their voting power of "
+                        f"**{power_str}** to {delegate_link}!"
+                    ),
                 )
             ]
         else:
             delegator_clean = await el_explorer_url(delegator, prefix=None)
             delegate_clean = await el_explorer_url(delegate, prefix=None)
-            embed = Embed()
-            embed.description = (
-                f":handshake: {delegator_clean} has delegated their voting "
-                f"power of **{power_str}** to {delegate_clean}!"
-            )
-            tx_link = await el_explorer_url(args["transactionHash"], name="[tnx]")
-            embed.description += f" {tx_link}"
-            embed.set_footer(text="")
-            return [embed]
+            return [
+                await build_small_embed(
+                    f":handshake: {delegator_clean} has delegated their voting "
+                    f"power of **{power_str}** to {delegate_clean}!",
+                    args["transactionHash"],
+                )
+            ]
 
 
-class PDAOClaimerEvent(TransactionEvent[PDAOClaimerArgs]):
+class PDAOClaimerEvent(TransactionEvent):
     event_name = "pdao_claimer"
 
+    class Args(EventContext):
+        nodePercent: int
+        protocolPercent: int
+        trustedNodePercent: int
+
     async def build_embeds(
-        self, args: PDAOClaimerArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        description = build_claimer_description(args)
-        embed = Embed(
-            title=":classical_building: Protocol DAO: Changed Reward Distribution"
-        )
-        embed.description = f"```{description}```"
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":classical_building: Protocol DAO: Changed Reward Distribution",
+                description=f"```{build_claimer_description(args)}```",
+            )
         ]
 
 
-class PDAOSettingMultiEvent(TransactionEvent[PDAOSettingMultiArgs]):
+class PDAOSettingMultiEvent(TransactionEvent):
     event_name = "pdao_setting_multi"
 
+    class Args(EventContext):
+        settingContractNames: list[str]
+        settingPaths: list[str]
+        types: list[int]
+        data: list[bytes]
+
     async def build_embeds(
-        self, args: PDAOSettingMultiArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        description = decode_setting_multi(args, args["data"])
-        embed = Embed(
-            title=":classical_building: Protocol DAO: Multiple Settings Modified"
-        )
-        embed.description = description
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":classical_building: Protocol DAO: Multiple Settings Modified",
+                description=decode_setting_multi(args, args["data"]),
+            )
         ]
 
 
-class SDAOMemberKickEvent(TransactionEvent[SDAOMemberKickArgs]):
+class SDAOMemberKickEvent(TransactionEvent):
     event_name = "sdao_member_kick"
 
+    class Args(EventContext):
+        memberAddress: NodeAddress
+
     async def build_embeds(
-        self, args: SDAOMemberKickArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        member_link = await wrap_member_address(
+        member_link = await el_explorer_url(
             args["memberAddress"], block=(args["blockNumber"] - 1)
         )
-        embed = Embed(title=":boot: Security Council Expulsion")
-        embed.description = f"{member_link} has been kicked from the security council!"
+        embed = await build_embed(
+            tx_hash=args["transactionHash"],
+            block_number=args["blockNumber"],
+            title=":boot: Security Council Expulsion",
+            description=f"{member_link} has been kicked from the security council!",
+        )
         embed.set_image(
             url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
         )
-        return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
-        ]
+        return [embed]
 
 
-class SDAOMemberKickMultiEvent(TransactionEvent[SDAOMemberKickMultiArgs]):
+class SDAOMemberKickMultiEvent(TransactionEvent):
     event_name = "sdao_member_kick_multi"
 
+    class Args(EventContext):
+        memberAddresses: list[NodeAddress]
+
     async def build_embeds(
-        self, args: SDAOMemberKickMultiArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         block = args["blockNumber"] - 1
         member_links = [
-            await wrap_member_address(addr, block=block)
-            for addr in args["memberAddresses"]
+            await el_explorer_url(addr, block=block) for addr in args["memberAddresses"]
         ]
         member_list = ", ".join(member_links)
-        embed = Embed(title=":boot: Security Council Mass Expulsion")
-        embed.description = (
-            f"Multiple members have been kicked from the security council!\n"
-            f"{member_list}"
+        embed = await build_embed(
+            tx_hash=args["transactionHash"],
+            block_number=args["blockNumber"],
+            title=":boot: Security Council Mass Expulsion",
+            description=(
+                f"Multiple members have been kicked from the security council!\n"
+                f"{member_list}"
+            ),
         )
         embed.set_image(
             url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
         )
-        return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
-        ]
+        return [embed]
 
 
-class SDAOMemberReplaceEvent(TransactionEvent[SDAOMemberReplaceArgs]):
+class SDAOMemberReplaceEvent(TransactionEvent):
     event_name = "sdao_member_replace"
 
+    class Args(EventContext):
+        existingMemberAddress: NodeAddress
+        newMemberAddress: NodeAddress
+
     async def build_embeds(
-        self, args: SDAOMemberReplaceArgs, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        existing_link = await wrap_member_address(
+        existing_link = await el_explorer_url(
             args["existingMemberAddress"], block=(args["blockNumber"] - 1)
         )
-        new_link = await el_explorer_url(args["newMemberAddress"])
-        embed = Embed(title=":repeat: Security Council Replacement")
-        embed.description = f"{existing_link} has been replaced by {new_link}!"
+        fmt = await self._fmt(args)
         return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":repeat: Security Council Replacement",
+                description=f"{existing_link} has been replaced by {fmt['newMemberAddress']}!",
+            )
         ]
 
 
-class FailedDepositEvent(TransactionEvent[EventContext]):
+class FailedDepositEvent(TransactionEvent):
     event_name = "minipool_failed_deposit"
 
     async def build_embeds(
-        self, args: EventContext, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         if receipt is None:
             receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
@@ -613,14 +650,19 @@ class FailedDepositEvent(TransactionEvent[EventContext]):
 
         node_link = await el_explorer_url(receipt["from"])
         burned = format_value(solidity.to_float(event["gasPrice"] * receipt["gasUsed"]))
-        embed = Embed(title=":fire: Failed Validator Deposit")
-        embed.description = (
-            f":fire_engine: {node_link} burned **{burned} ETH** "
-            f"trying to create a validator! :fire_engine:"
-        )
+        fields = []
+        if reason:
+            fields.append(("Likely Revert Reason", f"`{reason}`", False))
         return [
-            await finalize_embed(
-                embed, args["transactionHash"], args["blockNumber"], reason=reason
+            await build_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":fire: Failed Validator Deposit",
+                description=(
+                    f":fire_engine: {node_link} burned **{burned} ETH** "
+                    f"trying to create a validator! :fire_engine:"
+                ),
+                fields=fields or None,
             )
         ]
 
@@ -630,27 +672,28 @@ class FailedDepositEvent(TransactionEvent[EventContext]):
 # ---------------------------------------------------------------------------
 
 
-class UpgradeTriggeredEvent(TransactionEvent[EventContext]):
+class UpgradeTriggeredEvent(TransactionEvent):
     def __init__(self, event_name: str, title: str, image_url: str) -> None:
         self.event_name = event_name
         self._title = title
         self._image_url = image_url
 
     async def build_embeds(
-        self, args: EventContext, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: EventData, receipt: TxReceipt | None
     ) -> list[Embed]:
-        embed = Embed(title=self._title)
+        embed = await build_embed(
+            tx_hash=args["transactionHash"],
+            block_number=args["blockNumber"],
+            title=self._title,
+        )
         embed.set_image(url=self._image_url)
-        return [
-            await finalize_embed(embed, args["transactionHash"], args["blockNumber"])
-        ]
+        return [embed]
 
 
 # ---------------------------------------------------------------------------
-# Parameterized instances
+# Shared parameterized instances (multi-use)
 # ---------------------------------------------------------------------------
 
-# Settings
 _bootstrap_odao_setting = SettingEvent(
     "bootstrap_odao_setting",
     ":satellite_orbital: oDAO Bootstrap Mode: Setting Modified",
@@ -667,8 +710,6 @@ _pdao_setting = SettingEvent(
     "pdao_setting",
     ":classical_building: Protocol DAO: Setting Modified",
 )
-
-# Proposal execute
 _odao_proposal_execute = ProposalExecuteEvent(
     "odao_proposal_execute",
     ":white_check_mark: oDAO Proposal Executed",

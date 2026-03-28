@@ -176,7 +176,7 @@ class RocketPool:
         return address
 
     @staticmethod
-    async def get_revert_reason(tnx):
+    async def get_revert_reason(tnx) -> str:
         try:
             await w3.eth.call(
                 {
@@ -200,7 +200,7 @@ class RocketPool:
                 case _:
                     return "Hidden Error"
         else:
-            return None
+            return "Unknown"
 
     async def get_string(self, key: str) -> str:
         sha3 = w3.solidity_keccak(["string"], [key])

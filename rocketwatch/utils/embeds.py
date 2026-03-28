@@ -10,9 +10,10 @@ import humanize
 from aiocache import cached
 from discord import Color, Interaction
 from ens import InvalidName
-from eth_typing import BlockIdentifier
+from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from etherscan_labels import Addresses
 from web3.constants import ADDRESS_ZERO
+from web3.types import TxReceipt
 
 from strings import _
 from utils import solidity
@@ -40,6 +41,102 @@ class Embed(discord.Embed):
             footer_parts.insert(-1, f"Chain: {cfg.rocketpool.chain.capitalize()}")
         footer_parts.extend(parts)
         self.set_footer(text=" · ".join(footer_parts))
+
+
+#: Type for custom fields: ``(name, value, inline)``
+EmbedField = tuple[str, str, bool]
+
+
+async def build_small_embed(description: str, tx_hash: HexStr) -> Embed:
+    """Create a compact one-line embed with a ``[tnx]`` link and empty footer."""
+    tx_link = await el_explorer_url(tx_hash, name="[tnx]")
+    desc = f"{description} {tx_link}"
+    if cfg.rocketpool.chain != "mainnet":
+        desc += f" ({cfg.rocketpool.chain.capitalize()})"
+    embed = Embed(description=desc)
+    embed.set_footer(text="")
+    return embed
+
+
+async def build_embed(
+    *,
+    tx_hash: HexStr,
+    block_number: BlockNumber,
+    fields: list[EmbedField] | None = None,
+    **kwargs,
+) -> Embed:
+    """Create an :class:`Embed` with custom fields and standard tx footer."""
+    embed = Embed(**kwargs)
+
+    for name, value, inline in fields or []:
+        embed.add_field(name=name, value=value, inline=inline)
+
+    el_explorer = cfg.execution_layer.explorer
+    tx_link = await el_explorer_url(tx_hash)
+    tx_advanced = advanced_tnx_url(tx_hash)
+    embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
+    embed.add_field(
+        name="Block Number",
+        value=f"[{block_number}]({el_explorer}/block/{block_number})",
+    )
+    ts = await block_to_ts(block_number)
+    embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
+    return embed
+
+
+async def build_rich_embed(
+    *,
+    tx_hash: HexStr,
+    block_number: BlockNumber,
+    receipt: TxReceipt | None = None,
+    sender: ChecksumAddress | None = None,
+    caller: ChecksumAddress | None = None,
+    fields: list[EmbedField] | None = None,
+    **kwargs,
+) -> Embed:
+    """Create an :class:`Embed` with sender/caller, custom fields, and tx footer."""
+    embed = Embed(**kwargs)
+
+    for name, value, inline in fields or []:
+        embed.add_field(name=name, value=value, inline=inline)
+
+    el_explorer = cfg.execution_layer.explorer
+    tx_link = await el_explorer_url(tx_hash)
+    tx_advanced = advanced_tnx_url(tx_hash)
+    embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
+
+    if sender:
+        sea = await get_sea_creature_for_address(w3.to_checksum_address(sender))
+        sender_link = await el_explorer_url(sender, prefix=sea)
+        if caller and caller != sender:
+            caller_sea = await get_sea_creature_for_address(
+                w3.to_checksum_address(caller)
+            )
+            caller_link = await el_explorer_url(caller, prefix=caller_sea)
+            value = f"{caller_link} ({sender_link})"
+        else:
+            value = sender_link
+        embed.add_field(name="Sender Address", value=value)
+
+    embed.add_field(
+        name="Block Number",
+        value=f"[{block_number}]({el_explorer}/block/{block_number})",
+    )
+    ts = await block_to_ts(block_number)
+    embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
+
+    if receipt is not None and cfg.rocketpool.chain == "mainnet":
+        tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
+        tnx_fee_usd = round(await rp.get_eth_usdc_price() * tnx_fee / 10**18, 2)
+        if tnx_fee >= 10**15:
+            fee_str = f"{round(tnx_fee / 10**18, 3):,} ETH ({tnx_fee_usd} USDC)"
+        elif tnx_fee >= 10**9:
+            fee_str = f"{round(tnx_fee / 10**9):,} Gwei ({tnx_fee_usd} USDC)"
+        else:
+            fee_str = f"{tnx_fee:,} Wei ({tnx_fee_usd} USDC)"
+        embed.add_field(name="Transaction Fee", value=fee_str, inline=False)
+
+    return embed
 
 
 # Convert a user-provided string into a display name and address.
@@ -99,7 +196,7 @@ async def el_explorer_url(
     prefix: str | None = "",
     name_fmt: Callable[[str], str] | None = None,
     block: BlockIdentifier = "latest",
-):
+) -> str:
     _prefix = ""
 
     if w3.is_address(target):
@@ -590,35 +687,3 @@ async def assemble(args) -> Embed:
         e.add_field(name="Transaction Fee", value=value, inline=False)
 
     return e
-
-
-async def finalize_embed(
-    embed: Embed,
-    tx_hash: str,
-    block_number: int,
-    reason: str | None = None,
-) -> Embed:
-    """Add universal transaction fields to an embed.
-
-    Unlike ``assemble()``, this performs no auto-detection or transformation —
-    it only appends the standard footer fields that every transaction embed
-    should have.
-    """
-    el_explorer = cfg.execution_layer.explorer
-
-    tx_link = await el_explorer_url(tx_hash)
-    tx_advanced = advanced_tnx_url(tx_hash)
-    embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
-
-    embed.add_field(
-        name="Block Number",
-        value=f"[{block_number}]({el_explorer}/block/{block_number})",
-    )
-
-    if reason:
-        embed.add_field(name="Likely Revert Reason", value=f"`{reason}`", inline=False)
-
-    ts = await block_to_ts(block_number)
-    embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
-
-    return embed

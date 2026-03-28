@@ -92,12 +92,15 @@ class DAO(ABC):
         return body_repr
 
 
+type DAOContractName = Literal[
+    "rocketDAONodeTrustedProposals", "rocketDAOSecurityProposals"
+]
+
+
 class DefaultDAO(DAO):
     def __init__(
         self,
-        contract_name: Literal[
-            "rocketDAONodeTrustedProposals", "rocketDAOSecurityProposals"
-        ],
+        contract_name: DAOContractName,
     ):
         if contract_name == "rocketDAONodeTrustedProposals":
             self.display_name = "oDAO"
