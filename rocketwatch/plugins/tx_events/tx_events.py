@@ -426,7 +426,7 @@ class Transactions(EventPlugin):
     async def _handle_upgrade(self, block_number: int) -> None:
         log.info("Detected contract upgrade at block %s, reinitializing", block_number)
         await rp.flush()
-        self.__init__(self.bot)  # type: ignore[misc]
+        self.addresses = await self._parse_transaction_config()
 
 
 async def setup(bot: RocketWatch) -> None:

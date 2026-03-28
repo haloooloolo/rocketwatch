@@ -381,7 +381,6 @@ class Events(EventPlugin):
 
         try:
             await rp.flush()
-            self.__init__(self.bot)  # type: ignore[misc]
             await self.async_init()
             return messages + await self.get_past_events(
                 BlockNumber(contract_upgrade_block + 1), to_block
