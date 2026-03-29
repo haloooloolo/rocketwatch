@@ -2,6 +2,7 @@ import logging
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 from discord import Guild, Intents, Interaction, Role, Thread, User
 from discord.abc import GuildChannel, Messageable, PrivateChannel
@@ -23,7 +24,7 @@ class RocketWatch(Bot):
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
         self.db: AsyncDatabase = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
 
-    async def _load_plugins(self):
+    async def _load_plugins(self) -> None:
         chain = cfg.rocketpool.chain
         storage = cfg.rocketpool.manual_addresses["rocketStorage"]
         log.info(f"Running using storage contract {storage} (Chain: {chain})")
@@ -80,7 +81,7 @@ class RocketWatch(Bot):
         for guild in self.guilds:
             self.tree.clear_commands(guild=guild)
 
-    async def on_error(self, event_method: str, /, *args, **kwargs) -> None:
+    async def on_error(self, event_method: str, /, *args: Any, **kwargs: Any) -> None:
         exc = sys.exc_info()[1]
         if isinstance(exc, Exception):
             log.exception(f"Error in listener {event_method}")
@@ -88,7 +89,7 @@ class RocketWatch(Bot):
         else:
             log.exception("Ignoring BaseException in error handler")
 
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         assert self.user is not None
         log.info(f"Logged in as {self.user.name} ({self.user.id})")
         commands_enabled = cfg.modules.enable_commands
@@ -117,7 +118,7 @@ class RocketWatch(Bot):
         return guild.get_role(role_id) or await guild.fetch_role(role_id)
 
     async def report_error(
-        self, exception: Exception, interaction: Interaction | None = None, *args
+        self, exception: Exception, interaction: Interaction | None = None, *args: Any
     ) -> None:
         err_description = f"`{repr(exception)[:150]}`"
 

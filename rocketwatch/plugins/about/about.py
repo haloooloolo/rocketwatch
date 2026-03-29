@@ -28,7 +28,7 @@ class About(commands.Cog):
         self.process = psutil.Process(os.getpid())
 
     @command()
-    async def about(self, interaction: Interaction):
+    async def about(self, interaction: Interaction) -> None:
         """Show bot and server information"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
@@ -99,5 +99,5 @@ class About(commands.Cog):
         await interaction.followup.send(embed=e)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(About(bot))

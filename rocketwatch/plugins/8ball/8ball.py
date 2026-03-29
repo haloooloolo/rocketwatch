@@ -16,7 +16,7 @@ class EightBall(commands.Cog):
         self.bot = bot
 
     @command(name="8ball")
-    async def eight_ball(self, interaction: Interaction, question: str):
+    async def eight_ball(self, interaction: Interaction, question: str) -> None:
         e = Embed(title="🎱 Magic 8 Ball")
         if not question.endswith("?"):
             e.description = (
@@ -55,5 +55,5 @@ class EightBall(commands.Cog):
         await interaction.followup.send(embed=e)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(EightBall(bot))
