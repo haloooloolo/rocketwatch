@@ -15,30 +15,37 @@ log = logging.getLogger("rocketwatch.releases")
 class Releases(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.tag_url = "https://github.com/rocket-pool/smartnode-install/releases/tag/"
+        self._repo = "rocket-pool/smartnode"
 
     @command()
     async def latest_release(self, interaction: Interaction) -> None:
         """
-        Get the latest release of Smart Node.
+        Show the latest release of Smart Node
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
         async with aiohttp.ClientSession() as session:
             res = await session.get(
-                "https://api.github.com/repos/rocket-pool/smartnode-install/tags"
+                f"https://api.github.com/repos/{self._repo}/releases"
             )
-            res = await res.json()
-        latest_release = None
-        for tag in res:
-            if tag["name"].split(".")[-1].isnumeric():
-                latest_release = f"[{tag['name']}]({self.tag_url + tag['name']})"
+            releases = await res.json()
+
+        latest_stable = None
+        latest_prerelease = None
+        tag_base_url = f"https://github.com/{self._repo}/releases/tag"
+        for release in releases:
+            tag = release["tag_name"]
+            link = f"[{tag}]({tag_base_url}/{tag})"
+            if release["prerelease"]:
+                latest_prerelease = latest_prerelease or link
+            else:
+                latest_stable = link
                 break
 
-        e = Embed()
-        e.add_field(
-            name="Latest Smart Node Release", value=latest_release, inline=False
-        )
+        e = Embed(title="Smart Node Releases")
+        e.add_field(name="Latest Release", value=latest_stable or "N/A", inline=True)
+        if latest_prerelease:
+            e.add_field(name="Latest Pre-release", value=latest_prerelease, inline=True)
         await interaction.followup.send(embed=e)
 
 
