@@ -16,7 +16,6 @@ from utils import solidity
 from utils.block_time import block_to_ts
 from utils.config import cfg
 from utils.dao import (
-    DAOContractName,
     DefaultDAO,
     ProtocolDAO,
     build_claimer_description,
@@ -990,8 +989,8 @@ class BootstrapPDAOSpendTreasuryEvent(LogEvent):
         ]
 
 
-class BootstrapPDAOTreasuryRecurringEvent(LogEvent):
-    """Parameterized for new/update recurring treasury spends."""
+class _BootstrapPDAOTreasuryRecurringEvent(LogEvent):
+    """Base for new/update recurring treasury spend events."""
 
     class Args(LogEventContext):
         amountPerPeriod: Wei
@@ -1000,9 +999,7 @@ class BootstrapPDAOTreasuryRecurringEvent(LogEvent):
         periodLength: int
         startTime: NotRequired[int]
 
-    def __init__(self, event_name: str, title: str) -> None:
-        self.event_name = event_name
-        self._title = title
+    _action: str
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt | None
@@ -1030,7 +1027,7 @@ class BootstrapPDAOTreasuryRecurringEvent(LogEvent):
             await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
-                title=self._title,
+                title=f":satellite_orbital: pDAO Bootstrap Mode: {self._action} Recurring Spend",
                 description=(
                     f"{fmt['recipientAddress']} will be awarded "
                     f"**{args['numPeriods']} x {amount_s} RPL**!"
@@ -1038,6 +1035,16 @@ class BootstrapPDAOTreasuryRecurringEvent(LogEvent):
                 fields=fields,
             )
         ]
+
+
+class BootstrapPDAOTreasuryNewEvent(_BootstrapPDAOTreasuryRecurringEvent):
+    event_name = "bootstrap_pdao_spend_treasury_recurring_new_event"
+    _action = "New"
+
+
+class BootstrapPDAOTreasuryUpdateEvent(_BootstrapPDAOTreasuryRecurringEvent):
+    event_name = "bootstrap_pdao_spend_treasury_recurring_update_event"
+    _action = "Updated"
 
 
 class BootstrapSDAOMemberInviteEvent(LogEvent):
@@ -1133,7 +1140,23 @@ DAO_NAME_TO_PREFIX: dict[str, str] = {
 }
 
 
-class _ConcreteDAOProposalEvent(LogEvent):
+_DAO_TITLES: dict[str, dict[str, str]] = {
+    "add": {
+        "odao": ":bulb: New oDAO Proposal",
+        "sdao": ":bulb: New Security Council Proposal",
+    },
+    "vote": {
+        "odao": ":ballot_box: oDAO Vote",
+        "sdao": ":ballot_box: Security Council Vote",
+    },
+    "cancel": {
+        "odao": ":no_entry_sign: oDAO Proposal Canceled",
+        "sdao": ":no_entry_sign: Security Council Proposal Canceled",
+    },
+}
+
+
+class _DAOProposalEvent(LogEvent):
     """Parameterized oDAO/sDAO proposal event (add/vote/cancel)."""
 
     class Args(LogEventContext):
@@ -1143,17 +1166,8 @@ class _ConcreteDAOProposalEvent(LogEvent):
         supported: NotRequired[bool]
         canceller: NotRequired[NodeAddress]
 
-    def __init__(
-        self,
-        event_name: str,
-        title: str,
-        dao_contract: DAOContractName,
-        *,
-        action: str,
-    ) -> None:
+    def __init__(self, event_name: str, action: str) -> None:
         self.event_name = event_name
-        self._title = title
-        self._dao_contract: DAOContractName = dao_contract
         self._action = action
 
     async def build_embeds(
@@ -1161,7 +1175,11 @@ class _ConcreteDAOProposalEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         proposal_id = args["proposalID"]
-        dao = DefaultDAO(self._dao_contract)
+        dao_name = await rp.call("rocketDAOProposal.getDAO", proposal_id)
+        prefix = DAO_NAME_TO_PREFIX.get(dao_name)
+        if prefix is None:
+            return []
+        dao = DefaultDAO(dao_name)
         proposal = await dao.fetch_proposal(proposal_id)
         body = await dao.build_proposal_body(
             proposal,
@@ -1185,80 +1203,10 @@ class _ConcreteDAOProposalEvent(LogEvent):
             await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
-                title=self._title,
+                title=_DAO_TITLES[self._action][prefix],
                 description=f"{desc}\n```{body}```",
             )
         ]
-
-
-# Concrete oDAO/sDAO proposal instances
-_odao_proposal_add = _ConcreteDAOProposalEvent(
-    "odao_proposal_add_event",
-    ":bulb: New oDAO Proposal",
-    "rocketDAONodeTrustedProposals",
-    action="add",
-)
-_sdao_proposal_add = _ConcreteDAOProposalEvent(
-    "sdao_proposal_add_event",
-    ":bulb: New Security Council Proposal",
-    "rocketDAOSecurityProposals",
-    action="add",
-)
-_odao_proposal_vote = _ConcreteDAOProposalEvent(
-    "odao_proposal_vote_event",
-    ":ballot_box: oDAO Vote",
-    "rocketDAONodeTrustedProposals",
-    action="vote",
-)
-_sdao_proposal_vote = _ConcreteDAOProposalEvent(
-    "sdao_proposal_vote_event",
-    ":ballot_box: Security Council Vote",
-    "rocketDAOSecurityProposals",
-    action="vote",
-)
-_odao_proposal_cancel = _ConcreteDAOProposalEvent(
-    "odao_proposal_cancel_event",
-    ":no_entry_sign: oDAO Proposal Canceled",
-    "rocketDAONodeTrustedProposals",
-    action="cancel",
-)
-_sdao_proposal_cancel = _ConcreteDAOProposalEvent(
-    "sdao_proposal_cancel_event",
-    ":no_entry_sign: Security Council Proposal Canceled",
-    "rocketDAOSecurityProposals",
-    action="cancel",
-)
-
-_DAO_PROPOSAL_EVENTS: dict[str, dict[str, _ConcreteDAOProposalEvent]] = {
-    "add": {"odao": _odao_proposal_add, "sdao": _sdao_proposal_add},
-    "vote": {"odao": _odao_proposal_vote, "sdao": _sdao_proposal_vote},
-    "cancel": {"odao": _odao_proposal_cancel, "sdao": _sdao_proposal_cancel},
-}
-
-
-class _DAOProposalDispatcher(LogEvent):
-    """Dispatcher that resolves dao_proposal_* to odao/sdao variant."""
-
-    class Args(LogEventContext):
-        proposalID: int
-
-    def __init__(self, event_name: str, action: str) -> None:
-        self.event_name = event_name
-        self._action = action
-
-    async def resolve(
-        self, args: dict[str, Any], event: LogEventData
-    ) -> LogEvent | None:
-        dao_name = await rp.call("rocketDAOProposal.getDAO", args["proposalID"])
-        prefix = DAO_NAME_TO_PREFIX.get(dao_name)
-        if prefix is None:
-            return None
-        return _DAO_PROPOSAL_EVENTS[self._action][prefix]
-
-    async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        raise RuntimeError("Must be resolved first")
 
 
 # ===================================================================
@@ -2569,122 +2517,25 @@ class MegapoolPenaltyEvent(LogEvent):
 _NODESET_EMOJI = "<:nodeset:1351406340056285266>"
 
 
-class CSMaxValidatorChangeEvent(LogEvent):
-    event_name = "cs_max_validator_change_event"
-
-    class Args(LogEventContext):
-        oldValue: int
-        newValue: int
-
-    async def build_embeds(
-        self,
-        args: Args,
-        event: LogEventData,
-        receipt: TxReceipt | None,
-    ) -> list[Embed]:
-        old_limit = args["oldValue"]
-        new_limit = args["newValue"]
-        if new_limit > old_limit:
-            args["event_name"] = "cs_max_validator_increase_event"
-            embed = await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=f"{_NODESET_EMOJI} Constellation Validator Limit Increased",
-                description=(
-                    f"Constellation operators can now run **{new_limit}** minipools!\n"
-                    f" This is up from the previous limit of **{old_limit}**."
-                ),
-            )
-            embed.set_image(
-                url="https://media1.tenor.com/m/Yp6Yeiufb04AAAAd/piranhas-feeding.gif"
-            )
-            return [embed]
-        else:
-            args["event_name"] = "cs_max_validator_decrease_event"
-            return [
-                await build_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    title=f"{_NODESET_EMOJI} Constellation Validator Limit Decreased",
-                    description=(
-                        f"Constellation operators are now limited to **{new_limit}** "
-                        f"minipools!\n This is down from the previous limit of **{old_limit}**."
-                    ),
-                )
-            ]
-
-
-class CSFeeChangeEvent(LogEvent):
-    """Parameterized event for Constellation fee changes."""
-
-    class Args(LogEventContext):
-        oldValue: NotRequired[Percentage]
-        newValue: NotRequired[Percentage]
-        oldFee: NotRequired[Percentage]
-        newFee: NotRequired[Percentage]
-
-    def __init__(
-        self,
-        event_name: str,
-        title: str,
-        what: str,
-        *,
-        use_value_keys: bool = False,
-    ) -> None:
-        self.event_name = event_name
-        self._title = title
-        self._what = what
-        self._use_value_keys = use_value_keys
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        if self._use_value_keys:
-            old_fee = fmt["oldValue"]
-            new_fee = fmt["newValue"]
-        else:
-            old_fee = fmt["oldFee"]
-            new_fee = fmt["newFee"]
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=self._title,
-                description=(
-                    f"The {self._what} has changed from "
-                    f"**{format_value(old_fee)}%** to **{format_value(new_fee)}%**!"
-                ),
-            )
-        ]
-
-
-class CSDepositWithdrawEvent(LogEvent):
-    """Parameterized event for Constellation deposits/withdrawals."""
-
+class _ConstellationVaultEvent(LogEvent):
     class Args(LogEventContext):
         sender: WalletAddress
         assets: Wei
         shares: Wei
 
+    _action: str
+    _verb: str
+    _prep: str
+
     def __init__(
         self,
         event_name: str,
-        title: str,
-        verb: str,
-        preposition: str,
         unit_shares: str,
         unit_assets: str,
-        *,
-        is_rpl: bool = False,
     ) -> None:
         self.event_name = event_name
-        self._title = title
-        self._verb = verb
-        self._prep = preposition
         self._unit_shares = unit_shares
         self._unit_assets = unit_assets
-        self._is_rpl = is_rpl
 
     async def build_embeds(
         self,
@@ -2696,7 +2547,7 @@ class CSDepositWithdrawEvent(LogEvent):
         assets = fmt["assets"]
         shares = fmt["shares"]
 
-        if self._is_rpl:
+        if self._unit_assets == "RPL":
             rpl_ratio = solidity.to_float(
                 await rp.call("rocketNetworkPrices.getRPLPrice")
             )
@@ -2720,7 +2571,7 @@ class CSDepositWithdrawEvent(LogEvent):
             await build_event_embed(
                 tx_hash=args["transactionHash"],
                 block_number=args["blockNumber"],
-                title=self._title,
+                title=f"{_NODESET_EMOJI} {self._unit_shares} {self._action.capitalize()}",
                 description=(
                     f"**{shares_s} {self._unit_shares}** {self._verb} "
                     f"{self._prep} **{assets_s} {self._unit_assets}**!"
@@ -2729,103 +2580,16 @@ class CSDepositWithdrawEvent(LogEvent):
         ]
 
 
-class CSOperatorAddedEvent(LogEvent):
-    event_name = "cs_operator_added_event"
-
-    async def build_embeds(
-        self, args: LogEvent.Args, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        if receipt is None:
-            receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
-        address = receipt["from"]
-        address_link = await _addr(address)
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=f"{_NODESET_EMOJI} New Constellation Operator",
-                description=(
-                    f"{address_link} registered as a node operator for Constellation!"
-                ),
-            )
-        ]
+class ConstellationDepositEvent(_ConstellationVaultEvent):
+    _action = "deposit"
+    _verb = "minted"
+    _prep = "from"
 
 
-class CSOperatorsListEvent(LogEvent):
-    """Parameterized for operators added/removed (plural)."""
-
-    class Args(LogEventContext):
-        operators: list[str]  # formatted manually with el_explorer_url
-
-    def __init__(self, event_name: str, title: str) -> None:
-        self.event_name = event_name
-        self._title = title
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        operator_list = "\n".join(
-            [await el_explorer_url(addr) for addr in args["operators"]]
-        )
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=self._title,
-                description=operator_list,
-            )
-        ]
-
-
-class CSOperatorRemovedEvent(LogEvent):
-    event_name = "cs_operator_removed_event"
-
-    class Args(LogEventContext):
-        address: WalletAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=f"{_NODESET_EMOJI} Constellation Operator Removed",
-                description=(f"{fmt['address']} has been removed as a node operator!"),
-            )
-        ]
-
-
-class CSRatioChangeEvent(LogEvent):
-    """Parameterized for RPL min/target ratio changes."""
-
-    class Args(LogEventContext):
-        oldRatio: Percentage
-        newRatio: Percentage
-
-    def __init__(self, event_name: str, title: str, what: str) -> None:
-        self.event_name = event_name
-        self._title = title
-        self._what = what
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        old_ratio = fmt["oldRatio"]
-        new_ratio = fmt["newRatio"]
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=self._title,
-                description=(
-                    f"The supernode's {self._what} changed from "
-                    f"**{format_value(old_ratio)}%** to **{format_value(new_ratio)}%**!"
-                ),
-            )
-        ]
+class ConstellationWithdrawEvent(_ConstellationVaultEvent):
+    _action = "withdrawal"
+    _verb = "burned"
+    _prep = "for"
 
 
 # ===================================================================
@@ -3212,11 +2976,9 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "PenaltyUpdated": MinipoolPenaltyUpdatedEvent(),
     },
     "rocketDAOProposal": {
-        "ProposalAdded": _DAOProposalDispatcher("dao_proposal_add_event", "add"),
-        "ProposalVoted": _DAOProposalDispatcher("dao_proposal_vote_event", "vote"),
-        "ProposalCancelled": _DAOProposalDispatcher(
-            "dao_proposal_cancel_event", "cancel"
-        ),
+        "ProposalAdded": _DAOProposalEvent("dao_proposal_add_event", "add"),
+        "ProposalVoted": _DAOProposalEvent("dao_proposal_vote_event", "vote"),
+        "ProposalCancelled": _DAOProposalEvent("dao_proposal_cancel_event", "cancel"),
     },
     "rocketDAONodeTrustedActions": {
         "ActionJoined": ODAOMemberJoinEvent(),
@@ -3261,14 +3023,8 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "BootstrapSettingAddress": BootstrapPDAOSettingEvent(),
         "BootstrapSettingClaimers": BootstrapPDAOClaimerEvent(),
         "BootstrapSpendTreasury": BootstrapPDAOSpendTreasuryEvent(),
-        "BootstrapTreasuryNewContract": BootstrapPDAOTreasuryRecurringEvent(
-            "bootstrap_pdao_spend_treasury_recurring_new_event",
-            ":satellite_orbital: pDAO Bootstrap Mode: New Recurring Spend",
-        ),
-        "BootstrapTreasuryUpdateContract": BootstrapPDAOTreasuryRecurringEvent(
-            "bootstrap_pdao_spend_treasury_recurring_update_event",
-            ":satellite_orbital: pDAO Bootstrap Mode: Updated Recurring Spend",
-        ),
+        "BootstrapTreasuryNewContract": BootstrapPDAOTreasuryNewEvent(),
+        "BootstrapTreasuryUpdateContract": BootstrapPDAOTreasuryUpdateEvent(),
         "BootstrapSecurityInvite": BootstrapSDAOMemberInviteEvent(),
         "BootstrapSecurityKick": BootstrapSDAOMemberKickEvent(),
         "BootstrapDisabled": BootstrapPDAODisableEvent(),
@@ -3297,92 +3053,28 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "ChallengeSubmitted": PDAOProposalChallengeEvent(),
         "ProposalBondBurned": PDAOProposalBondBurnEvent(),
     },
-    "Constellation.SuperNodeAccount": {
-        "MaxValidatorsChanged": CSMaxValidatorChangeEvent(),
-    },
     "Constellation.ETHVault": {
-        "TreasuryFeeChanged": CSFeeChangeEvent(
-            "cs_eth_treasury_fee_change_event",
-            f"{_NODESET_EMOJI} xrETH Treasury Fee Changed",
-            "xrETH treasury fee",
-            use_value_keys=True,
-        ),
-        "NodeOperatorFeeChanged": CSFeeChangeEvent(
-            "cs_eth_no_fee_change_event",
-            f"{_NODESET_EMOJI} xrETH Operator Fee Changed",
-            "xrETH node operator fee",
-            use_value_keys=True,
-        ),
-        "MintFeeChanged": CSFeeChangeEvent(
-            "cs_eth_mint_fee_change_event",
-            f"{_NODESET_EMOJI} xrETH Mint Fee Changed",
-            "xrETH mint fee",
-            use_value_keys=True,
-        ),
-        "Deposit": CSDepositWithdrawEvent(
+        "Deposit": ConstellationDepositEvent(
             "cs_deposit_eth_event",
-            f"{_NODESET_EMOJI} xrETH Deposit",
-            "minted",
-            "from",
             "xrETH",
             "ETH",
         ),
-        "Withdraw": CSDepositWithdrawEvent(
+        "Withdraw": ConstellationWithdrawEvent(
             "cs_withdraw_eth_event",
-            f"{_NODESET_EMOJI} xrETH Withdrawal",
-            "burned",
-            "for",
             "xrETH",
             "ETH",
         ),
     },
     "Constellation.RPLVault": {
-        "TreasuryFeeChanged": CSFeeChangeEvent(
-            "cs_rpl_treasury_fee_change_event",
-            f"{_NODESET_EMOJI} xRPL Treasury Fee Changed",
-            "xRPL treasury fee",
-        ),
-        "Deposit": CSDepositWithdrawEvent(
+        "Deposit": ConstellationDepositEvent(
             "cs_deposit_rpl_event",
-            f"{_NODESET_EMOJI} xRPL Deposit",
-            "minted",
-            "from",
             "xRPL",
             "RPL",
-            is_rpl=True,
         ),
-        "Withdraw": CSDepositWithdrawEvent(
+        "Withdraw": ConstellationWithdrawEvent(
             "cs_withdraw_rpl_event",
-            f"{_NODESET_EMOJI} xRPL Withdrawal",
-            "burned",
-            "for",
             "xRPL",
             "RPL",
-            is_rpl=True,
-        ),
-    },
-    "Constellation.Whitelist": {
-        "OperatorAdded": CSOperatorAddedEvent(),
-        "OperatorsAdded": CSOperatorsListEvent(
-            "cs_operators_added_event",
-            f"{_NODESET_EMOJI} New Constellation Operators",
-        ),
-        "OperatorRemoved": CSOperatorRemovedEvent(),
-        "OperatorsRemoved": CSOperatorsListEvent(
-            "cs_operators_removed_event",
-            f"{_NODESET_EMOJI} Constellation Operators Removed",
-        ),
-    },
-    "Constellation.OperatorDistributor": {
-        "MinStakeRatioUpdated": CSRatioChangeEvent(
-            "cs_rpl_min_ratio_change_event",
-            f"{_NODESET_EMOJI} Constellation RPL Minimum Changed",
-            "RPL bond minimum",
-        ),
-        "TargetStakeRatioUpdated": CSRatioChangeEvent(
-            "cs_rpl_target_ratio_change_event",
-            f"{_NODESET_EMOJI} Constellation RPL Target Changed",
-            "RPL bond target",
         ),
     },
     "RockSolidVault": {
