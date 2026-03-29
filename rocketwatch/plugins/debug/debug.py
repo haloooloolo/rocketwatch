@@ -246,11 +246,11 @@ class Debug(Cog):
         import pickle
         from datetime import datetime
 
-        from plugins.log_events.log_events import Events
+        from plugins.log_events.log_events import LogEvents
 
         await interaction.response.defer(ephemeral=True)
 
-        events_plugin = cast(Events, self.bot.cogs["Events"])
+        events_plugin = cast(LogEvents, self.bot.cogs["Events"])
 
         filtered_events = []
         for event_log in (await w3.eth.get_transaction_receipt(HexStr(tx_hash)))[

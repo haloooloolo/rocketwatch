@@ -31,7 +31,7 @@ from .event_definitions import (
     LogEventData,
 )
 
-log = logging.getLogger("rocketwatch.events")
+log = logging.getLogger("rocketwatch.log_events")
 
 _DUMMY_TX_HASH = "0x" + "0" * 64
 
@@ -111,7 +111,7 @@ _UPGRADE_EVENTS: set[str] = {
 }
 
 
-class Events(EventPlugin):
+class LogEvents(EventPlugin):
     def __init__(self, bot: RocketWatch):
         super().__init__(bot)
         self._partial_filters: list[PartialFilter] = []
@@ -751,6 +751,6 @@ class Events(EventPlugin):
 
 
 async def setup(bot: RocketWatch) -> None:
-    cog = Events(bot)
+    cog = LogEvents(bot)
     await cog.async_init()
     await bot.add_cog(cog)

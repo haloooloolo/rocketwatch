@@ -34,7 +34,7 @@ from .event_definitions import (
     UpgradeTriggeredEvent,
 )
 
-log = logging.getLogger("rocketwatch.transactions")
+log = logging.getLogger("rocketwatch.tx_events")
 
 _DUMMY_TX_HASH = HexStr("0x" + "0" * 64)
 
@@ -101,7 +101,7 @@ class PreviewTxModal(Modal):
             await interaction.followup.send(content="No events triggered.")
 
 
-class Transactions(EventPlugin):
+class TxEvents(EventPlugin):
     def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot)
         self.addresses: list[ChecksumAddress] | None = None
@@ -430,4 +430,4 @@ class Transactions(EventPlugin):
 
 
 async def setup(bot: RocketWatch) -> None:
-    await bot.add_cog(Transactions(bot))
+    await bot.add_cog(TxEvents(bot))
