@@ -241,6 +241,10 @@ class BeaconEvents(EventPlugin):
             aiohttp.ClientSession() as session,
             session.get(endpoint, headers={"apikey": api_key}) as resp,
         ):
+            if resp.status == 429:
+                log.warning("beaconcha.in API rate limit reached")
+                return None
+            resp.raise_for_status()
             response_body = await resp.json()
 
         log.debug(f"{response_body = }")
