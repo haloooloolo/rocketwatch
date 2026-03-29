@@ -66,11 +66,11 @@ def _inline_sender(fmt: dict[str, Any], raw: Mapping[str, Any]) -> str:
     """
     if "caller" in raw and raw["caller"] != raw["from"]:
         return f"{fmt['caller']} ({fmt['from']})"
-    return fmt["from"]
+    return str(fmt["from"])
 
 
 def _get_proposal_id(args: Mapping[str, Any]) -> int:
-    return args.get("proposalID") or args["proposalId"]
+    return int(args.get("proposalID") or args["proposalId"])
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ class LogEvent(ABC):
 
     async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Auto-format *args* using this class's nested ``Args`` TypedDict."""
-        return await auto_format(args, type(self).Args)
+        return dict(await auto_format(args, type(self).Args))
 
     @abstractmethod
     async def build_embeds(
@@ -1237,7 +1237,7 @@ async def _enrich_pdao_proposal(
 
     dao = ProtocolDAO()
     proposal = await dao.fetch_proposal(proposal_id)
-    return await dao.build_proposal_body(
+    body = await dao.build_proposal_body(
         proposal,
         include_proposer=False,
         include_payload=("add" in event_name),
@@ -1245,6 +1245,7 @@ async def _enrich_pdao_proposal(
             kw not in event_name for kw in ("add", "challenge", "root", "destroy")
         ),
     )
+    return str(body) if body is not None else None
 
 
 class PDAOProposalAddEvent(LogEvent):

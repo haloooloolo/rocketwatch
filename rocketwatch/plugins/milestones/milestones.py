@@ -2,6 +2,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, overload
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -21,10 +22,16 @@ class Milestone:
     call: Callable[[], Awaitable[float | int]]
 
 
+@overload
+def contract_call[T](
+    path: str, formatter: Callable[[Any], T]
+) -> Callable[[], Awaitable[T]]: ...
+@overload
+def contract_call(path: str) -> Callable[[], Awaitable[Any]]: ...
 def contract_call(
-    path: str, formatter: Callable[[int], float] | None = None
-) -> Callable[[], Awaitable[float | int]]:
-    async def call():
+    path: str, formatter: Callable[[Any], Any] | None = None
+) -> Callable[[], Awaitable[Any]]:
+    async def call() -> Any:
         value = await rp.call(path)
         return formatter(value) if formatter else value
 
@@ -32,7 +39,7 @@ def contract_call(
 
 
 async def _get_percentage_rpl_swapped() -> float:
-    value = solidity.to_float(await rp.call("rocketTokenRPL.totalSwappedRPL"))
+    value: float = solidity.to_float(await rp.call("rocketTokenRPL.totalSwappedRPL"))
     return round((value / 18_000_000) * 100, 2)
 
 
@@ -137,5 +144,5 @@ class Milestones(EventPlugin):
         return payload
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Milestones(bot))

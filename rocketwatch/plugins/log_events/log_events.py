@@ -14,6 +14,7 @@ from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
 from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
+from web3.constants import HASH_ZERO
 from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
 from web3.types import EventData, FilterParams, LogReceipt, TxReceipt
@@ -32,8 +33,6 @@ from .event_definitions import (
 )
 
 log = logging.getLogger("rocketwatch.log_events")
-
-_DUMMY_TX_HASH = "0x" + "0" * 64
 
 
 def _get_event_fields(
@@ -80,12 +79,12 @@ class _PreviewLogModal(Modal):
 
         args: dict[str, Any] = {
             **parsed_args,
-            "transactionHash": _DUMMY_TX_HASH,
+            "transactionHash": HASH_ZERO,
             "blockNumber": self.block_number,
             "event_name": self.event_cls.event_name,
         }
         event_data: LogEventData = {
-            "hash": _DUMMY_TX_HASH,
+            "hash": HASH_ZERO,
             "blockNumber": self.block_number,
         }
         resolved = await self.event_cls.resolve(args, event_data)
@@ -199,15 +198,17 @@ class LogEvents(EventPlugin):
             async def build_direct_filter(
                 _from: BlockNumber, _to: BlockNumber | Literal["latest"]
             ) -> Sequence[LogReceipt | EventData]:
-                return await w3.eth.get_logs(
-                    cast(
-                        FilterParams,
-                        {
-                            "address": list(addresses),
-                            "topics": [list(aggregated_topics)],
-                            "fromBlock": _from,
-                            "toBlock": _to,
-                        },
+                return list(
+                    await w3.eth.get_logs(
+                        cast(
+                            FilterParams,
+                            {
+                                "address": list(addresses),
+                                "topics": [list(aggregated_topics)],
+                                "fromBlock": _from,
+                                "toBlock": _to,
+                            },
+                        )
                     )
                 )
 
@@ -265,12 +266,12 @@ class LogEvents(EventPlugin):
         else:
             await interaction.response.defer()
             args: dict[str, Any] = {
-                "transactionHash": _DUMMY_TX_HASH,
+                "transactionHash": HASH_ZERO,
                 "blockNumber": block_number,
                 "event_name": event_cls.event_name,
             }
             event_data: LogEventData = {
-                "hash": _DUMMY_TX_HASH,
+                "hash": HASH_ZERO,
                 "blockNumber": block_number,
             }
             resolved = await event_cls.resolve(args, event_data)

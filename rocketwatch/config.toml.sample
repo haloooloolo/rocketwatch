@@ -82,7 +82,7 @@ block_batch_size = 1000
 [events.status_message.default]
 plugin = "DepositPool"
 cooldown = 60
-fields = []
+fields = [{name = "Example", value = "https://example.com"}]
 
 [other]
 mev_hashes = []

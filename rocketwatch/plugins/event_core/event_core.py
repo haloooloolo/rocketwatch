@@ -16,7 +16,7 @@ from eth_typing import BlockNumber
 
 from plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch import RocketWatch
-from utils.config import cfg
+from utils.config import StatusMessageConfig, cfg
 from utils.embeds import Embed
 from utils.event import EventPlugin
 from utils.shared_w3 import w3
@@ -277,7 +277,9 @@ class EventCore(commands.Cog):
             log.debug(f"Updating state message for channel {channel_name}")
             await self._update_status_message(channel_name, config)
 
-    async def _update_status_message(self, channel_name: str, config) -> None:
+    async def _update_status_message(
+        self, channel_name: str, config: StatusMessageConfig
+    ) -> None:
         state_message = await self.bot.db.state_messages.find_one({"_id": channel_name})
         is_far_behind = self.head_block < (self.latest_block - self.block_batch_size)
 
@@ -307,7 +309,7 @@ class EventCore(commands.Cog):
             text=f"Tracking {cfg.rocketpool.chain} using {len(self.bot.cogs)} plugins"
         )
         for field in config.fields:
-            embed.add_field(**field)
+            embed.add_field(name=field.name, value=field.value)
 
         await self._replace_or_add_status(channel_name, embed, state_message)
 
@@ -408,5 +410,5 @@ class EventCore(commands.Cog):
             )
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(EventCore(bot))

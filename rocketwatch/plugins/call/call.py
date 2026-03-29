@@ -1,12 +1,15 @@
 import contextlib
 import json
 import logging
+from collections.abc import Sequence
+from typing import cast
 
 import humanize
 from discord import Interaction
 from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 from discord.ui import Modal, TextInput
+from eth_typing import ABIComponent, BlockIdentifier, BlockNumber, ChecksumAddress
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -19,24 +22,32 @@ log = logging.getLogger("rocketwatch.call")
 
 
 class CallModal(Modal):
-    def __init__(self, cog, function, block, address, raw_output, abi_inputs):
+    def __init__(
+        self,
+        cog: "Call",
+        function: str,
+        block: BlockIdentifier,
+        address: ChecksumAddress | None,
+        raw_output: bool,
+        abi_inputs: Sequence[ABIComponent],
+    ) -> None:
         func_name = function.rsplit(".", 1)[1] if "." in function else function
         super().__init__(title=func_name[:45])
         self.cog = cog
         self.function = function
-        self.block = block
+        self.block: BlockIdentifier = block
         self.address = address
         self.raw_output = raw_output
         self.abi_inputs = abi_inputs
         self.param_inputs: list[TextInput] = []
         for inp in abi_inputs:
             text_input: TextInput = TextInput(
-                label=f"{inp['name']} ({inp['type']})"[:45], required=True
+                label=f"{inp.get('name', '?')} ({inp['type']})"[:45], required=True
             )
             self.add_item(text_input)
             self.param_inputs.append(text_input)
 
-    async def on_submit(self, interaction):
+    async def on_submit(self, interaction: Interaction) -> None:
         await interaction.response.defer(
             ephemeral=is_hidden_role_controlled(interaction)
         )
@@ -48,7 +59,7 @@ class CallModal(Modal):
                 val = json.loads(val)
             error = self._validate(val, inp["type"])
             if error:
-                errors.append(f"`{inp['name']}`: {error}")
+                errors.append(f"`{inp.get('name', '?')}`: {error}")
             else:
                 args.append(val)
         if errors:
@@ -61,7 +72,7 @@ class CallModal(Modal):
         )
 
     @staticmethod
-    def _validate(value, abi_type):
+    def _validate(value: object, abi_type: str) -> str | None:
         if abi_type == "bool":
             if not isinstance(value, bool):
                 return f"expected bool, got `{value!r}`"
@@ -89,7 +100,7 @@ class Call(Cog):
         self.function_names: list[str] = []
 
     @Cog.listener()
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         if self.function_names:
             return
 
@@ -116,12 +127,28 @@ class Call(Cog):
         block: str = "latest",
         address: str | None = None,
         raw_output: bool = False,
-    ):
+    ) -> None:
         """Manually call a function on a protocol contract"""
-        block_id: int | str = int(block) if block.isnumeric() else block
+
+        block_id: BlockIdentifier
+        if block.isnumeric():
+            block_id = BlockNumber(int(block))
+        elif block in ("earliest", "finalized", "safe"):
+            block_id = cast(BlockIdentifier, block)
+        else:
+            await interaction.response.send_message("Invalid block identifier.")
+            return
+
+        verified_address: ChecksumAddress | None = None
+        if address is not None:
+            if w3.is_address(address):
+                verified_address = w3.to_checksum_address(address)
+            else:
+                await interaction.response.send_message("Invalid contract address.")
+                return
 
         # Look up ABI inputs for the function
-        abi_inputs = []
+        abi_inputs: Sequence[ABIComponent] = []
         try:
             contract_name, func_id = function.rsplit(".", 1)
             contract = await rp.get_contract_by_name(contract_name)
@@ -135,7 +162,9 @@ class Call(Cog):
             pass
 
         if abi_inputs:
-            modal = CallModal(self, function, block_id, address, raw_output, abi_inputs)
+            modal = CallModal(
+                self, function, block_id, verified_address, raw_output, abi_inputs
+            )
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer(
@@ -146,8 +175,14 @@ class Call(Cog):
             )
 
     async def _execute_call(
-        self, interaction, function, args, block, address, raw_output
-    ):
+        self,
+        interaction: Interaction,
+        function: str,
+        args: list,
+        block: BlockIdentifier,
+        address: str | None,
+        raw_output: bool,
+    ) -> None:
         try:
             v = await rp.call(
                 function,
@@ -174,7 +209,7 @@ class Call(Cog):
             v = solidity.to_float(v)
         g = humanize.intcomma(g)
         func_name = function.split("(")[0]
-        text = f"`block: {block}`\n`gas estimate: {g}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
+        text = f"`block: {block!s}`\n`gas estimate: {g}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
         if len(text + str(v)) > 2000:
             text += "too long, attached as file`"
             await interaction.followup.send(
@@ -195,5 +230,5 @@ class Call(Cog):
         ][:25]
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Call(bot))

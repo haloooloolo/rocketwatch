@@ -10,6 +10,7 @@ from web3.constants import HASH_ZERO
 from plugins.forum.forum import Forum
 from plugins.rpips.rpips import RPIPs
 from plugins.snapshot.snapshot import Snapshot
+from rocketwatch import RocketWatch
 from utils.block_time import ts_to_block
 from utils.config import cfg
 from utils.dao import DAO, DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
@@ -49,18 +50,21 @@ class Governance(StatusPlugin):
         to_block = (await ts_to_block(proposal.created)) + 1
 
         log.info(f"Looking for proposal {proposal} in [{from_block},{to_block}]")
-        for receipt in dao.proposal_contract.events.ProposalAdded().get_logs(
+        if not (proposal_contract := dao._proposal_contract):
+            return HASH_ZERO
+
+        for receipt in proposal_contract.events.ProposalAdded().get_logs(
             from_block=from_block, to_block=to_block
         ):
             log.info(f"Found receipt {receipt}")
             if receipt.args.proposalID == proposal.id:
-                return receipt.transactionHash.hex()
+                return HexStr(receipt.transactionHash.hex())
 
-        return HexStr(HASH_ZERO)
+        return HASH_ZERO
 
     async def _get_active_snapshot_proposals(self) -> list[Snapshot.Proposal]:
         try:
-            return await Snapshot.fetch_proposals("active", reverse=True)
+            return list(await Snapshot.fetch_proposals("active", reverse=True))
         except Exception as e:
             await self.bot.report_error(e)
             return []
@@ -185,5 +189,5 @@ class Governance(StatusPlugin):
         return embed
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Governance(bot))

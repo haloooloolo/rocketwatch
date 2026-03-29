@@ -25,12 +25,15 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.collateral")
 
 
-def get_percentiles(percentiles, counts):
-    for p in percentiles:
-        yield p, np.percentile(counts, p, method="nearest")
+def get_percentiles(
+    percentiles: list[int], counts: list[float]
+) -> list[tuple[int, float]]:
+    return [(p, np.percentile(counts, p, method="nearest")) for p in percentiles]
 
 
-async def collateral_distribution_raw(interaction: Interaction, distribution):
+async def collateral_distribution_raw(
+    interaction: Interaction, distribution: list[tuple[float, int]]
+) -> None:
     e = Embed()
     e.title = "Collateral Distribution"
     description = "```\n"
@@ -111,7 +114,7 @@ async def get_node_collateral_data(
 
 async def get_average_collateral_percentage_per_node(
     db: AsyncDatabase, collateral_cap: int | None, bonded: bool
-):
+) -> dict[float, list[float]]:
     stakes = list((await get_node_collateral_data(db)).values())
     rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
 
@@ -172,11 +175,11 @@ class Collateral(commands.Cog):
         rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         data = await get_node_collateral_data(self.bot.db)
 
-        def node_collateral(node):
+        def node_collateral(node: dict[str, int | float]) -> float:
             eth = node["bonded"] if bonded else node["borrowed"]
             if not eth:
-                return 0
-            return 100 * node["rpl_stake"] * rpl_price / eth
+                return 0.0
+            return float(100 * node["rpl_stake"] * rpl_price / eth)
 
         x, y, c = [], [], []
         max_validators = 0
@@ -520,5 +523,5 @@ class Collateral(commands.Cog):
         img.close()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Collateral(bot))
