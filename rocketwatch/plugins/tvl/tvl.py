@@ -18,8 +18,10 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.tvl")
 
 
-def minipool_split_rewards_logic(balance, node_share, commission, force_base=False):
-    d = {"base": {"reth": 0, "node": 0}, "rewards": {"reth": 0, "node": 0}}
+def minipool_split_rewards_logic(
+    balance: float, node_share: float, commission: float, force_base: bool = False
+) -> dict:
+    d = {"base": {"reth": 0.0, "node": 0.0}, "rewards": {"reth": 0.0, "node": 0.0}}
     node_balance = 32 * node_share
     reth_balance = 32 - node_balance
     if balance >= 8 or force_base:
@@ -38,8 +40,12 @@ def minipool_split_rewards_logic(balance, node_share, commission, force_base=Fal
 
 
 def megapool_split_rewards(
-    rewards, capital_ratio, node_commission, voter_share, dao_share
-):
+    rewards: float,
+    capital_ratio: float,
+    node_commission: float,
+    voter_share: float,
+    dao_share: float,
+) -> dict:
     borrowed_portion = rewards * (1 - capital_ratio)
     reth_commission = 1 - node_commission - voter_share - dao_share
     reth = borrowed_portion * reth_commission
@@ -55,7 +61,7 @@ class TVL(Cog):
 
     @command()
     @describe(show_all="Also show entries with 0 value")
-    async def tvl(self, interaction: Interaction, show_all: bool = False):
+    async def tvl(self, interaction: Interaction, show_all: bool = False) -> None:
         """
         Show the total value locked in the protocol
         """
@@ -531,7 +537,7 @@ class TVL(Cog):
                 "Node Distributor Contracts"
             ]["rETH Share"]["_val"] = tmp[0]["reth_share"]
 
-        def set_val_of_branch(branch, unit):
+        def set_val_of_branch(branch: dict, unit: str) -> float:
             val = 0
             for child in branch:
                 if isinstance(branch[child], dict):
@@ -565,5 +571,5 @@ class TVL(Cog):
         await interaction.followup.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(TVL(bot))

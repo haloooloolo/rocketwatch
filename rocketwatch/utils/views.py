@@ -50,13 +50,17 @@ class PageView(ui.View):
         return embed
 
     @ui.button(emoji="⬅", label="Prev", style=ButtonStyle.gray)
-    async def prev_page(self, interaction: Interaction, _) -> None:
+    async def prev_page(
+        self, interaction: Interaction, button: ui.Button["PageView"]
+    ) -> None:
         self.page_index -= 1
         embed = await self.load()
         await interaction.response.edit_message(embed=embed, view=self)
 
     @ui.button(emoji="➡", label="Next", style=ButtonStyle.gray)
-    async def next_page(self, interaction: Interaction, _) -> None:
+    async def next_page(
+        self, interaction: Interaction, button: ui.Button["PageView"]
+    ) -> None:
         self.page_index += 1
         embed = await self.load()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -77,6 +81,8 @@ class PageView(ui.View):
             await interaction.response.edit_message(embed=embed, view=self.view)
 
     @ui.button(label="Jump", style=ButtonStyle.gray)
-    async def jump_to_position(self, interaction: Interaction, _) -> None:
+    async def jump_to_position(
+        self, interaction: Interaction, button: ui.Button["PageView"]
+    ) -> None:
         modal = self.JumpToModal(self)
         await interaction.response.send_modal(modal)

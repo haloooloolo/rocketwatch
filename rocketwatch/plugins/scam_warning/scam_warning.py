@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime, timedelta
 
-from discord import errors
+from discord import Member, Message, User, errors
 from discord.abc import Messageable
 from discord.ext import commands
 
@@ -19,7 +19,7 @@ class ScamWarning(commands.Cog):
         self.inactivity_cooldown = timedelta(days=90)
         self.failure_cooldown = timedelta(days=1)
 
-    async def send_warning(self, user) -> None:
+    async def send_warning(self, user: User | Member) -> None:
         support_channel = await self.bot.get_or_fetch_channel(
             cfg.rocketpool.support.channel_id
         )
@@ -72,7 +72,7 @@ class ScamWarning(commands.Cog):
         await user.send(embed=embed)
 
     @commands.Cog.listener()
-    async def on_message(self, message) -> None:
+    async def on_message(self, message: Message) -> None:
         # message not in relevant channel
         if message.channel.id not in self.channel_ids:
             return
@@ -81,7 +81,10 @@ class ScamWarning(commands.Cog):
         if message.author == self.bot.user:
             return
 
-        if message.author.guild_permissions.moderate_members:
+        if (
+            isinstance(message.author, Member)
+            and message.author.guild_permissions.moderate_members
+        ):
             log.info(f"{message.author} is a moderator, skipping warning.")
             return
 
@@ -116,5 +119,5 @@ class ScamWarning(commands.Cog):
         )
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(ScamWarning(bot))

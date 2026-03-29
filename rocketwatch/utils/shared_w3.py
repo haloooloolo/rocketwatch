@@ -22,7 +22,7 @@ class Bacon(AsyncBeacon):
         )
 
 
-def _get_web3(endpoint: str):
+def _get_web3(endpoint: str) -> AsyncWeb3:
     provider = AsyncHTTPProvider(endpoint, request_kwargs={"timeout": 60})
     return AsyncWeb3(provider)
 
