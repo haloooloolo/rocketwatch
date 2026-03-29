@@ -184,7 +184,7 @@ class OnchainDAO(Cog):
             self.proposal = proposal
             self._voter_list: list[OnchainDAO.Vote] | None = None
 
-        async def _ensure_voter_list(self):
+        async def _ensure_voter_list(self) -> None:
             if self._voter_list is not None:
                 return
             self._voter_list = await self._get_voter_list(self.proposal)
@@ -289,5 +289,5 @@ class OnchainDAO(Cog):
         await interaction.followup.send(embed=embed, view=view)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(OnchainDAO(bot))

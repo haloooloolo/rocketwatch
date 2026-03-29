@@ -27,7 +27,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def raise_exception(self, interaction: Interaction):
+    async def raise_exception(self, interaction: Interaction) -> None:
         """
         Raise an exception for testing purposes.
         """
@@ -39,7 +39,7 @@ class Debug(Cog):
     @is_owner()
     async def get_members_of_role(
         self, interaction: Interaction, guild_id: str, role_id: str
-    ):
+    ) -> None:
         """Get members of a role"""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -64,7 +64,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def get_roles(self, interaction: Interaction, guild_id: str):
+    async def get_roles(self, interaction: Interaction, guild_id: str) -> None:
         """Get roles of a guild"""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -83,7 +83,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def delete_msg(self, interaction: Interaction, message_url: str):
+    async def delete_msg(self, interaction: Interaction, message_url: str) -> None:
         """
         Guess what. It deletes a message.
         """
@@ -100,7 +100,7 @@ class Debug(Cog):
     @is_owner()
     async def edit_embed(
         self, interaction: Interaction, message_url: str, new_description: str
-    ):
+    ) -> None:
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
@@ -114,7 +114,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def debug_transaction(self, interaction: Interaction, tnx_hash: str):
+    async def debug_transaction(self, interaction: Interaction, tnx_hash: str) -> None:
         """
         Try to return the revert reason of a transaction.
         """
@@ -130,7 +130,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def purge_minipools(self, interaction: Interaction, confirm: bool = False):
+    async def purge_minipools(
+        self, interaction: Interaction, confirm: bool = False
+    ) -> None:
         """
         Purge minipools collection, so it can be resynced from scratch in the next update.
         """
@@ -146,7 +148,7 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def sync_commands(self, interaction: Interaction):
+    async def sync_commands(self, interaction: Interaction) -> None:
         """
         Full sync of the command tree
         """
@@ -157,7 +159,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def talk(self, interaction: Interaction, channel_id: str, message: str):
+    async def talk(
+        self, interaction: Interaction, channel_id: str, message: str
+    ) -> None:
         """
         Send a message to a channel.
         """
@@ -170,7 +174,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def announce(self, interaction: Interaction, channel_id: str, message: str):
+    async def announce(
+        self, interaction: Interaction, channel_id: str, message: str
+    ) -> None:
         """
         Send a message to a channel.
         """
@@ -190,7 +196,7 @@ class Debug(Cog):
     @is_owner()
     async def restore_support_template(
         self, interaction: Interaction, template_name: str, message_url: str
-    ):
+    ) -> None:
         await interaction.response.defer(ephemeral=True)
         channel_id, message_id = message_url.split("/")[-2:]
         channel = await self.bot.get_or_fetch_channel(int(channel_id))
@@ -242,7 +248,9 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def restore_missed_events(self, interaction: Interaction, tx_hash: str):
+    async def restore_missed_events(
+        self, interaction: Interaction, tx_hash: str
+    ) -> None:
         import pickle
         from datetime import datetime
 
@@ -293,5 +301,5 @@ class Debug(Cog):
         await interaction.followup.send(content="Done")
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Debug(bot))

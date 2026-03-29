@@ -72,7 +72,7 @@ class DelegateContracts(commands.Cog):
         return e
 
     @command()
-    async def minipool_delegates(self, interaction: Interaction):
+    async def minipool_delegates(self, interaction: Interaction) -> None:
         """Show stats for minipool delegate contract adoption"""
         await interaction.response.defer()
         e = await self._delegate_stats(
@@ -90,7 +90,7 @@ class DelegateContracts(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def megapool_delegates(self, interaction: Interaction):
+    async def megapool_delegates(self, interaction: Interaction) -> None:
         """Show stats for megapool delegate contract adoption"""
         await interaction.response.defer()
         e = await self._delegate_stats(
@@ -104,5 +104,5 @@ class DelegateContracts(commands.Cog):
         await interaction.followup.send(embed=e)
 
 
-async def setup(self):
+async def setup(self: RocketWatch) -> None:
     await self.add_cog(DelegateContracts(self))

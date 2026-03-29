@@ -81,7 +81,7 @@ class FeeDistribution(commands.Cog):
     @command()
     async def fee_distribution(
         self, interaction: Interaction, mode: Literal["tree", "pie"] = "pie"
-    ):
+    ) -> None:
         """
         Show the distribution of minipool commission percentages.
         """
@@ -108,5 +108,5 @@ class FeeDistribution(commands.Cog):
             await interaction.followup.send(embed=e, file=File(img, filename=file_name))
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(FeeDistribution(bot))

@@ -50,7 +50,7 @@ class Forum(commands.Cog):
         likes_received: int
 
         @property
-        def url(self):
+        def url(self) -> str:
             return f"{Forum.DOMAIN}/u/{self.username}"
 
         def __str__(self) -> str:
@@ -174,5 +174,5 @@ class Forum(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Forum(bot))

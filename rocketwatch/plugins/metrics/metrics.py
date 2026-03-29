@@ -21,7 +21,7 @@ class Metrics(commands.Cog):
         self.collection = self.bot.db.command_metrics
 
     @command()
-    async def metrics(self, interaction: Interaction):
+    async def metrics(self, interaction: Interaction) -> None:
         """
         Show a summary of event and command statistics
         """
@@ -121,7 +121,7 @@ class Metrics(commands.Cog):
             await self.bot.report_error(e)
 
     @command()
-    async def metrics_chart(self, interaction: Interaction):
+    async def metrics_chart(self, interaction: Interaction) -> None:
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         # generate mathplotlib chart that shows monthly command usage and monthly event emission, in separate subplots
 
@@ -201,5 +201,5 @@ class Metrics(commands.Cog):
         )
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Metrics(bot))

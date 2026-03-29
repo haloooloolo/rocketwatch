@@ -38,12 +38,12 @@ class Random(commands.Cog):
         self.contract_names: list[str] = []
 
     @commands.Cog.listener()
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         if not self.contract_names:
             self.contract_names = list(rp.addresses)
 
     @command()
-    async def dice(self, interaction: Interaction, dice_string: str = "1d6"):
+    async def dice(self, interaction: Interaction, dice_string: str = "1d6") -> None:
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         result = dice.roll(dice_string)
         e = Embed()
@@ -57,7 +57,7 @@ class Random(commands.Cog):
             await interaction.followup.send(embed=e)
 
     @command()
-    async def burn_reason(self, interaction: Interaction):
+    async def burn_reason(self, interaction: Interaction) -> None:
         """Show the largest sources of burned ETH"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         url = "https://ultrasound.money/api/fees/grouped-analysis-1"
@@ -104,7 +104,7 @@ class Random(commands.Cog):
         await interaction.followup.send(embed=e)
 
     @command()
-    async def dev_time(self, interaction: Interaction):
+    async def dev_time(self, interaction: Interaction) -> None:
         """Timezones too confusing to you? Well worry no more, this command is here to help!"""
         e = Embed()
         time_format = "%A %H:%M:%S %Z"
@@ -522,7 +522,9 @@ class Random(commands.Cog):
         await interaction.response.send_message(name)
 
     @command()
-    async def get_block_by_timestamp(self, interaction: Interaction, timestamp: int):
+    async def get_block_by_timestamp(
+        self, interaction: Interaction, timestamp: int
+    ) -> None:
         """
         Get a block using its timestamp. Useful for contracts that track block time instead of block number.
         """
@@ -543,7 +545,9 @@ class Random(commands.Cog):
         await interaction.followup.send(content=f"```{text}```")
 
     @command()
-    async def get_abi_of_contract(self, interaction: Interaction, contract: str):
+    async def get_abi_of_contract(
+        self, interaction: Interaction, contract: str
+    ) -> None:
         """Retrieve the latest ABI for a contract"""
         await interaction.response.defer(
             ephemeral=is_hidden_role_controlled(interaction)
@@ -556,7 +560,9 @@ class Random(commands.Cog):
             await interaction.followup.send(content=f"```Exception: {err!r}```")
 
     @command()
-    async def get_address_of_contract(self, interaction: Interaction, contract: str):
+    async def get_address_of_contract(
+        self, interaction: Interaction, contract: str
+    ) -> None:
         """Retrieve the latest address for a contract"""
         await interaction.response.defer(
             ephemeral=is_hidden_role_controlled(interaction)
@@ -582,7 +588,7 @@ class Random(commands.Cog):
     @command()
     async def decode_tnx(
         self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None
-    ):
+    ) -> None:
         """
         Decode transaction calldata
         """
@@ -614,5 +620,5 @@ class Random(commands.Cog):
         ][:25]
 
 
-async def setup(self):
+async def setup(self: RocketWatch) -> None:
     await self.add_cog(Random(self))

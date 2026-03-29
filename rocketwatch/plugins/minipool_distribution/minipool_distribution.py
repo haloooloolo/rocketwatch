@@ -1,5 +1,6 @@
 import logging
 import re
+from collections.abc import Generator
 from io import BytesIO
 from typing import Any
 
@@ -16,12 +17,16 @@ from utils.visibility import is_hidden
 log = logging.getLogger("rocketwatch.minipool_distribution")
 
 
-def get_percentiles(percentiles, counts):
+def get_percentiles(
+    percentiles: list[int], counts: list[int]
+) -> Generator[tuple[int, Any], None, None]:
     for p in percentiles:
         yield p, np.percentile(counts, p, method="nearest")
 
 
-async def minipool_distribution_raw(interaction: Interaction, distribution):
+async def minipool_distribution_raw(
+    interaction: Interaction, distribution: list[tuple[int, int]]
+) -> None:
     e = Embed()
     e.title = "Minipool Distribution"
     description = "```\n"
@@ -39,7 +44,7 @@ class MinipoolDistribution(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    async def get_minipool_counts_per_node(self):
+    async def get_minipool_counts_per_node(self) -> list[int]:
         # get an array for minipool counts per node from db using aggregation
         # example: [0,0,1,2,3,3,3]
         # 2 nodes have 0 minipools
@@ -62,7 +67,9 @@ class MinipoolDistribution(commands.Cog):
 
     @command()
     @describe(raw="Show the raw Distribution Data")
-    async def minipool_distribution(self, interaction: Interaction, raw: bool = False):
+    async def minipool_distribution(
+        self, interaction: Interaction, raw: bool = False
+    ) -> None:
         """Show the distribution of minipools per node."""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
@@ -117,7 +124,7 @@ class MinipoolDistribution(commands.Cog):
 
     @command()
     @describe(raw="Show the raw distribution data")
-    async def node_gini(self, interaction: Interaction, raw: bool = False):
+    async def node_gini(self, interaction: Interaction, raw: bool = False) -> None:
         """
         Show the cumulative validator share of the largest nodes.
         """
@@ -207,5 +214,5 @@ class MinipoolDistribution(commands.Cog):
         img.close()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(MinipoolDistribution(bot))

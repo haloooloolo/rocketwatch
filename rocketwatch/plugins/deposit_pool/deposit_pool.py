@@ -191,5 +191,5 @@ class DepositPool(StatusPlugin):
         return embed
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(DepositPool(bot))

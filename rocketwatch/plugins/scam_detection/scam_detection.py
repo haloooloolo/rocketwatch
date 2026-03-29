@@ -598,5 +598,5 @@ class ScamDetection(Cog):
         return RemovalVoteView(reportable, on_mark_safe)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(ScamDetection(bot))

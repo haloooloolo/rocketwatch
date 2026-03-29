@@ -20,7 +20,7 @@ class RPL(commands.Cog):
         self.bot = bot
 
     @command()
-    async def staked_rpl(self, interaction: Interaction):
+    async def staked_rpl(self, interaction: Interaction) -> None:
         """
         Show the amount of RPL staked
         """
@@ -50,7 +50,7 @@ class RPL(commands.Cog):
         )["total_unstaking_rpl_"]
         unstaked_rpl = rpl_supply - staked_rpl - unstaking_rpl
 
-        def fmt(v):
+        def fmt(v: float) -> str:
             if v >= 1_000_000:
                 return f"{v / 1_000_000:.2f}M"
             if v >= 1_000:
@@ -63,7 +63,7 @@ class RPL(commands.Cog):
 
         total = sum(sizes)
 
-        def autopct(pct):
+        def autopct(pct: float) -> str:
             return f"{fmt(pct / 100 * total)} ({pct:.1f}%)"
 
         fig, ax = plt.subplots()
@@ -91,7 +91,7 @@ class RPL(commands.Cog):
         img.close()
 
     @command()
-    async def withdrawable_rpl(self, interaction: Interaction):
+    async def withdrawable_rpl(self, interaction: Interaction) -> None:
         """
         Show the available liquidity at different RPL/ETH prices
         """
@@ -202,5 +202,5 @@ class RPL(commands.Cog):
         img.close()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(RPL(bot))

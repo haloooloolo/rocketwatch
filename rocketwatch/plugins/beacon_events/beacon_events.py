@@ -394,5 +394,5 @@ class BeaconEvents(EventPlugin):
         return None
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(BeaconEvents(bot))

@@ -20,7 +20,7 @@ class Commissions(commands.Cog):
         self.bot = bot
 
     @command()
-    async def commission_history(self, interaction: Interaction):
+    async def commission_history(self, interaction: Interaction) -> None:
         """
         Show the history of minipool commissions.
         """
@@ -79,5 +79,5 @@ class Commissions(commands.Cog):
         img.close()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Commissions(bot))

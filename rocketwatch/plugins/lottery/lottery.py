@@ -88,7 +88,7 @@ class Lottery(commands.Cog):
         return description
 
     @command()
-    async def lottery(self, interaction: Interaction):
+    async def lottery(self, interaction: Interaction) -> None:
         """
         Get the status of the current and next sync committee.
         """

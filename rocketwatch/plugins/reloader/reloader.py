@@ -47,7 +47,7 @@ class Reloader(Cog):
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_unloaded_extensions)
-    async def load(self, interaction: Interaction, module: str):
+    async def load(self, interaction: Interaction, module: str) -> None:
         """Load a new module"""
         await interaction.response.defer()
         try:
@@ -65,7 +65,7 @@ class Reloader(Cog):
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_loaded_extensions)
-    async def unload(self, interaction: Interaction, module: str):
+    async def unload(self, interaction: Interaction, module: str) -> None:
         """Unload a module"""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -79,7 +79,7 @@ class Reloader(Cog):
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
     @autocomplete(module=_get_loaded_extensions)
-    async def reload(self, interaction: Interaction, module: str):
+    async def reload(self, interaction: Interaction, module: str) -> None:
         """Reload a module"""
         await interaction.response.defer(ephemeral=True)
         try:
@@ -90,5 +90,5 @@ class Reloader(Cog):
             await interaction.followup.send(content=f"Plugin {module} not loaded!")
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Reloader(bot))

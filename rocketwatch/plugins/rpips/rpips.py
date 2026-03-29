@@ -20,7 +20,7 @@ class RPIPs(Cog):
 
     @command()
     @describe(name="RPIP name")
-    async def rpip(self, interaction: Interaction, name: str):
+    async def rpip(self, interaction: Interaction, name: str) -> None:
         """Show information about a specific RPIP."""
         await interaction.response.defer()
         embed = Embed()
@@ -151,5 +151,5 @@ class RPIPs(Cog):
         return rpips
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(RPIPs(bot))

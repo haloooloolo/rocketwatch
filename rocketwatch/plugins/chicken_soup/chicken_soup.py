@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from discord import Interaction
+from discord import Interaction, Message
 from discord.app_commands import command
 from discord.ext import commands
 
@@ -14,7 +14,7 @@ class ChickenSoup(commands.Cog):
         self.dispense_end: dict[int, datetime] = {}
 
     @command()
-    async def chicken_soup(self, interaction: Interaction):
+    async def chicken_soup(self, interaction: Interaction) -> None:
         if interaction.channel_id is not None:
             self.dispense_end[interaction.channel_id] = datetime.now() + self.duration
         await interaction.response.send_message(
@@ -22,7 +22,7 @@ class ChickenSoup(commands.Cog):
         )
 
     @commands.Cog.listener()
-    async def on_message(self, message) -> None:
+    async def on_message(self, message: Message) -> None:
         if message.author == self.bot.user:
             return
 
@@ -37,5 +37,5 @@ class ChickenSoup(commands.Cog):
         await message.add_reaction("🍲")
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(ChickenSoup(bot))

@@ -22,13 +22,13 @@ class PinnedMessages(commands.Cog):
             self.run_loop.start()
 
     @commands.Cog.listener()
-    async def on_ready(self):
+    async def on_ready(self) -> None:
         if self.run_loop.is_running():
             return
         self.run_loop.start()
 
     @tasks.loop(seconds=60.0)
-    async def run_loop(self):
+    async def run_loop(self) -> None:
         # get all pinned messages in db
         messages = await self.bot.db.pinned_messages.find().to_list()
         for message in messages:
@@ -92,7 +92,7 @@ class PinnedMessages(commands.Cog):
     @is_owner()
     async def pin(
         self, interaction: Interaction, channel_id: int, title: str, description: str
-    ):
+    ) -> None:
         await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(channel_id)
@@ -137,7 +137,7 @@ class PinnedMessages(commands.Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def unpin(self, interaction: Interaction, channel_id: str):
+    async def unpin(self, interaction: Interaction, channel_id: str) -> None:
         await interaction.response.defer()
         # check if channel exists
         channel = self.bot.get_channel(int(channel_id))
@@ -160,9 +160,9 @@ class PinnedMessages(commands.Cog):
         # rest is done by the run_loop
         await interaction.followup.send("Disabled pinned message")
 
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         self.run_loop.cancel()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(PinnedMessages(bot))

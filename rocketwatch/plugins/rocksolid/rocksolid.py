@@ -65,7 +65,7 @@ class RockSolid(Cog):
         return updates
 
     @command()
-    async def rocksolid(self, interaction: Interaction):
+    async def rocksolid(self, interaction: Interaction) -> None:
         """
         Summary of RockSolid rETH vault stats.
         """
@@ -79,8 +79,10 @@ class RockSolid(Cog):
             reth_value = await rp.call(
                 "RockSolidVault.convertToAssets", 10**18, block=block_number
             )
-            return await rp.call(
-                "rocketTokenRETH.getEthValue", reth_value, block=block_number
+            return int(
+                await rp.call(
+                    "rocketTokenRETH.getEthValue", reth_value, block=block_number
+                )
             )
 
         current_eth_rate = await get_eth_rate(current_block)
@@ -162,5 +164,5 @@ class RockSolid(Cog):
         )
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(RockSolid(bot))

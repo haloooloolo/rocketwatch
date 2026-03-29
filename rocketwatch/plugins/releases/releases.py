@@ -18,7 +18,7 @@ class Releases(commands.Cog):
         self.tag_url = "https://github.com/rocket-pool/smartnode-install/releases/tag/"
 
     @command()
-    async def latest_release(self, interaction: Interaction):
+    async def latest_release(self, interaction: Interaction) -> None:
         """
         Get the latest release of Smart Node.
         """
@@ -42,5 +42,5 @@ class Releases(commands.Cog):
         await interaction.followup.send(embed=e)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Releases(bot))
