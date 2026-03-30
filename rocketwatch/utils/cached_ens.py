@@ -10,14 +10,15 @@ log = logging.getLogger("rocketwatch.cached_ens")
 
 
 class CachedEns:
-    def __init__(self):
+    def __init__(self) -> None:
         self.ens = AsyncENS.from_web3(w3_mainnet)
 
     @cached(key_builder=lambda _, _self, address: address)
     async def get_name(self, address: ChecksumAddress) -> str | None:
         log.debug(f"Retrieving ENS name for {address}")
         try:
-            return await self.ens.name(address)
+            result: str | None = await self.ens.name(address)
+            return result
         except Exception as e:
             log.warning(f"ENS name lookup failed for {address}: {e}")
             return None
@@ -26,7 +27,8 @@ class CachedEns:
     async def resolve_name(self, name: str) -> ChecksumAddress | None:
         log.debug(f"Resolving ENS name {name}")
         try:
-            return await self.ens.address(name)
+            result: ChecksumAddress | None = await self.ens.address(name)
+            return result
         except Exception as e:
             log.warning(f"ENS address resolution failed for {name}: {e}")
             return None

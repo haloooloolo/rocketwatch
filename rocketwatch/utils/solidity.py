@@ -11,12 +11,12 @@ BEACON_START_DATE = 1606824023
 BEACON_EPOCH_LENGTH = 12 * 32
 
 
-def to_float(n, decimals=18):
-    return int(n) / 10**decimals
+def to_float(n: int, decimals: int = 18) -> float:
+    return float(int(n) / 10**decimals)
 
 
-def to_int(n, decimals=18):
-    return int(n) // 10**decimals
+def to_int(n: int, decimals: int = 18) -> int:
+    return int(int(n) // 10**decimals)
 
 
 def beacon_block_to_date(block_num: int) -> int:
@@ -46,7 +46,7 @@ SUBMISSION_KEYS = (
 )
 
 
-def mp_state_to_str(state):
+def mp_state_to_str(state: int) -> str:
     match state:
         case 0:
             return "initialised"

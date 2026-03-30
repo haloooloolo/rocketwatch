@@ -2816,19 +2816,12 @@ class UnstETHWithdrawalEvent(LogEvent):
         ]
 
 
-_ExitArbCallerField = TypedDict(
-    "_ExitArbCallerField",
-    {
-        "from": NotRequired[WalletAddress],
-        "caller": NotRequired[WalletAddress],
-    },
-)
-
-
 class ExitArbitrageEvent(LogEvent):
     event_name = "exit_arbitrage_event"
 
-    class Args(_ExitArbCallerField, LogEventContext):
+    class Args(LogEventContext):
+        caller: WalletAddress
+        receiver: WalletAddress
         amount: Wei
         profit: Wei
 
@@ -2838,11 +2831,11 @@ class ExitArbitrageEvent(LogEvent):
         fmt = await self._fmt(args)
         amount = fmt["amount"]
         profit = fmt["profit"]
-        caller_link = fmt.get("caller", fmt.get("from", ""))
+        receiver = fmt["receiver"]
         if amount < 100:
             return [
                 await build_small_event_embed(
-                    f":money_mouth: {caller_link} earned "
+                    f":money_mouth: {receiver} earned "
                     f"**{format_value(profit)} ETH** from an exit arbitrage!",
                     args["transactionHash"],
                 )
@@ -2853,7 +2846,7 @@ class ExitArbitrageEvent(LogEvent):
                 block_number=args["blockNumber"],
                 title=":money_mouth: Large Exit Arbitrage",
                 description=(
-                    f"{caller_link} earned **{format_value(profit)} ETH** "
+                    f"{receiver} earned **{format_value(profit)} ETH** "
                     f"with a {format_value(amount)} ETH flash loan!"
                 ),
             )

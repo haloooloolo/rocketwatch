@@ -3,10 +3,11 @@ import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import termplotlib as tpl
 from eth_typing import ChecksumAddress
+from web3.contract import AsyncContract
 
 from utils import solidity
 from utils.embeds import el_explorer_url
@@ -23,16 +24,18 @@ class DAO(ABC):
         self._contract = None
         self._proposal_contract = None
 
-    async def _get_contract(self):
+    async def _get_contract(self) -> AsyncContract:
         if self._contract is None:
             self._contract = await rp.get_contract_by_name(self.contract_name)
+        assert self._contract is not None
         return self._contract
 
-    async def _get_proposal_contract(self):
+    async def _get_proposal_contract(self) -> AsyncContract:
         if self._proposal_contract is None:
             self._proposal_contract = await rp.get_contract_by_name(
                 self._proposal_contract_name
             )
+        assert self._proposal_contract is not None
         return self._proposal_contract
 
     @dataclass(frozen=True, slots=True)
@@ -62,9 +65,9 @@ class DAO(ABC):
         self,
         proposal: Proposal,
         *,
-        include_proposer=True,
-        include_payload=True,
-        include_votes=True,
+        include_proposer: bool = True,
+        include_payload: bool = True,
+        include_votes: bool = True,
     ) -> str:
         body_repr = f"Description:\n{self.sanitize(proposal.message)}"
 
@@ -224,17 +227,17 @@ class DefaultDAO(DAO):
 
 
 class OracleDAO(DefaultDAO):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("rocketDAONodeTrustedProposals")
 
 
 class SecurityCouncil(DefaultDAO):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("rocketDAOSecurityProposals")
 
 
 class ProtocolDAO(DAO):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("rocketDAOProtocolProposals", "rocketDAOProtocolProposal")
 
     class ProposalState(IntEnum):
@@ -263,7 +266,7 @@ class ProtocolDAO(DAO):
         veto_quorum: float
 
         @property
-        def votes_total(self):
+        def votes_total(self) -> float:
             return self.votes_for + self.votes_against + self.votes_abstain
 
     async def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
@@ -407,7 +410,7 @@ def build_claimer_description(args: dict[str, int]) -> str:
     )
 
 
-def decode_setting_multi(args: dict[str, list], values_list: list[bytes]) -> str:
+def decode_setting_multi(args: dict[str, list[Any]], values_list: list[bytes]) -> str:
     description_parts = []
     for i in range(len(args["settingContractNames"])):
         value_raw = values_list[i]
@@ -428,4 +431,4 @@ def decode_setting_multi(args: dict[str, list], values_list: list[bytes]) -> str
 
 
 async def wrap_member_address(address: ChecksumAddress, block: int) -> str:
-    return await el_explorer_url(address, block=block)
+    return str(await el_explorer_url(address, block=block))
