@@ -1,4 +1,5 @@
 import tomllib
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -68,10 +69,15 @@ class ModulesConfig(BaseModel):
     enable_commands: bool | None = None
 
 
+class StatusMessageFieldConfig(BaseModel):
+    name: str
+    value: str
+
+
 class StatusMessageConfig(BaseModel):
     plugin: str
     cooldown: int
-    fields: list[dict[str, str]] = []
+    fields: list[StatusMessageFieldConfig] = []
 
 
 class EventsConfig(BaseModel):
@@ -114,7 +120,7 @@ class _ConfigProxy:
             data = tomllib.load(f)
         cfg._instance = Config(**data)
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         if self._instance is None:
             self.__load_config()
         return getattr(self._instance, name)
