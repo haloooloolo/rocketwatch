@@ -133,7 +133,7 @@ class Call(Cog):
         block_id: BlockIdentifier
         if block.isnumeric():
             block_id = BlockNumber(int(block))
-        elif block in ("earliest", "finalized", "safe"):
+        elif block in ("earliest", "finalized", "safe", "latest"):
             block_id = cast(BlockIdentifier, block)
         else:
             await interaction.response.send_message("Invalid block identifier.")
