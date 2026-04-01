@@ -42,7 +42,7 @@ class Embed(discord.Embed):
         timestamp: datetime | None = None,
     ) -> None:
         if color is None:
-            color = Color.from_rgb(235, 142, 85)
+            color = Color.from_rgb(226, 116, 57)
         super().__init__(
             color=color,
             title=title,
@@ -81,7 +81,7 @@ async def build_event_embed(
     tx_hash: HexStr,
     block_number: BlockNumber,
     fields: list[EmbedField] | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Embed:
     """Create an :class:`Embed` with custom fields and standard tx footer."""
     embed = Embed(**kwargs)
@@ -110,7 +110,7 @@ async def build_rich_event_embed(
     sender: ChecksumAddress | None = None,
     caller: ChecksumAddress | None = None,
     fields: list[EmbedField] | None = None,
-    **kwargs,
+    **kwargs: Any,
 ) -> Embed:
     """Create an :class:`Embed` with sender/caller, custom fields, and tx footer."""
     embed = Embed(**kwargs)
@@ -172,7 +172,9 @@ def format_value(value: int | float) -> str:
 # If an ens name is provided, it will be used as the display name.
 # If an address is provided, the display name will either be the reverse record or the address.
 # If the user input isn't sanitary, send an error message back to the user and return None, None.
-async def resolve_ens(interaction: Interaction, node_address: str):
+async def resolve_ens(
+    interaction: Interaction, node_address: str
+) -> tuple[str | None, ChecksumAddress | None]:
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
         try:
