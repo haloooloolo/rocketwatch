@@ -655,9 +655,40 @@ class ValidatorQueueExitedEvent(LogEvent):
         self, args: Args, event: LogEventData, receipt: TxReceipt | None
     ) -> list[Embed]:
         fmt = await self._fmt(args)
+
+        # Determine queue type by finding the MegapoolValidatorDequeued event
+        # in the same receipt and checking the validator's expressUsed field
+        # at the previous block (before dequeue resets it).
+        queue_type = ""
+        try:
+            if receipt is None:
+                receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
+            megapool_address = await rp.call(
+                "rocketNodeManager.getMegapoolAddress", args["nodeAddress"]
+            )
+            if megapool_address != ADDRESS_ZERO:
+                mp = await rp.get_contract_by_name("rocketMegapoolDelegate")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    dequeued_logs = (
+                        mp.events.MegapoolValidatorDequeued().process_receipt(receipt)
+                    )
+                if dequeued_logs:
+                    validator_id = dequeued_logs[0].args["validatorId"]
+                    info = await rp.call(
+                        "rocketMegapoolDelegate.getValidatorInfo",
+                        validator_id,
+                        address=megapool_address,
+                        block=args["blockNumber"] - 1,
+                    )
+                    express_used = info[8]  # expressUsed field in ValidatorInfo struct
+                    queue_type = " express" if express_used else " standard"
+        except Exception:
+            log.exception("Failed to determine queue type for QueueExited event")
+
         return [
             await build_small_event_embed(
-                f":leaves: {fmt['nodeAddress']} has removed a validator from the queue!",
+                f":leaves: {fmt['nodeAddress']} has removed a validator from the{queue_type} queue!",
                 args["transactionHash"],
             )
         ]
