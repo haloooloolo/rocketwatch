@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 
 from discord import Interaction
 from discord.app_commands import command
@@ -20,7 +21,9 @@ _BEACON_PENDING = {
 }
 
 
-def _classify_beacon_validator(beacon, contract_status):
+def _classify_beacon_validator(
+    beacon: dict, contract_status: str
+) -> tuple[str | None, str | None]:
     """Classify a validator by beacon status. Returns (status, sub_status)."""
     match beacon["status"]:
         case "pending_initialized":
@@ -47,8 +50,15 @@ def _classify_beacon_validator(beacon, contract_status):
             return None, None
 
 
-def _empty_state_tree():
-    return {
+def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, list]:
+    """Classify docs into state tree.
+
+    Args:
+        docs: list of DB documents, with or without beacon data
+        done_fn: function that takes a doc and returns True if its lifecycle is complete
+                 (used to distinguish withdrawn vs closed for withdrawal_done validators)
+    """
+    data = {
         "dissolved": 0,
         "pending": {},
         "active": {},
@@ -57,17 +67,6 @@ def _empty_state_tree():
         "withdrawn": {},
         "closed": {},
     }
-
-
-def _classify_collection(docs, done_fn):
-    """Classify docs into state tree.
-
-    Args:
-        docs: list of DB documents, with or without beacon data
-        done_fn: function that takes a doc and returns True if its lifecycle is complete
-                 (used to distinguish withdrawn vs closed for withdrawal_done validators)
-    """
-    data = _empty_state_tree()
     exiting_valis = []
     withdrawn_valis = []
 
@@ -116,7 +115,7 @@ class ValidatorStates(commands.Cog):
         self.bot = bot
 
     @command()
-    async def validator_states(self, interaction: Interaction):
+    async def validator_states(self, interaction: Interaction) -> None:
         """Show validator counts by beacon chain and contract status"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
@@ -146,7 +145,7 @@ class ValidatorStates(commands.Cog):
             "megapools": _collapse_tree(mg_data),
         }
 
-        embed = Embed(title="Validator States", color=0x00FF00)
+        embed = Embed(title="Validator States")
         description = "```\n"
         description += render_tree_legacy(tree, "Validators")
 
@@ -234,5 +233,5 @@ class ValidatorStates(commands.Cog):
         await interaction.followup.send(embed=embed)
 
 
-async def setup(self):
+async def setup(self: RocketWatch) -> None:
     await self.add_cog(ValidatorStates(self))
