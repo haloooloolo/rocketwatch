@@ -1,9 +1,12 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from discord import Member, Message, User, errors
+from bson import ObjectId
+from discord import Interaction, Member, Message, User, errors
 from discord.abc import Messageable
+from discord.app_commands import command, guilds
 from discord.ext import commands
+from discord.ext.commands import is_owner
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
@@ -19,56 +22,61 @@ class ScamWarning(commands.Cog):
         self.inactivity_cooldown = timedelta(days=90)
         self.failure_cooldown = timedelta(days=1)
 
-    async def send_warning(self, user: User | Member) -> None:
+    async def _build_warning_embed(self) -> Embed:
         support_channel = await self.bot.get_or_fetch_channel(
             cfg.rocketpool.support.channel_id
-        )
-        report_channel = await self.bot.get_or_fetch_channel(
-            cfg.discord.channels["report_scams"]
         )
         resource_channel = await self.bot.get_or_fetch_channel(
             cfg.discord.channels["resources"]
         )
         assert isinstance(support_channel, Messageable)
-        assert isinstance(report_channel, Messageable)
         assert isinstance(resource_channel, Messageable)
 
-        embed = Embed()
-        embed.title = "**Stay Safe on Rocket Pool Discord**"
-        embed.description = (
-            f"Hello! You've recently been active on the Rocket Pool server and might have opened "
-            f"your direct messages (DMs) to other users. To protect your funds and stay secure, "
-            f"please follow these guidelines:\n"
+        since = datetime.now(UTC) - timedelta(days=30)
+        scam_count = await self.bot.db.scam_reports.count_documents(
+            {"_id": {"$gt": ObjectId.from_datetime(since)}}
+        )
+
+        title = "**Stay Safe on Rocket Pool Discord**"
+        description = "Scammers actively target this server."
+        if scam_count > 0:
+            description += (
+                f" Rocket Watch has detected **{scam_count} scam attempts**"
+                f" in the past month alone - many more go unnoticed."
+            )
+        description += (
+            f"\n\n"
+            f"🔑 **Protect your keys**\n"
+            f"Never share your private keys or seed phrase."
+            f" Under no circumstance are they needed to resolve your issue.\n"
             f"\n"
-            f"1. **Keep Conversations Public**\n"
-            f"  - Ask and answer questions in public channels whenever possible.\n"
-            f"  - Ignore unsolicited DMs from strangers.\n"
-            f"  - **Beware of support threads**\n"
-            f"      - Scammers may ping you from newly-created threads pretending to offer support.\n"
-            f"      - Be cautious if someone contacts you directly from a thread.\n"
-            f"  - Report any suspicious messages in {report_channel.mention}.\n"
+            f"🚫 **Ignore unsolicited DMs**\n"
+            f"We do **not** use a ticket system."
+            f" Use the public {support_channel.mention} channel for help."
+            f" Be aware that scammers may try to impersonate reputable users.\n"
             f"\n"
-            f"2. **Use Official Resources Only**\n"
-            f"  - Avoid joining external Discord servers or visiting unknown websites that claim to offer support.\n"
-            f"  - We do **not** use a ticket system. For assistance, please use {support_channel.mention}.\n"
-            f"  - Always double-check links, even if they are shared publicly.\n"
-            f"  - You can find official Rocket Pool links and contract addresses in {resource_channel.mention}.\n"
-            f"  - If you're unsure about something, wait for confirmation from the community.\n"
+            f"🔗 **Verify links**\n"
+            f"Find official links and contract addresses"
+            f" in {resource_channel.mention}. Always double-check URLs.\n"
             f"\n"
-            f"3. **Protect Your Private Information**\n"
-            f"  - Never share your private keys or seed phrase with anyone.\n"
-            f"  - This information is **never** needed to help resolve issues.\n"
-            f"\n"
-            f"4. **Be Cautious with Private Messages**\n"
-            f"  - If you need to share sensitive details like your wallet address in private, be extra careful.\n"
-            f"  - Initiate the conversation yourself to avoid imposters.\n"
-            f"  - Verify the person's identity with others if necessary.\n"
-            f"\n"
-            f"**Tip:** Consider changing your Discord settings to limit who can send you direct messages. "
-            f"This can help prevent unwanted interactions.\n"
+            f"> **Tip:** Right-click the server icon → *Privacy Settings* →"
+            f" disable *Direct Messages* to block unsolicited messages.\n"
             f"\n"
             f"*This message may be sent again as a reminder after periods of inactivity.*"
         )
+
+        return Embed(title=title, description=description)
+
+    @command()
+    @guilds(cfg.discord.owner.server_id)
+    @is_owner()
+    async def preview_scam_warning(self, interaction: Interaction) -> None:
+        """Preview the scam warning template"""
+        embed = await self._build_warning_embed()
+        await interaction.response.send_message(embed=embed)
+
+    async def send_warning(self, user: User | Member) -> None:
+        embed = await self._build_warning_embed()
         await user.send(embed=embed)
 
     @commands.Cog.listener()
