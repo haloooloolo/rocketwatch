@@ -28,7 +28,7 @@ class InstructionsView(ui.View):
         self.distributable = distributable
 
     @ui.button(label="Instructions", style=ButtonStyle.blurple)
-    async def instructions(self, interaction: Interaction, _) -> None:
+    async def instructions(self, interaction: Interaction, _: ui.Button) -> None:
         mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
         bud_calldata = bytes.fromhex(
             mp_contract.encode_abi(abi_element_identifier="beginUserDistribute")[2:]
@@ -90,11 +90,11 @@ class UserDistribute(commands.Cog):
         self.bot = bot
         self.task.start()
 
-    async def cog_unload(self):
+    async def cog_unload(self) -> None:
         self.task.cancel()
 
     @tasks.loop(hours=8)
-    async def task(self):
+    async def task(self) -> None:
         channel_id = cfg.discord.channels.get("user_distribute")
         if not channel_id:
             return
@@ -123,11 +123,11 @@ class UserDistribute(commands.Cog):
         )
 
     @task.before_loop
-    async def before_task(self):
+    async def before_task(self) -> None:
         await self.bot.wait_until_ready()
 
     @task.error
-    async def on_task_error(self, err: BaseException):
+    async def on_task_error(self, err: BaseException) -> None:
         assert isinstance(err, Exception)
         await self.bot.report_error(err)
 
@@ -191,7 +191,7 @@ class UserDistribute(commands.Cog):
         return eligible, pending, distributable
 
     @command()
-    async def user_distribute_status(self, interaction: Interaction):
+    async def user_distribute_status(self, interaction: Interaction) -> None:
         """Show user distribute summary for minipools"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
@@ -243,5 +243,5 @@ class UserDistribute(commands.Cog):
             await interaction.followup.send(embed=embed)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(UserDistribute(bot))

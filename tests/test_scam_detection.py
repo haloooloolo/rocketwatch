@@ -33,7 +33,6 @@ def _get_test_cfg():
             endpoint=ExecutionLayerEndpoint(
                 current="http://localhost:8545", mainnet="http://localhost:8545"
             ),
-            etherscan_secret="test",
         ),
         consensus_layer=ConsensusLayerConfig(
             explorer="https://beaconcha.in",

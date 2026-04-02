@@ -51,7 +51,7 @@ class PageView(ui.View):
 
     @ui.button(emoji="⬅", label="Prev", style=ButtonStyle.gray)
     async def prev_page(
-        self, interaction: Interaction, button: ui.Button["PageView"]
+        self, interaction: Interaction, _: ui.Button["PageView"]
     ) -> None:
         self.page_index -= 1
         embed = await self.load()
@@ -59,7 +59,7 @@ class PageView(ui.View):
 
     @ui.button(emoji="➡", label="Next", style=ButtonStyle.gray)
     async def next_page(
-        self, interaction: Interaction, button: ui.Button["PageView"]
+        self, interaction: Interaction, _: ui.Button["PageView"]
     ) -> None:
         self.page_index += 1
         embed = await self.load()

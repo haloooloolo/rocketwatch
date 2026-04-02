@@ -34,7 +34,6 @@ def _minimal_config(**overrides) -> Config:
             endpoint=ExecutionLayerEndpoint(
                 current="http://localhost:8545", mainnet="http://localhost:8545"
             ),
-            etherscan_secret="test",
         ),
         "consensus_layer": ConsensusLayerConfig(
             explorer="https://beaconcha.in",
@@ -89,7 +88,6 @@ class TestConfigConstruction:
                     mainnet="http://localhost:8545",
                     archive="http://localhost:8546",
                 ),
-                etherscan_secret="test",
             )
         )
         assert cfg.execution_layer.endpoint.archive == "http://localhost:8546"

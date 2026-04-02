@@ -242,8 +242,10 @@ class Wall(commands.Cog):
         )
         ax.axvline(rpl_usd, color="black", linestyle="--", linewidth=1)
 
-        def get_formatter(base_fmt: str, *, scale=1.0, prefix="", suffix=""):
-            def formatter(_x, _pos) -> str:
+        def get_formatter(
+            base_fmt: str, *, scale: float = 1.0, prefix: str = "", suffix: str = ""
+        ) -> ticker.FuncFormatter:
+            def formatter(_x: float, _pos: float) -> str:
                 levels = [(1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")]
                 modifier = ""
                 base_value = _x * scale
@@ -254,9 +256,8 @@ class Wall(commands.Cog):
                         base_value /= m
                         break
 
-                return (
-                    prefix + f"{base_value:{base_fmt}}".rstrip(".") + modifier + suffix
-                )
+                value_str = f"{base_value:{base_fmt}}".rstrip(".")
+                return prefix + value_str + modifier + suffix
 
             return ticker.FuncFormatter(formatter)
 
@@ -383,5 +384,5 @@ class Wall(commands.Cog):
         return None
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Wall(bot))

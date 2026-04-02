@@ -1,7 +1,6 @@
 import logging
 from dataclasses import dataclass, replace
 from io import BytesIO
-from typing import Any
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -262,7 +261,7 @@ class Rewards(commands.Cog):
             )
             return
 
-        def formatter(_x: float, _pos: Any) -> str:
+        def formatter(_x: float, _pos: float) -> str:
             if _x < 1000:
                 return f"{_x:.0f}"
             elif _x < 10_000:

@@ -78,7 +78,7 @@ class TransactionEvent(ABC):
 
     async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Auto-format *args* using this class's nested ``Args`` TypedDict."""
-        return await auto_format(args, type(self).Args)
+        return dict(await auto_format(args, type(self).Args))
 
     @abstractmethod
     async def build_embeds(

@@ -11,8 +11,9 @@ from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
-from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
+from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
+from web3.constants import HASH_ZERO
 from web3.types import BlockData, TxData, TxReceipt
 
 from rocketwatch import RocketWatch
@@ -35,8 +36,6 @@ from .event_definitions import (
 )
 
 log = logging.getLogger("rocketwatch.tx_events")
-
-_DUMMY_TX_HASH = HexStr("0x" + "0" * 64)
 
 
 def _get_event_fields(
@@ -84,14 +83,14 @@ class PreviewTxModal(Modal):
                 parsed_args[name] = val
 
         event_data: EventData = {
-            "hash": _DUMMY_TX_HASH,
+            "hash": HASH_ZERO,
             "blockNumber": self.block_number,
         }
         args: dict[str, Any] = {
             **parsed_args,
             "function_name": self.function,
             "event_name": self.event_cls.event_name,
-            "transactionHash": _DUMMY_TX_HASH,
+            "transactionHash": HASH_ZERO,
             "blockNumber": self.block_number,
         }
         embeds = await self.event_cls.build_embeds(args, event_data, None)
@@ -147,13 +146,13 @@ class TxEvents(EventPlugin):
         else:
             await interaction.response.defer()
             event_data: EventData = {
-                "hash": _DUMMY_TX_HASH,
+                "hash": HASH_ZERO,
                 "blockNumber": block_number,
             }
             args: EventContext = {
                 "function_name": function,
                 "event_name": event_cls.event_name,
-                "transactionHash": _DUMMY_TX_HASH,
+                "transactionHash": HASH_ZERO,
                 "blockNumber": block_number,
             }
             embeds = await event_cls.build_embeds(args, event_data, None)
