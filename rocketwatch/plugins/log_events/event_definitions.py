@@ -10,7 +10,7 @@ import humanize
 from discord import Color
 from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.constants import ADDRESS_ZERO
-from web3.types import TxReceipt
+from web3.types import EventData, TxReceipt
 
 from utils import solidity
 from utils.block_time import block_to_ts
@@ -51,7 +51,13 @@ log = logging.getLogger("rocketwatch.events")
 # Type aliases
 # ---------------------------------------------------------------------------
 
-LogEventData = dict[str, Any]
+
+class LogEventData(EventData, total=False):
+    """Event wrapper: all of :class:`EventData` plus dynamically added keys."""
+
+    topics: list[str]
+    assignmentCount: int
+    amountOfStETH: int
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +198,7 @@ class LogEvent(ABC):
         self,
         args: Any,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]: ...
 
 
@@ -209,7 +215,7 @@ class NegativeRETHRatioEvent(LogEvent):
         rethSupply: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         reth_supply = solidity.to_float(args["rethSupply"])
         total_eth = solidity.to_float(args["totalEth"])
@@ -245,7 +251,7 @@ class PriceUpdateEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         block = args["blockNumber"]
         period_start = await rp.call(
@@ -300,7 +306,7 @@ class TransferEvent(LogEvent):
         self._token_prefix = token_prefix
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         amount = args["value"] / 10**18
 
@@ -332,7 +338,7 @@ class TransferEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":whale: Large rETH Transfer",
                 description=(
                     f"**{format_value(amount)} rETH** transferred "
@@ -350,7 +356,7 @@ class RETHBurnEvent(LogEvent):
         ethAmount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -373,7 +379,7 @@ class RETHBurnEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":fire: rETH Burn",
                 description=f"Burned **{amount_s} rETH** for {eth_s} ETH!",
             )
@@ -387,7 +393,7 @@ class RPLInflationEvent(LogEvent):
         value: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         value = format_value(fmt["value"])
@@ -416,7 +422,7 @@ class RPLMigrationEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -434,7 +440,7 @@ class RPLMigrationEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":arrows_counterclockwise: RPL Migration",
                 description=(
                     f"{fmt['from']} migrated **{amount_s} RPL v1** to the new token contract!"
@@ -450,7 +456,7 @@ class RPLStakeEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         fmt = await self._fmt(args)
@@ -479,7 +485,7 @@ class RPLStakeEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":moneybag: RPL Stake",
                 description=(
                     f"{fmt['from']} staked **{amount_s} RPL** (worth {eth_s} ETH)!"
@@ -496,7 +502,7 @@ class RPLWithdrawEvent(LogEvent):
         to: WalletAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         rpl_ratio = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
@@ -529,7 +535,7 @@ class NodeRPLSlashEvent(LogEvent):
         node: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
@@ -559,7 +565,7 @@ class PoolDepositEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -577,7 +583,7 @@ class PoolDepositEvent(LogEvent):
             block_number=args["blockNumber"],
             receipt=receipt,
             sender=args["from"],
-            caller=receipt["from"] if receipt else None,
+            caller=receipt["from"],
             title=":rocket: Pool Deposit",
             description=f"**{amount_s} ETH** deposited for rETH!",
         )
@@ -595,7 +601,7 @@ class PoolDepositAssignedEvent(LogEvent):
         minipool: MinipoolAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         count = event.get("assignmentCount", 0)
         if count == 0:
@@ -632,7 +638,7 @@ class PoolDepositRecycledEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
@@ -652,7 +658,7 @@ class ValidatorQueueExitedEvent(LogEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
 
@@ -661,8 +667,6 @@ class ValidatorQueueExitedEvent(LogEvent):
         # at the previous block (before dequeue resets it).
         queue_type = ""
         try:
-            if receipt is None:
-                receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", args["nodeAddress"]
             )
@@ -702,7 +706,7 @@ class ETHDepositEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -721,7 +725,7 @@ class ETHDepositEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":moneybag: Node ETH Deposit",
                 description=(
                     f"{fmt['from']} deposited **{amount_s} ETH** into node {fmt['nodeAddress']}!"
@@ -739,7 +743,7 @@ class ETHWithdrawEvent(LogEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -771,7 +775,7 @@ class ValidatorDepositEvent(LogEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
@@ -792,7 +796,7 @@ class ValidatorMultiDepositEvent(LogEvent):
         totalBond: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         num = args["numberOfValidators"]
@@ -815,7 +819,7 @@ class ValidatorMultiDepositEvent(LogEvent):
                     block_number=args["blockNumber"],
                     receipt=receipt,
                     sender=args["from"],
-                    caller=receipt["from"] if receipt else None,
+                    caller=receipt["from"],
                     title=":construction_site: Multi Validator Deposit",
                     description=(
                         f"**{num} validators** created with a total bond of "
@@ -837,7 +841,7 @@ class NodeMerkleRewardsClaimedEvent(LogEvent):
     event_name = "node_merkle_rewards_claimed"
 
     async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt | None
+        self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return []  # TODO
 
@@ -856,7 +860,7 @@ class AuctionLotCreateEvent(LogEvent):
         lotIndex: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         rpl_s = format_value(fmt["rplAmount"])
@@ -882,7 +886,7 @@ class AuctionBidEvent(LogEvent):
         by: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         eth = fmt["bidAmount"]
@@ -915,7 +919,7 @@ class AuctionRPLRecoverEvent(LogEvent):
         lotIndex: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         rpl_s = format_value(fmt["rplAmount"])
@@ -942,7 +946,7 @@ class BootstrapPDAOSettingEvent(LogEvent):
         value: Any
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         value = args["value"]
         return [
@@ -964,7 +968,7 @@ class BootstrapPDAOSettingMultiEvent(LogEvent):
         self,
         args: BootstrapSettingMultiArgs,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         description = decode_setting_multi(dict(args), args["values"])
         return [
@@ -986,7 +990,7 @@ class BootstrapPDAOClaimerEvent(LogEvent):
         self,
         args: BootstrapClaimerArgs,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         return [
             await build_event_embed(
@@ -1006,7 +1010,7 @@ class BootstrapPDAOSpendTreasuryEvent(LogEvent):
         recipientAddress: WalletAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
@@ -1033,7 +1037,7 @@ class _BootstrapPDAOTreasuryRecurringEvent(LogEvent):
     _action: str
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amountPerPeriod"])
@@ -1086,7 +1090,7 @@ class BootstrapSDAOMemberInviteEvent(LogEvent):
         id: str
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -1109,7 +1113,7 @@ class BootstrapSDAOMemberKickEvent(LogEvent):
         memberAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         member_link = await el_explorer_url(
             args["memberAddress"], block=(args["blockNumber"] - 1)
@@ -1130,7 +1134,7 @@ class BootstrapPDAODisableEvent(LogEvent):
     event_name = "bootstrap_pdao_disable_event"
 
     async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt | None
+        self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
             await build_event_embed(
@@ -1149,7 +1153,7 @@ class BootstrapPDAOEnableGovernanceEvent(LogEvent):
     event_name = "bootstrap_pdao_enable_governance_event"
 
     async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt | None
+        self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
             await build_event_embed(
@@ -1202,7 +1206,7 @@ class _DAOProposalEvent(LogEvent):
         self._action = action
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         proposal_id = args["proposalID"]
@@ -1288,7 +1292,7 @@ class PDAOProposalAddEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1322,7 +1326,7 @@ class PDAOProposalVoteEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         voting_power = fmt["votingPower"]
@@ -1361,7 +1365,7 @@ class PDAOProposalVoteOverrideEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         proposal_id = _get_proposal_id(args)
         proposal_block = await rp.call(
@@ -1404,7 +1408,7 @@ class PDAOProposalFinaliseEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1431,7 +1435,7 @@ class PDAOProposalDestroyEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1464,7 +1468,7 @@ class PDAOProposalRootEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1518,7 +1522,7 @@ class PDAOProposalChallengeEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1570,7 +1574,7 @@ class PDAOProposalBondBurnEvent(LogEvent):
         proposalId: NotRequired[int]
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         body = await _enrich_pdao_proposal(args, self.event_name, args["blockNumber"])
         if body is None:
@@ -1604,7 +1608,7 @@ class ODAOMemberJoinEvent(LogEvent):
         rplBondAmount: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         bond = format_value(fmt["rplBondAmount"])
@@ -1627,7 +1631,7 @@ class ODAOMemberLeaveEvent(LogEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         node_link = await el_explorer_url(
             args["nodeAddress"], block=(args["blockNumber"] - 1)
@@ -1649,7 +1653,7 @@ class ODAOMemberKickEvent(LogEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         node_link = await el_explorer_url(
             args["nodeAddress"], block=(args["blockNumber"] - 1)
@@ -1673,7 +1677,7 @@ class ODAOMemberChallengeEvent(LogEvent):
         time: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         deadline = args["time"] + await rp.call(
@@ -1705,7 +1709,7 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         challenged = fmt["nodeChallengedAddress"]
@@ -1759,7 +1763,7 @@ class SDAOMemberJoinEvent(LogEvent):
         nodeAddress: WalletAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -1779,7 +1783,7 @@ class SDAOMemberLeaveEvent(LogEvent):
         nodeAddress: WalletAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         node_link = await el_explorer_url(
             args["nodeAddress"], block=(args["blockNumber"] - 1)
@@ -1801,7 +1805,7 @@ class SDAOMemberRequestLeaveEvent(LogEvent):
         nodeAddress: WalletAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         node_link = await el_explorer_url(
             args["nodeAddress"], block=(args["blockNumber"] - 1)
@@ -1833,7 +1837,7 @@ class ODAORewardsSnapshotEvent(LogEvent):
         submission: Any
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         submission = dict(zip(SUBMISSION_KEYS, args["submission"], strict=False))
         fields: list[tuple[str, str, bool]] = []
@@ -1869,7 +1873,7 @@ class ODAORewardsSnapshotSubmissionEvent(LogEvent):
         submission: Any
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         submission = dict(zip(SUBMISSION_KEYS, args["submission"], strict=False))
@@ -1890,7 +1894,7 @@ class ODAORewardsSnapshotSubmissionEvent(LogEvent):
                 block_number=args["blockNumber"],
                 receipt=receipt,
                 sender=args["from"],
-                caller=receipt["from"] if receipt else None,
+                caller=receipt["from"],
                 title=":writing_hand: Reward Snapshot Submission Submitted",
                 description=(
                     f"{from_link} has published their submission for "
@@ -1913,7 +1917,7 @@ class NodeRegisterEvent(LogEvent):
         node: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         timezone = await rp.call(
             "rocketNodeManager.getNodeTimezoneLocation", args["node"]
@@ -1938,7 +1942,7 @@ class NodeSmoothingPoolStateChangedEvent(LogEvent):
         state: bool
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         validator_count = await rp.call(
             "rocketMinipoolManager.getNodeMinipoolCount", args["node"]
@@ -1989,7 +1993,7 @@ class MinipoolScrubEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         minipool = args["minipool"]
         minipool_link = await _addr(minipool)
@@ -2080,7 +2084,7 @@ class MinipoolScrubVoteEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         minipool = args["minipool"]
@@ -2115,7 +2119,7 @@ class MinipoolDepositReceivedEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         minipool = args["minipool"]
         deposit_amount = await rp.call(
@@ -2124,8 +2128,6 @@ class MinipoolDepositReceivedEvent(LogEvent):
             block=args["blockNumber"],
         )
 
-        if receipt is None:
-            receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
         node = receipt["from"]
 
         # Determine user deposit vs credit/balance usage
@@ -2250,7 +2252,7 @@ class MinipoolVacancyPreparedEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         pubkey_link = await cl_explorer_url(args.get("pubkey", ""))
@@ -2284,7 +2286,7 @@ class MinipoolWithdrawalProcessedEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         contract = await rp.assemble_contract("rocketMinipool", args["minipool"])
@@ -2318,7 +2320,7 @@ class MinipoolStatusUpdatedEvent(LogEvent):
         return None
 
     async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt | None
+        self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         raise RuntimeError("Must be resolved first")
 
@@ -2334,7 +2336,7 @@ class MinipoolDissolveEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         operator = await rp.call(
             "rocketMinipoolDelegate.getNodeAddress", address=args["minipool"]
@@ -2368,7 +2370,7 @@ class MinipoolPenaltyUpdatedEvent(LogEvent):
         penalty: Percentage
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         embed = await build_event_embed(
@@ -2391,7 +2393,7 @@ class ODAOMinipoolPenaltyEvent(LogEvent):
         rate: Percentage
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         embed = await build_event_embed(
@@ -2423,7 +2425,7 @@ class MegapoolValidatorAssignedEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -2446,7 +2448,7 @@ class MegapoolValidatorExitingEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -2469,7 +2471,7 @@ class MegapoolValidatorExitedEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -2492,7 +2494,7 @@ class MegapoolValidatorDissolveEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         node_link = fmt["node"]
@@ -2523,7 +2525,7 @@ class MegapoolPenaltyEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
@@ -2573,7 +2575,7 @@ class _ConstellationVaultEvent(LogEvent):
         self,
         args: Args,
         event: LogEventData,
-        receipt: TxReceipt | None,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         assets = fmt["assets"]
@@ -2636,7 +2638,7 @@ class ODAOUpgradePendingEvent(LogEvent):
         upgradeProposalID: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         contract_name = await rp.call(
             "rocketDAONodeTrustedUpgrade.getName",
@@ -2690,7 +2692,7 @@ class SDAOUpgradeVetoedEvent(LogEvent):
         upgradeProposalID: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         contract_name = await rp.call(
             "rocketDAONodeTrustedUpgrade.getName",
@@ -2718,7 +2720,7 @@ class ODAOContractUpgradedEvent(LogEvent):
         newAddress: ContractAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         contract_name = rp.get_name_by_address(args["oldAddress"]) or "Unknown"
@@ -2739,7 +2741,7 @@ class ODAOContractAddedEvent(LogEvent):
         newAddress: ContractAddress
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         contract_name = rp.get_name_by_address(args["newAddress"]) or "Unknown"
@@ -2768,7 +2770,7 @@ class OTCSwapEvent(LogEvent):
         senderAmount: int
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         rpl = await rp.get_address_by_name("rocketTokenRPL")
         if args["signerToken"] != rpl and args["senderToken"] != rpl:
@@ -2828,7 +2830,7 @@ class UnstETHWithdrawalEvent(LogEvent):
         amountOfStETH: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amountOfStETH"]
@@ -2857,7 +2859,7 @@ class ExitArbitrageEvent(LogEvent):
         profit: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = fmt["amount"]
@@ -2892,7 +2894,7 @@ class RockSolidDepositEvent(LogEvent):
         assets: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         assets = fmt["assets"]
@@ -2927,7 +2929,7 @@ class RockSolidWithdrawalEvent(LogEvent):
         shares: Wei
 
     async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt | None
+        self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         block = args["blockNumber"]

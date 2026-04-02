@@ -11,10 +11,10 @@ from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
-from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress
+from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from hexbytes import HexBytes
-from web3.constants import HASH_ZERO
-from web3.types import BlockData, TxData, TxReceipt
+from web3.constants import ADDRESS_ZERO, HASH_ZERO
+from web3.types import BlockData, Nonce, TxData, TxReceipt, Wei
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
@@ -29,13 +29,45 @@ from .event_definitions import (
     TRANSACTION_REGISTRY,
     DAOProposalExecuteEvent,
     EventContext,
-    EventData,
     ProposalExecuteEvent,
     TransactionEvent,
+    TxEventData,
     UpgradeTriggeredEvent,
 )
 
 log = logging.getLogger("rocketwatch.tx_events")
+
+_DUMMY_RECEIPT: TxReceipt = {
+    "blockHash": HexBytes(HASH_ZERO),
+    "blockNumber": BlockNumber(0),
+    "contractAddress": None,
+    "cumulativeGasUsed": 0,
+    "effectiveGasPrice": Wei(0),
+    "gasUsed": 0,
+    "from": ChecksumAddress(ADDRESS_ZERO),
+    "logs": [],
+    "logsBloom": HexBytes(b""),
+    "root": HexStr(""),
+    "status": 1,
+    "to": ChecksumAddress(ADDRESS_ZERO),
+    "transactionHash": HexBytes(HASH_ZERO),
+    "transactionIndex": 0,
+    "type": 0,
+}
+
+_DUMMY_EVENT: TxEventData = {
+    "blockHash": HexBytes(HASH_ZERO),
+    "blockNumber": BlockNumber(0),
+    "from": ChecksumAddress(ADDRESS_ZERO),
+    "gas": 0,
+    "gasPrice": Wei(0),
+    "hash": HexBytes(HASH_ZERO),
+    "input": HexBytes(b""),
+    "nonce": Nonce(0),
+    "to": ChecksumAddress(ADDRESS_ZERO),
+    "transactionIndex": 0,
+    "value": Wei(0),
+}
 
 
 def _get_event_fields(
@@ -82,10 +114,7 @@ class PreviewTxModal(Modal):
                     val = json.loads(val)
                 parsed_args[name] = val
 
-        event_data: EventData = {
-            "hash": HASH_ZERO,
-            "blockNumber": self.block_number,
-        }
+        event_data: TxEventData = {**_DUMMY_EVENT, "blockNumber": self.block_number}
         args: dict[str, Any] = {
             **parsed_args,
             "function_name": self.function,
@@ -93,7 +122,7 @@ class PreviewTxModal(Modal):
             "transactionHash": HASH_ZERO,
             "blockNumber": self.block_number,
         }
-        embeds = await self.event_cls.build_embeds(args, event_data, None)
+        embeds = await self.event_cls.build_embeds(args, event_data, _DUMMY_RECEIPT)
         if embeds:
             await interaction.followup.send(embeds=embeds)
         else:
@@ -145,17 +174,14 @@ class TxEvents(EventPlugin):
             await interaction.response.send_modal(modal)
         else:
             await interaction.response.defer()
-            event_data: EventData = {
-                "hash": HASH_ZERO,
-                "blockNumber": block_number,
-            }
+            event_data: TxEventData = {**_DUMMY_EVENT, "blockNumber": block_number}
             args: EventContext = {
                 "function_name": function,
                 "event_name": event_cls.event_name,
                 "transactionHash": HASH_ZERO,
                 "blockNumber": block_number,
             }
-            embeds = await event_cls.build_embeds(args, event_data, None)
+            embeds = await event_cls.build_embeds(args, event_data, _DUMMY_RECEIPT)
             if embeds:
                 await interaction.followup.send(embeds=embeds)
             else:
@@ -165,6 +191,8 @@ class TxEvents(EventPlugin):
     async def _autocomplete_contract(
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:
+        if not current and interaction.namespace.function:
+            return []
         return [
             Choice(name=name, value=name)
             for name in TRANSACTION_REGISTRY
@@ -282,7 +310,7 @@ class TxEvents(EventPlugin):
             return []
         event_cls, function_name, decoded_args = decoded
 
-        event: EventData = self._build_event(tnx, block, decoded_args, function_name)
+        event: TxEventData = self._build_event(tnx, block, decoded_args, function_name)
 
         payload_events: list[Event] = []
         if isinstance(event_cls, ProposalExecuteEvent):
@@ -365,8 +393,8 @@ class TxEvents(EventPlugin):
         block: BlockData,
         decoded_args: dict[str, Any],
         function_name: str,
-    ) -> EventData:
-        event: EventData = {**tnx}
+    ) -> TxEventData:
+        event: TxEventData = {**tnx}
         event["args"] = decoded_args
         event["args"]["timestamp"] = block["timestamp"]
         event["args"]["function_name"] = function_name
@@ -375,7 +403,7 @@ class TxEvents(EventPlugin):
     async def _handle_dao_proposal(
         self,
         event_cls: ProposalExecuteEvent,
-        event: EventData,
+        event: TxEventData,
         block: BlockData,
         tnx: TxData,
     ) -> list[Event]:
@@ -405,7 +433,7 @@ class TxEvents(EventPlugin):
         embeds: list[Embed],
         event_name: str,
         tnx: TxData,
-        event: EventData,
+        event: TxEventData,
         child_responses: list[Event],
     ) -> list[Event]:
         responses: list[Event] = []

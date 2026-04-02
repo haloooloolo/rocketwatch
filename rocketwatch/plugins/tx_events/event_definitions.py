@@ -7,7 +7,7 @@ from typing import Any, ClassVar, NotRequired, TypedDict
 
 import humanize
 from eth_typing import BlockNumber, HexStr
-from web3.types import TxReceipt
+from web3.types import TxData, TxReceipt
 
 from utils import solidity
 from utils.dao import (
@@ -22,7 +22,6 @@ from utils.embeds import (
     format_value,
 )
 from utils.rocketpool import rp
-from utils.shared_w3 import w3
 from utils.type_markers import (
     ContractAddress,
     NodeAddress,
@@ -30,11 +29,6 @@ from utils.type_markers import (
     Wei,
     auto_format,
 )
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 
 # ---------------------------------------------------------------------------
 # TypedDicts
@@ -51,8 +45,10 @@ class EventContext(TypedDict):
     timestamp: NotRequired[int]
 
 
-#: Transaction wrapper: dict(TxData) + injected "args" key.
-EventData = dict[str, Any]
+class TxEventData(TxData, total=False):
+    """Transaction wrapper: all of :class:`TxData` plus an injected ``args`` key."""
+
+    args: dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +80,8 @@ class TransactionEvent(ABC):
     async def build_embeds(
         self,
         args: Any,
-        event: EventData,
-        receipt: TxReceipt | None,
+        event: TxEventData,
+        receipt: TxReceipt,
     ) -> list[Embed]: ...
 
 
@@ -101,7 +97,7 @@ class BootstrapODAOMemberEvent(TransactionEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -121,7 +117,7 @@ class BootstrapODAODisableEvent(TransactionEvent):
         confirmDisableBootstrapMode: bool
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         if not args["confirmDisableBootstrapMode"]:
             return []
@@ -146,7 +142,7 @@ class ODAOMemberInviteEvent(TransactionEvent):
         nodeAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -168,7 +164,7 @@ class SDAOMemberInviteEvent(TransactionEvent):
         memberAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -192,7 +188,7 @@ class PDAOSpendTreasuryEvent(TransactionEvent):
         amount: Wei
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount = format_value(fmt["amount"])
@@ -223,7 +219,7 @@ class SettingEvent(TransactionEvent):
         self._title = title
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         value = args["value"]
         if "SettingBool" in args["function_name"]:
@@ -258,7 +254,7 @@ class ProposalExecuteEvent(TransactionEvent):
         self._title = title
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
@@ -285,7 +281,7 @@ class DAOProposalExecuteEvent(TransactionEvent):
     event_name = "dao_proposal_execute"
 
     async def build_embeds(
-        self, args: Any, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         raise RuntimeError(
             "DAOProposalExecuteEvent.build_embeds should not be called directly; "
@@ -315,8 +311,8 @@ class TreasuryRecurringSpendEvent(TransactionEvent):
     async def build_embeds(
         self,
         args: Args,
-        event: EventData,
-        receipt: TxReceipt | None,
+        event: TxEventData,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_per_period = format_value(fmt["amountPerPeriod"])
@@ -358,8 +354,8 @@ class TreasuryRecurringClaimEvent(TransactionEvent):
     async def build_embeds(
         self,
         args: Args,
-        event: EventData,
-        receipt: TxReceipt | None,
+        event: TxEventData,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         embeds: list[Embed] = []
         for contract_name in args["contractNames"]:
@@ -441,8 +437,8 @@ class BootstrapNetworkUpgradeEvent(TransactionEvent):
     async def build_embeds(
         self,
         args: Args,
-        event: EventData,
-        receipt: TxReceipt | None,
+        event: TxEventData,
+        receipt: TxReceipt,
     ) -> list[Embed]:
         template = self._DESCRIPTIONS.get(args["type"])
         if template is None:
@@ -465,10 +461,8 @@ class PDAOSetDelegateEvent(TransactionEvent):
         newDelegate: NotRequired[NodeAddress]
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
-        if receipt is None:
-            receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
         delegator: NodeAddress = receipt["from"]
         delegate: NodeAddress | None = args.get("delegate") or args.get("newDelegate")
         voting_power = solidity.to_float(
@@ -518,7 +512,7 @@ class PDAOClaimerEvent(TransactionEvent):
         trustedNodePercent: int
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
             await build_event_embed(
@@ -540,7 +534,7 @@ class PDAOSettingMultiEvent(TransactionEvent):
         data: list[bytes]
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
             await build_event_embed(
@@ -559,7 +553,7 @@ class SDAOMemberKickEvent(TransactionEvent):
         memberAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         member_link = await el_explorer_url(
             args["memberAddress"], block=(args["blockNumber"] - 1)
@@ -583,7 +577,7 @@ class SDAOMemberKickMultiEvent(TransactionEvent):
         memberAddresses: list[NodeAddress]
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         block = args["blockNumber"] - 1
         member_links = [
@@ -613,7 +607,7 @@ class SDAOMemberReplaceEvent(TransactionEvent):
         newMemberAddress: NodeAddress
 
     async def build_embeds(
-        self, args: Args, event: EventData, receipt: TxReceipt | None
+        self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         existing_link = await el_explorer_url(
             args["existingMemberAddress"], block=(args["blockNumber"] - 1)
@@ -633,11 +627,8 @@ class FailedDepositEvent(TransactionEvent):
     event_name = "minipool_failed_deposit"
 
     async def build_embeds(
-        self, args: Any, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
-        if receipt is None:
-            receipt = await w3.eth.get_transaction_receipt(args["transactionHash"])
-
         reason: str = await rp.get_revert_reason(event)
         if "insufficient for pre deposit" in reason:
             return []
@@ -673,7 +664,7 @@ class UpgradeTriggeredEvent(TransactionEvent):
         self._image_url = image_url
 
     async def build_embeds(
-        self, args: Any, event: EventData, receipt: TxReceipt | None
+        self, args: Any, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         embed = await build_event_embed(
             tx_hash=args["transactionHash"],

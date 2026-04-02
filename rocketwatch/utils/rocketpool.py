@@ -12,6 +12,7 @@ from web3.constants import ADDRESS_ZERO
 from web3.contract import AsyncContract
 from web3.contract.async_contract import AsyncContractFunction
 from web3.exceptions import ContractLogicError
+from web3.types import TxData
 
 from utils import solidity
 from utils.config import cfg
@@ -30,14 +31,14 @@ class RocketPool:
     ABI_CACHE: FIFOCache[str, str] = FIFOCache(maxsize=2048)
     CONTRACT_CACHE: FIFOCache[tuple, AsyncContract] = FIFOCache(maxsize=2048)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.addresses: bidict[str, ChecksumAddress] = bidict()
-        self._multicall = None
+        self._multicall: AsyncContract | None = None
 
-    async def async_init(self):
+    async def async_init(self) -> None:
         await self._init_contract_addresses()
 
-    async def flush(self):
+    async def flush(self) -> None:
         log.warning("FLUSHING RP CACHE")
         self.CONTRACT_CACHE.clear()
         self.ABI_CACHE.clear()
@@ -88,9 +89,9 @@ class RocketPool:
             log.warning("Failed to find address for Constellation contracts")
 
     @staticmethod
-    def _abi_type_str(output: dict) -> str:
+    def _abi_type_str(output: dict[str, Any]) -> str:
         """Convert a single ABI output entry to an eth_abi type string, handling tuples."""
-        t = output["type"]
+        t: str = output["type"]
         if "tuple" in t:
             inner = ",".join(RocketPool._abi_type_str(c) for c in output["components"])
             suffix = t[5:]  # captures "", "[]", "[N]", etc.
@@ -98,12 +99,12 @@ class RocketPool:
         return t
 
     @staticmethod
-    def _decode_fn_output(fn, data: bytes) -> Any:
+    def _decode_fn_output(fn: AsyncContractFunction, data: bytes) -> Any:
         """Decode raw ABI output bytes for a ContractFunction."""
         outputs = fn.abi["outputs"]
         if not outputs:
             return None
-        types = [RocketPool._abi_type_str(o) for o in outputs]
+        types = [RocketPool._abi_type_str(dict(o)) for o in outputs]
         decoded = abi.decode(types, data)
         return decoded[0] if len(decoded) == 1 else decoded
 
@@ -168,7 +169,9 @@ class RocketPool:
         storage = await self.get_contract_by_name(
             "rocketStorage", historical=block != "latest"
         )
-        address = await storage.functions.getAddress(sha3).call(block_identifier=block)
+        address: ChecksumAddress = await storage.functions.getAddress(sha3).call(
+            block_identifier=block
+        )
         if address == ADDRESS_ZERO:
             raise NoAddressFound(f"No address found for {name} Contract")
         self.addresses[name] = address
@@ -176,7 +179,7 @@ class RocketPool:
         return address
 
     @staticmethod
-    async def get_revert_reason(tnx) -> str:
+    async def get_revert_reason(tnx: TxData) -> str:
         try:
             await w3.eth.call(
                 {
@@ -187,13 +190,13 @@ class RocketPool:
                     "gasPrice": tnx["gasPrice"],
                     "value": tnx["value"],
                 },
-                block_identifier=tnx.blockNumber,
+                block_identifier=tnx["blockNumber"],
             )
         except ContractLogicError as err:
-            log.debug(f"Transaction: {tnx.hash} ContractLogicError: {err}")
+            log.debug(f"Transaction: {tnx['hash']!r} ContractLogicError: {err}")
             return ", ".join(err.args)
         except ValueError as err:
-            log.debug(f"Transaction: {tnx.hash} ValueError: {err}")
+            log.debug(f"Transaction: {tnx['hash']!r} ValueError: {err}")
             match err.args[0]["code"]:
                 case -32000:
                     return "Out of gas"
@@ -205,32 +208,32 @@ class RocketPool:
     async def get_string(self, key: str) -> str:
         sha3 = w3.solidity_keccak(["string"], [key])
         storage = await self.get_contract_by_name("rocketStorage")
-        return await storage.functions.getString(sha3).call()
+        return str(await storage.functions.getString(sha3).call())
 
     async def get_uint(self, key: str) -> int:
         sha3 = w3.solidity_keccak(["string"], [key])
         storage = await self.get_contract_by_name("rocketStorage")
-        return await storage.functions.getUint(sha3).call()
+        return int(await storage.functions.getUint(sha3).call())
 
     async def get_protocol_version(self) -> tuple:
         version_string = await self.get_string("protocol.version")
         return tuple(map(int, version_string.split(".")))
 
-    async def get_abi_by_name(self, name) -> str:
+    async def get_abi_by_name(self, name: str) -> str:
         if name in self.ABI_CACHE:
             return self.ABI_CACHE[name]
         abi = await self.uncached_get_abi_by_name(name)
         self.ABI_CACHE[name] = abi
         return abi
 
-    async def uncached_get_abi_by_name(self, name) -> str:
+    async def uncached_get_abi_by_name(self, name: str) -> str:
         log.debug(f"Retrieving abi for {name} contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.abi", name])
         storage = await self.get_contract_by_name("rocketStorage")
         compressed_string = await storage.functions.getString(sha3).call()
         if not compressed_string:
             raise Exception(f"No abi found for {name} contract")
-        return decode_abi(compressed_string)
+        return str(decode_abi(compressed_string))
 
     async def assemble_contract(
         self,
@@ -288,7 +291,7 @@ class RocketPool:
         return await self.assemble_contract(name, address)
 
     async def estimate_gas_for_call(
-        self, path: str, *args, block: BlockIdentifier = "latest"
+        self, path: str, *args: Any, block: BlockIdentifier = "latest"
     ) -> int:
         log.debug(f"Estimating gas for {path} (block={block!r})")
         name, function = path.rsplit(".", 1)
@@ -300,7 +303,7 @@ class RocketPool:
     async def get_function(
         self,
         path: str,
-        *args,
+        *args: Any,
         historical: bool = False,
         address: ChecksumAddress | None = None,
         mainnet: bool = False,
@@ -318,7 +321,7 @@ class RocketPool:
     async def call(
         self,
         path: str,
-        *args,
+        *args: Any,
         block: BlockIdentifier = "latest",
         address: ChecksumAddress | None = None,
         mainnet: bool = False,
@@ -339,32 +342,32 @@ class RocketPool:
             "rocketTokenRPL.getInflationIntervalTime"
         )
         intervals_per_year = solidity.years / seconds_per_interval
-        return (inflation_per_interval**intervals_per_year) - 1
+        return float((inflation_per_interval**intervals_per_year) - 1.0)
 
     async def is_node(self, address: ChecksumAddress) -> bool:
-        return await self.call("rocketNodeManager.getNodeExists", address)
+        return bool(await self.call("rocketNodeManager.getNodeExists", address))
 
     async def is_minipool(self, address: ChecksumAddress) -> bool:
-        return await self.call("rocketMinipoolManager.getMinipoolExists", address)
+        return bool(await self.call("rocketMinipoolManager.getMinipoolExists", address))
 
     async def is_megapool(self, address: ChecksumAddress) -> bool:
         sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", address])
         storage = await self.get_contract_by_name("rocketStorage")
-        return await storage.functions.getBool(sha3).call()
+        return bool(await storage.functions.getBool(sha3).call())
 
     async def get_eth_usdc_price(self) -> float:
         from utils.liquidity import UniswapV3
 
         pool_address = await self.get_address_by_name("UniV3_USDC_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
-        return 1 / await pool.get_normalized_price()
+        return float(1.0 / await pool.get_normalized_price())
 
     async def get_reth_eth_price(self) -> float:
         from utils.liquidity import UniswapV3
 
         pool_address = await self.get_address_by_name("UniV3_rETH_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
-        return await pool.get_normalized_price()
+        return float(await pool.get_normalized_price())
 
 
 rp = RocketPool()

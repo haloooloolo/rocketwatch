@@ -12,12 +12,12 @@ from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
-from eth_typing.evm import BlockNumber, ChecksumAddress
+from eth_typing.evm import BlockNumber, ChecksumAddress, HexStr
 from hexbytes import HexBytes
-from web3.constants import HASH_ZERO
+from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
-from web3.types import EventData, FilterParams, LogReceipt, TxReceipt
+from web3.types import EventData, FilterParams, LogReceipt, TxReceipt, Wei
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
@@ -33,6 +33,35 @@ from .event_definitions import (
 )
 
 log = logging.getLogger("rocketwatch.log_events")
+
+_DUMMY_RECEIPT: TxReceipt = {
+    "blockHash": HexBytes(HASH_ZERO),
+    "blockNumber": BlockNumber(0),
+    "contractAddress": None,
+    "cumulativeGasUsed": 0,
+    "effectiveGasPrice": Wei(0),
+    "gasUsed": 0,
+    "from": ChecksumAddress(ADDRESS_ZERO),
+    "logs": [],
+    "logsBloom": HexBytes(b""),
+    "root": HexStr(""),
+    "status": 1,
+    "to": ChecksumAddress(ADDRESS_ZERO),
+    "transactionHash": HexBytes(HASH_ZERO),
+    "transactionIndex": 0,
+    "type": 0,
+}
+
+_DUMMY_EVENT: LogEventData = {
+    "address": ChecksumAddress(ADDRESS_ZERO),
+    "args": {},
+    "blockHash": HexBytes(HASH_ZERO),
+    "blockNumber": 0,
+    "event": "",
+    "logIndex": 0,
+    "transactionHash": HexBytes(HASH_ZERO),
+    "transactionIndex": 0,
+}
 
 
 def _get_event_fields(
@@ -83,15 +112,12 @@ class _PreviewLogModal(Modal):
             "blockNumber": self.block_number,
             "event_name": self.event_cls.event_name,
         }
-        event_data: LogEventData = {
-            "hash": HASH_ZERO,
-            "blockNumber": self.block_number,
-        }
+        event_data: LogEventData = {**_DUMMY_EVENT, "blockNumber": self.block_number}
         resolved = await self.event_cls.resolve(args, event_data)
         if resolved is None:
             await interaction.followup.send(content="Event filtered out.")
             return
-        embeds = await resolved.build_embeds(args, event_data, None)
+        embeds = await resolved.build_embeds(args, event_data, _DUMMY_RECEIPT)
         if embeds:
             await interaction.followup.send(embeds=embeds)
         else:
@@ -270,15 +296,12 @@ class LogEvents(EventPlugin):
                 "blockNumber": block_number,
                 "event_name": event_cls.event_name,
             }
-            event_data: LogEventData = {
-                "hash": HASH_ZERO,
-                "blockNumber": block_number,
-            }
+            event_data: LogEventData = {**_DUMMY_EVENT, "blockNumber": block_number}
             resolved = await event_cls.resolve(args, event_data)
             if resolved is None:
                 await interaction.followup.send(content="Event filtered out.")
                 return
-            embeds = await resolved.build_embeds(args, event_data, None)
+            embeds = await resolved.build_embeds(args, event_data, _DUMMY_RECEIPT)
             if embeds:
                 await interaction.followup.send(embeds=embeds)
             else:
@@ -288,6 +311,8 @@ class LogEvents(EventPlugin):
     async def _autocomplete_contract(
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:
+        if not current and interaction.namespace.event:
+            return []
         return [
             Choice(name=name, value=name)
             for name in EVENT_REGISTRY
@@ -487,14 +512,15 @@ class LogEvents(EventPlugin):
             }
 
             # Resolve dispatchers
-            resolved = await event_cls.resolve(args, event)
+            event_data = cast(LogEventData, event)
+            resolved = await event_cls.resolve(args, event_data)
             if resolved is None:
                 continue
             event_cls = resolved
             event_name: str = event_cls.event_name
 
             # Get receipt for mainnet fee calculation
-            receipt: TxReceipt | None = None
+            receipt: TxReceipt = _DUMMY_RECEIPT
             if cfg.rocketpool.chain == "mainnet":
                 tx_hash = event["transactionHash"]
                 if isinstance(tx_hash, str):
@@ -503,7 +529,7 @@ class LogEvents(EventPlugin):
                     receipt = await w3.eth.get_transaction_receipt(tx_hash)
 
             try:
-                embeds = await event_cls.build_embeds(args, event, receipt)
+                embeds = await event_cls.build_embeds(args, event_data, receipt)
             except BadFunctionCallOutput as e:
                 log.exception("Failed to build embeds for %s", event_name)
                 await self.bot.report_error(e)
