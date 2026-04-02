@@ -24,7 +24,6 @@ class ExecutionLayerEndpoint(BaseModel):
 class ExecutionLayerConfig(BaseModel):
     explorer: str
     endpoint: ExecutionLayerEndpoint
-    etherscan_secret: str
 
 
 class ConsensusLayerConfig(BaseModel):

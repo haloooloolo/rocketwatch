@@ -13,6 +13,7 @@ from discord.app_commands import command, describe
 from discord.ext import commands
 from discord.utils import as_chunks
 from matplotlib import pyplot as plt
+from matplotlib.axes import Axes
 from pymongo import ASCENDING, DESCENDING
 
 from rocketwatch import RocketWatch
@@ -123,7 +124,7 @@ class Proposals(commands.Cog):
         self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
 
-    async def loop(self):
+    async def loop(self) -> None:
         await self.bot.wait_until_ready()
         await self.check_indexes()
         while not self.bot.is_closed():
@@ -141,7 +142,7 @@ class Proposals(commands.Cog):
             finally:
                 await asyncio.sleep(self.cooldown.total_seconds())
 
-    async def check_indexes(self):
+    async def check_indexes(self) -> None:
         await self.bot.wait_until_ready()
         try:
             await self.bot.db.proposals.create_index("validator")
@@ -152,7 +153,7 @@ class Proposals(commands.Cog):
         except Exception as e:
             log.warning(f"Could not create indexes: {e}")
 
-    async def fetch_proposals(self):
+    async def fetch_proposals(self) -> None:
         if db_entry := (await self.bot.db.last_checked_block.find_one({"_id": cog_id})):
             last_checked_slot = db_entry["slot"]
         else:
@@ -198,7 +199,7 @@ class Proposals(commands.Cog):
             {"slot": slot}, {"$set": proposal_data}, upsert=True
         )
 
-    async def create_latest_proposal_view(self):
+    async def create_latest_proposal_view(self) -> None:
         log.info("creating latest proposals view")
         pipeline = [
             {
@@ -253,7 +254,9 @@ class Proposals(commands.Cog):
         )
 
     @timerun_async
-    async def gather_attribute(self, attribute, remove_allnodes=False):
+    async def gather_attribute(
+        self, attribute: str, remove_allnodes: bool = False
+    ) -> dict:
         # Build the match stage to filter out Allnodes if needed
         match_stage: dict = {}
         if remove_allnodes:
@@ -305,7 +308,7 @@ class Proposals(commands.Cog):
 
     @command()
     @describe(days="how many days to show history for")
-    async def version_chart(self, interaction: Interaction, days: int = 90):
+    async def version_chart(self, interaction: Interaction, days: int = 90) -> None:
         """
         Show a historical chart of used Smart Node versions
         """
@@ -430,8 +433,8 @@ class Proposals(commands.Cog):
         img.close()
 
     async def plot_axes_with_data(
-        self, attr: str, ax1, ax2, remove_allnodes: bool = False
-    ):
+        self, attr: str, ax1: Axes, ax2: Axes, remove_allnodes: bool = False
+    ) -> None:
         # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
 
@@ -542,8 +545,8 @@ class Proposals(commands.Cog):
         ax2.set_title("Node Operators", fontsize=22)
 
     async def proposal_vs_node_operators_embed(
-        self, attribute, name, remove_allnodes: bool = False
-    ):
+        self, attribute: str, name: str, remove_allnodes: bool = False
+    ) -> tuple[Embed, File]:
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
         # iterate axes in pairs
         title = f"Rocket Pool {name} Distribution {'without Allnodes' if remove_allnodes else ''}"
@@ -570,7 +573,7 @@ class Proposals(commands.Cog):
     @command()
     async def client_distribution(
         self, interaction: Interaction, remove_allnodes: bool = False
-    ):
+    ) -> None:
         """
         Generate a distribution graph of clients.
         """
@@ -588,7 +591,7 @@ class Proposals(commands.Cog):
         await interaction.followup.send(embeds=embeds, files=files)
 
     @command()
-    async def operator_type_distribution(self, interaction: Interaction):
+    async def operator_type_distribution(self, interaction: Interaction) -> None:
         """
         Generate a graph of NO groups.
         """
@@ -602,7 +605,7 @@ class Proposals(commands.Cog):
         interaction: Interaction,
         remove_allnodes: bool = False,
         group_by_node_operators: bool = False,
-    ):
+    ) -> None:
         """
         Generate a ranking of most used execution and consensus clients.
         """
@@ -659,5 +662,5 @@ class Proposals(commands.Cog):
         await interaction.followup.send(embed=e)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Proposals(bot))

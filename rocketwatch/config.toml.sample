@@ -14,7 +14,6 @@ errors = -1
 
 [execution_layer]
 explorer = "https://etherscan.io"
-etherscan_secret = ""
 
 [execution_layer.endpoint]
 current = "http://node:8545"
