@@ -258,6 +258,15 @@ class ScamDetection(Cog):
 
     # --- Reporting ---
 
+    @staticmethod
+    def _build_automod_embed(report_msg: Message, actions: list[str]) -> Embed:
+        return Embed(
+            title=":hammer: Automated Moderation",
+            url=report_msg.jump_url,
+            color=ReportColor.ALERT,
+            description=f"{' and '.join(actions)}.",
+        )
+
     async def report_message(self, message: Message, reason: str) -> None:
         async with self._message_report_lock:
             if not (components := await self._generate_message_report(message, reason)):
@@ -307,12 +316,7 @@ class ScamDetection(Cog):
                 return
 
             if actions:
-                embed = Embed(
-                    title=":hammer: Automated Moderation",
-                    url=report_msg.jump_url,
-                )
-                embed.color = ReportColor.ALERT
-                embed.description = f"{' and '.join(actions)}."
+                embed = self._build_automod_embed(report_msg, actions)
                 with contextlib.suppress(errors.Forbidden):
                     await message.channel.send(embed=embed)
 
@@ -369,12 +373,7 @@ class ScamDetection(Cog):
                 return
 
             if actions and isinstance(thread.parent, Messageable):
-                embed = Embed(
-                    title=":hammer: Automated Moderation",
-                    url=report_msg.jump_url,
-                )
-                embed.color = ReportColor.ALERT
-                embed.description = f"{' and '.join(actions)}."
+                embed = self._build_automod_embed(report_msg, actions)
                 with contextlib.suppress(errors.Forbidden):
                     await thread.parent.send(embed=embed)
 
