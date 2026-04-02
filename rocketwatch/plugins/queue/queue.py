@@ -1,5 +1,5 @@
 import logging
-from typing import Literal, NamedTuple
+from typing import Literal, NamedTuple, cast
 
 from aiocache import cached
 from discord import Interaction
@@ -52,15 +52,18 @@ class Queue(Cog):
 
     @staticmethod
     @cached(key_builder=lambda _, address, prefix="": (address, prefix))
-    async def _cached_el_url(address, prefix="") -> str:
-        return await el_explorer_url(
-            address, name_fmt=lambda n: f"`{n}`", prefix=prefix
+    async def _cached_el_url(address: ChecksumAddress, prefix: str = "") -> str:
+        return str(
+            await el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
         )
 
     @staticmethod
-    async def _megapool_to_node(megapool_address) -> ChecksumAddress:
-        return await rp.call(
-            "rocketMegapoolDelegate.getNodeAddress", address=megapool_address
+    async def _megapool_to_node(megapool_address: ChecksumAddress) -> ChecksumAddress:
+        return cast(
+            ChecksumAddress,
+            await rp.call(
+                "rocketMegapoolDelegate.getNodeAddress", address=megapool_address
+            ),
         )
 
     @staticmethod
@@ -226,7 +229,7 @@ class Queue(Cog):
         self,
         interaction: Interaction,
         lane: Literal["combined", "standard", "express"] = "combined",
-    ):
+    ) -> None:
         """Show the RP validator queue"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         view = Queue.ValidatorPageView(lane)
@@ -234,5 +237,5 @@ class Queue(Cog):
         await interaction.followup.send(embed=embed, view=view)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Queue(bot))

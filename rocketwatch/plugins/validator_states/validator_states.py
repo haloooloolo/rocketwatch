@@ -58,8 +58,8 @@ def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, lis
         done_fn: function that takes a doc and returns True if its lifecycle is complete
                  (used to distinguish withdrawn vs closed for withdrawal_done validators)
     """
-    data = {
-        "dissolved": 0,
+    dissolved = 0
+    data: dict[str, dict[str, int]] = {
         "pending": {},
         "active": {},
         "exiting": {},
@@ -79,7 +79,7 @@ def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, lis
             if sub:
                 data["pending"][sub] = data["pending"].get(sub, 0) + 1
             elif contract_status == "dissolved":
-                data["dissolved"] += 1
+                dissolved += 1
             continue
 
         category, sub = _classify_beacon_validator(beacon, contract_status)
@@ -88,15 +88,17 @@ def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, lis
         if category == "withdrawn" and done_fn(doc):
             category = "closed"
         if category == "dissolved":
-            data["dissolved"] += 1
+            dissolved += 1
         else:
+            assert sub is not None
             data[category][sub] = data[category].get(sub, 0) + 1
         if category in ("exiting", "exited"):
             exiting_valis.append(doc)
         elif category == "withdrawn":
             withdrawn_valis.append(doc)
 
-    return data, exiting_valis, withdrawn_valis
+    result: dict[str, int | dict[str, int]] = {"dissolved": dissolved, **data}
+    return result, exiting_valis, withdrawn_valis
 
 
 def _collapse_tree(data: dict) -> dict:

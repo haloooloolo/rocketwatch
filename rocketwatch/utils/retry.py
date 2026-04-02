@@ -1,15 +1,11 @@
 import inspect
 from collections.abc import Callable
-from typing import ParamSpec, TypeVar
 
 from retry_async.api import EXCEPTIONS
 from retry_async.api import retry as __retry
 
-P = ParamSpec("P")
-R = TypeVar("R")
 
-
-def retry(
+def retry[**P, R](
     exceptions: EXCEPTIONS = Exception,
     *,
     tries: int = -1,
