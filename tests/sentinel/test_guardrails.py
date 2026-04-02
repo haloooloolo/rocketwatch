@@ -55,6 +55,11 @@ class TestCheckMessageAge:
         msg.created_at = datetime.now(UTC)
         assert check_message_age(-1, msg) == ("action_disabled", 0, 403)
 
+    def test_none_limit_allows_any_age(self):
+        msg = MagicMock()
+        msg.created_at = datetime.now(UTC) - timedelta(days=365)
+        assert check_message_age(None, msg) is None
+
 
 class TestCheckThreadAge:
     def test_young_thread_passes(self):
@@ -80,6 +85,11 @@ class TestCheckThreadAge:
         thread = MagicMock()
         thread.created_at = None
         assert check_thread_age(3600, thread) == ("thread_age_unknown", 0, 422)
+
+    def test_none_limit_allows_any_age(self):
+        thread = MagicMock()
+        thread.created_at = datetime.now(UTC) - timedelta(days=365)
+        assert check_thread_age(None, thread) is None
 
 
 class TestCheckTimeoutDuration:
@@ -111,6 +121,14 @@ class TestCheckTimeoutDuration:
         key = KeyConfig(secret="s", timeout_member_max_duration=-1)
         assert check_timeout_duration(key, 3600) == ("action_disabled", 403)
 
+    def test_none_max_allows_any_duration(self):
+        key = KeyConfig(secret="s", timeout_member_max_duration=None)
+        assert check_timeout_duration(key, 999999) is None
+
+    def test_none_max_still_rejects_zero_duration(self):
+        key = KeyConfig(secret="s", timeout_member_max_duration=None)
+        assert check_timeout_duration(key, 0) == ("duration_too_short", 422)
+
 
 class TestCheckMemberAge:
     def test_recent_member_passes(self):
@@ -136,6 +154,11 @@ class TestCheckMemberAge:
         member = MagicMock()
         member.joined_at = None
         assert check_member_age(604800, member) == ("member_age_unknown", 0, 422)
+
+    def test_none_limit_allows_any_age(self):
+        member = MagicMock()
+        member.joined_at = datetime.now(UTC) - timedelta(days=365)
+        assert check_member_age(None, member) is None
 
 
 class TestCheckModerator:
@@ -176,6 +199,11 @@ class TestRateLimiter:
         assert rate_limiter.check(key_a) is None
         assert rate_limiter.check(key_a) is not None
         assert rate_limiter.check(key_b) is None
+
+    def test_none_limit_allows_unlimited_actions(self):
+        key = KeyConfig(secret="unlimited", max_actions_per_hour=None)
+        for _ in range(200):
+            assert rate_limiter.check(key) is None
 
     def test_window_expiry_allows_new_actions(self):
         key = KeyConfig(secret="s", max_actions_per_hour=1)

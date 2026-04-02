@@ -36,17 +36,17 @@ openssl rand -base64 32
 | `api.host` | `0.0.0.0` | Bind address for the HTTP server |
 | `api.port` | `8080` | Port for the HTTP server |
 
-The optional `[api.defaults]` section sets guardrail values inherited by all keys. Each `[[api.keys]]` entry only needs to specify overrides. If a value is not set in either place, the default shown below applies.
+The optional `[api.defaults]` section sets guardrail values inherited by all keys. Each `[[api.keys]]` entry only needs to specify overrides. If a value is not set in either place, the action is unrestricted (no age/duration limit).
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `delete_message_max_age` | `900` | Allow deleting messages younger than this; 0 to disable deletion |
-| `lock_thread_max_age` | `3600` | Allow locking threads younger than this; 0 to disable locking |
-| `delete_thread_max_age` | `3600` | Allow deleting threads younger than this; 0 to disable thread deletion |
-| `timeout_member_max_duration` | `86400` | Maximum duration of user timeouts; 0 to disable timeouts |
-| `kick_member_max_age` | `0` | Allow kicking members who joined less than this many seconds ago; 0 to disable kicks |
-| `ban_member_max_age` | `0` | Allow banning members who joined less than this many seconds ago; 0 to disable bans |
-| `max_actions_per_hour` | `100` | Rate limit for this key |
+| Key | Description |
+|-----|-------------|
+| `delete_message_max_age` | Allow deleting messages younger than this many seconds; 0 to disable deletion; omit for no limit |
+| `lock_thread_max_age` | Allow locking threads younger than this many seconds; 0 to disable locking; omit for no limit |
+| `delete_thread_max_age` | Allow deleting threads younger than this many seconds; 0 to disable thread deletion; omit for no limit |
+| `timeout_member_max_duration` | Maximum duration of user timeouts in seconds; 0 to disable timeouts; omit for no limit |
+| `kick_member_max_age` | Allow kicking members who joined less than this many seconds ago; 0 to disable kicks; omit for no limit |
+| `ban_member_max_age` | Allow banning members who joined less than this many seconds ago; 0 to disable bans; omit for no limit |
+| `max_actions_per_hour` | Rate limit for this key; omit for no limit |
 
 Each `[[api.keys]]` entry defines a key:
 

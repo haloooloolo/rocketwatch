@@ -35,7 +35,7 @@ class SentinelClient:
 
     async def _request(self, endpoint: str, payload: dict) -> bool:
         log.info(f"POST {endpoint} {payload}")
-        return await self._post(endpoint, payload)
+        return bool(await self._post(endpoint, payload))
 
     async def delete_message(self, message: Message, reason: str) -> bool:
         if message.guild is None:

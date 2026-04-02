@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, replace
 from io import BytesIO
+from typing import Any
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
+from eth_typing import ChecksumAddress
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -36,13 +38,13 @@ class Rewards(commands.Cog):
         system_weight: float
 
     @retry(tries=3, delay=1)
-    async def _make_request(self, address) -> dict:
+    async def _make_request(self, address: ChecksumAddress) -> dict:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
-            return await response.json()
+            return dict(await response.json())
 
     async def get_estimated_rewards(
-        self, interaction: Interaction, address: str
+        self, interaction: Interaction, address: ChecksumAddress
     ) -> RewardEstimate | None:
         if not await rp.call("rocketNodeManager.getNodeExists", address):
             await interaction.followup.send(f"{address} is not a registered node.")
@@ -94,7 +96,7 @@ class Rewards(commands.Cog):
     )
     async def upcoming_rewards(
         self, interaction: Interaction, node_address: str, extrapolate: bool = True
-    ):
+    ) -> None:
         """
         Show estimated RPL and smoothing pool rewards for this period.
         """
@@ -142,7 +144,7 @@ class Rewards(commands.Cog):
         rpl_stake: int = 0,
         num_leb8: int = 0,
         num_eb16: int = 0,
-    ):
+    ) -> None:
         """
         Simulate RPL rewards for this period
         """
@@ -199,19 +201,17 @@ class Rewards(commands.Cog):
             rpl_value = _stake * rpl_ratio
             collateral_ratio = (rpl_value / _borrowed_eth) if _borrowed_eth > 0 else 0
             if collateral_ratio <= 0.15:
-                return 100 * rpl_value
+                return float(100 * rpl_value)
             else:
-                return (
-                    13.6137 + 2 * np.log(100 * collateral_ratio - 13)
-                ) * _borrowed_eth
+                return float(
+                    (13.6137 + 2 * np.log(100 * collateral_ratio - 13)) * _borrowed_eth
+                )
 
         def rewards_at(_stake: float, _borrowed_eth: float) -> float:
             weight = node_weight(_stake, _borrowed_eth)
             base_weight = node_weight(actual_rpl_stake, _borrowed_eth)
             new_system_weight = rewards.system_weight + weight - base_weight
-            return solidity.to_float(
-                0.7 * period_inflation * weight / new_system_weight
-            )
+            return 0.7 * period_inflation * weight / (new_system_weight * 10**18)
 
         fig, ax = plt.subplots(figsize=(5, 2.5))
         ax.grid()
@@ -233,7 +233,7 @@ class Rewards(commands.Cog):
             y = np.array([rewards_at(int(x), _borrowed_eth) for x in x])
             ax.plot(x, y, color=_color, linestyle=_line_style, label=_label)
 
-            def plot_point(_pt_color: str, _pt_label: str, _x: int) -> None:
+            def plot_point(_pt_color: str, _pt_label: str, _x: float) -> None:
                 label = _pt_label if _label is None else None
                 _y = rewards_at(_x, _borrowed_eth)
                 ax.plot(_x, _y, "o", color=_pt_color, label=label)
@@ -262,7 +262,7 @@ class Rewards(commands.Cog):
             )
             return
 
-        def formatter(_x, _pos) -> str:
+        def formatter(_x: float, _pos: Any) -> str:
             if _x < 1000:
                 return f"{_x:.0f}"
             elif _x < 10_000:
@@ -311,5 +311,5 @@ class Rewards(commands.Cog):
         img.close()
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Rewards(bot))

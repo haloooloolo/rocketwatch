@@ -8,13 +8,13 @@ class DiscordConfig(BaseModel):
 
 
 class KeyDefaults(BaseModel):
-    delete_message_max_age: int = 900
-    lock_thread_max_age: int = 3600
-    delete_thread_max_age: int = 3600
-    timeout_member_max_duration: int = 86400
-    kick_member_max_age: int = 0
-    ban_member_max_age: int = 0
-    max_actions_per_hour: int = 100
+    delete_message_max_age: int | None = None
+    lock_thread_max_age: int | None = None
+    delete_thread_max_age: int | None = None
+    timeout_member_max_duration: int | None = None
+    kick_member_max_age: int | None = None
+    ban_member_max_age: int | None = None
+    max_actions_per_hour: int | None = None
 
 
 class KeyConfig(KeyDefaults):
