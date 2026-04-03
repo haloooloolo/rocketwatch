@@ -30,7 +30,7 @@ from utils.embeds import (
     format_value,
 )
 from utils.readable import cl_explorer_url, s_hex
-from utils.rocketpool import rp
+from utils.rocketpool import ValidatorInfo, rp
 from utils.shared_w3 import bacon, w3
 from utils.solidity import SUBMISSION_KEYS
 from utils.type_markers import (
@@ -685,8 +685,9 @@ class ValidatorQueueExitedEvent(LogEvent):
                         address=megapool_address,
                         block=args["blockNumber"] - 1,
                     )
-                    express_used = info[8]  # expressUsed field in ValidatorInfo struct
-                    queue_type = " express" if express_used else " standard"
+                    queue_type = (
+                        " express" if ValidatorInfo(*info).express_used else " standard"
+                    )
         except Exception:
             log.exception("Failed to determine queue type for QueueExited event")
 

@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from typing import Any, NamedTuple
+from typing import Any
 
 import pymongo
 from cronitor import Monitor
@@ -20,7 +20,7 @@ from utils import solidity
 from utils.block_time import ts_to_block
 from utils.config import cfg
 from utils.event_logs import get_logs
-from utils.rocketpool import rp
+from utils.rocketpool import ValidatorInfo, rp
 from utils.shared_w3 import bacon, w3
 from utils.time_debug import timerun, timerun_async
 
@@ -28,23 +28,6 @@ log = logging.getLogger("rocketwatch.db_upkeep_task")
 
 # (contract_fn, require_success, transform, field_name)
 MulticallSpec = tuple[AsyncContractFunction, bool, Callable[[Any], Any] | None, str]
-
-
-class ValidatorInfo(NamedTuple):
-    last_assignment_time: int
-    last_requested_value: int
-    last_requested_bond: int
-    deposit_value: int
-    staked: bool
-    exited: bool
-    in_queue: bool
-    in_prestake: bool
-    express_used: bool
-    dissolved: bool
-    exiting: bool
-    locked: bool
-    exit_balance: int
-    locked_time: int
 
 
 def is_true(v: Any) -> bool:
@@ -81,10 +64,6 @@ def _parse_epoch(value: int) -> int | None:
     return epoch if epoch < 2**32 else None
 
 
-def _parse_validator_info(raw: tuple) -> ValidatorInfo:
-    return ValidatorInfo(*raw)
-
-
 def _derive_validator_status(info: ValidatorInfo) -> str:
     if info.dissolved:
         return "dissolved"
@@ -103,8 +82,7 @@ def _derive_validator_status(info: ValidatorInfo) -> str:
     return "unknown"
 
 
-def _unpack_validator_info(raw: tuple) -> dict[str, Any]:
-    info = _parse_validator_info(raw)
+def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
         "express_used": info.express_used,
@@ -115,8 +93,7 @@ def _unpack_validator_info(raw: tuple) -> dict[str, Any]:
     }
 
 
-def _unpack_validator_info_dynamic(raw: tuple) -> dict[str, Any]:
-    info = _parse_validator_info(raw)
+def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
         "assignment_time": info.last_assignment_time,
@@ -834,7 +811,8 @@ class DBUpkeepTask(commands.Cog):
                         else None,
                     }
                     if info_raw is not None:
-                        doc.update(_unpack_validator_info(info_raw))
+                        info = ValidatorInfo(*info_raw)
+                        doc.update(_unpack_validator_info(info))
                     docs.append(doc)
                 if docs:
                     await self.bot.db.megapool_validators.insert_many(
@@ -920,10 +898,11 @@ class DBUpkeepTask(commands.Cog):
             ops = []
             for v, info_raw in zip(batch, results, strict=False):
                 if info_raw is not None:
+                    info = ValidatorInfo(*info_raw)
                     ops.append(
                         UpdateOne(
                             {"_id": v["_id"]},
-                            {"$set": _unpack_validator_info_dynamic(info_raw)},
+                            {"$set": _unpack_validator_info_dynamic(info)},
                         )
                     )
             if ops:

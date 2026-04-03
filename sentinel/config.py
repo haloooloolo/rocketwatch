@@ -1,4 +1,5 @@
 import tomllib
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -52,7 +53,7 @@ class _ConfigProxy:
             data = tomllib.load(f)
         cfg._instance = Config(**data)
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         if self._instance is None:
             self.__load_config()
         return getattr(self._instance, name)

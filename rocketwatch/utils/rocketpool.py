@@ -2,7 +2,7 @@ import logging
 import os
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from bidict import bidict
 from cachetools import FIFOCache
@@ -20,6 +20,23 @@ from utils.readable import decode_abi
 from utils.shared_w3 import w3, w3_archive, w3_mainnet
 
 log = logging.getLogger("rocketwatch.rocketpool")
+
+
+class ValidatorInfo(NamedTuple):
+    last_assignment_time: int
+    last_requested_value: int
+    last_requested_bond: int
+    deposit_value: int
+    staked: bool
+    exited: bool
+    in_queue: bool
+    in_prestake: bool
+    express_used: bool
+    dissolved: bool
+    exiting: bool
+    locked: bool
+    exit_balance: int
+    locked_time: int
 
 
 class NoAddressFound(Exception):

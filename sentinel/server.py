@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 import discord
 from aiohttp import web
+from aiohttp.typedefs import Handler
 from discord.ext.commands import Bot
 
 from audit import log_action
@@ -37,7 +38,7 @@ def create_app(bot: Bot) -> web.Application:
 
 
 @web.middleware
-async def auth_middleware(request: web.Request, handler) -> web.StreamResponse:
+async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
     api_key = request.headers.get("X-Api-Key")
     if key := request.app[keys_key].get(api_key):
         request["key"] = key
