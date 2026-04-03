@@ -1,6 +1,7 @@
 import time
 from collections import deque
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from unittest.mock import MagicMock
 
 from config import KeyConfig
@@ -43,17 +44,21 @@ class TestCheckMessageAge:
         error, age, status = result
         assert error == "message_too_old"
         assert age >= 1000
-        assert status == 422
+        assert status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     def test_zero_limit_returns_action_disabled(self):
         msg = MagicMock()
         msg.created_at = datetime.now(UTC)
-        assert check_message_age(0, msg) == ("action_disabled", 0, 403)
+        assert check_message_age(0, msg) == ("action_disabled", 0, HTTPStatus.FORBIDDEN)
 
     def test_negative_limit_returns_action_disabled(self):
         msg = MagicMock()
         msg.created_at = datetime.now(UTC)
-        assert check_message_age(-1, msg) == ("action_disabled", 0, 403)
+        assert check_message_age(-1, msg) == (
+            "action_disabled",
+            0,
+            HTTPStatus.FORBIDDEN,
+        )
 
     def test_none_limit_allows_any_age(self):
         msg = MagicMock()
@@ -75,16 +80,24 @@ class TestCheckThreadAge:
         error, age, status = result
         assert error == "thread_too_old"
         assert age >= 4000
-        assert status == 422
+        assert status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     def test_zero_limit_returns_action_disabled(self):
         thread = MagicMock()
-        assert check_thread_age(0, thread) == ("action_disabled", 0, 403)
+        assert check_thread_age(0, thread) == (
+            "action_disabled",
+            0,
+            HTTPStatus.FORBIDDEN,
+        )
 
     def test_none_created_at(self):
         thread = MagicMock()
         thread.created_at = None
-        assert check_thread_age(3600, thread) == ("thread_age_unknown", 0, 422)
+        assert check_thread_age(3600, thread) == (
+            "thread_age_unknown",
+            0,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     def test_none_limit_allows_any_age(self):
         thread = MagicMock()
@@ -99,7 +112,10 @@ class TestCheckTimeoutDuration:
 
     def test_exceeding_duration(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=86400)
-        assert check_timeout_duration(key, 90000) == ("duration_exceeds_limit", 422)
+        assert check_timeout_duration(key, 90000) == (
+            "duration_exceeds_limit",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     def test_exact_boundary_passes(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=86400)
@@ -107,19 +123,31 @@ class TestCheckTimeoutDuration:
 
     def test_zero_duration_rejected(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=86400)
-        assert check_timeout_duration(key, 0) == ("duration_too_short", 422)
+        assert check_timeout_duration(key, 0) == (
+            "duration_too_short",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     def test_negative_duration_rejected(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=86400)
-        assert check_timeout_duration(key, -5) == ("duration_too_short", 422)
+        assert check_timeout_duration(key, -5) == (
+            "duration_too_short",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     def test_zero_max_returns_action_disabled(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=0)
-        assert check_timeout_duration(key, 3600) == ("action_disabled", 403)
+        assert check_timeout_duration(key, 3600) == (
+            "action_disabled",
+            HTTPStatus.FORBIDDEN,
+        )
 
     def test_negative_max_returns_action_disabled(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=-1)
-        assert check_timeout_duration(key, 3600) == ("action_disabled", 403)
+        assert check_timeout_duration(key, 3600) == (
+            "action_disabled",
+            HTTPStatus.FORBIDDEN,
+        )
 
     def test_none_max_allows_any_duration(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=None)
@@ -127,7 +155,10 @@ class TestCheckTimeoutDuration:
 
     def test_none_max_still_rejects_zero_duration(self):
         key = KeyConfig(secret="s", timeout_member_max_duration=None)
-        assert check_timeout_duration(key, 0) == ("duration_too_short", 422)
+        assert check_timeout_duration(key, 0) == (
+            "duration_too_short",
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
 
 class TestCheckMemberAge:
@@ -144,16 +175,24 @@ class TestCheckMemberAge:
         error, age, status = result
         assert error == "member_too_old"
         assert age >= 604800
-        assert status == 422
+        assert status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     def test_zero_limit_returns_action_disabled(self):
         member = MagicMock()
-        assert check_member_age(0, member) == ("action_disabled", 0, 403)
+        assert check_member_age(0, member) == (
+            "action_disabled",
+            0,
+            HTTPStatus.FORBIDDEN,
+        )
 
     def test_none_joined_at(self):
         member = MagicMock()
         member.joined_at = None
-        assert check_member_age(604800, member) == ("member_age_unknown", 0, 422)
+        assert check_member_age(604800, member) == (
+            "member_age_unknown",
+            0,
+            HTTPStatus.UNPROCESSABLE_ENTITY,
+        )
 
     def test_none_limit_allows_any_age(self):
         member = MagicMock()

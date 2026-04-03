@@ -1,5 +1,6 @@
 import logging
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 
 import discord
 from aiohttp import web
@@ -43,7 +44,7 @@ async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamR
     if key := request.app[keys_key].get(api_key):
         request["key"] = key
         return await handler(request)
-    return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
 
 
 async def handle_delete_message(request: web.Request) -> web.Response:
@@ -57,33 +58,44 @@ async def handle_delete_message(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("delete_message", guild_id, message_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     channel = guild.get_channel(channel_id) or guild.get_thread(channel_id)
     if channel is None:
         try:
             channel = await guild.fetch_channel(channel_id)
         except discord.NotFound:
-            return web.json_response({"error": "channel_not_found"}, status=404)
+            return web.json_response(
+                {"error": "channel_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
 
     if not isinstance(channel, discord.abc.Messageable):
-        return web.json_response({"error": "channel_not_found"}, status=404)
+        return web.json_response(
+            {"error": "channel_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     try:
         message = await channel.fetch_message(message_id)
     except discord.NotFound:
         log_action("delete_message", guild_id, message_id, reason, "not_found")
-        return web.json_response({"error": "message_not_found"}, status=404)
+        return web.json_response(
+            {"error": "message_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     if age_check := check_message_age(key.delete_message_max_age, message):
         error, age, status = age_check
@@ -94,7 +106,9 @@ async def handle_delete_message(request: web.Request) -> web.Response:
         await message.delete()
     except discord.Forbidden:
         log_action("delete_message", guild_id, message_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("delete_message", guild_id, message_id, reason, "success")
     return web.json_response(
@@ -112,17 +126,22 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("lock_thread", guild_id, thread_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     thread = guild.get_thread(thread_id)
     if thread is None:
@@ -130,10 +149,14 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
             fetched = await guild.fetch_channel(thread_id)
         except discord.NotFound:
             log_action("lock_thread", guild_id, thread_id, reason, "not_found")
-            return web.json_response({"error": "thread_not_found"}, status=404)
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
         if not isinstance(fetched, discord.Thread):
             log_action("lock_thread", guild_id, thread_id, reason, "not_found")
-            return web.json_response({"error": "thread_not_found"}, status=404)
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
         thread = fetched
 
     if age_check := check_thread_age(key.lock_thread_max_age, thread):
@@ -145,7 +168,9 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
         await thread.edit(locked=True, archived=True, reason=reason)
     except discord.Forbidden:
         log_action("lock_thread", guild_id, thread_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("lock_thread", guild_id, thread_id, reason, "success")
     return web.json_response(
@@ -163,17 +188,22 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("delete_thread", guild_id, thread_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     thread = guild.get_thread(thread_id)
     if thread is None:
@@ -181,10 +211,14 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
             fetched = await guild.fetch_channel(thread_id)
         except discord.NotFound:
             log_action("delete_thread", guild_id, thread_id, reason, "not_found")
-            return web.json_response({"error": "thread_not_found"}, status=404)
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
         if not isinstance(fetched, discord.Thread):
             log_action("delete_thread", guild_id, thread_id, reason, "not_found")
-            return web.json_response({"error": "thread_not_found"}, status=404)
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
         thread = fetched
 
     if age_check := check_thread_age(key.delete_thread_max_age, thread):
@@ -196,7 +230,9 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
         await thread.delete()
     except discord.Forbidden:
         log_action("delete_thread", guild_id, thread_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("delete_thread", guild_id, thread_id, reason, "success")
     return web.json_response(
@@ -215,7 +251,9 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if result := check_timeout_duration(key, duration_seconds):
         error, status = result
@@ -227,22 +265,29 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("timeout_member", guild_id, user_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     try:
         member = await guild.fetch_member(user_id)
     except discord.NotFound:
         log_action("timeout_member", guild_id, user_id, reason, "not_found")
-        return web.json_response({"error": "member_not_found"}, status=404)
+        return web.json_response(
+            {"error": "member_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     if check_moderator(member):
         log_action("timeout_member", guild_id, user_id, reason, "target_is_moderator")
-        return web.json_response({"error": "target_is_moderator"}, status=422)
+        return web.json_response(
+            {"error": "target_is_moderator"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if member.is_timed_out():
         timed_out_until = (
@@ -250,7 +295,8 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
         )
         log_action("timeout_member", guild_id, user_id, reason, "already_timed_out")
         return web.json_response(
-            {"error": "already_timed_out", "until": timed_out_until}, status=409
+            {"error": "already_timed_out", "until": timed_out_until},
+            status=HTTPStatus.CONFLICT,
         )
 
     until = datetime.now(UTC) + timedelta(seconds=duration_seconds)
@@ -258,7 +304,9 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
         await member.timeout(until, reason=reason)
     except discord.Forbidden:
         log_action("timeout_member", guild_id, user_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("timeout_member", guild_id, user_id, reason, "success")
     return web.json_response(
@@ -281,27 +329,36 @@ async def handle_kick_member(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("kick_member", guild_id, user_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     try:
         member = await guild.fetch_member(user_id)
     except discord.NotFound:
         log_action("kick_member", guild_id, user_id, reason, "not_found")
-        return web.json_response({"error": "member_not_found"}, status=404)
+        return web.json_response(
+            {"error": "member_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     if check_moderator(member):
         log_action("kick_member", guild_id, user_id, reason, "target_is_moderator")
-        return web.json_response({"error": "target_is_moderator"}, status=422)
+        return web.json_response(
+            {"error": "target_is_moderator"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if age_check := check_member_age(key.kick_member_max_age, member):
         error, age, status = age_check
@@ -312,7 +369,9 @@ async def handle_kick_member(request: web.Request) -> web.Response:
         await member.kick(reason=reason)
     except discord.Forbidden:
         log_action("kick_member", guild_id, user_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("kick_member", guild_id, user_id, reason, "success")
     return web.json_response(
@@ -330,27 +389,36 @@ async def handle_ban_member(request: web.Request) -> web.Response:
     reason = data.get("reason", "")
 
     if error := check_guild(key, guild_id):
-        return web.json_response({"error": error}, status=422)
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if (retry_after := rate_limiter.check(key)) is not None:
         log_action("ban_member", guild_id, user_id, reason, "rate_limited")
         return web.json_response(
-            {"error": "rate_limited", "retry_after_seconds": retry_after}, status=429
+            {"error": "rate_limited", "retry_after_seconds": retry_after},
+            status=HTTPStatus.TOO_MANY_REQUESTS,
         )
 
     guild = bot.get_guild(guild_id)
     if guild is None:
-        return web.json_response({"error": "guild_not_found"}, status=404)
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     try:
         member = await guild.fetch_member(user_id)
     except discord.NotFound:
         log_action("ban_member", guild_id, user_id, reason, "not_found")
-        return web.json_response({"error": "member_not_found"}, status=404)
+        return web.json_response(
+            {"error": "member_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
 
     if check_moderator(member):
         log_action("ban_member", guild_id, user_id, reason, "target_is_moderator")
-        return web.json_response({"error": "target_is_moderator"}, status=422)
+        return web.json_response(
+            {"error": "target_is_moderator"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
 
     if age_check := check_member_age(key.ban_member_max_age, member):
         error, age, status = age_check
@@ -361,7 +429,9 @@ async def handle_ban_member(request: web.Request) -> web.Response:
         await member.ban(reason=reason)
     except discord.Forbidden:
         log_action("ban_member", guild_id, user_id, reason, "forbidden")
-        return web.json_response({"error": "missing_permissions"}, status=403)
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
 
     log_action("ban_member", guild_id, user_id, reason, "success")
     return web.json_response(

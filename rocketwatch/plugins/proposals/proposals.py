@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from datetime import datetime, timedelta
+from http import HTTPStatus
 from io import BytesIO
 
 import numpy as np
@@ -179,7 +180,7 @@ class Proposals(commands.Cog):
                 "message"
             ]
         except ClientResponseError as e:
-            if e.status == 404:
+            if e.status == HTTPStatus.NOT_FOUND:
                 return None
             else:
                 raise e

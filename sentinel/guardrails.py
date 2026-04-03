@@ -1,6 +1,7 @@
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime
+from http import HTTPStatus
 
 import discord
 
@@ -45,10 +46,10 @@ def check_message_age(
     if limit is None:
         return None
     if limit is not None and limit <= 0:
-        return "action_disabled", 0, 403
+        return "action_disabled", 0, HTTPStatus.FORBIDDEN
     age = (datetime.now(UTC) - message.created_at).total_seconds()
     if age > limit:
-        return "message_too_old", int(age), 422
+        return "message_too_old", int(age), HTTPStatus.UNPROCESSABLE_ENTITY
     return None
 
 
@@ -58,12 +59,12 @@ def check_thread_age(
     if limit is None:
         return None
     if limit <= 0:
-        return "action_disabled", 0, 403
+        return "action_disabled", 0, HTTPStatus.FORBIDDEN
     if thread.created_at is None:
-        return "thread_age_unknown", 0, 422
+        return "thread_age_unknown", 0, HTTPStatus.UNPROCESSABLE_ENTITY
     age = (datetime.now(UTC) - thread.created_at).total_seconds()
     if age > limit:
-        return "thread_too_old", int(age), 422
+        return "thread_too_old", int(age), HTTPStatus.UNPROCESSABLE_ENTITY
     return None
 
 
@@ -71,13 +72,13 @@ def check_timeout_duration(
     key: KeyConfig, duration_seconds: int
 ) -> tuple[str, int] | None:
     if duration_seconds < 1:
-        return "duration_too_short", 422
+        return "duration_too_short", HTTPStatus.UNPROCESSABLE_ENTITY
     if key.timeout_member_max_duration is None:
         return None
     if key.timeout_member_max_duration <= 0:
-        return "action_disabled", 403
+        return "action_disabled", HTTPStatus.FORBIDDEN
     if duration_seconds > key.timeout_member_max_duration:
-        return "duration_exceeds_limit", 422
+        return "duration_exceeds_limit", HTTPStatus.UNPROCESSABLE_ENTITY
     return None
 
 
@@ -87,12 +88,12 @@ def check_member_age(
     if limit is None:
         return None
     if limit <= 0:
-        return "action_disabled", 0, 403
+        return "action_disabled", 0, HTTPStatus.FORBIDDEN
     if member.joined_at is None:
-        return "member_age_unknown", 0, 422
+        return "member_age_unknown", 0, HTTPStatus.UNPROCESSABLE_ENTITY
     age = (datetime.now(UTC) - member.joined_at).total_seconds()
     if age > limit:
-        return "member_too_old", int(age), 422
+        return "member_too_old", int(age), HTTPStatus.UNPROCESSABLE_ENTITY
     return None
 
 

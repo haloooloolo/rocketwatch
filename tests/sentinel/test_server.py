@@ -1,6 +1,7 @@
 import time
 from collections import deque
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from unittest.mock import MagicMock
 
 import discord
@@ -16,11 +17,15 @@ from helpers import (
 
 
 def _not_found():
-    return discord.NotFound(response=MagicMock(status=404), message="Not Found")
+    return discord.NotFound(
+        response=MagicMock(status=HTTPStatus.NOT_FOUND), message="Not Found"
+    )
 
 
 def _forbidden():
-    return discord.Forbidden(response=MagicMock(status=403), message="Forbidden")
+    return discord.Forbidden(
+        response=MagicMock(status=HTTPStatus.FORBIDDEN), message="Forbidden"
+    )
 
 
 def _headers(key=TEST_KEY_SECRET):
@@ -55,7 +60,7 @@ class TestAuthMiddleware:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
 
     async def test_invalid_key(self, client):
         resp = await client.post(
@@ -67,7 +72,7 @@ class TestAuthMiddleware:
             },
             headers=_headers("wrong-key"),
         )
-        assert resp.status == 401
+        assert resp.status == HTTPStatus.UNAUTHORIZED
         body = await resp.json()
         assert body["error"] == "unauthorized"
 
@@ -80,7 +85,7 @@ class TestAuthMiddleware:
                 "message_id": 2000,
             },
         )
-        assert resp.status == 401
+        assert resp.status == HTTPStatus.UNAUTHORIZED
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +110,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "delete_message"
@@ -121,7 +126,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "guild_not_allowed"
 
@@ -137,7 +142,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 429
+        assert resp.status == HTTPStatus.TOO_MANY_REQUESTS
         body = await resp.json()
         assert body["error"] == "rate_limited"
         assert "retry_after_seconds" in body
@@ -153,7 +158,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
         body = await resp.json()
         assert body["error"] == "guild_not_found"
 
@@ -171,7 +176,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
         body = await resp.json()
         assert body["error"] == "channel_not_found"
 
@@ -192,7 +197,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
 
     async def test_channel_found_via_fetch(self, client):
         channel = make_mock_channel()
@@ -212,7 +217,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
 
     async def test_message_not_found(self, client):
         channel = make_mock_channel()
@@ -228,7 +233,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
         body = await resp.json()
         assert body["error"] == "message_not_found"
 
@@ -249,7 +254,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "message_too_old"
 
@@ -269,7 +274,7 @@ class TestDeleteMessage:
             },
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN
         body = await resp.json()
         assert body["error"] == "missing_permissions"
 
@@ -293,7 +298,7 @@ class TestLockThread:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "lock_thread"
@@ -307,7 +312,7 @@ class TestLockThread:
             json={"guild_id": 999999, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_rate_limited(self, client):
         _fill_rate_limiter()
@@ -316,7 +321,7 @@ class TestLockThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 429
+        assert resp.status == HTTPStatus.TOO_MANY_REQUESTS
 
     async def test_guild_not_found(self, client):
         client.mock_bot.get_guild.return_value = None
@@ -325,7 +330,7 @@ class TestLockThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_thread_not_found(self, client):
         client.mock_guild.get_thread.return_value = None
@@ -336,7 +341,7 @@ class TestLockThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
         body = await resp.json()
         assert body["error"] == "thread_not_found"
 
@@ -354,7 +359,7 @@ class TestLockThread:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
 
     async def test_thread_too_old(self, client):
         thread = make_mock_thread(
@@ -367,7 +372,7 @@ class TestLockThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "thread_too_old"
 
@@ -381,7 +386,7 @@ class TestLockThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN
 
 
 # ---------------------------------------------------------------------------
@@ -403,7 +408,7 @@ class TestDeleteThread:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "delete_thread"
@@ -418,7 +423,7 @@ class TestDeleteThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_thread_too_old(self, client):
         thread = make_mock_thread(
@@ -431,7 +436,7 @@ class TestDeleteThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_forbidden(self, client):
         thread = make_mock_thread()
@@ -443,7 +448,7 @@ class TestDeleteThread:
             json={"guild_id": TEST_GUILD_ID, "thread_id": 3000},
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +471,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "timeout_member"
@@ -483,7 +488,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_duration_exceeds_limit(self, client):
         resp = await client.post(
@@ -495,7 +500,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "duration_exceeds_limit"
         assert "max_seconds" in body
@@ -510,7 +515,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "duration_too_short"
 
@@ -525,7 +530,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 429
+        assert resp.status == HTTPStatus.TOO_MANY_REQUESTS
 
     async def test_guild_not_found(self, client):
         client.mock_bot.get_guild.return_value = None
@@ -538,7 +543,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_member_not_found(self, client):
         client.mock_guild.fetch_member.side_effect = _not_found()
@@ -552,7 +557,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
         body = await resp.json()
         assert body["error"] == "member_not_found"
 
@@ -569,7 +574,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "target_is_moderator"
 
@@ -587,7 +592,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 409
+        assert resp.status == HTTPStatus.CONFLICT
         body = await resp.json()
         assert body["error"] == "already_timed_out"
         assert "until" in body
@@ -606,7 +611,7 @@ class TestTimeoutMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN
 
 
 # ---------------------------------------------------------------------------
@@ -628,7 +633,7 @@ class TestKickMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "kick_member"
@@ -640,7 +645,7 @@ class TestKickMember:
             json={"guild_id": 999999, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_rate_limited(self, client):
         _fill_rate_limiter()
@@ -649,7 +654,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 429
+        assert resp.status == HTTPStatus.TOO_MANY_REQUESTS
 
     async def test_guild_not_found(self, client):
         client.mock_bot.get_guild.return_value = None
@@ -658,7 +663,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_member_not_found(self, client):
         client.mock_guild.fetch_member.side_effect = _not_found()
@@ -667,7 +672,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_target_is_moderator(self, client):
         member = make_mock_member(is_moderator=True)
@@ -678,7 +683,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "target_is_moderator"
 
@@ -691,7 +696,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
         body = await resp.json()
         assert body["error"] == "member_too_old"
 
@@ -705,7 +710,7 @@ class TestKickMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN
 
 
 # ---------------------------------------------------------------------------
@@ -727,7 +732,7 @@ class TestBanMember:
             },
             headers=_headers(),
         )
-        assert resp.status == 200
+        assert resp.status == HTTPStatus.OK
         body = await resp.json()
         assert body["status"] == "ok"
         assert body["action"] == "ban_member"
@@ -739,7 +744,7 @@ class TestBanMember:
             json={"guild_id": 999999, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_rate_limited(self, client):
         _fill_rate_limiter()
@@ -748,7 +753,7 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 429
+        assert resp.status == HTTPStatus.TOO_MANY_REQUESTS
 
     async def test_guild_not_found(self, client):
         client.mock_bot.get_guild.return_value = None
@@ -757,7 +762,7 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_member_not_found(self, client):
         client.mock_guild.fetch_member.side_effect = _not_found()
@@ -766,7 +771,7 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 404
+        assert resp.status == HTTPStatus.NOT_FOUND
 
     async def test_target_is_moderator(self, client):
         member = make_mock_member(is_moderator=True)
@@ -777,7 +782,7 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_member_too_old(self, client):
         member = make_mock_member(joined_at=datetime.now(UTC) - timedelta(days=8))
@@ -788,7 +793,7 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 422
+        assert resp.status == HTTPStatus.UNPROCESSABLE_ENTITY
 
     async def test_forbidden(self, client):
         member = make_mock_member()
@@ -800,4 +805,4 @@ class TestBanMember:
             json={"guild_id": TEST_GUILD_ID, "user_id": 1000},
             headers=_headers(),
         )
-        assert resp.status == 403
+        assert resp.status == HTTPStatus.FORBIDDEN

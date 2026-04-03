@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Mapping
+from http import HTTPStatus
 from typing import Any, cast
 
 import aiohttp
@@ -104,7 +105,7 @@ class BeaconEvents(EventPlugin):
             log.debug(f"Checking slot {slot_number}")
             beacon_block = (await bacon.get_block(str(slot_number)))["data"]["message"]
         except aiohttp.ClientResponseError as e:
-            if e.status == 404:
+            if e.status == HTTPStatus.NOT_FOUND:
                 log.error(f"Beacon block {slot_number} not found, skipping.")
                 return []
             else:
@@ -241,7 +242,7 @@ class BeaconEvents(EventPlugin):
             aiohttp.ClientSession() as session,
             session.get(endpoint, headers={"apikey": api_key}) as resp,
         ):
-            if resp.status == 429:
+            if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
                 log.warning("beaconcha.in API rate limit reached")
                 return None
             resp.raise_for_status()

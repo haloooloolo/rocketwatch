@@ -1,4 +1,5 @@
 import logging
+from http import HTTPStatus
 
 import aiohttp
 from discord import Member, Message, Thread
@@ -27,7 +28,7 @@ class SentinelClient:
         session = await self._get_session()
         async with session.post(endpoint, json=payload) as resp:
             body = await resp.json()
-            if resp.status == 200:
+            if resp.status == HTTPStatus.OK:
                 log.info(f"POST {endpoint} -> {resp.status}")
                 return True
             log.warning(f"POST {endpoint} -> {resp.status}: {body}")
