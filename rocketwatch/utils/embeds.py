@@ -1,8 +1,10 @@
 import contextlib
+import json
 import logging
 import math
 from collections.abc import Callable
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -17,7 +19,6 @@ from etherscan_labels import Addresses
 from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
-from strings import _
 from utils.block_time import block_to_ts
 from utils.cached_ens import ens
 from utils.config import cfg
@@ -28,6 +29,12 @@ from utils.sea_creatures import get_sea_creature_for_address
 from utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.embeds")
+
+_ADDRESS_NAMES: dict[str, str] = json.loads(
+    (
+        Path(__file__).resolve().parent.parent / "strings" / "addresses.en.json"
+    ).read_text()
+)
 
 
 class Embed(discord.Embed):
@@ -238,8 +245,7 @@ async def el_explorer_url(
         chain = cfg.rocketpool.chain
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
 
-        n_key = f"addresses.{target}"
-        if not name and (n := _(n_key)) != n_key:
+        if not name and (n := _ADDRESS_NAMES.get(target)):
             name = n
 
         if await rp.is_node(target):
