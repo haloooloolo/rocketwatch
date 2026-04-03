@@ -769,6 +769,38 @@ class ETHWithdrawEvent(LogEvent):
         ]
 
 
+class CreditWithdrawnEvent(LogEvent):
+    event_name = "credit_withdrawn_event"
+
+    class Args(LogEventContext):
+        nodeAddress: NodeAddress
+        amount: Wei
+
+    async def build_embeds(
+        self, args: Args, event: LogEventData, receipt: TxReceipt
+    ) -> list[Embed]:
+        fmt = await self._fmt(args)
+        amount = fmt["amount"]
+        if amount < 32:
+            return [
+                await build_small_event_embed(
+                    f":leaves: {fmt['nodeAddress']} withdrew "
+                    f"**{format_value(amount)} ETH** of credit!",
+                    args["transactionHash"],
+                )
+            ]
+        return [
+            await build_event_embed(
+                tx_hash=args["transactionHash"],
+                block_number=args["blockNumber"],
+                title=":leaves: Credit Withdrawal",
+                description=(
+                    f"{fmt['nodeAddress']} withdrew **{format_value(amount)} ETH** of credit!"
+                ),
+            )
+        ]
+
+
 class ValidatorDepositEvent(LogEvent):
     event_name = "validator_deposit_event"
 
@@ -2999,6 +3031,7 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "DepositAssigned": PoolDepositAssignedEvent(),
         "DepositRecycled": PoolDepositRecycledEvent(),
         "QueueExited": ValidatorQueueExitedEvent(),
+        "CreditWithdrawn": CreditWithdrawnEvent(),
     },
     "rocketNetworkPenalties": {
         "PenaltyUpdated": MinipoolPenaltyUpdatedEvent(),
