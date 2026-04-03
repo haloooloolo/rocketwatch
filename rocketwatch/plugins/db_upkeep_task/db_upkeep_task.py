@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
 from datetime import timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import pymongo
 from cronitor import Monitor
@@ -13,6 +13,7 @@ from discord.utils import as_chunks
 from eth_typing import BlockNumber
 from pymongo import UpdateMany, UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
+from web3.contract.async_contract import AsyncContractFunction
 
 from rocketwatch import RocketWatch
 from utils import solidity
@@ -25,14 +26,34 @@ from utils.time_debug import timerun, timerun_async
 
 log = logging.getLogger("rocketwatch.db_upkeep_task")
 
+# (contract_fn, require_success, transform, field_name)
+MulticallSpec = tuple[AsyncContractFunction, bool, Callable[[Any], Any] | None, str]
 
-def is_true(v) -> bool:
+
+class ValidatorInfo(NamedTuple):
+    last_assignment_time: int
+    last_requested_value: int
+    last_requested_bond: int
+    deposit_value: int
+    staked: bool
+    exited: bool
+    in_queue: bool
+    in_prestake: bool
+    express_used: bool
+    dissolved: bool
+    exiting: bool
+    locked: bool
+    exit_balance: int
+    locked_time: int
+
+
+def is_true(v: Any) -> bool:
     return v is True
 
 
-def safe_to_float(num):
+def safe_to_float(num: int) -> float | None:
     try:
-        return solidity.to_float(num)
+        return float(solidity.to_float(num))
     except Exception:
         return None
 
@@ -41,65 +62,61 @@ def safe_to_hex(b: bytes) -> str | None:
     return f"0x{b.hex()}" if b else None
 
 
-def safe_state_to_str(state):
+def safe_state_to_str(state: int) -> str | None:
     try:
-        return solidity.mp_state_to_str(state)
+        return str(solidity.mp_state_to_str(state))
     except Exception:
         return None
 
 
-def safe_inv(num):
+def safe_inv(num: int) -> float | None:
     try:
-        return 1 / solidity.to_float(num)
+        return float(1 / solidity.to_float(num))
     except Exception:
         return None
 
 
-def _parse_epoch(value):
+def _parse_epoch(value: int) -> int | None:
     epoch = int(value)
     return epoch if epoch < 2**32 else None
 
 
-def _derive_validator_status(info):
-    if info[9]:  # dissolved
+def _derive_validator_status(info: ValidatorInfo) -> str:
+    if info.dissolved:
         return "dissolved"
-    if info[5]:  # exited
+    if info.exited:
         return "exited"
-    if info[6]:  # inQueue
+    if info.in_queue:
         return "in_queue"
-    if info[7]:  # inPrestake
+    if info.in_prestake:
         return "prestaked"
-    if info[11]:  # locked
+    if info.locked:
         return "locked"
-    if info[10]:  # exiting
+    if info.exiting:
         return "exiting"
-    if info[4]:  # staked
+    if info.staked:
         return "staking"
     return "unknown"
 
 
-def _unpack_validator_info(info):
-    if info is None:
-        return None
+def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
-        "express_used": info[8],
-        "assignment_time": info[0],
-        "requested_bond": info[2] / 1000,  # milliether to ETH
-        "deposit_value": info[3] / 1000,  # milliether to ETH
-        "exit_balance": solidity.to_float(info[12], 9),  # gwei to ETH
+        "express_used": info.express_used,
+        "assignment_time": info.last_assignment_time,
+        "requested_bond": info.last_requested_bond / 1000,  # milliether to ETH
+        "deposit_value": info.deposit_value / 1000,  # milliether to ETH
+        "exit_balance": solidity.to_float(info.exit_balance, 9),  # gwei to ETH
     }
 
 
-def _unpack_validator_info_dynamic(info):
-    if info is None:
-        return None
+def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
-        "assignment_time": info[0],
-        "requested_bond": info[2] / 1000,
-        "deposit_value": info[3] / 1000,
-        "exit_balance": solidity.to_float(info[12], 9),
+        "assignment_time": info.last_assignment_time,
+        "requested_bond": info.last_requested_bond / 1000,
+        "deposit_value": info.deposit_value / 1000,
+        "exit_balance": solidity.to_float(info.exit_balance, 9),
     }
 
 
@@ -111,7 +128,7 @@ class DBUpkeepTask(commands.Cog):
         self.cooldown = timedelta(minutes=10)
         self.bot.loop.create_task(self.loop())
 
-    async def loop(self):
+    async def loop(self) -> None:
         await self.bot.wait_until_ready()
         await self.check_indexes()
         while not self.bot.is_closed():
@@ -143,7 +160,7 @@ class DBUpkeepTask(commands.Cog):
             finally:
                 await asyncio.sleep(self.cooldown.total_seconds())
 
-    async def check_indexes(self):
+    async def check_indexes(self) -> None:
         log.debug("checking indexes")
         await self.bot.db.node_operators.create_index("address")
         await self.bot.db.node_operators.create_index("megapool.address")
@@ -165,7 +182,7 @@ class DBUpkeepTask(commands.Cog):
         self,
         collection: AsyncCollection,
         query: dict[str, Any],
-        call_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, list[tuple]]],
+        call_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, list[MulticallSpec]]],
         projection: dict[str, Any],
         label: str | None,
     ) -> None:
@@ -205,7 +222,7 @@ class DBUpkeepTask(commands.Cog):
     # -- Node operator tasks --
 
     @timerun_async
-    async def add_untracked_node_operators(self):
+    async def add_untracked_node_operators(self) -> None:
         nm = await rp.get_contract_by_name("rocketNodeManager")
         latest_rp = await rp.call("rocketNodeManager.getNodeCount") - 1
         latest_db = 0
@@ -229,11 +246,11 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun_async
-    async def add_static_node_operator_data(self):
+    async def add_static_node_operator_data(self) -> None:
         df = await rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
 
-        async def get_calls(n):
+        async def get_calls(n: dict) -> list[MulticallSpec]:
             return [
                 (
                     df.functions.getProxyAddress(n["address"]),
@@ -263,7 +280,7 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun_async
-    async def update_dynamic_node_operator_data(self):
+    async def update_dynamic_node_operator_data(self) -> None:
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
         nd = await rp.get_contract_by_name("rocketNodeDeposit")
         nm = await rp.get_contract_by_name("rocketNodeManager")
@@ -271,7 +288,7 @@ class DBUpkeepTask(commands.Cog):
         ns = await rp.get_contract_by_name("rocketNodeStaking")
         mc = await rp.get_contract_by_name("multicall3")
 
-        async def get_calls(n):
+        async def get_calls(n: dict) -> list[MulticallSpec]:
             return [
                 (
                     nm.functions.getNodeWithdrawalAddress(n["address"]),
@@ -402,8 +419,8 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun_async
-    async def update_dynamic_megapool_data(self):
-        async def get_calls(n):
+    async def update_dynamic_megapool_data(self) -> None:
+        async def get_calls(n: dict) -> list[MulticallSpec]:
             mp = await rp.assemble_contract(
                 "rocketMegapoolDelegate", address=n["megapool"]["address"]
             )
@@ -492,7 +509,7 @@ class DBUpkeepTask(commands.Cog):
     # -- Minipool tasks --
 
     @timerun_async
-    async def add_untracked_minipools(self):
+    async def add_untracked_minipools(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
         latest_rp = await rp.call("rocketMinipoolManager.getMinipoolCount") - 1
         latest_db = 0
@@ -520,10 +537,10 @@ class DBUpkeepTask(commands.Cog):
             )
 
     @timerun_async
-    async def add_static_minipool_data(self):
+    async def add_static_minipool_data(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
 
-        async def lamb(n):
+        async def lamb(n: dict) -> list[MulticallSpec]:
             return [
                 (
                     (
@@ -552,7 +569,7 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun
-    async def add_static_minipool_deposit_data(self):
+    async def add_static_minipool_deposit_data(self) -> None:
         minipools = (
             await self.bot.db.minipools.find(
                 {"deposit_amount": {"$exists": False}, "status": "initialised"},
@@ -619,10 +636,10 @@ class DBUpkeepTask(commands.Cog):
             )
 
     @timerun_async
-    async def update_dynamic_minipool_data(self):
+    async def update_dynamic_minipool_data(self) -> None:
         mc = await rp.get_contract_by_name("multicall3")
 
-        async def get_calls(n):
+        async def get_calls(n: dict) -> list[MulticallSpec]:
             minipool_contract = await rp.assemble_contract(
                 "rocketMinipool", address=n["address"]
             )
@@ -717,7 +734,7 @@ class DBUpkeepTask(commands.Cog):
         )
 
     @timerun
-    async def update_dynamic_minipool_beacon_data(self):
+    async def update_dynamic_minipool_beacon_data(self) -> None:
         pubkeys = await self.bot.db.minipools.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
         )
@@ -761,7 +778,7 @@ class DBUpkeepTask(commands.Cog):
     # -- Megapool validator tasks --
 
     @timerun_async
-    async def add_untracked_megapool_validators(self):
+    async def add_untracked_megapool_validators(self) -> None:
         # get deployed megapools with their on-chain validator count
         nodes = await self.bot.db.node_operators.find(
             {"megapool.deployed": True, "megapool.validator_count": {"$gt": 0}},
@@ -810,9 +827,8 @@ class DBUpkeepTask(commands.Cog):
                         if pubkey_raw is not None
                         else None,
                     }
-                    info = _unpack_validator_info(info_raw)
-                    if info:
-                        doc.update(info)
+                    if info_raw is not None:
+                        doc.update(_unpack_validator_info(info_raw))
                     docs.append(doc)
                 if docs:
                     await self.bot.db.megapool_validators.insert_many(
@@ -820,7 +836,7 @@ class DBUpkeepTask(commands.Cog):
                     )
 
     @timerun_async
-    async def add_static_megapool_deposit_data(self):
+    async def add_static_megapool_deposit_data(self) -> None:
         validators = await self.bot.db.megapool_validators.find(
             {"deposit_time": {"$exists": False}},
             {"megapool": 1, "validator_id": 1},
@@ -873,7 +889,7 @@ class DBUpkeepTask(commands.Cog):
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
     @timerun_async
-    async def update_dynamic_megapool_validator_data(self):
+    async def update_dynamic_megapool_validator_data(self) -> None:
         validators = await self.bot.db.megapool_validators.find(
             {"status": {"$nin": ["exited", "dissolved"]}},
             {"megapool": 1, "validator_id": 1},
@@ -897,18 +913,18 @@ class DBUpkeepTask(commands.Cog):
             results = await rp.multicall(fns)
             ops = []
             for v, info_raw in zip(batch, results, strict=False):
-                info = (
-                    _unpack_validator_info_dynamic(info_raw)
-                    if info_raw is not None
-                    else None
-                )
-                if info is not None:
-                    ops.append(UpdateOne({"_id": v["_id"]}, {"$set": info}))
+                if info_raw is not None:
+                    ops.append(
+                        UpdateOne(
+                            {"_id": v["_id"]},
+                            {"$set": _unpack_validator_info_dynamic(info_raw)},
+                        )
+                    )
             if ops:
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
     @timerun
-    async def update_dynamic_megapool_validator_beacon_data(self):
+    async def update_dynamic_megapool_validator_beacon_data(self) -> None:
         pubkeys = await self.bot.db.megapool_validators.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
         )
@@ -952,5 +968,5 @@ class DBUpkeepTask(commands.Cog):
                 )
 
 
-async def setup(self):
+async def setup(self: RocketWatch) -> None:
     await self.add_cog(DBUpkeepTask(self))

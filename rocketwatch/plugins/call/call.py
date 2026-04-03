@@ -2,7 +2,7 @@ import contextlib
 import json
 import logging
 from collections.abc import Sequence
-from typing import cast
+from typing import Any, cast
 
 import humanize
 from discord import Interaction
@@ -72,7 +72,7 @@ class CallModal(Modal):
         )
 
     @staticmethod
-    def _validate(value: object, abi_type: str) -> str | None:
+    def _validate(value: Any, abi_type: str) -> str | None:
         if abi_type == "bool":
             if not isinstance(value, bool):
                 return f"expected bool, got `{value!r}`"

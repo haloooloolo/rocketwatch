@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import aiohttp
 import numpy as np
 from eth_typing import ChecksumAddress, HexStr
+from web3.contract import AsyncContract
 
 from utils.retry import retry
 from utils.rocketpool import rp
@@ -710,7 +711,11 @@ class DEX(Exchange, ABC):
 class BalancerV2(DEX):
     class WeightedPool(DEX.LiquidityPool):
         def __init__(
-            self, pool_id: HexStr, vault, token_0: ERC20Token, token_1: ERC20Token
+            self,
+            pool_id: HexStr,
+            vault: AsyncContract,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
         ):
             self.id = pool_id
             self.vault = vault
@@ -730,9 +735,8 @@ class BalancerV2(DEX):
             return balances[1] / balances[0] if (balances[0] > 0) else 0
 
         async def get_normalized_price(self) -> float:
-            return await self.get_price() * 10 ** (
-                self.token_0.decimals - self.token_1.decimals
-            )
+            exponent: int = self.token_0.decimals - self.token_1.decimals
+            return float(await self.get_price() * (10**exponent))
 
         async def get_liquidity(self) -> Liquidity | None:
             balance_0, balance_1 = (
@@ -749,7 +753,9 @@ class BalancerV2(DEX):
             def depth_at(_price: float) -> float:
                 invariant = balance_0 * balance_1
                 new_balance_0 = math.sqrt(_price * invariant / balance_norm)
-                return abs(new_balance_0 - balance_0) / (10**self.token_0.decimals)
+                return float(
+                    abs(new_balance_0 - balance_0) / (10**self.token_0.decimals)
+                )
 
             return Liquidity(price, depth_at)
 
@@ -757,7 +763,7 @@ class BalancerV2(DEX):
         # missing support for other pool types
         super().__init__(pools)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "Balancer"
 
     @property
@@ -772,7 +778,7 @@ class UniswapV3(DEX):
 
     @staticmethod
     def tick_to_price(tick: float) -> float:
-        return 1.0001**tick
+        return float(1.0001**tick)
 
     @staticmethod
     def price_to_tick(price: float) -> float:
@@ -782,7 +788,7 @@ class UniswapV3(DEX):
         def __init__(
             self,
             pool_address: ChecksumAddress,
-            contract,
+            contract: AsyncContract,
             tick_spacing: int,
             token_0: ERC20Token,
             token_1: ERC20Token,
@@ -860,11 +866,12 @@ class UniswapV3(DEX):
 
         async def get_price(self) -> float:
             sqrt96x = (await self.contract.functions.slot0().call())[0]
-            return (sqrt96x**2) / (2**192)
+            return float((sqrt96x**2) / (2**192))
 
         async def get_normalized_price(self) -> float:
-            return await self.get_price() * 10 ** (
-                self.token_0.decimals - self.token_1.decimals
+            return float(
+                await self.get_price()
+                * 10 ** (self.token_0.decimals - self.token_1.decimals)
             )
 
         async def get_liquidity(self) -> Liquidity | None:

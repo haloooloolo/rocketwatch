@@ -2,6 +2,7 @@ import base64
 import contextlib
 import json
 import zlib
+from typing import Any
 
 from colorama import Fore, Style
 
@@ -10,7 +11,7 @@ from utils.config import cfg
 from utils.shared_w3 import bacon
 
 
-def prettify_json_string(data):
+def prettify_json_string(data: str) -> str:
     return json.dumps(json.loads(data), indent=4)
 
 
@@ -43,11 +44,11 @@ def pretty_time(time: int | float) -> str:
     return " ".join(parts[:2])
 
 
-def s_hex(string):
+def s_hex(string: str) -> str:
     return string[:10]
 
 
-async def cl_explorer_url(target, name=None):
+async def cl_explorer_url(target: str | int, name: str | None = None) -> str:
     # if name is none, and it has the correct length for a validator pubkey, try to lookup the validator index
     if not name and isinstance(target, str) and len(target) == 98:
         with contextlib.suppress(Exception):
@@ -56,12 +57,12 @@ async def cl_explorer_url(target, name=None):
     if not name and isinstance(target, str):
         name = s_hex(target)
     if not name:
-        name = target
+        name = str(target)
     url = cfg.consensus_layer.explorer
     return f"[{name}]({url}/validator/{target})"
 
 
-def advanced_tnx_url(tx_hash):
+def advanced_tnx_url(tx_hash: str) -> str:
     return ""
 
 
@@ -107,7 +108,15 @@ def render_tree_legacy(data: dict, name: str) -> str:
     return "\n".join(lines)
 
 
-def render_branch(k, v, prefix, current_depth=0, max_depth=0, reverse=False, m_prev=""):
+def render_branch(
+    k: str,
+    v: dict[str, Any],
+    prefix: str,
+    current_depth: int = 0,
+    max_depth: int = 0,
+    reverse: bool = False,
+    m_prev: str = "",
+) -> list[tuple[str, int, int]]:
     m = "┌" if reverse else "└"
     a = [(f"{prefix}{k}:", v.get("_value", 0), current_depth)]
     # if the value is a dict, recurse
@@ -154,7 +163,7 @@ def render_branch(k, v, prefix, current_depth=0, max_depth=0, reverse=False, m_p
     return a
 
 
-def render_tree(data: dict, name: str, max_depth: int = 0) -> str:
+def render_tree(data: dict[str, Any], name: str, max_depth: int = 0) -> str:
     # remove empty states
     data = {k: v for k, v in data.items() if v}
     lines, values, depths = map(

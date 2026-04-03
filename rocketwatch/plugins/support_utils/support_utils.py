@@ -1,3 +1,4 @@
+import builtins
 import logging
 from datetime import UTC, datetime
 from operator import itemgetter
@@ -6,6 +7,8 @@ from bson import CodecOptions
 from discord import ButtonStyle, Interaction, Member, TextStyle, User, app_commands, ui
 from discord.app_commands import Choice, Group, choices
 from discord.ext.commands import Cog, GroupCog
+from pymongo.asynchronous.collection import AsyncCollection
+from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch import RocketWatch
 from utils.config import cfg
@@ -15,12 +18,14 @@ from utils.file import TextFile
 log = logging.getLogger("rocketwatch.support_utils")
 
 
-async def generate_template_embed(db, template_name: str):
+async def generate_template_embed(
+    db: AsyncDatabase, template_name: str
+) -> Embed | None:
     template = await db.support_bot.find_one({"_id": template_name})
     if not template:
         return None
     # get the last log entry from the db
-    dumps_col = db.support_bot_dumps.with_options(
+    dumps_col: AsyncCollection = db.support_bot_dumps.with_options(
         codec_options=CodecOptions(tz_aware=True)
     )
     last_edit = await dumps_col.find_one({"template": template_name}, sort=[("ts", -1)])
@@ -33,14 +38,16 @@ async def generate_template_embed(db, template_name: str):
 
 # Define a simple View that gives us a counter button
 class AdminView(ui.View):
-    def __init__(self, db, template_name: str):
+    def __init__(self, db: AsyncDatabase, template_name: str) -> None:
         super().__init__()
         self.db = db
         self.template_name = template_name
 
     @ui.button(label="Edit", style=ButtonStyle.blurple)
-    async def edit(self, interaction: Interaction, button: ui.Button):
+    async def edit(self, interaction: Interaction, _: ui.Button) -> None:
         template = await self.db.support_bot.find_one({"_id": self.template_name})
+        if not template:
+            return
         # Make sure to update the message with our update
         await interaction.response.send_modal(
             AdminModal(
@@ -55,7 +62,7 @@ class DeletableView(ui.View):
         self.user = user
 
     @ui.button(emoji="<:delete:1364953621191721002>", style=ButtonStyle.gray)
-    async def delete(self, interaction: Interaction, button: ui.Button):
+    async def delete(self, interaction: Interaction, _: ui.Button) -> None:
         if (
             (interaction.user == self.user) or has_perms(interaction)
         ) and interaction.message:
@@ -66,7 +73,13 @@ class DeletableView(ui.View):
 
 
 class AdminModal(ui.Modal, title="Change Template Message"):
-    def __init__(self, old_title, old_description, db, template_name):
+    def __init__(
+        self,
+        old_title: str,
+        old_description: str,
+        db: AsyncDatabase,
+        template_name: str,
+    ) -> None:
         super().__init__()
         self.db = db
         self.old_title = old_title
@@ -88,6 +101,8 @@ class AdminModal(ui.Modal, title="Change Template Message"):
     async def on_submit(self, interaction: Interaction) -> None:
         # get the data from the db
         template = await self.db.support_bot.find_one({"_id": self.template_name})
+        if not template:
+            return
         # verify that no changes were made while we were editing
         if (
             template["title"] != self.old_title
@@ -166,7 +181,9 @@ def has_perms(interaction: Interaction) -> bool:
     return False
 
 
-async def _use(db, interaction: Interaction, name: str, mention: User | None):
+async def _use(
+    db: AsyncDatabase, interaction: Interaction, name: str, mention: User | None
+) -> None:
     # check if the template exists in the db
     template = await db.support_bot.find_one({"_id": name})
     if not template:
@@ -201,11 +218,15 @@ class SupportGlobal(Cog):
         self.bot = bot
 
     @app_commands.command(name="use")
-    async def _use(self, interaction: Interaction, name: str, mention: User | None):
+    async def _use(
+        self, interaction: Interaction, name: str, mention: User | None
+    ) -> None:
         await _use(self.bot.db, interaction, name, mention)
 
     @_use.autocomplete("name")
-    async def match_template(self, interaction: Interaction, current: str):
+    async def match_template(
+        self, interaction: Interaction, current: str
+    ) -> list[Choice[str]]:
         return [
             Choice(name=c["_id"], value=c["_id"])
             for c in await self.bot.db.support_bot.find(
@@ -225,7 +246,7 @@ class SupportUtils(GroupCog, name="support"):
         self.bot = bot
 
     @subgroup.command()
-    async def add(self, interaction: Interaction, name: str):
+    async def add(self, interaction: Interaction, name: str) -> None:
         if not has_perms(interaction):
             await interaction.response.send_message(
                 embed=Embed(
@@ -263,7 +284,7 @@ class SupportUtils(GroupCog, name="support"):
         )
 
     @subgroup.command()
-    async def edit(self, interaction: Interaction, name: str):
+    async def edit(self, interaction: Interaction, name: str) -> None:
         if not has_perms(interaction):
             await interaction.response.send_message(
                 embed=Embed(
@@ -296,7 +317,7 @@ class SupportUtils(GroupCog, name="support"):
         )
 
     @subgroup.command()
-    async def remove(self, interaction: Interaction, name: str):
+    async def remove(self, interaction: Interaction, name: str) -> None:
         if not has_perms(interaction):
             await interaction.response.send_message(
                 embed=Embed(
@@ -330,7 +351,7 @@ class SupportUtils(GroupCog, name="support"):
             Choice(name="Last Edited Date", value="last_edited_date"),
         ]
     )
-    async def list(self, interaction: Interaction, order_by: str = "_id"):
+    async def list(self, interaction: Interaction, order_by: str = "_id") -> None:
         await interaction.response.defer(ephemeral=True)
         # get all templates and their last edited date using the support_bot_dumps collection
         templates = await (
@@ -374,13 +395,17 @@ class SupportUtils(GroupCog, name="support"):
         await interaction.edit_original_response(embeds=embeds)
 
     @subgroup.command()
-    async def use(self, interaction: Interaction, name: str, mention: User | None):
+    async def use(
+        self, interaction: Interaction, name: str, mention: User | None
+    ) -> None:
         await _use(self.bot.db, interaction, name, mention)
 
     @edit.autocomplete("name")
     @remove.autocomplete("name")
     @use.autocomplete("name")
-    async def match_template(self, interaction: Interaction, current: str):
+    async def match_template(
+        self, interaction: Interaction, current: str
+    ) -> builtins.list[Choice[str]]:
         return [
             Choice(name=c["_id"], value=c["_id"])
             for c in await self.bot.db.support_bot.find(
@@ -389,6 +414,6 @@ class SupportUtils(GroupCog, name="support"):
         ]
 
 
-async def setup(self):
+async def setup(self: RocketWatch) -> None:
     await self.add_cog(SupportUtils(self))
     await self.add_cog(SupportGlobal(self))

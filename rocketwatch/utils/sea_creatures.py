@@ -1,5 +1,7 @@
 import contextlib
 
+from eth_typing import ChecksumAddress
+
 from utils import solidity
 from utils.rocketpool import rp
 from utils.shared_w3 import w3
@@ -30,7 +32,7 @@ sea_creatures = {
 }
 
 
-def get_sea_creature_for_holdings(holdings):
+def get_sea_creature_for_holdings(holdings: float) -> str:
     """
     Returns the sea creature for the given holdings.
     :param holdings: The holdings to get the sea creature for.
@@ -40,9 +42,8 @@ def get_sea_creature_for_holdings(holdings):
     # return the highest sea creature with a multiplier next to it
     highest_possible_holdings = max(sea_creatures.keys())
     if holdings >= 2 * highest_possible_holdings:
-        return sea_creatures[highest_possible_holdings] * int(
-            holdings / highest_possible_holdings
-        )
+        creature_count = max(int(holdings / highest_possible_holdings), 10)
+        return sea_creatures[highest_possible_holdings] * creature_count
     return next(
         (
             sea_creature
@@ -53,7 +54,7 @@ def get_sea_creature_for_holdings(holdings):
     )
 
 
-async def get_holding_for_address(address):
+async def get_holding_for_address(address: ChecksumAddress) -> float:
     if price_cache["block"] != (b := await w3.eth.get_block_number()):
         price_cache["rpl_price"] = solidity.to_float(
             await rp.call("rocketNetworkPrices.getRPLPrice")
@@ -64,7 +65,7 @@ async def get_holding_for_address(address):
         price_cache["block"] = b
 
     # get their eth balance
-    eth_balance = solidity.to_float(await w3.eth.get_balance(address))
+    eth_balance: float = solidity.to_float(await w3.eth.get_balance(address))
     # get ERC-20 token balance for this address
     with contextlib.suppress(Exception):
         rpl_contract = await rp.get_contract_by_name("rocketTokenRPL")
@@ -92,5 +93,5 @@ async def get_holding_for_address(address):
     return eth_balance
 
 
-async def get_sea_creature_for_address(address):
+async def get_sea_creature_for_address(address: ChecksumAddress) -> str:
     return get_sea_creature_for_holdings(await get_holding_for_address(address))

@@ -35,7 +35,7 @@ class Snapshot(EventPlugin):
 
     @staticmethod
     @retry(tries=3, delay=1)
-    async def _query_api(query: Query) -> list[dict] | dict | None:
+    async def _query_api(query: Query) -> list[dict] | dict:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")
         async with (
@@ -45,7 +45,8 @@ class Snapshot(EventPlugin):
             response = await resp.json()
         if "errors" in response:
             raise Exception(response["errors"])
-        return response["data"][query.name]
+        result: list[dict] | dict = response["data"][query.name]
+        return result
 
     @dataclass(frozen=True)
     class Proposal:
@@ -69,7 +70,7 @@ class Snapshot(EventPlugin):
         _V_SPACE_MEDIUM = 20
         _V_SPACE_LARGE = 40
 
-        def _predict_choice_height(self):
+        def _predict_choice_height(self) -> int:
             return self._TEXT_SIZE + self._V_SPACE_SMALL + self._BAR_SIZE
 
         def predict_render_height(self, with_title: bool = True) -> int:
@@ -82,7 +83,7 @@ class Snapshot(EventPlugin):
             height += self._V_SPACE_SMALL + self._HEADER_SIZE + self._V_SPACE_SMALL
             height += self._BAR_SIZE + self._V_SPACE_LARGE
             height += self._TEXT_SIZE
-            return height
+            return int(height)
 
         def reached_quorum(self) -> bool:
             return sum(self.scores) >= self.quorum
@@ -96,7 +97,7 @@ class Snapshot(EventPlugin):
             *,
             include_title: bool = True,
         ) -> int:
-            def safe_div(x, y):
+            def safe_div(x: float, y: float) -> float:
                 return (x / y) if y else 0
 
             label_offset = self._BAR_SIZE / 2
@@ -343,7 +344,7 @@ class Snapshot(EventPlugin):
             # vote choice represented as 1-based index
             return self.proposal.choices[raw_vote - 1]
 
-        def _format_single_choice(self, choice: "Snapshot.SingleChoice"):
+        def _format_single_choice(self, choice: "Snapshot.SingleChoice") -> str:
             label = self._label_choice(choice)
             match label.lower():
                 case "for":
@@ -374,7 +375,7 @@ class Snapshot(EventPlugin):
                 force_ascii=True,
                 max_width=15,
             )
-            return "```" + graph.get_string().replace("]", "%]") + "```"
+            return "```" + str(graph.get_string()).replace("]", "%]") + "```"
 
         async def create_event(
             self, prev_vote: Optional["Snapshot.Vote"]
@@ -457,7 +458,7 @@ class Snapshot(EventPlugin):
             arguments=[Argument(name="id", value=f'"{proposal_id}"')],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"],
         )
-        response: dict | None = await Snapshot._query_api(query)
+        response: dict = await Snapshot._query_api(query)
         return Snapshot.Proposal(**response) if response else None
 
     @staticmethod
@@ -624,7 +625,7 @@ class Snapshot(EventPlugin):
         return events
 
     @command()
-    async def snapshot_votes(self, interaction: Interaction):
+    async def snapshot_votes(self, interaction: Interaction) -> None:
         """Show currently active Snapshot proposals"""
         await interaction.response.defer(ephemeral=is_hidden(interaction))
 
@@ -687,5 +688,5 @@ class Snapshot(EventPlugin):
         await interaction.followup.send(embed=embed, file=file)
 
 
-async def setup(bot):
+async def setup(bot: RocketWatch) -> None:
     await bot.add_cog(Snapshot(bot))
