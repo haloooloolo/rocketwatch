@@ -58,7 +58,7 @@ filterwarnings = [
 
 [tool.mypy]
 python_version = "3.12"
-mypy_path = "."
+mypy_path = ".:sentinel"
 explicit_package_bases = true
 ignore_missing_imports = true
 check_untyped_defs = true

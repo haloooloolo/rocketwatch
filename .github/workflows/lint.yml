@@ -25,8 +25,4 @@ jobs:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
-      - run: uv sync --extra dev
-        working-directory: sentinel
-      - run: uv run mypy rocketwatch/
-      - run: uv run mypy .
-        working-directory: sentinel
+      - run: uv run mypy rocketwatch/ sentinel/
