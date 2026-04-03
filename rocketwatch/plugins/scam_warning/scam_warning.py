@@ -107,11 +107,14 @@ class ScamWarning(commands.Cog):
         elif last_msg_time := db_entry.get("last_message"):
             cooldown_end = last_msg_time + self.inactivity_cooldown
 
+        last_success_time = db_entry.get("last_success")
+
         # only send if message is not within cooldown window
         if msg_time > cooldown_end:
             try:
                 await self.send_warning(message.author)
                 last_failure_time = None
+                last_success_time = msg_time
             except (errors.Forbidden, errors.HTTPException):
                 log.info(f"Unable to DM {message.author}, skipping warning.")
                 last_failure_time = msg_time
@@ -121,6 +124,7 @@ class ScamWarning(commands.Cog):
             {
                 "_id": message.author.id,
                 "last_message": msg_time,
+                "last_success": last_success_time,
                 "last_failure": last_failure_time,
             },
             upsert=True,
