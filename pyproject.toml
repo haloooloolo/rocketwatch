@@ -13,7 +13,7 @@ dependencies = [
     "cronitor==4.9.0",
     "dice==4.0.0",
     "discord.py==2.7.1",
-    "eth-typing==5.2.1",
+    "eth-typing==6.0.0",
     "eth-utils==6.0.0",
     "etherscan_labels @ git+https://github.com/haloooloolo/etherscan-labels",
     "graphql_query==1.4.0",
