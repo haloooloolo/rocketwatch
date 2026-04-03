@@ -81,6 +81,10 @@ def _parse_epoch(value: int) -> int | None:
     return epoch if epoch < 2**32 else None
 
 
+def _parse_validator_info(raw: tuple) -> ValidatorInfo:
+    return ValidatorInfo(*raw)
+
+
 def _derive_validator_status(info: ValidatorInfo) -> str:
     if info.dissolved:
         return "dissolved"
@@ -99,7 +103,8 @@ def _derive_validator_status(info: ValidatorInfo) -> str:
     return "unknown"
 
 
-def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
+def _unpack_validator_info(raw: tuple) -> dict[str, Any]:
+    info = _parse_validator_info(raw)
     return {
         "status": _derive_validator_status(info),
         "express_used": info.express_used,
@@ -110,7 +115,8 @@ def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
     }
 
 
-def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
+def _unpack_validator_info_dynamic(raw: tuple) -> dict[str, Any]:
+    info = _parse_validator_info(raw)
     return {
         "status": _derive_validator_status(info),
         "assignment_time": info.last_assignment_time,
