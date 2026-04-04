@@ -22,7 +22,7 @@ from guardrails import (
 log = logging.getLogger("sentinel.server")
 
 bot_key: web.AppKey[Bot] = web.AppKey("bot", Bot)
-keys_key: web.AppKey[dict] = web.AppKey("keys", dict)
+keys_key: web.AppKey[dict[str, KeyConfig]] = web.AppKey("keys", dict)
 
 
 def create_app(bot: Bot) -> web.Application:
@@ -41,7 +41,7 @@ def create_app(bot: Bot) -> web.Application:
 @web.middleware
 async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
     api_key = request.headers.get("X-Api-Key")
-    if key := request.app[keys_key].get(api_key):
+    if api_key and (key := request.app[keys_key].get(api_key)):
         request["key"] = key
         return await handler(request)
     return web.json_response({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)

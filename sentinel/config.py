@@ -31,7 +31,7 @@ class ApiConfig(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def apply_defaults(cls, data: dict) -> dict:
+    def apply_defaults(cls, data: dict[str, Any]) -> dict[str, Any]:
         defaults = data.get("defaults", {})
         data["keys"] = [{**defaults, **key} for key in data.get("keys", [])]
         return data

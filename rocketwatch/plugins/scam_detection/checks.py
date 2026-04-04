@@ -1,9 +1,12 @@
+from collections.abc import Sequence
 from urllib import parse
 
 import regex as re
 from anyascii import anyascii
 from cachetools import TTLCache
 from discord import Emoji, Member, Message, PartialEmoji, User
+
+type _Keyword = str | Sequence["_Keyword"]
 
 
 class ScamChecks:
@@ -127,7 +130,7 @@ class ScamChecks:
         if not self.basic_url_pattern.search(txt):
             return None
 
-        default_reason = "There is no ticket system in this server."
+        default_reason = "There is no ticket system in this server"
 
         # High-confidence scam indicators (don't need URL trust check)
         strong_keywords = (
@@ -234,7 +237,7 @@ class ScamChecks:
         return None
 
     @staticmethod
-    def __txt_contains(txt: str, kw: list | tuple | str) -> bool:
+    def __txt_contains(txt: str, kw: _Keyword) -> bool:
         match kw:
             case str():
                 return kw in txt

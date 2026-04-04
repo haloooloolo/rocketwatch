@@ -60,16 +60,23 @@ filterwarnings = [
 
 [tool.mypy]
 python_version = "3.12"
-mypy_path = ".:sentinel"
+mypy_path = "rocketwatch"
 explicit_package_bases = true
+strict = true
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = [
+    "aiocache", "aiocache.*",
+    "ens", "ens.*",
+    "etherscan_labels", "etherscan_labels.*",
+    "retry_async", "retry_async.*",
+    "termplotlib", "termplotlib.*",
+    "cronitor", "cronitor.*",
+    "dice", "dice.*",
+    "uptime", "uptime.*",
+]
 ignore_missing_imports = true
-check_untyped_defs = true
-warn_return_any = true
-warn_unused_ignores = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-strict_equality = true
-warn_redundant_casts = true
 
 [tool.ruff]
 target-version = "py312"

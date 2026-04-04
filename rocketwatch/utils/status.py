@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from rocketwatch.rocketwatch import RocketWatch
+    from rocketwatch import RocketWatch
 from utils.embeds import Embed
 
 
