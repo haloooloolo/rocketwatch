@@ -130,14 +130,10 @@ class ScamDetection(Cog):
         text = self._serialize_message(message)
 
         try:
-            reason = await self._llm_check.check(text)
-            await self._notify_llm_result(message, reason)
+            if reason := await self._llm_check.check(text):
+                await self.report_message(message, f"{reason} (AI)")
         except Exception as e:
             await self.bot.report_error(e)
-            return
-
-        # if reason:
-        #    await self.report_message(message, f"{reason} (AI)")
 
     @Cog.listener()
     async def on_message_edit(self, before: Message, after: Message) -> None:
@@ -584,19 +580,6 @@ class ScamDetection(Cog):
             return_document=ReturnDocument.AFTER,
         )
         return int(result["count"]) if result else 0
-
-    async def _notify_llm_result(self, message: Message, reason: str | None) -> None:
-        try:
-            owner = await self.bot.get_or_fetch_user(cfg.discord.owner.user_id)
-            dm = await owner.create_dm()
-            content_preview = message.content[:200] if message.content else "(empty)"
-            await dm.send(
-                f"**{'SCAM' if reason else 'SAFE'}**: {reason or ''}\n"
-                f"{message.jump_url}\n"
-                f"```\n{content_preview}\n```"
-            )
-        except Exception:
-            log.warning("Failed to send LLM check notification DM")
 
     async def _get_report_channel(self) -> Messageable:
         channel = await self.bot.get_or_fetch_channel(
