@@ -3,6 +3,7 @@ import contextlib
 import json
 import logging
 from datetime import timedelta
+from typing import Any
 
 import humanize
 from discord import (
@@ -284,7 +285,7 @@ class ScamDetection(Cog):
 
     @staticmethod
     def _serialize_message(message: Message) -> str:
-        data: dict = {"content": message.content}
+        data: dict[str, Any] = {"content": message.content}
         if message.embeds:
             data["embeds"] = [
                 {"title": e.title, "description": e.description} for e in message.embeds
@@ -578,7 +579,7 @@ class ScamDetection(Cog):
             upsert=True,
             return_document=ReturnDocument.AFTER,
         )
-        return int(result["count"])
+        return int(result["count"]) if result else 0
 
     async def _notify_llm_result(self, message: Message, reason: str | None) -> None:
         try:

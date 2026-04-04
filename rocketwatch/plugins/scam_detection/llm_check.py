@@ -1,6 +1,7 @@
 import logging
 
 from anthropic import AsyncAnthropic
+from anthropic.types import TextBlock
 
 from utils.config import cfg
 
@@ -54,7 +55,9 @@ class LLMScamChecker:
             ],
         )
 
-        result = response.content[0].text.strip()
+        block = response.content[0]
+        assert isinstance(block, TextBlock)
+        result = block.text.strip()
         log.debug(f"AI scam check result: {result}")
 
         if result.upper().startswith("SCAM"):
