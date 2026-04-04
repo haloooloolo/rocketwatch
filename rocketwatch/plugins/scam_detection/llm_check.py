@@ -24,13 +24,13 @@ Do NOT flag messages that:
 Examples:
 
 "I've sent you a guide, kindly check. I had a similar issue but it was resolved"
--> SCAM: Unsolicited help claiming to have sent a guide, likely steering to DMs or profile
+-> SCAM: Steering to DMs or profile
 
 "Apologies for the inconvenience. For any inquiries or support, please use the official link in my bio to reach the technical team and moderators."
--> SCAM: Directing users to profile link under guise of official support
+-> SCAM: Redirection to profile link
 
 "You need assistance mate?"
--> SCAM: Unsolicited offer of help to a specific user, likely to continue via DMs
+-> SCAM: Unsolicited help offer
 
 "This support is useless, where do I actually get help?"
 -> SAFE
@@ -42,11 +42,11 @@ Examples:
 -> SAFE
 
 If the message is safe, respond with exactly: SAFE
-If the message is a scam, respond with: SCAM: <brief reason>"""
+If the message is a scam, respond with: SCAM: <short label>"""
 
 USER_PROMPT_TEMPLATE = "Evaluate this Discord message:\n\n{content}"
 
-MAX_OUTPUT_TOKENS = 50
+MAX_OUTPUT_TOKENS = 30
 
 
 class LLMProvider(ABC):
