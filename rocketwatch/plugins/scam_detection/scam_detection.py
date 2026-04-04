@@ -588,13 +588,12 @@ class ScamDetection(Cog):
     async def _notify_llm_result(self, message: Message, reason: str | None) -> None:
         try:
             owner = await self.bot.get_or_fetch_user(cfg.discord.owner.user_id)
-            verdict = reason or "SAFE"
             dm = await owner.create_dm()
+            content_preview = message.content[:200] if message.content else "(empty)"
             await dm.send(
-                f"**LLM check** on {message.jump_url}\n"
-                f"Author: {message.author} (`{message.author.id}`)\n"
-                f"Verdict: {verdict}\n"
-                f"Content: {message.content[:200]}"
+                f"**{'SCAM' if reason else 'SAFE'}**: {reason or ''}\n"
+                f"{message.jump_url}\n"
+                f"```\n{content_preview}\n```"
             )
         except Exception:
             log.warning("Failed to send LLM check notification DM")

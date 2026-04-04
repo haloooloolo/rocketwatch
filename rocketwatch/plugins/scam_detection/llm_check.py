@@ -5,7 +5,10 @@ from utils.config import cfg
 
 log = logging.getLogger("rocketwatch.scam_detection.llm")
 
-SYSTEM_PROMPT = """\
+MAX_REASON_WORDS = 5
+MAX_OUTPUT_TOKENS = (MAX_REASON_WORDS + 1) * 2
+
+SYSTEM_PROMPT = f"""\
 You are a scam detection system for a cryptocurrency Discord server.
 Your job is to determine whether a message is attempting to manipulate or deceive users.
 
@@ -41,11 +44,9 @@ Examples:
 "My node has been offline for 2 days and I keep getting penalties, is there something wrong with the network?"
 -> SAFE
 
-Respond with SAFE or SCAM: <reason in 6 words max>"""
+Respond with SAFE or SCAM: <reason in {MAX_REASON_WORDS} words max>"""
 
 USER_PROMPT_TEMPLATE = "Evaluate this Discord message:\n\n{content}"
-
-MAX_OUTPUT_TOKENS = 15
 
 
 class LLMProvider(ABC):
