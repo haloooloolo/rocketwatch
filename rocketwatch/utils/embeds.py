@@ -300,54 +300,46 @@ async def el_explorer_url(
         if not name:
             name = await ens.get_name(target)
 
-        if code := await w3.eth.get_code(target):
-            _prefix += "📄"
-            if (not name) and (
-                w3.keccak(text=code.hex()).hex() in cfg.other.mev_hashes
-            ):
-                name = "MEV Bot Contract"
-            if not name:
-                with contextlib.suppress(Exception):
-                    c = w3.eth.contract(
-                        address=target,
-                        abi=[
-                            {
-                                "inputs": [],
-                                "name": "name",
-                                "outputs": [
-                                    {
-                                        "internalType": "string",
-                                        "name": "",
-                                        "type": "string",
-                                    }
-                                ],
-                                "stateMutability": "view",
-                                "type": "function",
-                            }
-                        ],
-                    )
-                    n = await c.functions.name().call()
-                    # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
-                    # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
-                    # in an attempt to get people to click on his contract
+        if (await w3.eth.get_code(target)) and (not name):
+            with contextlib.suppress(Exception):
+                c = w3.eth.contract(
+                    address=target,
+                    abi=[
+                        {
+                            "inputs": [],
+                            "name": "name",
+                            "outputs": [
+                                {
+                                    "internalType": "string",
+                                    "name": "",
+                                    "type": "string",
+                                }
+                            ],
+                            "stateMutability": "view",
+                            "type": "function",
+                        }
+                    ],
+                )
+                n = await c.functions.name().call()
+                # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
+                # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
+                # in an attempt to get people to click on his contract
 
-                    # first, if the name has a link in it, we ignore it
-                    if any(
-                        keyword in n.lower()
-                        for keyword in [
-                            "http",
-                            "discord",
-                            "airdrop",
-                            "telegram",
-                            "twitter",
-                            "youtube",
-                        ]
-                    ):
-                        log.warning(f"Contract {target} has a suspicious name: {n}")
-                    else:
-                        name = (
-                            f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
-                        )
+                # first, if the name has a link in it, we ignore it
+                if any(
+                    keyword in n.lower()
+                    for keyword in [
+                        "http",
+                        "discord",
+                        "airdrop",
+                        "telegram",
+                        "twitter",
+                        "youtube",
+                    ]
+                ):
+                    log.warning(f"Contract {target} has a suspicious name: {n}")
+                else:
+                    name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
     else:
         # transaction hash
         url = f"{cfg.execution_layer.explorer}/tx/{target}"

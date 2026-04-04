@@ -88,8 +88,5 @@ plugin = "DepositPool"
 cooldown = 60
 fields = [{name = "Example", value = "https://example.com"}]
 
-[other]
-mev_hashes = []
-
-[other.secrets]
+[secrets]
 cronitor = ""

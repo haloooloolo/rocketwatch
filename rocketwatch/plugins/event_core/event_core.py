@@ -42,7 +42,7 @@ class EventCore(commands.Cog):
         self.at_head: bool = False
         self._catchup_start_block: BlockNumber | None = None
         self.block_batch_size: int = cfg.events.block_batch_size
-        self.monitor = Monitor("event-core", api_key=cfg.other.secrets.cronitor)
+        self.monitor = Monitor("event-core", api_key=cfg.secrets.cronitor)
         self.task.start()
 
     async def cog_unload(self) -> None:

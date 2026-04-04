@@ -106,7 +106,7 @@ def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
 class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("db-task", api_key=cfg.other.secrets.cronitor)
+        self.monitor = Monitor("db-task", api_key=cfg.secrets.cronitor)
         self.batch_size = 250
         self.cooldown = timedelta(minutes=10)
         self.bot.loop.create_task(self.loop())

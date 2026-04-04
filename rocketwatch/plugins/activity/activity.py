@@ -13,7 +13,7 @@ log = logging.getLogger("rocketwatch.rich_activity")
 class RichActivity(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("update-activity", api_key=cfg.other.secrets.cronitor)
+        self.monitor = Monitor("update-activity", api_key=cfg.secrets.cronitor)
         self.task.start()
 
     async def cog_unload(self) -> None:

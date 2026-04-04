@@ -1,5 +1,5 @@
 import tomllib
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -57,7 +57,7 @@ class RocketPoolConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = ""
+    provider: Literal["anthropic", "openai", "google", ""] = ""
     api_key: str = ""
     model: str = ""
 
@@ -96,23 +96,18 @@ class SecretsConfig(BaseModel):
     cronitor: str = ""
 
 
-class OtherConfig(BaseModel):
-    mev_hashes: list[str] = []
-    secrets: SecretsConfig = SecretsConfig()
-
-
 class Config(BaseModel):
     log_level: str = "DEBUG"
     discord: DiscordConfig
+    mongodb: MongoDBConfig
+    modules: ModulesConfig = ModulesConfig()
     execution_layer: ExecutionLayerConfig
     consensus_layer: ConsensusLayerConfig
-    mongodb: MongoDBConfig
     rocketpool: RocketPoolConfig
-    modules: ModulesConfig = ModulesConfig()
-    llm: LLMConfig = LLMConfig()
-    sentinel: SentinelConfig = SentinelConfig()
     events: EventsConfig
-    other: OtherConfig = OtherConfig()
+    sentinel: SentinelConfig = SentinelConfig()
+    llm: LLMConfig = LLMConfig()
+    secrets: SecretsConfig = SecretsConfig()
 
 
 class _ConfigProxy:

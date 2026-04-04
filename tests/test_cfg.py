@@ -14,7 +14,6 @@ from utils.config import (
     ExecutionLayerEndpoint,
     ModulesConfig,
     MongoDBConfig,
-    OtherConfig,
     RocketPoolConfig,
     RocketPoolSupport,
     SecretsConfig,
@@ -67,8 +66,8 @@ class TestConfigConstruction:
         assert cfg.modules.include == []
         assert cfg.modules.exclude == []
         assert cfg.modules.enable_commands is None
-        assert cfg.other == OtherConfig()
-        assert cfg.other.secrets.cronitor == ""
+        assert cfg.secrets == SecretsConfig()
+        assert cfg.secrets.cronitor == ""
         assert cfg.rocketpool.chain == "mainnet"
 
     def test_override_defaults(self):
