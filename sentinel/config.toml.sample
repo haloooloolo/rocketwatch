@@ -6,7 +6,7 @@ host = "0.0.0.0"
 port = 8080
 
 [api.defaults]
-delete_message_max_age = 900
+delete_message_max_age = 3600
 lock_thread_max_age = 3600
 delete_thread_max_age = 3600
 timeout_member_max_duration = 86400
