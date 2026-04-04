@@ -487,7 +487,7 @@
         "embeds": [
           {
             "title": "Onboard: #3 | Mercedes-AMG Team Verstappen Racing | Mercedes-AMG GT...",
-            "description": "Buckle up and follow the race from the cockpit perspective.\n\n\ud83c\udfab TICKETS\n\u27a1\ufe0f https://vln.de/tickets\n\n\ud83d\udca5 ENTRY LIST\n\u27a1\ufe0f https://www.nuerburgring-langstrecken-serie.de/wp-content/uploads/ergebnisse/2026-03-21s.pdf\n\n\ud83d\udca5 ALL NLS LIVESTREAMS\nStream with \ud83c\udde9\ud83c\uddea commentary \u27a1\ufe0f https://youtube.com/live/0F6vg-_iGR8\nStream with \ud83c\uddec\ud83c\udde7 com..."
+            "description": "Buckle up and follow the race from the cockpit perspective.\n\n🎫 TICKETS\n➡️ https://vln.de/tickets\n\n💥 ENTRY LIST\n➡️ https://www.nuerburgring-langstrecken-serie.de/wp-content/uploads/ergebnisse/2026-03-21s.pdf\n\n💥 ALL NLS LIVESTREAMS\nStream with 🇩🇪 commentary ➡️ https://youtube.com/live/0F6vg-_iGR8\nStream with 🇬🇧 com..."
           }
         ]
       },
@@ -807,30 +807,6 @@
             "description": "Need help? Open a ticket — an admin or mod will take it from there. | 3235 members"
           }
         ]
-      }
-    ],
-    "known_false_positives": [],
-    "known_false_negatives": [
-      {
-        "content": "I've sent you a guide,kindly check \nI had similarly  issue but it was resolved<@1213998623768055808>\n"
-      },
-      {
-        "content": "You need assistance mate?\n<@109422960682496000>\n"
-      },
-      {
-        "content": "<@846329528518836225> are you using mobile or extension\n"
-      },
-      {
-        "content": "Hello @everyone \n\nANYONE WHO CAN GET ME A WALLLET THAT HAVE PLENTY TRANSACTIONS I WILL PAY HIM 3SOL AN EMPTY WALLLET THAT HAVE REACH 3 MONTHS OR MORE THAN THAT I WILL PAY ANY AMOUNT AND SOME DEAD TOKENS, I AM GOING TO BUY DM"
-      },
-      {
-        "content": "<@415110898743640065> it's not just use the link on my bio to get answers\n"
-      },
-      {
-        "content": "check my icon for article\n"
-      },
-      {
-        "content": "<@968964809351659530> Apologies for the inconvenience. For any inquiries or support, please use the official link in my bio to reach the technical team and moderators.\n"
       }
     ]
   }

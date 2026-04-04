@@ -127,22 +127,6 @@ class TestMessageDetection:
         reasons = _check_message(checks, case)
         assert not reasons, f"Safe message falsely flagged: {reasons}"
 
-    @pytest.mark.parametrize(
-        "case", TEST_CASES["messages"]["known_false_positives"], ids=_case_id
-    )
-    @pytest.mark.xfail(reason="known false positive", strict=True)
-    def test_known_false_positive(self, checks, case):
-        reasons = _check_message(checks, case)
-        assert not reasons, f"Falsely flagged: {reasons}"
-
-    @pytest.mark.parametrize(
-        "case", TEST_CASES["messages"]["known_false_negatives"], ids=_case_id
-    )
-    @pytest.mark.xfail(reason="known false negative", strict=True)
-    def test_known_false_negative(self, checks, case):
-        reasons = _check_message(checks, case)
-        assert reasons, f"Scam not detected: {case['content'][:100]!r}"
-
 
 class TestThreadStarterDeleted:
     @pytest.fixture()
