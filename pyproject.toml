@@ -3,7 +3,7 @@ name = "rocketwatch"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-    "aiohttp==3.13.4",
+    "aiohttp==3.13.5",
     "anthropic>=0.52.0,<1.0.0",
     "aiocache==0.12.3",
     "anyascii==0.3.3",
