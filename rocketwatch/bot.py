@@ -10,11 +10,11 @@ from discord.ext.commands import Bot
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
-from utils.command_tree import RWCommandTree
-from utils.config import cfg
-from utils.file import TextFile
-from utils.retry import retry
-from utils.rocketpool import rp
+from rocketwatch.utils.command_tree import RWCommandTree
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.file import TextFile
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch.bot")
 

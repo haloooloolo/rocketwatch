@@ -1,15 +1,16 @@
 import logging
+from typing import Any
 
 from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 from pymongo.asynchronous.collection import AsyncCollection
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed, el_explorer_url
-from utils.readable import s_hex
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.readable import s_hex
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.delegate_contracts")
 

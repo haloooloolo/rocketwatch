@@ -9,13 +9,14 @@ from discord.abc import Messageable
 from discord.app_commands import command, guilds
 from discord.ext.commands import Cog, is_owner
 from eth_typing import HexStr
+from web3.types import EventData, LogReceipt
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.embeds import Embed
-from utils.file import TextFile
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.file import TextFile
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.debug")
 
@@ -254,7 +255,7 @@ class Debug(Cog):
         import pickle
         from datetime import datetime
 
-        from plugins.log_events.log_events import LogEvents
+        from rocketwatch.plugins.log_events.log_events import LogEvents
 
         await interaction.response.defer(ephemeral=True)
 

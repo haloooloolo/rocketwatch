@@ -1,7 +1,7 @@
 import base64
 import zlib
 
-from utils.readable import (
+from rocketwatch.utils.readable import (
     decode_abi,
     prettify_json_string,
     pretty_time,

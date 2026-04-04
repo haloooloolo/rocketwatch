@@ -2,7 +2,7 @@ from abc import abstractmethod
 
 from discord import ButtonStyle, Interaction, ui
 
-from utils.embeds import Embed
+from rocketwatch.utils.embeds import Embed
 
 
 class PageView(ui.View):

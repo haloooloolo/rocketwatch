@@ -7,12 +7,12 @@ from discord.app_commands import command, describe
 from discord.ext.commands import Cog
 from eth_typing import BlockIdentifier, ChecksumAddress
 
-from rocketwatch import RocketWatch
-from utils.embeds import el_explorer_url
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
-from utils.views import PageView
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import el_explorer_url
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.views import PageView
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.queue")
 

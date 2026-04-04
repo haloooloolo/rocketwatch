@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 
 from discord import Interaction
@@ -7,16 +8,22 @@ from discord.utils import escape_markdown
 from eth_typing import HexStr
 from web3.constants import HASH_ZERO
 
-from plugins.forum.forum import Forum
-from plugins.rpips.rpips import RPIPs
-from plugins.snapshot.snapshot import Snapshot
-from rocketwatch import RocketWatch
-from utils.block_time import ts_to_block
-from utils.config import cfg
-from utils.dao import DAO, DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
-from utils.embeds import Embed
-from utils.status import StatusPlugin
-from utils.visibility import is_hidden
+from rocketwatch.plugins.forum.forum import Forum
+from rocketwatch.plugins.rpips.rpips import RPIPs
+from rocketwatch.plugins.snapshot.snapshot import Snapshot
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.dao import (
+    DAO,
+    DefaultDAO,
+    OracleDAO,
+    ProtocolDAO,
+    SecurityCouncil,
+)
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.status import StatusPlugin
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.governance")
 

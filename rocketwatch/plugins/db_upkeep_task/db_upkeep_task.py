@@ -15,14 +15,14 @@ from pymongo import UpdateMany, UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
 from web3.contract.async_contract import AsyncContractFunction
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import ts_to_block
-from utils.config import cfg
-from utils.event_logs import get_logs
-from utils.rocketpool import ValidatorInfo, rp
-from utils.shared_w3 import bacon, w3
-from utils.time_debug import timerun, timerun_async
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.event_logs import get_logs
+from rocketwatch.utils.rocketpool import ValidatorInfo, rp
+from rocketwatch.utils.shared_w3 import bacon, w3
+from rocketwatch.utils.time_debug import timerun, timerun_async
 
 log = logging.getLogger("rocketwatch.db_upkeep_task")
 

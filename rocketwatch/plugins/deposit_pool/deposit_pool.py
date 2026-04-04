@@ -3,14 +3,14 @@ import logging
 from discord import Interaction
 from discord.app_commands import command
 
-from plugins.queue.queue import Queue
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.config import cfg
-from utils.embeds import Embed
-from utils.rocketpool import rp
-from utils.status import StatusPlugin
-from utils.visibility import is_hidden
+from rocketwatch.plugins.queue.queue import Queue
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.status import StatusPlugin
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.deposit_pool")
 

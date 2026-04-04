@@ -1,10 +1,10 @@
 import logging
 from collections.abc import Callable, Coroutine
-from typing import NotRequired, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 from discord import ButtonStyle, Color, Interaction, Member, Message, Thread, ui
 
-from utils.config import cfg
+from rocketwatch.utils.config import cfg
 
 log = logging.getLogger("rocketwatch.scam_detection")
 

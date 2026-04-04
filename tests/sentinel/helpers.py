@@ -2,7 +2,8 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
-from config import ApiConfig, Config, DiscordConfig
+
+from sentinel.config import ApiConfig, Config, DiscordConfig
 
 TEST_KEY_SECRET = "test-secret-key"
 TEST_GUILD_ID = 123456

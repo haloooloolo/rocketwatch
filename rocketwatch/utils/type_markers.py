@@ -18,9 +18,9 @@ from typing import Annotated, Any, get_type_hints
 
 from eth_typing import ChecksumAddress
 
-from utils import solidity
-from utils.embeds import el_explorer_url
-from utils.sea_creatures import get_sea_creature_for_address
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import el_explorer_url
+from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
 
 # ---------------------------------------------------------------------------
 # Marker dataclasses

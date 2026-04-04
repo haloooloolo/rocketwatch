@@ -7,9 +7,9 @@ from discord.app_commands import command, guilds
 from discord.ext import commands, tasks
 from discord.ext.commands import is_owner
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.embeds import Embed
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
 
 log = logging.getLogger("rocketwatch.rich_activity")
 

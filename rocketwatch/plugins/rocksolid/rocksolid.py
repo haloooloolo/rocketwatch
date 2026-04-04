@@ -11,14 +11,14 @@ from eth_typing import BlockNumber
 from matplotlib.dates import DateFormatter
 from pymongo import InsertOne
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import block_to_ts, ts_to_block
-from utils.embeds import Embed, el_explorer_url
-from utils.event_logs import get_logs
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import block_to_ts, ts_to_block
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.event_logs import get_logs
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.visibility import is_hidden
 
 cog_id = "rocksolid"
 log = logging.getLogger(f"rocketwatch.{cog_id}")

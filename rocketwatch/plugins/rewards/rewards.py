@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, replace
 from io import BytesIO
+from typing import Any
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -10,12 +11,12 @@ from discord.app_commands import command, describe
 from discord.ext import commands
 from eth_typing import ChecksumAddress
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import ts_to_block
-from utils.embeds import Embed, resolve_ens
-from utils.retry import retry
-from utils.rocketpool import rp
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.embeds import Embed, resolve_ens
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch.rewards")
 

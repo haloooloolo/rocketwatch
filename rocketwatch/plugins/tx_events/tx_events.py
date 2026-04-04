@@ -4,7 +4,7 @@ import contextlib
 import json
 import logging
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 import web3.exceptions
 from discord import Interaction
@@ -16,13 +16,13 @@ from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.types import BlockData, Nonce, TxData, TxReceipt, Wei
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.dao import DefaultDAO, ProtocolDAO
-from utils.embeds import Embed
-from utils.event import Event, EventPlugin
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.dao import DefaultDAO, ProtocolDAO
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 from .event_definitions import (
     DAO_PROPOSAL_EVENTS,

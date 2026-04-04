@@ -10,8 +10,8 @@ from discord.ext.commands import (
     is_owner,
 )
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
 
 
 class Reloader(Cog):

@@ -12,16 +12,16 @@ from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.constants import ADDRESS_ZERO
 from web3.types import EventData, TxReceipt
 
-from utils import solidity
-from utils.block_time import block_to_ts
-from utils.config import cfg
-from utils.dao import (
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import block_to_ts
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.dao import (
     DefaultDAO,
     ProtocolDAO,
     build_claimer_description,
     decode_setting_multi,
 )
-from utils.embeds import (
+from rocketwatch.utils.embeds import (
     Embed,
     build_event_embed,
     build_rich_event_embed,
@@ -29,11 +29,11 @@ from utils.embeds import (
     el_explorer_url,
     format_value,
 )
-from utils.readable import cl_explorer_url, s_hex
-from utils.rocketpool import ValidatorInfo, rp
-from utils.shared_w3 import bacon, w3
-from utils.solidity import SUBMISSION_KEYS
-from utils.type_markers import (
+from rocketwatch.utils.readable import cl_explorer_url, s_hex
+from rocketwatch.utils.rocketpool import ValidatorInfo, rp
+from rocketwatch.utils.shared_w3 import bacon, w3
+from rocketwatch.utils.solidity import SUBMISSION_KEYS
+from rocketwatch.utils.type_markers import (
     ContractAddress,
     MegapoolAddress,
     MinipoolAddress,

@@ -1,6 +1,7 @@
 import logging
 import math
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any, Literal, cast
@@ -9,10 +10,10 @@ import termplotlib as tpl
 from eth_typing import ChecksumAddress
 from web3.contract import AsyncContract
 
-from utils import solidity
-from utils.embeds import el_explorer_url
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import el_explorer_url
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.dao")
 

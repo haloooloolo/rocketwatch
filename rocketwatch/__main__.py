@@ -2,8 +2,8 @@ import logging
 
 from discord import Intents
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
 
 logging.basicConfig(
     format="%(levelname)5s %(asctime)s [%(name)s] %(filename)s:%(lineno)d|%(funcName)s(): %(message)s"

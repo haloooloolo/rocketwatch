@@ -5,9 +5,9 @@ from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.releases")
 

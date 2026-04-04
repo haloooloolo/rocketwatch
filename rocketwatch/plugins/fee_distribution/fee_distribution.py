@@ -1,6 +1,6 @@
 import logging
 from io import BytesIO
-from typing import Literal
+from typing import Any, Literal
 
 from discord import File, Interaction
 from discord.app_commands import command
@@ -8,10 +8,10 @@ from discord.ext import commands
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed
-from utils.readable import render_tree_legacy
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.readable import render_tree_legacy
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.fee_distribution")
 

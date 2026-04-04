@@ -10,7 +10,6 @@ dependencies = [
 
 [tool.mypy]
 python_version = "3.12"
-mypy_path = "."
 explicit_package_bases = true
 strict = true
 

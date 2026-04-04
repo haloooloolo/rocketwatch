@@ -13,10 +13,10 @@ from discord.app_commands.errors import (
     TransformerError,
 )
 
-from utils.config import cfg
+from rocketwatch.utils.config import cfg
 
 if TYPE_CHECKING:
-    from rocketwatch.rocketwatch import RocketWatch
+    from rocketwatch.bot import RocketWatch
 
 log = logging.getLogger("rocketwatch.command_tree")
 

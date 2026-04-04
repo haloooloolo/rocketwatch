@@ -4,15 +4,16 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import aiohttp
 import numpy as np
 from eth_typing import ChecksumAddress, HexStr
 from web3.contract import AsyncContract
 
-from utils.retry import retry
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.liquidity")
 

@@ -9,20 +9,20 @@ import humanize
 from eth_typing import BlockNumber, HexStr
 from web3.types import TxData, TxReceipt
 
-from utils import solidity
-from utils.dao import (
+from rocketwatch.utils import solidity
+from rocketwatch.utils.dao import (
     build_claimer_description,
     decode_setting_multi,
 )
-from utils.embeds import (
+from rocketwatch.utils.embeds import (
     Embed,
     build_event_embed,
     build_small_event_embed,
     el_explorer_url,
     format_value,
 )
-from utils.rocketpool import rp
-from utils.type_markers import (
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.type_markers import (
     ContractAddress,
     NodeAddress,
     WalletAddress,

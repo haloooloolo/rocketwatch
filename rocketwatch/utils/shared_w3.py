@@ -4,7 +4,7 @@ from web3 import AsyncWeb3
 from web3.beacon import AsyncBeacon
 from web3.providers import AsyncHTTPProvider
 
-from utils.config import cfg
+from rocketwatch.utils.config import cfg
 
 
 class Bacon(AsyncBeacon):
