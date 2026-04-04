@@ -1,7 +1,5 @@
 import logging
-
-from anthropic import AsyncAnthropic
-from anthropic.types import TextBlock
+from abc import ABC, abstractmethod
 
 from utils.config import cfg
 
@@ -23,45 +21,128 @@ Do NOT flag messages that:
 - Discuss problems, errors, or frustrations — even emotional ones
 - Contain links shared in good faith
 
+Examples:
+
+"I've sent you a guide, kindly check. I had a similar issue but it was resolved"
+-> SCAM: Unsolicited help claiming to have sent a guide, likely steering to DMs or profile
+
+"Apologies for the inconvenience. For any inquiries or support, please use the official link in my bio to reach the technical team and moderators."
+-> SCAM: Directing users to profile link under guise of official support
+
+"You need assistance mate?"
+-> SCAM: Unsolicited offer of help to a specific user, likely to continue via DMs
+
+"This support is useless, where do I actually get help?"
+-> SAFE
+
+"Can someone explain how the minipool bond reduction works?"
+-> SAFE
+
+"My node has been offline for 2 days and I keep getting penalties, is there something wrong with the network?"
+-> SAFE
+
 If the message is safe, respond with exactly: SAFE
 If the message is a scam, respond with: SCAM: <brief reason>"""
 
 USER_PROMPT_TEMPLATE = "Evaluate this Discord message:\n\n{content}"
 
+MAX_OUTPUT_TOKENS = 50
+
+
+class LLMProvider(ABC):
+    @abstractmethod
+    async def complete(self, system: str, user_message: str) -> str: ...
+
+
+class AnthropicProvider(LLMProvider):
+    async def complete(self, system: str, user_message: str) -> str:
+        from anthropic import AsyncAnthropic
+        from anthropic.types import TextBlock
+
+        if not hasattr(self, "_client"):
+            self._client = AsyncAnthropic(api_key=cfg.llm.api_key)
+
+        response = await self._client.messages.create(
+            model=cfg.llm.model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            system=system,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        block = response.content[0]
+        assert isinstance(block, TextBlock)
+        return block.text
+
+
+class OpenAIProvider(LLMProvider):
+    async def complete(self, system: str, user_message: str) -> str:
+        from openai import AsyncOpenAI
+
+        if not hasattr(self, "_client"):
+            self._client = AsyncOpenAI(api_key=cfg.llm.api_key)
+
+        response = await self._client.chat.completions.create(
+            model=cfg.llm.model,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        content = response.choices[0].message.content
+        assert isinstance(content, str)
+        return content
+
+
+class GoogleProvider(LLMProvider):
+    async def complete(self, system: str, user_message: str) -> str:
+        from google import genai
+
+        if not hasattr(self, "_client"):
+            self._client = genai.Client(api_key=cfg.llm.api_key)
+
+        response = await self._client.aio.models.generate_content(
+            model=cfg.llm.model,
+            contents=user_message,
+            config=genai.types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+            ),
+        )
+        text = response.text
+        assert isinstance(text, str)
+        return text
+
+
+_PROVIDERS: dict[str, type[LLMProvider]] = {
+    "anthropic": AnthropicProvider,
+    "openai": OpenAIProvider,
+    "google": GoogleProvider,
+}
+
 
 class LLMScamChecker:
     def __init__(self) -> None:
-        self._client: AsyncAnthropic | None = None
-        if cfg.anthropic.api_key:
-            self._client = AsyncAnthropic(api_key=cfg.anthropic.api_key)
+        provider_name = cfg.llm.provider
+        self.enabled = bool(provider_name and cfg.llm.api_key)
+        self._provider: LLMProvider | None = None
+        if self.enabled:
+            self._provider = _PROVIDERS[provider_name]()
 
     async def check(self, content: str) -> str | None:
         """Evaluate a message for social engineering using an LLM.
 
         Returns a reason string if the message is likely a scam, None otherwise.
         """
-        if not self._client:
+        if not self._provider:
             return None
 
-        response = await self._client.messages.create(
-            model=cfg.anthropic.model,
-            max_tokens=50,
-            system=SYSTEM_PROMPT,
-            messages=[
-                {
-                    "role": "user",
-                    "content": USER_PROMPT_TEMPLATE.format(content=content),
-                },
-            ],
-        )
-
-        block = response.content[0]
-        assert isinstance(block, TextBlock)
-        result = block.text.strip()
-        log.debug(f"AI scam check result: {result}")
+        user_message = USER_PROMPT_TEMPLATE.format(content=content)
+        result = (await self._provider.complete(SYSTEM_PROMPT, user_message)).strip()
+        log.debug(f"AI scam check ({cfg.llm.provider}/{cfg.llm.model}): {result}")
 
         if result.upper().startswith("SCAM"):
             reason = result.removeprefix("SCAM").lstrip(":").strip()
             if reason:
                 return reason
+
         return None

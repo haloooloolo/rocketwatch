@@ -110,17 +110,21 @@ class ScamDetection(Cog):
             return
 
         if isinstance(message.author, Member) and is_reputable(message.author):
-            log.warning(f"Ignoring message sent by trusted user ({message.author})")
+            log.info(f"Ignoring message sent by trusted user ({message.author})")
             return
 
         if reason := self._checks.run_all(message):
             await self.report_message(message, reason)
             return
 
-        if user_msg_count >= REPUTABLE_MESSAGE_THRESHOLD:
+        if (not message.content) and (not message.embeds):
+            log.debug("Ignoring message with empty content")
             return
 
-        if not message.content and not message.embeds:
+        if user_msg_count >= REPUTABLE_MESSAGE_THRESHOLD:
+            log.debug(
+                f"Ignoring message because user has {user_msg_count} previous messages"
+            )
             return
 
         text = self._serialize_message(message)
