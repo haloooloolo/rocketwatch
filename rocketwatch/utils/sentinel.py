@@ -12,6 +12,7 @@ log = logging.getLogger("rocketwatch.sentinel")
 
 class SentinelClient:
     def __init__(self) -> None:
+        self._enabled = bool(cfg.sentinel.api_url and cfg.sentinel.api_key)
         self._session: aiohttp.ClientSession | None = None
 
     async def _get_session(self) -> aiohttp.ClientSession:
@@ -35,6 +36,8 @@ class SentinelClient:
             return False
 
     async def _request(self, endpoint: str, payload: dict) -> bool:
+        if not self._enabled:
+            return False
         log.info(f"POST {endpoint} {payload}")
         return bool(await self._post(endpoint, payload))
 

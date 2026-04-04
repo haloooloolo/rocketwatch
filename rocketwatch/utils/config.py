@@ -56,6 +56,11 @@ class RocketPoolConfig(BaseModel):
     dm_warning: DmWarningConfig
 
 
+class AnthropicConfig(BaseModel):
+    api_key: str = ""
+    model: str = "claude-haiku-4-5-20251001"
+
+
 class SentinelConfig(BaseModel):
     api_url: str = ""
     api_key: str = ""
@@ -103,6 +108,7 @@ class Config(BaseModel):
     mongodb: MongoDBConfig
     rocketpool: RocketPoolConfig
     modules: ModulesConfig = ModulesConfig()
+    anthropic: AnthropicConfig = AnthropicConfig()
     sentinel: SentinelConfig = SentinelConfig()
     events: EventsConfig
     other: OtherConfig = OtherConfig()

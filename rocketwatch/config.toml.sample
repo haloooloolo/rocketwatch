@@ -64,6 +64,10 @@ UniV3_rETH_ETH = "0x553e9C493678d8606d6a5ba284643dB2110Df823"
 RockSolidVault = "0x936faCdf10c8c36294e7b9d28345255539d81bc7"
 GPv2Settlement = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
 
+[anthropic]
+api_key = ""
+model = "claude-haiku-4-5-20251001"
+
 [sentinel]
 api_url = ""
 api_key = ""

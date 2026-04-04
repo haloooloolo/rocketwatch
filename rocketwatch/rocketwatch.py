@@ -22,7 +22,7 @@ log = logging.getLogger("rocketwatch.bot")
 class RocketWatch(Bot):
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
-        self.db: AsyncDatabase = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
+        self.db: AsyncDatabase[Any] = AsyncMongoClient(cfg.mongodb.uri).rocketwatch
 
     async def _load_plugins(self) -> None:
         chain = cfg.rocketpool.chain

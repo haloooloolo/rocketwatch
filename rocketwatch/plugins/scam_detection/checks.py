@@ -48,7 +48,6 @@ class ScamChecks:
             self._suspicious_link,
             self._discord_invite,
             self._tap_on_this,
-            self._bio_redirect,
             self._spam_wall,
         ]
         for check in checks:
@@ -202,6 +201,7 @@ class ScamChecks:
             "rocketpool.support",
             "xcancel.com",
             "steely-test.org",
+            "rocketdash.net",
             "validatorqueue.com",
             "checkpointz",
             "discord.com",
@@ -263,14 +263,6 @@ class ScamChecks:
             username = m.group(1).lower()
             if any(kw in username for kw in suspicious_keywords):
                 return "Link to suspicious X account"
-        return None
-
-    def _bio_redirect(self, message: Message) -> str | None:
-        if not message.content or len(message.content) > 300:
-            return None
-        txt = self._get_message_content(message)
-        if any(kw in txt for kw in ("my bio", "my icon", "my profile", "my pfp")):
-            return "Redirection to malicious profile link"
         return None
 
     def _spam_wall(self, message: Message) -> str | None:

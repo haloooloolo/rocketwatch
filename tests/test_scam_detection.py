@@ -107,7 +107,6 @@ def _check_message(checks, case: dict) -> list[str]:
         checks._suspicious_link,
         checks._discord_invite,
         checks._tap_on_this,
-        checks._bio_redirect,
         checks._spam_wall,
     ]
     return [r for check in results if (r := check(msg))]

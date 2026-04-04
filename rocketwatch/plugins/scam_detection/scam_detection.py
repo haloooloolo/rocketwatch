@@ -24,8 +24,10 @@ from discord import (
 from discord.abc import Messageable
 from discord.app_commands import ContextMenu, command, guilds
 from discord.ext.commands import Cog
+from pymongo import ReturnDocument
 
 from plugins.scam_detection.checks import ScamChecks
+from plugins.scam_detection.llm_check import LLMScamChecker
 from plugins.scam_detection.utils import (
     RemovalVoteView,
     ReportColor,
@@ -40,6 +42,8 @@ from utils.sentinel import SentinelClient
 
 log = logging.getLogger("rocketwatch.scam_detection")
 
+REPUTABLE_MESSAGE_THRESHOLD = 50
+
 
 class ScamDetection(Cog):
     def __init__(self, bot: RocketWatch):
@@ -47,8 +51,9 @@ class ScamDetection(Cog):
         self._message_report_lock = asyncio.Lock()
         self._thread_report_lock = asyncio.Lock()
         self._user_report_lock = asyncio.Lock()
-        self._sentinel: SentinelClient | None = None
+        self._sentinel = SentinelClient()
         self._checks = ScamChecks()
+        self._llm_check = LLMScamChecker()
         self._thread_creation_messages: dict[int, int] = {}
         self.message_report_menu = ContextMenu(
             name="Report Message",
@@ -63,8 +68,6 @@ class ScamDetection(Cog):
             guild_ids=[cfg.rocketpool.support.server_id],
         )
         self.bot.tree.add_command(self.user_report_menu)
-        if cfg.sentinel.api_url and cfg.sentinel.api_key:
-            self._sentinel = SentinelClient()
 
     async def cog_unload(self) -> None:
         self.bot.tree.remove_command(
@@ -90,6 +93,12 @@ class ScamDetection(Cog):
             log.warning(f"Ignoring message in {message.guild.id})")
             return
 
+        if message.author.bot:
+            log.warning("Ignoring message sent by bot")
+            return
+
+        user_msg_count = await self._increment_message_count(message.author)
+
         # Thread-created system messages (from existing messages) have a different
         # ID than the thread. Map the system message ID to the thread ID so we can
         # detect deletion of the starter message.
@@ -99,16 +108,31 @@ class ScamDetection(Cog):
             self._thread_creation_messages[message.id] = thread_id
             return
 
-        if message.author.bot:
-            log.warning("Ignoring message sent by bot")
-            return
-
         if isinstance(message.author, Member) and is_reputable(message.author):
             log.warning(f"Ignoring message sent by trusted user ({message.author})")
             return
 
         if reason := self._checks.run_all(message):
             await self.report_message(message, reason)
+            return
+
+        if user_msg_count >= REPUTABLE_MESSAGE_THRESHOLD:
+            return
+
+        if not message.content and not message.embeds:
+            return
+
+        text = self._serialize_message(message)
+
+        try:
+            reason = await self._llm_check.check(text)
+            await self._notify_llm_result(message, reason)
+        except Exception as e:
+            await self.bot.report_error(e)
+            return
+
+        # if reason:
+        #    await self.report_message(message, f"{reason} (AI)")
 
     @Cog.listener()
     async def on_message_edit(self, before: Message, after: Message) -> None:
@@ -259,6 +283,15 @@ class ScamDetection(Cog):
     # --- Reporting ---
 
     @staticmethod
+    def _serialize_message(message: Message) -> str:
+        data: dict = {"content": message.content}
+        if message.embeds:
+            data["embeds"] = [
+                {"title": e.title, "description": e.description} for e in message.embeds
+            ]
+        return json.dumps(data, indent=2)
+
+    @staticmethod
     def _build_automod_embed(report_msg: Message, actions: list[str]) -> Embed:
         return Embed(
             title=":hammer: Automated Moderation",
@@ -291,9 +324,6 @@ class ScamDetection(Cog):
             await self._add_message_report_to_db(
                 message, reason, warning_msg, report_msg
             )
-
-            if not self._sentinel:
-                return
 
             # this might take a while with retries on failure
             # we'd rather be fast with the initial warning and then delete it after
@@ -350,9 +380,6 @@ class ScamDetection(Cog):
                     "removed": False,
                 }
             )
-
-            if not self._sentinel:
-                return
 
             actions = []
             timeout_duration = timedelta(hours=24)
@@ -414,27 +441,7 @@ class ScamDetection(Cog):
             "Please review and take appropriate action."
         )
 
-        message_structure = json.dumps(
-            {
-                "content": message.content,
-                **(
-                    {
-                        "embeds": [
-                            {
-                                "title": e.title,
-                                "description": e.description,
-                            }
-                            for e in message.embeds
-                        ]
-                    }
-                    if message.embeds
-                    else {}
-                ),
-            },
-            indent=2,
-        )
-        attachment = TextFile(message_structure, filename="message.json")
-
+        attachment = TextFile(self._serialize_message(message), filename="message.json")
         return warning, report, attachment
 
     async def _generate_thread_report(
@@ -563,6 +570,29 @@ class ScamDetection(Cog):
                 "removed": False,
             }
         )
+
+    async def _increment_message_count(self, user: User | Member) -> int:
+        result = await self.bot.db.message_counts.find_one_and_update(
+            {"_id": user.id},
+            {"$inc": {"count": 1}},
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+        return int(result["count"])
+
+    async def _notify_llm_result(self, message: Message, reason: str | None) -> None:
+        try:
+            owner = await self.bot.get_or_fetch_user(cfg.discord.owner.user_id)
+            verdict = reason or "SAFE"
+            dm = await owner.create_dm()
+            await dm.send(
+                f"**LLM check** on {message.jump_url}\n"
+                f"Author: {message.author} (`{message.author.id}`)\n"
+                f"Verdict: {verdict}\n"
+                f"Content: {message.content[:200]}"
+            )
+        except Exception:
+            log.warning("Failed to send LLM check notification DM")
 
     async def _get_report_channel(self) -> Messageable:
         channel = await self.bot.get_or_fetch_channel(
