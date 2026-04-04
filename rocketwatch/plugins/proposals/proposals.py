@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from http import HTTPStatus
 from io import BytesIO
+from typing import Any
 
 import numpy as np
 from aiohttp.client_exceptions import ClientResponseError
@@ -17,13 +18,13 @@ from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
 from pymongo import ASCENDING, DESCENDING
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.embeds import Embed
-from utils.shared_w3 import bacon
-from utils.solidity import beacon_block_to_date, date_to_beacon_block
-from utils.time_debug import timerun_async
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.shared_w3 import bacon
+from rocketwatch.utils.solidity import beacon_block_to_date, date_to_beacon_block
+from rocketwatch.utils.time_debug import timerun_async
+from rocketwatch.utils.visibility import is_hidden
 
 cog_id = "proposals"
 log = logging.getLogger(f"rocketwatch.{cog_id}")

@@ -4,8 +4,8 @@ from http import HTTPStatus
 import aiohttp
 from discord import Member, Message, Thread
 
-from utils.config import cfg
-from utils.retry import retry
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.retry import retry
 
 log = logging.getLogger("rocketwatch.sentinel")
 

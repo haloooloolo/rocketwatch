@@ -1,17 +1,17 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import aiohttp
 from discord import Interaction
 from discord.app_commands import Choice, command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed
-from utils.retry import retry
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.forum")
 

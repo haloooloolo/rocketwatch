@@ -4,7 +4,7 @@ from discord import Interaction, Message
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
+from rocketwatch.bot import RocketWatch
 
 
 class ChickenSoup(commands.Cog):

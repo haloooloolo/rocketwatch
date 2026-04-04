@@ -1,5 +1,5 @@
-from utils import solidity
-from utils.solidity import (
+from rocketwatch.utils import solidity
+from rocketwatch.utils.solidity import (
     BEACON_START_DATE,
     beacon_block_to_date,
     date_to_beacon_block,

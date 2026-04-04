@@ -5,7 +5,7 @@ from typing import Any
 
 from discord import Member, Message
 
-from utils.config import cfg
+from rocketwatch.utils.config import cfg
 
 log = logging.getLogger("rocketwatch.scam_detection.llm")
 

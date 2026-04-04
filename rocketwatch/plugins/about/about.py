@@ -10,11 +10,11 @@ from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils import readable
-from utils.config import cfg
-from utils.embeds import Embed, el_explorer_url
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import readable
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.visibility import is_hidden
 
 psutil.getloadavg()
 BOOT_TIME = time.time()

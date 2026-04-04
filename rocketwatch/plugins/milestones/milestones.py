@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, overload
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.embeds import Embed, format_value
-from utils.event import Event, EventPlugin
-from utils.rocketpool import rp
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import Embed, format_value
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.rocketpool import rp
 
 log = logging.getLogger("rocketwatch.milestones")
 

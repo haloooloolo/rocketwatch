@@ -27,19 +27,19 @@ from discord.app_commands import ContextMenu, command, guilds
 from discord.ext.commands import Cog
 from pymongo import ReturnDocument
 
-from plugins.scam_detection.checks import ScamChecks
-from plugins.scam_detection.llm_check import LLMScamChecker
-from plugins.scam_detection.utils import (
+from rocketwatch.plugins.scam_detection.checks import ScamChecks
+from rocketwatch.plugins.scam_detection.llm_check import LLMScamChecker
+from rocketwatch.plugins.scam_detection.utils import (
     RemovalVoteView,
     ReportColor,
     ScamReport,
     is_reputable,
 )
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.embeds import Embed
-from utils.file import TextFile
-from utils.sentinel import SentinelClient
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.file import TextFile
+from rocketwatch.utils.sentinel import SentinelClient
 
 log = logging.getLogger("rocketwatch.scam_detection")
 

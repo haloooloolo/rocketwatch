@@ -5,7 +5,6 @@ from http import HTTPStatus
 from unittest.mock import MagicMock
 
 import discord
-from guardrails import rate_limiter
 from helpers import (
     TEST_GUILD_ID,
     TEST_KEY_SECRET,
@@ -14,6 +13,8 @@ from helpers import (
     make_mock_message,
     make_mock_thread,
 )
+
+from sentinel.guardrails import rate_limiter
 
 
 def _not_found():

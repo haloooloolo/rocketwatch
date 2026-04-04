@@ -12,19 +12,21 @@ from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
 from discord.ui import Modal, TextInput
-from eth_typing.evm import BlockNumber, ChecksumAddress, HexStr
+from eth_typing import HexStr
+from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
 from web3.types import EventData, FilterParams, LogReceipt, TxReceipt, Wei
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.event import Event, EventPlugin
-from utils.rocketpool import NoAddressFound, rp
-from utils.shared_w3 import w3
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.rocketpool import NoAddressFound, rp
+from rocketwatch.utils.shared_w3 import w3
 
+from .aggregation import aggregate_events
 from .event_definitions import (
     EVENT_REGISTRY,
     LogEvent,

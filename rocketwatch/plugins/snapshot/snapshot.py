@@ -2,7 +2,7 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal, Optional
+from typing import Any, Literal, Optional, cast
 
 import aiohttp
 import regex
@@ -14,15 +14,15 @@ from graphql_query import Argument, Operation, Query
 from pymongo import DESCENDING, DeleteOne, InsertOne, UpdateOne
 from web3.constants import ADDRESS_ZERO
 
-from rocketwatch import RocketWatch
-from utils.block_time import ts_to_block
-from utils.embeds import Embed, el_explorer_url
-from utils.event import Event, EventPlugin
-from utils.image import Color, FontVariant, Image, ImageCanvas
-from utils.readable import pretty_time
-from utils.retry import retry
-from utils.rocketpool import rp
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.image import Color, FontVariant, Image, ImageCanvas
+from rocketwatch.utils.readable import pretty_time
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.snapshot")
 

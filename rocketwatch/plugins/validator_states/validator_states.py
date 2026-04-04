@@ -1,15 +1,16 @@
 import logging
 from collections.abc import Callable
+from typing import Any
 
 from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed, el_explorer_url
-from utils.readable import render_tree_legacy
-from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.readable import render_tree_legacy
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.validator_states")
 

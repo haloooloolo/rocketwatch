@@ -8,18 +8,18 @@ import eth_utils
 from discord import Color
 from eth_typing import BlockNumber
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import ts_to_block
-from utils.config import cfg
-from utils.embeds import Embed, el_explorer_url, format_value
-from utils.event import Event, EventPlugin
-from utils.readable import cl_explorer_url
-from utils.retry import retry
-from utils.rocketpool import rp
-from utils.sea_creatures import get_sea_creature_for_address
-from utils.shared_w3 import bacon, w3
-from utils.solidity import beacon_block_to_date, date_to_beacon_block
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed, el_explorer_url, format_value
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.readable import cl_explorer_url
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
+from rocketwatch.utils.shared_w3 import bacon, w3
+from rocketwatch.utils.solidity import beacon_block_to_date, date_to_beacon_block
 
 log = logging.getLogger("rocketwatch.beacon_events")
 

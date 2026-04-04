@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from discord.ext import commands
 
 if TYPE_CHECKING:
-    from rocketwatch import RocketWatch
-from utils.embeds import Embed
+    from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
 
 
 class StatusPlugin(commands.Cog):

@@ -14,10 +14,10 @@ from web3.contract.async_contract import AsyncContractFunction
 from web3.exceptions import ContractLogicError
 from web3.types import TxData
 
-from utils import solidity
-from utils.config import cfg
-from utils.readable import decode_abi
-from utils.shared_w3 import w3, w3_archive, w3_mainnet
+from rocketwatch.utils import solidity
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.readable import decode_abi
+from rocketwatch.utils.shared_w3 import w3, w3_archive, w3_mainnet
 
 log = logging.getLogger("rocketwatch.rocketpool")
 
@@ -373,14 +373,14 @@ class RocketPool:
         return bool(await storage.functions.getBool(sha3).call())
 
     async def get_eth_usdc_price(self) -> float:
-        from utils.liquidity import UniswapV3
+        from rocketwatch.utils.liquidity import UniswapV3
 
         pool_address = await self.get_address_by_name("UniV3_USDC_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
         return float(1.0 / await pool.get_normalized_price())
 
     async def get_reth_eth_price(self) -> float:
-        from utils.liquidity import UniswapV3
+        from rocketwatch.utils.liquidity import UniswapV3
 
         pool_address = await self.get_address_by_name("UniV3_rETH_ETH")
         pool = await UniswapV3.Pool.create(pool_address)

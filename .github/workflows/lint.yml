@@ -24,10 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
-      - run: |
-          uv sync --extra dev
-          uv run mypy rocketwatch/
-      - run: |
-          uv sync
-          uv run mypy .
-        working-directory: sentinel
+      - run: uv sync --extra dev
+      - run: uv run mypy rocketwatch/
+      - run: uv sync --project sentinel
+      - run: uv run --project sentinel mypy sentinel/

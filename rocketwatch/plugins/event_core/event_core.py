@@ -14,13 +14,13 @@ from discord.abc import Messageable
 from discord.ext import commands, tasks
 from eth_typing import BlockNumber
 
-from plugins.support_utils.support_utils import generate_template_embed
-from rocketwatch import RocketWatch
-from utils.config import StatusMessageConfig, cfg
-from utils.embeds import Embed
-from utils.event import EventPlugin
-from utils.shared_w3 import w3
-from utils.status import StatusPlugin
+from rocketwatch.plugins.support_utils.support_utils import generate_template_embed
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import StatusMessageConfig, cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.event import EventPlugin
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.status import StatusPlugin
 
 log = logging.getLogger("rocketwatch.event_core")
 

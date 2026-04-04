@@ -6,9 +6,9 @@ from typing import Any
 
 from colorama import Fore, Style
 
-import utils.solidity as units
-from utils.config import cfg
-from utils.shared_w3 import bacon
+import rocketwatch.utils.solidity as units
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.shared_w3 import bacon
 
 
 def prettify_json_string(data: str) -> str:

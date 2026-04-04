@@ -2,6 +2,7 @@ import builtins
 import logging
 from datetime import UTC, datetime
 from operator import itemgetter
+from typing import Any
 
 from bson import CodecOptions
 from discord import ButtonStyle, Interaction, Member, TextStyle, User, app_commands, ui
@@ -10,10 +11,10 @@ from discord.ext.commands import Cog, GroupCog
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
-from utils.embeds import Embed
-from utils.file import TextFile
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.file import TextFile
 
 log = logging.getLogger("rocketwatch.support_utils")
 

@@ -5,7 +5,7 @@ from aiocache import cached
 from eth_typing import BlockNumber
 from web3.types import BlockData
 
-from utils.shared_w3 import w3
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.block_time")
 

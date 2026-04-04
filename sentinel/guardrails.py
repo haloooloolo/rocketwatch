@@ -4,8 +4,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 
 import discord
-
-from config import KeyConfig
+from sentinel.config import KeyConfig
 
 
 class RateLimiter:

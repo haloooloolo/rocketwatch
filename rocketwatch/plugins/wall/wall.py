@@ -15,9 +15,9 @@ from matplotlib import font_manager as fm
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed
-from utils.liquidity import (
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.liquidity import (
     CEX,
     DEX,
     HTX,
@@ -43,9 +43,9 @@ from utils.liquidity import (
     Market,
     UniswapV3,
 )
-from utils.rocketpool import rp
-from utils.time_debug import timerun, timerun_async
-from utils.visibility import is_hidden
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.time_debug import timerun, timerun_async
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.wall")
 

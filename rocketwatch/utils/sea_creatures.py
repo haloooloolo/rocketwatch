@@ -2,9 +2,9 @@ import contextlib
 
 from eth_typing import ChecksumAddress
 
-from utils import solidity
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
+from rocketwatch.utils import solidity
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
 
 price_cache = {"block": 0, "rpl_price": 0, "reth_price": 0}
 
