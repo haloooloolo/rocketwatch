@@ -1,5 +1,9 @@
+import json
 import logging
 from abc import ABC, abstractmethod
+from typing import Any
+
+from discord import Member, Message
 
 from utils.config import cfg
 
@@ -17,6 +21,10 @@ Focus on the author's INTENT. Flag messages that are trying to:
 - Build false trust by impersonating authority (staff, support, admins)
 - Create artificial urgency or fear to pressure users into action
 - Deceive users through any other social engineering technique
+
+You will be given context about the user: their join date and number of previous \
+messages in the server. Brand-new users with few or no messages who jump straight \
+into offering help or directing others are highly suspicious.
 
 Do NOT flag messages that:
 - Mention DMs, profiles, or wallets in normal conversation without manipulative intent
@@ -46,7 +54,11 @@ Examples:
 
 Respond with SAFE or SCAM: <reason in {MAX_REASON_WORDS} words max>"""
 
-USER_PROMPT_TEMPLATE = "Evaluate this Discord message:\n\n{content}"
+USER_PROMPT_TEMPLATE = (
+    "User joined: {joined}\n"
+    "Previous messages in server: {message_count}\n\n"
+    "Evaluate this Discord message:\n\n{content}"
+)
 
 
 class LLMProvider(ABC):
@@ -128,7 +140,7 @@ class LLMScamChecker:
         if self.enabled:
             self._provider = _PROVIDERS[provider_name]()
 
-    async def check(self, content: str) -> str | None:
+    async def check(self, message: Message, *, user_msg_count: int) -> str | None:
         """Evaluate a message for social engineering using an LLM.
 
         Returns a reason string if the message is likely a scam, None otherwise.
@@ -136,7 +148,22 @@ class LLMScamChecker:
         if not self._provider:
             return None
 
-        user_message = USER_PROMPT_TEMPLATE.format(content=content)
+        data: dict[str, Any] = {"content": message.content}
+        if message.embeds:
+            data["embeds"] = [
+                {"title": e.title, "description": e.description} for e in message.embeds
+            ]
+        content = json.dumps(data, indent=2)
+
+        joined = "unknown"
+        if isinstance(message.author, Member) and message.author.joined_at:
+            joined = message.author.joined_at.strftime("%Y-%m-%d")
+
+        prev_user_msg_count = user_msg_count - 1
+
+        user_message = USER_PROMPT_TEMPLATE.format(
+            content=content, joined=joined, message_count=prev_user_msg_count
+        )
         result = (await self._provider.complete(SYSTEM_PROMPT, user_message)).strip()
         log.debug(f"AI scam check ({cfg.llm.provider}/{cfg.llm.model}): {result}")
 

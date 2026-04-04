@@ -127,11 +127,10 @@ class ScamDetection(Cog):
             )
             return
 
-        text = self._serialize_message(message)
-
         try:
-            if reason := await self._llm_check.check(text):
-                await self.report_message(message, f"{reason} (AI)")
+            result = await self._llm_check.check(message, user_msg_count=user_msg_count)
+            if result:
+                await self.report_message(message, f"{result} (AI)")
         except Exception as e:
             await self.bot.report_error(e)
 
