@@ -38,18 +38,6 @@ dependencies = [
     "web3>=7.0.0,<8.0.0",
 ]
 
-[project.optional-dependencies]
-test = [
-    "pytest>=8.0",
-    "pytest-asyncio>=1.0",
-    "pytest-cov>=6.0",
-]
-dev = [
-    "mypy>=1.10",
-    "types-cachetools>=5.0",
-    "types-pytz>=2024.0",
-    "types-tabulate>=0.9",
-]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
