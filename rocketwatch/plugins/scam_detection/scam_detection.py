@@ -130,7 +130,7 @@ class ScamDetection(Cog):
         try:
             result = await self._llm_check.check(message, user_msg_count=user_msg_count)
             if result:
-                await self.report_message(message, f"{result} (AI)")
+                await self.report_message(message, f"{result} (AI Detection)")
         except Exception as e:
             await self.bot.report_error(e)
 
