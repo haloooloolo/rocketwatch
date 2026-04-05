@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import warnings
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Callable, Coroutine
 from typing import Any, Literal, cast
 
 from discord import Interaction
@@ -16,6 +16,7 @@ from eth_typing import HexStr
 from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO, HASH_ZERO
+from web3.contract.async_contract import AsyncContractEvent
 from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
 from web3.types import EventData, FilterParams, LogReceipt, TxReceipt, Wei
@@ -92,9 +93,11 @@ class _PreviewLogModal(Modal):
         self.event_cls = event_cls
         self.block_number = block_number
         self.fields = fields
-        self.param_inputs: list[TextInput] = []
+        self.param_inputs: list[TextInput[_PreviewLogModal]] = []
         for name, required in fields:
-            text_input: TextInput = TextInput(label=name[:45], required=required)
+            text_input: TextInput[_PreviewLogModal] = TextInput(
+                label=name[:45], required=required
+            )
             self.add_item(text_input)
             self.param_inputs.append(text_input)
 
@@ -128,7 +131,7 @@ class _PreviewLogModal(Modal):
 
 PartialFilter = Callable[
     [BlockNumber, BlockNumber | Literal["latest"]],
-    Coroutine[Any, Any, Sequence[LogReceipt | EventData]],
+    Coroutine[Any, Any, list[LogReceipt] | list[EventData]],
 ]
 
 # Upgrade event names that trigger contract re-init
@@ -175,7 +178,7 @@ class LogEvents(EventPlugin):
         aggregated_topics: set[str] = set()
 
         global_topics: set[str] = set()
-        global_topic_decoders: dict[str, type] = {}
+        global_topic_decoders: dict[str, AsyncContractEvent] = {}
 
         for contract_name, events in EVENT_REGISTRY.items():
             try:
@@ -225,7 +228,7 @@ class LogEvents(EventPlugin):
 
             async def build_direct_filter(
                 _from: BlockNumber, _to: BlockNumber | Literal["latest"]
-            ) -> Sequence[LogReceipt | EventData]:
+            ) -> list[LogReceipt]:
                 return list(
                     await w3.eth.get_logs(
                         cast(
@@ -246,7 +249,7 @@ class LogEvents(EventPlugin):
 
             async def build_global_filter(
                 _from: BlockNumber, _to: BlockNumber | Literal["latest"]
-            ) -> Sequence[LogReceipt | EventData]:
+            ) -> list[EventData]:
                 raw_logs = await w3.eth.get_logs(
                     cast(
                         FilterParams,
@@ -341,16 +344,16 @@ class LogEvents(EventPlugin):
         if not tx_hash.startswith("0x") or len(tx_hash) != 66:
             await interaction.followup.send(content="Invalid transaction hash.")
             return
-        receipt: TxReceipt = await w3.eth.get_transaction_receipt(tx_hash)
-        logs: list[dict[str, Any]] = receipt["logs"]  # type: ignore[assignment]
+        receipt: TxReceipt = await w3.eth.get_transaction_receipt(HexStr(tx_hash))
+        logs: list[LogReceipt] = receipt["logs"]
 
-        filtered_events: list[dict[str, Any]] = []
+        filtered_events: list[LogReceipt | EventData] = []
 
         # get direct events
         for event_log in logs:
             topics = event_log.get("topics", [])
             if topics and (topics[0].hex() in self._topic_map):
-                filtered_events.append(dict(event_log))
+                filtered_events.append(event_log)
 
         # get global events
         for contract_name, events in EVENT_REGISTRY.items():
@@ -371,9 +374,9 @@ class LogEvents(EventPlugin):
 
         responses, _ = await self.process_events(filtered_events)
         if responses:
-            await interaction.followup.send(
-                embeds=[response.embed for response in responses]
-            )
+            embeds = [response.embed for response in responses]
+            for i in range(0, len(embeds), 10):
+                await interaction.followup.send(embeds=embeds[i : i + 10])
         else:
             await interaction.followup.send(content="No events found.")
 
@@ -381,7 +384,7 @@ class LogEvents(EventPlugin):
 
     async def _get_new_events(self) -> list[Event]:
         from_block = self.last_served_block + 1 - self.lookback_distance
-        return await self.get_past_events(from_block, self._pending_block)
+        return await self.get_past_events(BlockNumber(from_block), self._pending_block)
 
     async def get_past_events(
         self, from_block: BlockNumber, to_block: BlockNumber
@@ -389,9 +392,9 @@ class LogEvents(EventPlugin):
         log.debug("Fetching events in [%s, %s]", from_block, to_block)
         log.debug("Using %d filters", len(self._partial_filters))
 
-        events: list[dict[str, Any]] = []
+        events: list[LogReceipt | EventData] = []
         for pf in self._partial_filters:
-            events.extend(await pf(from_block, to_block))  # type: ignore[arg-type]
+            events.extend(await pf(from_block, to_block))
 
         messages, contract_upgrade_block = await self.process_events(events)
         if not contract_upgrade_block:
@@ -426,14 +429,16 @@ class LogEvents(EventPlugin):
     # --- Event processing ---
 
     async def process_events(
-        self, events: list[dict[str, Any]]
+        self, events: list[LogReceipt | EventData]
     ) -> tuple[list[Event], BlockNumber | None]:
         events.sort(key=lambda e: (e["blockNumber"], e["logIndex"]))
         messages: list[Event] = []
         upgrade_block: BlockNumber | None = None
 
         log.debug("Aggregating %d events", len(events))
-        aggregated: list[dict[str, Any]] = await self.aggregate_events(events)
+        aggregated: list[dict[str, Any]] = await aggregate_events(
+            events, self._topic_map
+        )
         log.debug("Processing %d events", len(aggregated))
 
         for event in aggregated:
@@ -452,51 +457,52 @@ class LogEvents(EventPlugin):
             event_cls: LogEvent | None = None
 
             contract_name = rp.get_name_by_address(event.get("address", ""))
+            processed: dict[str, Any]
             if contract_name and "topics" in event:
-                # Direct event path
-                log.debug("Found event %s for %s", event, contract_name)
-                solidity_event_name = self._topic_map[event["topics"][0].hex()]
+                # Direct event path — event is a LogReceipt
+                log_receipt = cast(LogReceipt, event)
+                log.debug("Found event %s for %s", log_receipt, contract_name)
+                solidity_event_name = self._topic_map[log_receipt["topics"][0].hex()]
                 key = f"{contract_name}.{solidity_event_name}"
                 event_cls = self._event_map.get(key)
                 if event_cls is None:
                     log.debug("Skipping unregistered event %s", key)
                     continue
 
-                contract = await rp.get_contract_by_address(event["address"])
+                contract = await rp.get_contract_by_address(log_receipt["address"])
                 assert contract is not None
-                topics = [w3.to_hex(t) for t in event["topics"]]
-                decoded = dict(
-                    contract.events[solidity_event_name]().process_log(event)
+                topics = [w3.to_hex(t) for t in log_receipt["topics"]]
+                processed = dict(
+                    contract.events[solidity_event_name]().process_log(log_receipt)
                 )
-                decoded["topics"] = topics
-                decoded["args"] = dict(decoded["args"])
-                hash_args(decoded["args"])
+                processed["topics"] = topics
+                processed["args"] = dict(processed["args"])
+                hash_args(processed["args"])
+                # Carry over aggregation attributes from aggregate_events
+                for k, v in event.items():
+                    if k not in processed:
+                        processed[k] = v
 
-                # Carry over aggregation attributes
-                if "assignmentCount" in event:
-                    decoded["assignmentCount"] = event["assignmentCount"]
-                if "amountOfStETH" in event:
-                    decoded["args"]["amountOfStETH"] = event["amountOfStETH"]
-
-                event = decoded
             elif event.get("event") in self._global_event_map:
                 # Global event path (already decoded by filter)
-                solidity_event_name = event["event"]
+                event_data = cast(EventData, event)
+                solidity_event_name = event_data["event"]
                 event_cls = self._global_event_map[solidity_event_name]
-                event["args"] = dict(event.get("args", {}))
-                hash_args(event["args"])
+                processed = dict(event_data)
+                processed["args"] = dict(processed.get("args", {}))
+                hash_args(processed["args"])
 
                 # Check for upgrade events
                 if event_cls.event_name in _UPGRADE_EVENTS:
                     log.info("detected contract upgrade")
-                    upgrade_block = event["blockNumber"]
+                    upgrade_block = BlockNumber(event_data["blockNumber"])
 
                 # Global event enrichment (minipool/megapool validation, pubkey, sender)
                 if (
                     event_cls.event_name not in _UPGRADE_EVENTS
                     and event_cls.event_name != "sdao_upgrade_vetoed_event"
                 ):
-                    enriched = await self._enrich_global_event(event)
+                    enriched = await self._enrich_global_event(processed)
                     if not enriched:
                         continue
             else:
@@ -505,16 +511,16 @@ class LogEvents(EventPlugin):
 
             # Build args dict for the event class
             args: dict[str, Any] = {
-                **event.get("args", {}),
-                "transactionHash": event["transactionHash"].hex()
-                if isinstance(event["transactionHash"], (bytes, HexBytes))
-                else event["transactionHash"],
-                "blockNumber": event["blockNumber"],
+                **processed.get("args", {}),
+                "transactionHash": processed["transactionHash"].hex()
+                if isinstance(processed["transactionHash"], (bytes, HexBytes))
+                else processed["transactionHash"],
+                "blockNumber": processed["blockNumber"],
                 "event_name": event_cls.event_name,
             }
 
             # Resolve dispatchers
-            event_data = cast(LogEventData, event)
+            event_data = cast(LogEventData, processed)
             resolved = await event_cls.resolve(args, event_data)
             if resolved is None:
                 continue
@@ -524,9 +530,9 @@ class LogEvents(EventPlugin):
             # Get receipt for mainnet fee calculation
             receipt: TxReceipt = _DUMMY_RECEIPT
             if cfg.rocketpool.chain == "mainnet":
-                tx_hash = event["transactionHash"]
+                tx_hash = processed["transactionHash"]
                 if isinstance(tx_hash, str):
-                    receipt = await w3.eth.get_transaction_receipt(tx_hash)
+                    receipt = await w3.eth.get_transaction_receipt(HexStr(tx_hash))
                 else:
                     receipt = await w3.eth.get_transaction_receipt(tx_hash)
 
@@ -548,18 +554,18 @@ class LogEvents(EventPlugin):
                 e
                 for e in aggregated
                 if (
-                    e.get("transactionHash") == event.get("transactionHash")
-                    and e.get("blockHash") == event.get("blockHash")
+                    e.get("transactionHash") == processed.get("transactionHash")
+                    and e.get("blockHash") == processed.get("blockHash")
                 )
             ]
-            tx_log_index = event.get("logIndex", 0) - min(
+            tx_log_index = processed.get("logIndex", 0) - min(
                 e.get("logIndex", 0) for e in identical_events
             )
 
             tx_hash_hex = (
-                event["transactionHash"].hex()
-                if isinstance(event["transactionHash"], (bytes, HexBytes))
-                else event["transactionHash"]
+                processed["transactionHash"].hex()
+                if isinstance(processed["transactionHash"], (bytes, HexBytes))
+                else processed["transactionHash"]
             )
 
             for embed in embeds:
@@ -568,9 +574,9 @@ class LogEvents(EventPlugin):
                     topic="events",
                     event_name=event_name,
                     unique_id=f"{tx_hash_hex}:{event_name}:{args_hash.hexdigest()}:{tx_log_index}",
-                    block_number=event["blockNumber"],
-                    transaction_index=event.get("transactionIndex", 999),
-                    event_index=event.get("logIndex", 999),
+                    block_number=processed["blockNumber"],
+                    transaction_index=processed.get("transactionIndex", 999),
+                    event_index=processed.get("logIndex", 999),
                 )
                 messages.append(response)
 
@@ -650,133 +656,6 @@ class LogEvents(EventPlugin):
             )
 
         return True
-
-    # --- Aggregation ---
-
-    async def aggregate_events(
-        self, events: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Aggregate and deduplicate events within the same transaction."""
-        events_by_tx: dict[Any, list[dict[str, Any]]] = {}
-        for event in reversed(events):
-            tx_hash = event["transactionHash"]
-            if tx_hash not in events_by_tx:
-                events_by_tx[tx_hash] = []
-            events_by_tx[tx_hash].append(event)
-
-        aggregation_attributes = {
-            "rocketDepositPool.DepositAssigned": "assignmentCount",
-            "unstETH.WithdrawalRequested": "amountOfStETH",
-        }
-
-        async def get_event_name(
-            _event: dict[str, Any],
-        ) -> tuple[str, str]:
-            if "topics" in _event:
-                contract_name = rp.get_name_by_address(_event["address"])
-                name = self._topic_map[_event["topics"][0].hex()]
-            else:
-                contract_name = None
-                name = _event.get("event", "")
-
-            full_name = f"{contract_name}.{name}" if contract_name else name
-            return name, full_name
-
-        aggregates: dict[Any, dict[str, Any]] = {}
-        for tx_hash, tx_events in events_by_tx.items():
-            tx_aggregates: dict[str, Any] = {}
-            aggregates[tx_hash] = tx_aggregates
-            events_by_name: dict[str, list[dict[str, Any]]] = {}
-
-            for event in tx_events:
-                event_name, full_event_name = await get_event_name(event)
-                log.debug("Processing event %s", full_event_name)
-
-                if full_event_name not in events_by_name:
-                    events_by_name[full_event_name] = []
-
-                if full_event_name == "unstETH.WithdrawalRequested":
-                    contract = await rp.get_contract_by_address(event["address"])
-                    _event = dict(contract.events[event_name]().process_log(event))
-                    amount = tx_aggregates.get(full_event_name, 0)
-                    if amount:
-                        events.remove(event)
-                    tx_aggregates[full_event_name] = (
-                        amount + _event["args"]["amountOfStETH"]
-                    )
-                elif full_event_name == "rocketTokenRETH.Transfer":
-                    conflicting_events = [
-                        "rocketTokenRETH.TokensBurned",
-                        "rocketDepositPool.DepositReceived",
-                    ]
-                    if any(event in events_by_name for event in conflicting_events):
-                        events.remove(event)
-                        continue
-                    if prev_event := tx_aggregates.get(full_event_name):
-                        contract = await rp.get_contract_by_address(event["address"])
-                        _event = dict(contract.events[event_name]().process_log(event))
-                        _prev_event = dict(
-                            contract.events[event_name]().process_log(prev_event)
-                        )
-                        if _prev_event["args"]["value"] > _event["args"]["value"]:
-                            events.remove(event)
-                            event = prev_event
-                        else:
-                            events.remove(prev_event)
-                    tx_aggregates[full_event_name] = event
-                elif full_event_name == "StatusUpdated":
-                    if "MinipoolScrubbed" in events_by_name:
-                        events.remove(event)
-                        continue
-                elif (
-                    full_event_name
-                    == "rocketDAOProtocolProposal.ProposalVoteOverridden"
-                ):
-                    vote_event = events_by_name.get(
-                        "rocketDAOProtocolProposal.ProposalVoted", [None]
-                    ).pop()
-                    if vote_event is not None:
-                        events.remove(vote_event)
-                elif full_event_name == "MinipoolPrestaked":
-                    for assign_event in events_by_name.get(
-                        "rocketDepositPool.DepositAssigned", []
-                    ).copy():
-                        assigned_minipool = w3.to_checksum_address(
-                            assign_event["topics"][1][-20:]
-                        )
-                        if event["address"] == assigned_minipool:
-                            events_by_name["rocketDepositPool.DepositAssigned"].remove(
-                                assign_event
-                            )
-                            events.remove(assign_event)
-                            tx_aggregates["rocketDepositPool.DepositAssigned"] -= 1
-                elif full_event_name in aggregation_attributes:
-                    count = tx_aggregates.get(full_event_name, 0)
-                    if count:
-                        events.remove(event)
-                    tx_aggregates[full_event_name] = count + 1
-                else:
-                    tx_aggregates[full_event_name] = (
-                        tx_aggregates.get(full_event_name, 0) + 1
-                    )
-
-                if event in events:
-                    events_by_name[full_event_name].append(event)
-
-        result: list[dict[str, Any]] = [dict(event) for event in events]
-        for event in result:
-            _, full_event_name = await get_event_name(event)
-            if full_event_name not in aggregation_attributes:
-                continue
-
-            tx_hash = event["transactionHash"]
-            aggregated_value = aggregates[tx_hash].get(full_event_name, None)
-            if aggregated_value is None:
-                continue
-
-            event[aggregation_attributes[full_event_name]] = aggregated_value
-
-        return result
 
 
 async def setup(bot: RocketWatch) -> None:

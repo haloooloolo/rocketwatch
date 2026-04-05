@@ -75,7 +75,7 @@ SMARTNODE_REGEX = re.compile(
 )
 
 
-def parse_proposal(beacon_block: dict) -> dict:
+def parse_proposal(beacon_block: dict[str, Any]) -> dict[str, Any]:
     graffiti = (
         bytes.fromhex(beacon_block["body"]["graffiti"][2:])
         .decode("utf-8")
@@ -258,13 +258,13 @@ class Proposals(commands.Cog):
     @timerun_async
     async def gather_attribute(
         self, attribute: str, remove_allnodes: bool = False
-    ) -> dict:
+    ) -> dict[str, Any]:
         # Build the match stage to filter out Allnodes if needed
-        match_stage: dict = {}
+        match_stage: dict[str, Any] = {}
         if remove_allnodes:
             match_stage["$match"] = {"latest_proposal.type": {"$ne": "Allnodes"}}
 
-        pipeline: list[dict] = [
+        pipeline: list[dict[str, Any]] = [
             {
                 "$project": {
                     "attribute": f"$latest_proposal.{attribute}",
