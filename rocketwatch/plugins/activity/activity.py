@@ -4,8 +4,8 @@ from cronitor import Monitor
 from discord import Activity, ActivityType
 from discord.ext import commands, tasks
 
-from rocketwatch import RocketWatch
-from utils.config import cfg
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
 
 log = logging.getLogger("rocketwatch.rich_activity")
 

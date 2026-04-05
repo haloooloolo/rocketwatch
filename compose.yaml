@@ -5,8 +5,8 @@ services:
       context: .
       dockerfile: rocketwatch/Dockerfile
     volumes:
-      - ./rocketwatch/contracts/rocketpool:/app/contracts/rocketpool
-      - ./rocketwatch/config.toml:/app/config.toml
+      - ./rocketwatch/contracts/rocketpool:/app/rocketwatch/contracts/rocketpool
+      - ./rocketwatch/config.toml:/app/rocketwatch/config.toml
     restart: unless-stopped
     depends_on:
       - mongodb

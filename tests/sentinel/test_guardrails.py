@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from unittest.mock import MagicMock
 
-from config import KeyConfig
-from guardrails import (
+from sentinel.config import KeyConfig
+from sentinel.guardrails import (
     check_guild,
     check_member_age,
     check_message_age,

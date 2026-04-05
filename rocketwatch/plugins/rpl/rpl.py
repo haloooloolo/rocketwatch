@@ -6,11 +6,11 @@ from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.embeds import Embed
-from utils.rocketpool import rp
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.rpl")
 

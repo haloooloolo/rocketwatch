@@ -132,8 +132,8 @@ async def setup(bot):
 Plugins that track events extend `EventPlugin` from [`utils/event.py`](rocketwatch/utils/event.py) and implement the `_get_new_events()` method, which is called periodically to check for new events. They may also override `get_past_events()` to support querying historical events for a given block range:
 
 ```python
-from utils.event import Event, EventPlugin
-from utils.embeds import Embed
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.embeds import Embed
 
 class MyEventPlugin(EventPlugin):
     async def _get_new_events(self) -> list[Event]:
@@ -153,8 +153,8 @@ class MyEventPlugin(EventPlugin):
 Plugins that provide a rotating status embed (displayed by the bot when idle) extend `StatusPlugin` from [`utils/status.py`](rocketwatch/utils/status.py) and implement the `get_status()` method:
 
 ```python
-from utils.status import StatusPlugin
-from utils.embeds import Embed
+from rocketwatch.utils.status import StatusPlugin
+from rocketwatch.utils.embeds import Embed
 
 class MyStatusPlugin(StatusPlugin):
     async def get_status(self) -> Embed:

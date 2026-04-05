@@ -9,10 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "sentinel
 # Add this test package to path so helpers.py is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config import cfg
-from guardrails import rate_limiter
 from helpers import make_mock_bot, make_mock_guild, make_test_config
-from server import create_app
+
+from sentinel.config import cfg
+from sentinel.guardrails import rate_limiter
+from sentinel.server import create_app
 
 
 @pytest.fixture(autouse=True)

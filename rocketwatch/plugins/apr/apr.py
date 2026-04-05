@@ -12,12 +12,12 @@ from discord.ext import commands, tasks
 from matplotlib.dates import DateFormatter
 from matplotlib.ticker import FuncFormatter
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.embeds import Embed
-from utils.rocketpool import rp
-from utils.shared_w3 import w3, w3_archive
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3, w3_archive
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.apr")
 

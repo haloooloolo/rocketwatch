@@ -2,10 +2,9 @@ import asyncio
 import logging
 
 from aiohttp import web
-
-from bot import SentinelBot
-from config import cfg
-from server import create_app
+from sentinel.bot import SentinelBot
+from sentinel.config import cfg
+from sentinel.server import create_app
 
 logging.basicConfig(
     level=logging.INFO,

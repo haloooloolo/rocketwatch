@@ -4,7 +4,7 @@ from aiocache import cached
 from ens import AsyncENS
 from eth_typing import ChecksumAddress
 
-from utils.shared_w3 import w3_mainnet
+from rocketwatch.utils.shared_w3 import w3_mainnet
 
 log = logging.getLogger("rocketwatch.cached_ens")
 

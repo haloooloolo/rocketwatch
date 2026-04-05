@@ -10,10 +10,10 @@ from helpers import (
     make_mock_message,
     make_mock_thread,
 )
-from server import create_app
 
-from utils.config import cfg as rw_cfg
-from utils.sentinel import SentinelClient
+from rocketwatch.utils.config import cfg as rw_cfg
+from rocketwatch.utils.sentinel import SentinelClient
+from sentinel.server import create_app
 
 
 def _make_discord_message(guild_id=TEST_GUILD_ID, channel_id=4000, message_id=2000):

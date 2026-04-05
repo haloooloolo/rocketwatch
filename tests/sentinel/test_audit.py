@@ -1,6 +1,6 @@
 import logging
 
-from audit import log_action
+from sentinel.audit import log_action
 
 
 class TestLogAction:

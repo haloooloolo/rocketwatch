@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from discord import Thread
 
-from utils.config import Config, cfg
+from rocketwatch.utils.config import Config, cfg
 
 
 def _get_test_cfg():
-    from utils.config import (
+    from rocketwatch.utils.config import (
         ConsensusLayerConfig,
         DiscordConfig,
         DiscordOwner,
@@ -78,7 +78,7 @@ def _make_message(case: dict) -> MagicMock:
 
 def _make_checks():
     cfg._instance = _get_test_cfg()
-    from plugins.scam_detection.checks import ScamChecks
+    from rocketwatch.plugins.scam_detection.checks import ScamChecks
 
     return ScamChecks()
 
@@ -88,7 +88,7 @@ def _make_detector():
     bot = MagicMock()
     bot.tree = MagicMock()
     with patch.object(bot.tree, "add_command"):
-        from plugins.scam_detection.scam_detection import ScamDetection
+        from rocketwatch.plugins.scam_detection.scam_detection import ScamDetection
 
         return ScamDetection(bot)
 

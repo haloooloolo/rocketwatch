@@ -9,15 +9,15 @@ from discord.ext.commands import Cog
 from eth_typing import BlockNumber, ChecksumAddress
 from tabulate import tabulate
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import ts_to_block
-from utils.dao import DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
-from utils.embeds import Embed, el_explorer_url
-from utils.event_logs import get_logs
-from utils.rocketpool import rp
-from utils.views import PageView
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.dao import DefaultDAO, OracleDAO, ProtocolDAO, SecurityCouncil
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.event_logs import get_logs
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.views import PageView
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.dao")
 

@@ -1,6 +1,6 @@
 from discord import Interaction
 
-from plugins.support_utils.support_utils import has_perms
+from rocketwatch.plugins.support_utils.support_utils import has_perms
 
 
 def is_hidden(interaction: Interaction) -> bool:

@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.config import (
+from rocketwatch.utils.config import (
     Config,
     ConsensusLayerConfig,
     DiscordConfig,

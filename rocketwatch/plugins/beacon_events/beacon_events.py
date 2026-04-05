@@ -1,25 +1,43 @@
 import logging
 from collections.abc import Mapping
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import aiohttp
 import eth_utils
 from discord import Color
 from eth_typing import BlockNumber
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import ts_to_block
-from utils.config import cfg
-from utils.embeds import Embed, el_explorer_url, format_value
-from utils.event import Event, EventPlugin
-from utils.readable import cl_explorer_url
-from utils.retry import retry
-from utils.rocketpool import rp
-from utils.sea_creatures import get_sea_creature_for_address
-from utils.shared_w3 import bacon, w3
-from utils.solidity import beacon_block_to_date, date_to_beacon_block
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed, el_explorer_url, format_value
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.readable import cl_explorer_url
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
+from rocketwatch.utils.shared_w3 import bacon, w3
+from rocketwatch.utils.solidity import beacon_block_to_date, date_to_beacon_block
+
+
+class ExecutionPayload(TypedDict):
+    block_number: str
+    timestamp: str
+
+
+class BeaconBlockBody(TypedDict):
+    attester_slashings: list[dict[str, Any]]
+    proposer_slashings: list[dict[str, Any]]
+    execution_payload: ExecutionPayload
+
+
+class BeaconBlock(TypedDict):
+    slot: str
+    proposer_index: str
+    body: BeaconBlockBody
+
 
 log = logging.getLogger("rocketwatch.beacon_events")
 
@@ -103,10 +121,15 @@ class BeaconEvents(EventPlugin):
     ) -> list[Event]:
         try:
             log.debug(f"Checking slot {slot_number}")
-            beacon_block = (await bacon.get_block(str(slot_number)))["data"]["message"]
+            beacon_block = cast(
+                BeaconBlock,
+                (await bacon.get_block(str(slot_number)))["data"]["message"],
+            )
         except aiohttp.ClientResponseError as e:
             if e.status == HTTPStatus.NOT_FOUND:
-                log.error(f"Beacon block {slot_number} not found, skipping.")
+                log.debug(f"Beacon block {slot_number} not found (missed slot)")
+                if missed := await self._get_missed_proposal(slot_number):
+                    return [missed]
                 return []
             else:
                 raise e
@@ -122,9 +145,72 @@ class BeaconEvents(EventPlugin):
 
         return events
 
-    async def _get_slashings(self, beacon_block: dict) -> list[Event]:
+    async def _get_proposer_for_slot(self, slot_number: int) -> int:
+        epoch = slot_number // 32
+        resp = await bacon.get_block_proposer_duties(str(epoch))
+        duties = {int(d["slot"]): int(d["validator_index"]) for d in resp["data"]}
+        return duties[slot_number]
+
+    async def _get_missed_proposal(self, slot_number: int) -> Event | None:
+        try:
+            validator_index = await self._get_proposer_for_slot(slot_number)
+        except (aiohttp.ClientResponseError, KeyError):
+            log.exception(f"Failed to get proposer duties for slot {slot_number}")
+            return None
+
+        minipool: Mapping[str, Any] | None = await self.bot.db.minipools.find_one(
+            {"validator_index": validator_index}
+        )
+        megapool: (
+            Mapping[str, Any] | None
+        ) = await self.bot.db.megapool_validators.find_one(
+            {"validator_index": validator_index}
+        )
+        rp_pool = minipool or megapool
+        if not rp_pool:
+            return None
+
+        log.info(
+            f"RP validator {validator_index} missed proposal at slot {slot_number}"
+        )
+
+        timestamp = beacon_block_to_date(slot_number)
+        sea = await get_sea_creature_for_address(
+            w3.to_checksum_address(rp_pool["node_operator"])
+        )
+        node_op_link = await el_explorer_url(rp_pool["node_operator"], prefix=sea)
+        validator_link = await cl_explorer_url(validator_index)
+        cl_explorer = cfg.consensus_layer.explorer
+
+        embed = Embed(
+            title=":x: Missed Block Proposal",
+            description=f"Validator {validator_link} missed a block proposal!",
+        )
+        embed.add_field(name="Node Operator", value=node_op_link)
+        embed.add_field(
+            name="Slot",
+            value=f"[{slot_number}](https://{cl_explorer}/slot/{slot_number})",
+        )
+        embed.add_field(
+            name="Timestamp",
+            value=f"<t:{timestamp}:R> (<t:{timestamp}:f>)",
+            inline=False,
+        )
+
+        return Event(
+            topic="beacon_events",
+            embed=embed,
+            event_name="missed_proposal_event",
+            unique_id=f"missed_proposal:{slot_number}:{timestamp}",
+            block_number=await ts_to_block(timestamp),
+        )
+
+    async def _get_slashings(self, beacon_block: BeaconBlock) -> list[Event]:
         slot = int(beacon_block["slot"])
         timestamp = beacon_block_to_date(slot)
+        block_number = BlockNumber(
+            int(beacon_block["body"]["execution_payload"]["block_number"])
+        )
         slashings: list[dict[str, str | int]] = []
 
         for slash in beacon_block["body"]["attester_slashings"]:
@@ -201,14 +287,14 @@ class BeaconEvents(EventPlugin):
                     embed=embed,
                     event_name="validator_slash_event",
                     unique_id=unique_id,
-                    block_number=await ts_to_block(timestamp),
+                    block_number=block_number,
                 )
             )
 
         return events
 
     @retry(tries=5, delay=10, backoff=2, max_delay=30)
-    async def _get_proposal(self, beacon_block: dict) -> Event | None:
+    async def _get_proposal(self, beacon_block: BeaconBlock) -> Event | None:
         if not (payload := beacon_block["body"].get("execution_payload")):
             # no proposed block
             return None
@@ -327,10 +413,13 @@ class BeaconEvents(EventPlugin):
             block_number=block_number,
         )
 
-    async def _check_finality(self, beacon_block: dict) -> Event | None:
+    async def _check_finality(self, beacon_block: BeaconBlock) -> Event | None:
         slot_number = int(beacon_block["slot"])
         epoch_number = slot_number // 32
         timestamp = beacon_block_to_date(slot_number)
+        block_number = BlockNumber(
+            int(beacon_block["body"]["execution_payload"]["block_number"])
+        )
 
         try:
             # calculate finality delay
@@ -371,7 +460,7 @@ class BeaconEvents(EventPlugin):
                 embed=embed,
                 event_name="finality_delay_recover_event",
                 unique_id=f"finality_delay_recover:{epoch_number}",
-                block_number=await ts_to_block(timestamp),
+                block_number=block_number,
             )
 
         if finality_delay >= max(
@@ -389,7 +478,7 @@ class BeaconEvents(EventPlugin):
                 embed=embed,
                 event_name="finality_delay_event",
                 unique_id=f"{epoch_number}:finality_delay",
-                block_number=await ts_to_block(timestamp),
+                block_number=block_number,
             )
 
         return None

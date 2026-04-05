@@ -7,9 +7,9 @@ from discord import Interaction
 from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed
-from utils.retry import retry
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.retry import retry
 
 log = logging.getLogger("rocketwatch.rpips")
 

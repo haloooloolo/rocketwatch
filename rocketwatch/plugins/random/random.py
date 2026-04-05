@@ -13,21 +13,21 @@ from eth_typing import HexStr
 from web3.contract import AsyncContract
 from web3.types import TxData
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.block_time import block_to_ts, ts_to_block
-from utils.config import cfg
-from utils.embeds import Embed, el_explorer_url, ens
-from utils.file import TextFile
-from utils.readable import prettify_json_string, pretty_time, s_hex
-from utils.rocketpool import rp
-from utils.sea_creatures import (
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.block_time import block_to_ts, ts_to_block
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import Embed, el_explorer_url, ens
+from rocketwatch.utils.file import TextFile
+from rocketwatch.utils.readable import prettify_json_string, pretty_time, s_hex
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.sea_creatures import (
     get_holding_for_address,
     get_sea_creature_for_address,
     sea_creatures,
 )
-from utils.shared_w3 import bacon, w3
-from utils.visibility import is_hidden, is_hidden_role_controlled
+from rocketwatch.utils.shared_w3 import bacon, w3
+from rocketwatch.utils.visibility import is_hidden, is_hidden_role_controlled
 
 log = logging.getLogger("rocketwatch.random")
 

@@ -8,14 +8,19 @@ from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.contract import AsyncContract
 from web3.types import EventData
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.embeds import Embed, build_event_embed, el_explorer_url, format_value
-from utils.event import Event, EventPlugin
-from utils.rocketpool import rp
-from utils.sea_creatures import get_sea_creature_for_address
-from utils.shared_w3 import w3
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.embeds import (
+    Embed,
+    build_event_embed,
+    el_explorer_url,
+    format_value,
+)
+from rocketwatch.utils.event import Event, EventPlugin
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.cow_orders")
 

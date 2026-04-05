@@ -5,11 +5,11 @@ from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
-from rocketwatch import RocketWatch
-from utils.embeds import Embed, el_explorer_url
-from utils.shared_w3 import bacon
-from utils.solidity import BEACON_EPOCH_LENGTH, BEACON_START_DATE
-from utils.visibility import is_hidden
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.shared_w3 import bacon
+from rocketwatch.utils.solidity import BEACON_EPOCH_LENGTH, BEACON_START_DATE
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.lottery")
 

@@ -6,10 +6,9 @@ import discord
 from aiohttp import web
 from aiohttp.typedefs import Handler
 from discord.ext.commands import Bot
-
-from audit import log_action
-from config import KeyConfig, cfg
-from guardrails import (
+from sentinel.audit import log_action
+from sentinel.config import KeyConfig, cfg
+from sentinel.guardrails import (
     check_guild,
     check_member_age,
     check_message_age,

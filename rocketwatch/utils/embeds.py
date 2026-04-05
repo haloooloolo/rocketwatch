@@ -19,14 +19,14 @@ from etherscan_labels import Addresses
 from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
-from utils.block_time import block_to_ts
-from utils.cached_ens import ens
-from utils.config import cfg
-from utils.readable import advanced_tnx_url, s_hex
-from utils.retry import retry
-from utils.rocketpool import rp
-from utils.sea_creatures import get_sea_creature_for_address
-from utils.shared_w3 import w3
+from rocketwatch.utils.block_time import block_to_ts
+from rocketwatch.utils.cached_ens import ens as ens
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.readable import advanced_tnx_url, s_hex
+from rocketwatch.utils.retry import retry
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
+from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.embeds")
 

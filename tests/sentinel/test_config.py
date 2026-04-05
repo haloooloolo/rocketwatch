@@ -1,6 +1,7 @@
 import pytest
-from config import ApiConfig, KeyConfig, KeyDefaults
 from pydantic import ValidationError
+
+from sentinel.config import ApiConfig, KeyConfig, KeyDefaults
 
 
 class TestKeyDefaults:

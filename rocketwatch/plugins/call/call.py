@@ -11,12 +11,12 @@ from discord.ext.commands import Cog
 from discord.ui import Modal, TextInput
 from eth_typing import ABIComponent, BlockIdentifier, BlockNumber, ChecksumAddress
 
-from rocketwatch import RocketWatch
-from utils import solidity
-from utils.file import TextFile
-from utils.rocketpool import rp
-from utils.shared_w3 import w3
-from utils.visibility import is_hidden_role_controlled
+from rocketwatch.bot import RocketWatch
+from rocketwatch.utils import solidity
+from rocketwatch.utils.file import TextFile
+from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.shared_w3 import w3
+from rocketwatch.utils.visibility import is_hidden_role_controlled
 
 log = logging.getLogger("rocketwatch.call")
 
