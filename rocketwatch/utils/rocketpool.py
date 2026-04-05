@@ -17,9 +17,11 @@ from web3.types import TxData
 from rocketwatch.utils import solidity
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.readable import decode_abi
-from rocketwatch.utils.shared_w3 import w3, w3_archive, w3_mainnet
+from rocketwatch.utils.shared_w3 import w3, w3_mainnet
 
 log = logging.getLogger("rocketwatch.rocketpool")
+
+ContractProps = tuple[str, ChecksumAddress | None, bool]
 
 
 class ValidatorInfo(NamedTuple):
@@ -46,9 +48,7 @@ class NoAddressFound(Exception):
 class RocketPool:
     ADDRESS_CACHE: FIFOCache[str, ChecksumAddress] = FIFOCache(maxsize=2048)
     ABI_CACHE: FIFOCache[str, str] = FIFOCache(maxsize=2048)
-    CONTRACT_CACHE: FIFOCache[
-        tuple[str, ChecksumAddress | None, bool, bool], AsyncContract
-    ] = FIFOCache(maxsize=2048)
+    CONTRACT_CACHE: FIFOCache[ContractProps, AsyncContract] = FIFOCache(maxsize=2048)
 
     def __init__(self) -> None:
         self.addresses: bidict[str, ChecksumAddress] = bidict()
@@ -185,9 +185,7 @@ class RocketPool:
     ) -> ChecksumAddress:
         log.debug(f"Retrieving address for {name} Contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
-        storage = await self.get_contract_by_name(
-            "rocketStorage", historical=block != "latest"
-        )
+        storage = await self.get_contract_by_name("rocketStorage")
         address: ChecksumAddress = await storage.functions.getAddress(sha3).call(
             block_identifier=block
         )
@@ -258,10 +256,9 @@ class RocketPool:
         self,
         name: str,
         address: ChecksumAddress | None = None,
-        historical: bool = False,
         mainnet: bool = False,
     ) -> AsyncContract:
-        cache_key = (name, address, historical, mainnet)
+        cache_key: ContractProps = (name, address, mainnet)
         if cache_key in self.CONTRACT_CACHE:
             return self.CONTRACT_CACHE[cache_key]
 
@@ -279,8 +276,6 @@ class RocketPool:
 
         if mainnet:
             contract = w3_mainnet.eth.contract(address=address, abi=abi)
-        elif historical:
-            contract = w3_archive.eth.contract(address=address, abi=abi)
         else:
             contract = w3.eth.contract(address=address, abi=abi)
 
@@ -292,12 +287,10 @@ class RocketPool:
         return self.addresses.inverse.get(address, None)
 
     async def get_contract_by_name(
-        self, name: str, historical: bool = False, mainnet: bool = False
+        self, name: str, mainnet: bool = False
     ) -> AsyncContract:
         address = await self.get_address_by_name(name)
-        return await self.assemble_contract(
-            name, address, historical=historical, mainnet=mainnet
-        )
+        return await self.assemble_contract(name, address, mainnet=mainnet)
 
     async def get_contract_by_address(
         self, address: ChecksumAddress
@@ -323,14 +316,13 @@ class RocketPool:
         self,
         path: str,
         *args: Any,
-        historical: bool = False,
         address: ChecksumAddress | None = None,
         mainnet: bool = False,
     ) -> AsyncContractFunction:
         name, function = path.rsplit(".", 1)
         if not address:
             address = await self.get_address_by_name(name)
-        contract = await self.assemble_contract(name, address, historical, mainnet)
+        contract = await self.assemble_contract(name, address, mainnet)
         args = tuple(
             w3.to_checksum_address(a) if isinstance(a, str) and w3.is_address(a) else a
             for a in args
@@ -346,9 +338,7 @@ class RocketPool:
         mainnet: bool = False,
     ) -> Any:
         log.debug(f"Calling {path} (block={block!r})")
-        fn = await self.get_function(
-            path, *args, historical=block != "latest", address=address, mainnet=mainnet
-        )
+        fn = await self.get_function(path, *args, address=address, mainnet=mainnet)
         return await fn.call(block_identifier=block)
 
     async def get_annual_rpl_inflation(self) -> float:
