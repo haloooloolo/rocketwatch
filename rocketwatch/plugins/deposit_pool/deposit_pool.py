@@ -3,8 +3,8 @@ import logging
 from discord import Interaction
 from discord.app_commands import command
 
-from rocketwatch.plugins.queue.queue import Queue
 from rocketwatch.bot import RocketWatch
+from rocketwatch.plugins.queue.queue import Queue
 from rocketwatch.utils import solidity
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
