@@ -10,6 +10,7 @@ from discord.app_commands import Choice, command, describe
 from discord.ext.commands import Cog
 from discord.ui import Modal, TextInput
 from eth_typing import ABIComponent, BlockIdentifier, BlockNumber, ChecksumAddress
+from web3.contract import AsyncContract
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
@@ -39,9 +40,9 @@ class CallModal(Modal):
         self.address = address
         self.raw_output = raw_output
         self.abi_inputs = abi_inputs
-        self.param_inputs: list[TextInput] = []
+        self.param_inputs: list[TextInput[CallModal]] = []
         for inp in abi_inputs:
-            text_input: TextInput = TextInput(
+            text_input: TextInput[CallModal] = TextInput(
                 label=f"{inp.get('name', '?')} ({inp['type']})"[:45], required=True
             )
             self.add_item(text_input)
@@ -104,19 +105,19 @@ class Call(Cog):
         if self.function_names:
             return
 
-        for contract in rp.addresses.copy():
+        for contract_name in rp.addresses.copy():
             try:
-                c = await rp.get_contract_by_name(contract)
-                for entry in c.abi:
+                contract: AsyncContract = await rp.get_contract_by_name(contract_name)
+                for entry in cast(list[dict[str, Any]], contract.abi):
                     if (
                         entry.get("type") == "function"
                         and "name" in entry
                         and entry.get("stateMutability") in ("view", "pure")
                     ):
                         func_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
-                        self.function_names.append(f"{contract}.{func_id}")
+                        self.function_names.append(f"{contract_name}.{func_id}")
             except Exception:
-                log.exception(f"Could not get function list for {contract}")
+                log.exception(f"Could not get function list for {contract_name}")
 
     @command()
     @describe(block="call against block state")
@@ -152,7 +153,7 @@ class Call(Cog):
         try:
             contract_name, func_id = function.rsplit(".", 1)
             contract = await rp.get_contract_by_name(contract_name)
-            for entry in contract.abi:
+            for entry in cast(list[dict[str, Any]], contract.abi):
                 if entry.get("type") == "function" and "name" in entry:
                     entry_id = f"{entry['name']}({','.join(inp['type'] for inp in entry.get('inputs', []))})"
                     if entry_id == func_id:
@@ -178,13 +179,13 @@ class Call(Cog):
         self,
         interaction: Interaction,
         function: str,
-        args: list,
+        args: list[Any],
         block: BlockIdentifier,
         address: str | None,
         raw_output: bool,
     ) -> None:
         try:
-            v = await rp.call(
+            result = await rp.call(
                 function,
                 *args,
                 block=block,
@@ -193,30 +194,32 @@ class Call(Cog):
         except Exception as err:
             await interaction.followup.send(content=f"Exception: ```{err!r}```")
             return
+        gas_estimate: str
         try:
-            g = await rp.estimate_gas_for_call(function, *args, block=block)
+            gas_estimate = humanize.intcomma(
+                await rp.estimate_gas_for_call(function, *args, block=block)
+            )
         except Exception as err:
-            g = "N/A"
+            gas_estimate = "N/A"
             if (
                 isinstance(err, ValueError)
                 and err.args
                 and "code" in err.args
                 and err.args[0]["code"] == -32000
             ):
-                g += f" ({err.args[0]['message']})"
+                gas_estimate += f" ({err.args[0]['message']})"
 
-        if isinstance(v, int) and abs(v) >= 10**12 and not raw_output:
-            v = solidity.to_float(v)
-        g = humanize.intcomma(g)
+        if isinstance(result, int) and abs(result) >= 10**12 and not raw_output:
+            result = solidity.to_float(result)
         func_name = function.split("(")[0]
-        text = f"`block: {block!s}`\n`gas estimate: {g}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
-        if len(text + str(v)) > 2000:
+        text = f"`block: {block!s}`\n`gas estimate: {gas_estimate}`\n`{func_name}({', '.join([repr(a) for a in args])}): "
+        if len(text + str(result)) > 2000:
             text += "too long, attached as file`"
             await interaction.followup.send(
-                text, file=TextFile(str(v), "exception.txt")
+                text, file=TextFile(str(result), "exception.txt")
             )
         else:
-            text += f"{v!s}`"
+            text += f"{result!s}`"
             await interaction.followup.send(content=text)
 
     @call.autocomplete("function")

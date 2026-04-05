@@ -21,8 +21,8 @@ class DelegateContracts(commands.Cog):
 
     async def _delegate_stats(
         self,
-        collection: AsyncCollection,
-        match_filter: dict,
+        collection: AsyncCollection[dict[str, Any]],
+        match_filter: dict[str, Any],
         delegate_field: str,
         use_latest_field: str,
         latest_contract: str,

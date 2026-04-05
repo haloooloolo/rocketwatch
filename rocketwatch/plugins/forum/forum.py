@@ -60,7 +60,7 @@ class Forum(commands.Cog):
     UserMetric = Literal["topic_count", "post_count", "likes_received"]
 
     @staticmethod
-    def _parse_topics(topic_list: list[dict]) -> list[Topic]:
+    def _parse_topics(topic_list: list[dict[str, Any]]) -> list[Topic]:
         def datetime_to_epoch(_dt: str) -> int:
             return int(datetime.fromisoformat(_dt.replace("Z", "+00:00")).timestamp())
 
