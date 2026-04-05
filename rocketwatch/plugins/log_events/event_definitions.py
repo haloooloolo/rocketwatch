@@ -143,19 +143,6 @@ class MegapoolFromCallerContext(_FromCallerField, MegapoolEventContext):
     """MegapoolEventContext + optional raw ``from``/``caller``."""
 
 
-class BootstrapSettingMultiArgs(LogEventContext):
-    settingContractNames: list[str]
-    settingPaths: list[str]
-    types: list[int]
-    values: list[bytes]
-
-
-class BootstrapClaimerArgs(LogEventContext):
-    nodePercent: int
-    protocolPercent: int
-    trustedNodePercent: int
-
-
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
@@ -995,11 +982,15 @@ class BootstrapPDAOSettingEvent(LogEvent):
 class BootstrapPDAOSettingMultiEvent(LogEvent):
     event_name = "bootstrap_pdao_setting_multi_event"
 
-    Args = BootstrapSettingMultiArgs  # type: ignore[assignment]
+    class Args(LogEventContext):
+        settingContractNames: list[str]
+        settingPaths: list[str]
+        types: list[int]
+        values: list[bytes]
 
     async def build_embeds(
         self,
-        args: BootstrapSettingMultiArgs,
+        args: Args,
         event: LogEventData,
         receipt: TxReceipt,
     ) -> list[Embed]:
@@ -1017,11 +1008,14 @@ class BootstrapPDAOSettingMultiEvent(LogEvent):
 class BootstrapPDAOClaimerEvent(LogEvent):
     event_name = "bootstrap_pdao_claimer_event"
 
-    Args = BootstrapClaimerArgs  # type: ignore[assignment]  # shared with dao.py
+    class Args(LogEventContext):
+        nodePercent: int
+        protocolPercent: int
+        trustedNodePercent: int
 
     async def build_embeds(
         self,
-        args: BootstrapClaimerArgs,
+        args: Args,
         event: LogEventData,
         receipt: TxReceipt,
     ) -> list[Embed]:

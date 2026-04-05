@@ -38,7 +38,7 @@ class Rewards(commands.Cog):
         system_weight: float
 
     @retry(tries=3, delay=1)
-    async def _make_request(self, address: ChecksumAddress) -> dict:
+    async def _make_request(self, address: ChecksumAddress) -> dict[str, Any]:
         async with aiohttp.ClientSession() as session:
             response = await session.get(f"https://sprocketpool.net/api/node/{address}")
             return dict(await response.json())
