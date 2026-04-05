@@ -27,6 +27,7 @@ from discord.app_commands import ContextMenu, command, guilds
 from discord.ext.commands import Cog
 from pymongo import ReturnDocument
 
+from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.scam_detection.checks import ScamChecks
 from rocketwatch.plugins.scam_detection.llm_check import LLMScamChecker
 from rocketwatch.plugins.scam_detection.utils import (
@@ -35,7 +36,6 @@ from rocketwatch.plugins.scam_detection.utils import (
     ScamReport,
     is_reputable,
 )
-from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.file import TextFile
@@ -347,8 +347,7 @@ class ScamDetection(Cog):
 
             if actions:
                 embed = self._build_automod_embed(report_msg, actions)
-                with contextlib.suppress(errors.Forbidden):
-                    await message.channel.send(embed=embed)
+                await message.channel.send(embed=embed, delete_after=120)
 
     async def report_thread(self, thread: Thread, reason: str) -> None:
         async with self._thread_report_lock:
@@ -401,8 +400,7 @@ class ScamDetection(Cog):
 
             if actions and isinstance(thread.parent, Messageable):
                 embed = self._build_automod_embed(report_msg, actions)
-                with contextlib.suppress(errors.Forbidden):
-                    await thread.parent.send(embed=embed)
+                await thread.parent.send(embed=embed, delete_after=3600)
 
     # --- Report generation ---
 
