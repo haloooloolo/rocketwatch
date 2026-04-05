@@ -98,9 +98,11 @@ class PreviewTxModal(Modal):
         self.function = function
         self.block_number = block_number
         self.fields = fields
-        self.param_inputs: list[TextInput] = []
+        self.param_inputs: list[TextInput[PreviewTxModal]] = []
         for name, required in fields:
-            text_input: TextInput = TextInput(label=name[:45], required=required)
+            text_input: TextInput[PreviewTxModal] = TextInput(
+                label=name[:45], required=required
+            )
             self.add_item(text_input)
             self.param_inputs.append(text_input)
 
@@ -220,7 +222,7 @@ class TxEvents(EventPlugin):
             await interaction.followup.send(content="Invalid transaction hash.")
             return
         await self._ensure_config()
-        tnx: TxData = await w3.eth.get_transaction(tx_hash)
+        tnx: TxData = await w3.eth.get_transaction(HexStr(tx_hash))
         block: BlockData = await w3.eth.get_block(tnx["blockHash"])
 
         responses: list[Event] = await self.process_transaction(
@@ -268,7 +270,7 @@ class TxEvents(EventPlugin):
             return []
 
         # full_transactions=True guarantees Sequence[TxData], not Sequence[HexBytes]
-        transactions: Sequence[TxData] = block.get("transactions", [])  # type: ignore[assignment]
+        transactions = cast(Sequence[TxData], block.get("transactions", []))
         events: list[Event] = []
         for tnx in transactions:
             if "to" in tnx:
@@ -394,7 +396,7 @@ class TxEvents(EventPlugin):
         decoded_args: dict[str, Any],
         function_name: str,
     ) -> TxEventData:
-        event: TxEventData = {**tnx}
+        event = cast(TxEventData, {**tnx})
         event["args"] = decoded_args
         event["args"]["timestamp"] = block["timestamp"]
         event["args"]["function_name"] = function_name

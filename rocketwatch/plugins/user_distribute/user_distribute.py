@@ -22,14 +22,19 @@ log = logging.getLogger("rocketwatch.user_distribute")
 
 class InstructionsView(ui.View):
     def __init__(
-        self, eligible: list[dict], distributable: list[dict], instruction_timeout: int
+        self,
+        eligible: list[dict[str, Any]],
+        distributable: list[dict[str, Any]],
+        instruction_timeout: int,
     ):
         super().__init__(timeout=instruction_timeout)
         self.eligible = eligible
         self.distributable = distributable
 
     @ui.button(label="Instructions", style=ButtonStyle.blurple)
-    async def instructions(self, interaction: Interaction, _: ui.Button) -> None:
+    async def instructions(
+        self, interaction: Interaction["RocketWatch"], _: ui.Button["InstructionsView"]
+    ) -> None:
         mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
         bud_calldata = bytes.fromhex(
             mp_contract.encode_abi(abi_element_identifier="beginUserDistribute")[2:]
@@ -132,7 +137,9 @@ class UserDistribute(commands.Cog):
         assert isinstance(err, Exception)
         await self.bot.report_error(err)
 
-    async def _fetch_minipools(self) -> tuple[list[dict], list[dict], list[dict]]:
+    async def _fetch_minipools(
+        self,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
         head = await bacon.get_block_header("head")
         current_epoch = int(head["data"]["header"]["message"]["slot"]) // 32
         threshold_epoch = current_epoch - 5000

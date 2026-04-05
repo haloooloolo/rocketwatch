@@ -22,8 +22,8 @@ class DAO(ABC):
     def __init__(self, contract_name: str, proposal_contract_name: str):
         self.contract_name = contract_name
         self._proposal_contract_name = proposal_contract_name
-        self._contract = None
-        self._proposal_contract = None
+        self._contract: AsyncContract | None = None
+        self._proposal_contract: AsyncContract | None = None
 
     async def _get_contract(self) -> AsyncContract:
         if self._contract is None:
@@ -131,7 +131,7 @@ class DefaultDAO(DAO):
         expires: int
         votes_for: int
         votes_against: int
-        votes_required: int
+        votes_required: float
 
     async def get_proposal_ids_by_state(self) -> dict[ProposalState, list[int]]:
         proposal_contract = await self._get_proposal_contract()
@@ -394,7 +394,7 @@ def _share_repr(percentage: float, max_width: int = 35) -> str:
     return "*" * num_points
 
 
-def build_claimer_description(args: dict[str, int]) -> str:
+def build_claimer_description(args: Mapping[str, Any]) -> str:
     node_share = args["nodePercent"] / 10**16
     pdao_share = args["protocolPercent"] / 10**16
     odao_share = args["trustedNodePercent"] / 10**16
@@ -411,10 +411,11 @@ def build_claimer_description(args: dict[str, int]) -> str:
     )
 
 
-def decode_setting_multi(args: dict[str, list[Any]], values_list: list[bytes]) -> str:
+def decode_setting_multi(args: Mapping[str, Any], values_list: list[bytes]) -> str:
     description_parts = []
     for i in range(len(args["settingContractNames"])):
         value_raw = values_list[i]
+        value: int | bool | ChecksumAddress | str
         match args["types"][i]:
             case 0:
                 # SettingType.UINT256

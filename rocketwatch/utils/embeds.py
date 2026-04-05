@@ -96,6 +96,8 @@ async def build_event_embed(
     for name, value, inline in fields or []:
         embed.add_field(name=name, value=value, inline=inline)
 
+    tx_hash = HexStr("0x" + tx_hash)
+
     el_explorer = cfg.execution_layer.explorer
     tx_link = await el_explorer_url(tx_hash)
     tx_advanced = advanced_tnx_url(tx_hash)
@@ -133,7 +135,7 @@ async def build_rich_event_embed(
     if sender:
         sea = await get_sea_creature_for_address(w3.to_checksum_address(sender))
         sender_link = await el_explorer_url(sender, prefix=sea)
-        if caller and caller != sender:
+        if caller and (caller != sender) and (caller != ADDRESS_ZERO):
             caller_sea = await get_sea_creature_for_address(
                 w3.to_checksum_address(caller)
             )
@@ -150,7 +152,7 @@ async def build_rich_event_embed(
     ts = await block_to_ts(block_number)
     embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
 
-    if receipt is not None and cfg.rocketpool.chain == "mainnet":
+    if receipt is not None:
         tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
         tnx_fee_usd = round(await rp.get_eth_usdc_price() * tnx_fee / 10**18, 2)
         if tnx_fee >= 10**15:

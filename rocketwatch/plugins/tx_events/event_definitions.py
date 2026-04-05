@@ -475,6 +475,8 @@ class PDAOSetDelegateEvent(TransactionEvent):
         if (voting_power < 50) or (delegate == delegator):
             return []
 
+        assert delegate is not None
+
         delegator_link = await el_explorer_url(delegator)
         delegate_link = await el_explorer_url(delegate)
         power_str = format_value(voting_power)

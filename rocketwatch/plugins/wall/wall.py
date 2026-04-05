@@ -108,7 +108,7 @@ class Wall(commands.Cog):
         rpl_usd: float,
     ) -> tuple[np.ndarray, float]:
         depth = np.zeros_like(x)
-        liquidity = 0
+        liquidity = 0.0
 
         for liq in markets.values():
             conv = liq.price / rpl_usd

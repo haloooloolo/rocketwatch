@@ -20,13 +20,13 @@ log = logging.getLogger("rocketwatch.support_utils")
 
 
 async def generate_template_embed(
-    db: AsyncDatabase, template_name: str
+    db: AsyncDatabase[dict[str, Any]], template_name: str
 ) -> Embed | None:
     template = await db.support_bot.find_one({"_id": template_name})
     if not template:
         return None
     # get the last log entry from the db
-    dumps_col: AsyncCollection = db.support_bot_dumps.with_options(
+    dumps_col: AsyncCollection[dict[str, Any]] = db.support_bot_dumps.with_options(
         codec_options=CodecOptions(tz_aware=True)
     )
     last_edit = await dumps_col.find_one({"template": template_name}, sort=[("ts", -1)])
@@ -39,13 +39,15 @@ async def generate_template_embed(
 
 # Define a simple View that gives us a counter button
 class AdminView(ui.View):
-    def __init__(self, db: AsyncDatabase, template_name: str) -> None:
+    def __init__(self, db: AsyncDatabase[dict[str, Any]], template_name: str) -> None:
         super().__init__()
         self.db = db
         self.template_name = template_name
 
     @ui.button(label="Edit", style=ButtonStyle.blurple)
-    async def edit(self, interaction: Interaction, _: ui.Button) -> None:
+    async def edit(
+        self, interaction: Interaction["RocketWatch"], _: ui.Button["AdminView"]
+    ) -> None:
         template = await self.db.support_bot.find_one({"_id": self.template_name})
         if not template:
             return
@@ -63,7 +65,9 @@ class DeletableView(ui.View):
         self.user = user
 
     @ui.button(emoji="<:delete:1364953621191721002>", style=ButtonStyle.gray)
-    async def delete(self, interaction: Interaction, _: ui.Button) -> None:
+    async def delete(
+        self, interaction: Interaction["RocketWatch"], _: ui.Button["DeletableView"]
+    ) -> None:
         if (
             (interaction.user == self.user) or has_perms(interaction)
         ) and interaction.message:
@@ -78,7 +82,7 @@ class AdminModal(ui.Modal, title="Change Template Message"):
         self,
         old_title: str,
         old_description: str,
-        db: AsyncDatabase,
+        db: AsyncDatabase[dict[str, Any]],
         template_name: str,
     ) -> None:
         super().__init__()
@@ -116,8 +120,8 @@ class AdminModal(ui.Modal, title="Change Template Message"):
                         "Someone made changes while you were editing. Please try again.\n"
                         "Your pending changes have been attached to this message."
                     ),
-                    view=None,
-                )
+                ),
+                view=None,
             )
             a = await interaction.original_response()
             file = TextFile(
@@ -183,7 +187,10 @@ def has_perms(interaction: Interaction) -> bool:
 
 
 async def _use(
-    db: AsyncDatabase, interaction: Interaction, name: str, mention: User | None
+    db: AsyncDatabase[dict[str, Any]],
+    interaction: Interaction,
+    name: str,
+    mention: User | None,
 ) -> None:
     # check if the template exists in the db
     template = await db.support_bot.find_one({"_id": name})

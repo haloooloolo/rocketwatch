@@ -46,7 +46,9 @@ class NoAddressFound(Exception):
 class RocketPool:
     ADDRESS_CACHE: FIFOCache[str, ChecksumAddress] = FIFOCache(maxsize=2048)
     ABI_CACHE: FIFOCache[str, str] = FIFOCache(maxsize=2048)
-    CONTRACT_CACHE: FIFOCache[tuple, AsyncContract] = FIFOCache(maxsize=2048)
+    CONTRACT_CACHE: FIFOCache[
+        tuple[str, ChecksumAddress | None, bool, bool], AsyncContract
+    ] = FIFOCache(maxsize=2048)
 
     def __init__(self) -> None:
         self.addresses: bidict[str, ChecksumAddress] = bidict()
@@ -232,7 +234,7 @@ class RocketPool:
         storage = await self.get_contract_by_name("rocketStorage")
         return int(await storage.functions.getUint(sha3).call())
 
-    async def get_protocol_version(self) -> tuple:
+    async def get_protocol_version(self) -> tuple[int, ...]:
         version_string = await self.get_string("protocol.version")
         return tuple(map(int, version_string.split(".")))
 
