@@ -77,6 +77,11 @@ ignore = ["E501", "E203", "E231"]
 known-first-party = ["rocketwatch"]
 
 [dependency-groups]
+test = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "pytest-cov>=7.0.0",
+]
 dev = [
     "mypy>=1.19.1",
     "pre-commit>=4.5.1",
