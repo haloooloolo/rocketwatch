@@ -95,7 +95,7 @@ uv run .
 ### Linting
 
 ```sh
-uv run ruff check rocketwatch/
+uv run --group dev ruff check rocketwatch/
 ```
 
 Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort), `RUF`, `SIM`, `UP` (pyupgrade), `W` (warnings).
@@ -103,13 +103,13 @@ Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort),
 ### Type checking
 
 ```sh
-uv run mypy rocketwatch/
+uv run --group dev mypy rocketwatch/
 ```
 
 ### Testing
 
 ```sh
-uv run --extra test pytest
+uv run --group test pytest
 ```
 
 ### Plugin structure
