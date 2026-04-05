@@ -184,7 +184,7 @@ class BeaconEvents(EventPlugin):
 
         embed = Embed(
             title=":x: Missed Block Proposal",
-            description=f"Validator {validator_link} missed a block proposal!",
+            description=f"Validator {validator_link} failed to propose a block!",
         )
         embed.add_field(name="Node Operator", value=node_op_link)
         embed.add_field(
