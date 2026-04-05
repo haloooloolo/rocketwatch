@@ -10,7 +10,7 @@ from rocketwatch.utils.config import cfg
 log = logging.getLogger("rocketwatch.scam_detection.llm")
 
 MAX_REASON_WORDS = 5
-MAX_OUTPUT_TOKENS = (MAX_REASON_WORDS + 1) * 2
+MAX_OUTPUT_TOKENS = (MAX_REASON_WORDS + 1) * 3
 
 SYSTEM_PROMPT = f"""\
 You are a scam detection system for a cryptocurrency Discord server.

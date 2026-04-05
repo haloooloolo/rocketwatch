@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiohttp import web
 from aiohttp.test_utils import TestClient, TestServer
 from helpers import (
     TEST_GUILD_ID,
@@ -176,6 +177,57 @@ class TestBanMember:
     async def test_error_returns_false(self, sentinel_client):
         m = _make_discord_member(guild_id=999999)
         result = await sentinel_client.ban_member(m, "bad actor")
+        assert result is False
+
+
+class TestNonJsonErrorResponse:
+    """Sentinel may return non-JSON errors (e.g. plain text 500 from a proxy)."""
+
+    @pytest.fixture
+    async def plaintext_500_client(self):
+        async def handle(request):
+            return web.Response(text="Internal Server Error", status=500)
+
+        app = web.Application()
+        for endpoint in [
+            "/delete_message",
+            "/lock_thread",
+            "/delete_thread",
+            "/timeout_member",
+            "/kick_member",
+            "/ban_member",
+        ]:
+            app.router.add_post(endpoint, handle)
+
+        server = TestServer(app)
+        test_client = TestClient(server)
+        await test_client.start_server()
+
+        rw_mock = MagicMock()
+        rw_mock.sentinel.api_url = str(server.make_url(""))
+        rw_mock.sentinel.api_key = TEST_KEY_SECRET
+        rw_cfg._instance = rw_mock
+
+        client = SentinelClient()
+        yield client
+
+        await client.close()
+        await test_client.close()
+        rw_cfg._instance = None
+
+    async def test_delete_message(self, plaintext_500_client):
+        msg = _make_discord_message()
+        result = await plaintext_500_client.delete_message(msg, "spam")
+        assert result is False
+
+    async def test_lock_thread(self, plaintext_500_client):
+        t = _make_discord_thread()
+        result = await plaintext_500_client.lock_thread(t, "spam")
+        assert result is False
+
+    async def test_timeout_member(self, plaintext_500_client):
+        m = _make_discord_member()
+        result = await plaintext_500_client.timeout_member(m, 3600, "spam")
         assert result is False
 
 

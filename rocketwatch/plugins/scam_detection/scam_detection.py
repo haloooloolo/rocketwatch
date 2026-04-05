@@ -44,6 +44,9 @@ from rocketwatch.utils.sentinel import SentinelClient
 log = logging.getLogger("rocketwatch.scam_detection")
 
 REPUTABLE_MESSAGE_THRESHOLD = 50
+DEFAULT_USER_TIMEOUT = timedelta(hours=24)
+MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=2)
+THREAD_ALERT_DELETE_AFTER = timedelta(minutes=60)
 
 
 class ScamDetection(Cog):
@@ -162,12 +165,12 @@ class ScamDetection(Cog):
     @Cog.listener()
     async def on_thread_update(self, before: Thread, after: Thread) -> None:
         if not before.locked and after.locked:
-            db_filter = {"type": "thread", "channel_id": after.id, "removed": False}
+            db_filter = {"channel_id": after.id, "removed": False}
             async with self._thread_report_lock:
                 if report := await self.bot.db.scam_reports.find_one(db_filter):
                     await self._update_report(report, "Thread has been locked.")
                     await self.bot.db.scam_reports.update_one(
-                        db_filter, {"$set": {"warning_id": None, "removed": True}}
+                        db_filter, {"$set": {"removed": True}}
                     )
 
     @Cog.listener()
@@ -293,11 +296,20 @@ class ScamDetection(Cog):
 
     @staticmethod
     def _build_automod_embed(report_msg: Message, actions: list[str]) -> Embed:
+        description = ""
+        if len(actions) > 1:
+            description = ", ".join(actions[:-1]) + " and "
+        description += actions[-1] + "."
+
+        if not description.startswith("http"):
+            # capitalize first letter, leave others untouched
+            description = description[0].upper() + description[1:]
+
         return Embed(
             title=":hammer: Automated Moderation",
             url=report_msg.jump_url,
             color=ReportColor.ALERT,
-            description=f"{' and '.join(actions)}.",
+            description=description,
         )
 
     async def report_message(self, message: Message, reason: str) -> None:
@@ -311,7 +323,6 @@ class ScamDetection(Cog):
             try:
                 view = self._make_vote_view(message)
                 warning_msg = await message.reply(
-                    content="<@828245338347405362>",
                     embed=warning,
                     view=view,
                     mention_author=False,
@@ -328,30 +339,41 @@ class ScamDetection(Cog):
             # this might take a while with retries on failure
             # we'd rather be fast with the initial warning and then delete it after
 
+            automod_message_channel = message.channel
+            alert_duration = MESSAGE_ALERT_DELETE_AFTER
+
             actions = []
-            timeout_duration = timedelta(hours=24)
+            timeout_duration = DEFAULT_USER_TIMEOUT
             try:
                 if await self._sentinel.delete_message(message, reason):
-                    actions.append("Message deleted")
-                if isinstance(message.author, Member):  # noqa: SIM102
-                    if await self._sentinel.timeout_member(
-                        message.author, int(timeout_duration.total_seconds()), reason
-                    ):
-                        duration = humanize.naturaldelta(timeout_duration)
-                        actions.append(
-                            f"{message.author.mention} timed out for {duration}"
-                        )
+                    actions.append("message deleted")
+                if (
+                    isinstance(message.channel, Thread)
+                    and (message.channel.owner_id == message.author.id)
+                    and await self._sentinel.lock_thread(message.channel, reason)
+                ):
+                    actions.append(f"{message.channel.jump_url} locked")
+                    automod_message_channel = message.channel.parent
+                    alert_duration = THREAD_ALERT_DELETE_AFTER
+                if isinstance(
+                    message.author, Member
+                ) and await self._sentinel.timeout_member(
+                    message.author, int(timeout_duration.total_seconds()), reason
+                ):
+                    duration = humanize.naturaldelta(timeout_duration)
+                    actions.append(f"{message.author.mention} timed out for {duration}")
             except Exception as e:
                 await self.bot.report_error(e)
                 return
 
-            if actions:
-                delete_after = 120
+            if actions and isinstance(automod_message_channel, Messageable):
                 embed = self._build_automod_embed(report_msg, actions)
                 embed.set_footer(
-                    text=f"This alert will disappear in {humanize.naturaldelta(delete_after)}."
+                    text=f"This alert will disappear in {humanize.naturaldelta(alert_duration)}."
                 )
-                await message.channel.send(embed=embed, delete_after=delete_after)
+                await automod_message_channel.send(
+                    embed=embed, delete_after=alert_duration.total_seconds()
+                )
 
     async def report_thread(self, thread: Thread, reason: str) -> None:
         async with self._thread_report_lock:
@@ -385,10 +407,10 @@ class ScamDetection(Cog):
             )
 
             actions = []
-            timeout_duration = timedelta(hours=24)
+            timeout_duration = DEFAULT_USER_TIMEOUT
             try:
                 if await self._sentinel.lock_thread(thread, reason):
-                    actions.append("Thread locked")
+                    actions.append(f"{thread.jump_url} locked")
                 if (
                     thread.owner_id
                     and (member := thread.guild.get_member(thread.owner_id))
@@ -403,12 +425,14 @@ class ScamDetection(Cog):
                 return
 
             if actions and isinstance(thread.parent, Messageable):
-                delete_after = 3600
+                delete_after = THREAD_ALERT_DELETE_AFTER
                 embed = self._build_automod_embed(report_msg, actions)
                 embed.set_footer(
-                    text=f"This alert will disappear in {humanize.naturaldelta(delete_after)}."
+                    text=f"This alert will disappear in {humanize.naturaldelta(THREAD_ALERT_DELETE_AFTER)}."
                 )
-                await thread.parent.send(embed=embed, delete_after=delete_after)
+                await thread.parent.send(
+                    embed=embed, delete_after=delete_after.total_seconds()
+                )
 
     # --- Report generation ---
 
@@ -434,7 +458,10 @@ class ScamDetection(Cog):
 
         report = warning.copy()
         warning.set_footer(
-            text="This message will be deleted once the suspicious message is removed."
+            text=(
+                "Do not engage with this user, action will be taken.\n"
+                "Ignore any DMs you may receive."
+            )
         )
 
         report.description = warning.description + (
@@ -544,11 +571,7 @@ class ScamDetection(Cog):
             message = await report_channel.fetch_message(report["report_id"])
             embed = message.embeds[0]
             embed.description = (embed.description or "") + f"\n\n**{note}**"
-            embed.color = (
-                ReportColor.WARN
-                if (embed.color == ReportColor.ALERT)
-                else ReportColor.OK
-            )
+            embed.color = ReportColor.WARN
             await message.edit(embed=embed)
         except Exception as e:
             await self.bot.report_error(e)

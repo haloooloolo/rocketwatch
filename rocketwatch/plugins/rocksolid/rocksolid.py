@@ -54,13 +54,15 @@ class RockSolid(Cog):
             updates.append((ts, assets))
             db_operations.append(InsertOne({"time": ts, "assets": assets}))
 
-        async with self.bot.db.client.start_session() as session:  # noqa: SIM117
-            async with await session.start_transaction():
-                if db_operations:
-                    await self.bot.db.rocksolid.bulk_write(db_operations)
-                await self.bot.db.last_checked_block.replace_one(
-                    {"_id": cog_id}, {"_id": cog_id, "block": b_to}, upsert=True
-                )
+        async with (
+            self.bot.db.client.start_session() as session,
+            await session.start_transaction(),
+        ):
+            if db_operations:
+                await self.bot.db.rocksolid.bulk_write(db_operations)
+            await self.bot.db.last_checked_block.replace_one(
+                {"_id": cog_id}, {"_id": cog_id, "block": b_to}, upsert=True
+            )
 
         return updates
 

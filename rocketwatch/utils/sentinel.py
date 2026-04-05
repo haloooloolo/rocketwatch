@@ -28,10 +28,10 @@ class SentinelClient:
     async def _post(self, endpoint: str, payload: dict[str, str | int]) -> bool:
         session = await self._get_session()
         async with session.post(endpoint, json=payload) as resp:
-            body = await resp.json()
             if resp.status == HTTPStatus.OK:
                 log.info(f"POST {endpoint} -> {resp.status}")
                 return True
+            body = await resp.text()
             log.warning(f"POST {endpoint} -> {resp.status}: {body}")
             return False
 
