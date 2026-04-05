@@ -8,10 +8,10 @@ from discord.utils import escape_markdown
 from eth_typing import HexStr
 from web3.constants import HASH_ZERO
 
+from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.forum.forum import Forum
 from rocketwatch.plugins.rpips.rpips import RPIPs
 from rocketwatch.plugins.snapshot.snapshot import Snapshot
-from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.block_time import ts_to_block
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.dao import (
@@ -116,7 +116,7 @@ class Governance(StatusPlugin):
                 text = text[: (max_length - 1)] + "…"
             return text
 
-        async def print_proposals(_dao: DAO, _proposals: list[DAO.Proposal]) -> str:
+        async def print_proposals(_dao: DAO, _proposals: Sequence[DAO.Proposal]) -> str:
             text = ""
             for _i, _proposal in enumerate(_proposals, start=1):
                 _title = sanitize(_proposal.message, 40)
@@ -127,28 +127,28 @@ class Governance(StatusPlugin):
 
         # --------- SECURITY COUNCIL --------- #
 
-        dao = SecurityCouncil()
-        if proposals := await self._get_active_dao_proposals(dao):
+        sc_dao = SecurityCouncil()
+        if sc_proposals := await self._get_active_dao_proposals(sc_dao):
             embed.description += "### Security Council\n"
             embed.description += "- **Active on-chain proposals**\n"
-            embed.description += await print_proposals(dao, proposals)
+            embed.description += await print_proposals(sc_dao, sc_proposals)
 
         # --------- ORACLE DAO --------- #
 
-        dao = OracleDAO()
-        if proposals := await self._get_active_dao_proposals(dao):
+        odao = OracleDAO()
+        if odao_proposals := await self._get_active_dao_proposals(odao):
             embed.description += "### Oracle DAO\n"
             embed.description += "- **Active on-chain proposals**\n"
-            embed.description += await print_proposals(dao, proposals)
+            embed.description += await print_proposals(odao, odao_proposals)
 
         # --------- PROTOCOL DAO --------- #
 
         section_content = ""
-        dao = ProtocolDAO()
+        pdao = ProtocolDAO()
 
-        if proposals := await self._get_active_pdao_proposals(dao):
+        if pdao_proposals := await self._get_active_pdao_proposals(pdao):
             section_content += "- **Active on-chain proposals**\n"
-            section_content += await print_proposals(dao, proposals)
+            section_content += await print_proposals(pdao, pdao_proposals)
 
         if snapshot_proposals := await self._get_active_snapshot_proposals():
             section_content += "- **Active Snapshot proposals**\n"

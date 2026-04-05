@@ -20,7 +20,7 @@ class FeeDistribution(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
 
-    async def _get_minipools(self, bond: int) -> list[dict]:
+    async def _get_minipools(self, bond: int) -> list[dict[str, Any]]:
         result = await self.bot.db.minipools.aggregate(
             [
                 {
@@ -40,7 +40,7 @@ class FeeDistribution(commands.Cog):
         )
         return await result.to_list()
 
-    async def _get_tree(self) -> dict:
+    async def _get_tree(self) -> dict[str, Any]:
         tree = {}
         for bond in (8, 16):
             subtree = {}

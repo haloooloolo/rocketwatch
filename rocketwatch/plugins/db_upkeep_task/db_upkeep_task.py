@@ -163,7 +163,7 @@ class DBUpkeepTask(commands.Cog):
 
     async def _batch_multicall_update(
         self,
-        collection: AsyncCollection,
+        collection: AsyncCollection[dict[str, Any]],
         query: dict[str, Any],
         call_fn: Callable[[dict[str, Any]], Coroutine[Any, Any, list[MulticallSpec]]],
         projection: dict[str, Any],
@@ -233,7 +233,7 @@ class DBUpkeepTask(commands.Cog):
         df = await rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
 
-        async def get_calls(n: dict) -> list[MulticallSpec]:
+        async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
             return [
                 (
                     df.functions.getProxyAddress(n["address"]),
@@ -271,7 +271,7 @@ class DBUpkeepTask(commands.Cog):
         ns = await rp.get_contract_by_name("rocketNodeStaking")
         mc = await rp.get_contract_by_name("multicall3")
 
-        async def get_calls(n: dict) -> list[MulticallSpec]:
+        async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
             return [
                 (
                     nm.functions.getNodeWithdrawalAddress(n["address"]),
@@ -403,7 +403,7 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_megapool_data(self) -> None:
-        async def get_calls(n: dict) -> list[MulticallSpec]:
+        async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
             mp = await rp.assemble_contract(
                 "rocketMegapoolDelegate", address=n["megapool"]["address"]
             )
@@ -523,7 +523,7 @@ class DBUpkeepTask(commands.Cog):
     async def add_static_minipool_data(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
 
-        async def lamb(n: dict) -> list[MulticallSpec]:
+        async def lamb(n: dict[str, Any]) -> list[MulticallSpec]:
             return [
                 (
                     (
@@ -622,7 +622,7 @@ class DBUpkeepTask(commands.Cog):
     async def update_dynamic_minipool_data(self) -> None:
         mc = await rp.get_contract_by_name("multicall3")
 
-        async def get_calls(n: dict) -> list[MulticallSpec]:
+        async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
             minipool_contract = await rp.assemble_contract(
                 "rocketMinipool", address=n["address"]
             )

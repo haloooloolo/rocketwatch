@@ -261,7 +261,7 @@ class Debug(Cog):
 
         events_plugin = cast(LogEvents, self.bot.cogs["Events"])
 
-        filtered_events = []
+        filtered_events: list[LogReceipt | EventData] = []
         for event_log in (await w3.eth.get_transaction_receipt(HexStr(tx_hash)))[
             "logs"
         ]:

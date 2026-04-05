@@ -14,8 +14,8 @@ from discord.abc import Messageable
 from discord.ext import commands, tasks
 from eth_typing import BlockNumber
 
-from rocketwatch.plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch.bot import RocketWatch
+from rocketwatch.plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch.utils.config import StatusMessageConfig, cfg
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.event import EventPlugin
@@ -210,7 +210,7 @@ class EventCore(commands.Cog):
             log.debug("No pending events in queue")
             return
 
-        async def try_load(_entry: dict, _key: str) -> Any | None:
+        async def try_load(_entry: dict[str, Any], _key: str) -> Any | None:
             try:
                 serialized = _entry.get(_key)
                 return pickle.loads(serialized) if serialized else None
@@ -219,7 +219,7 @@ class EventCore(commands.Cog):
                 return None
 
         for channel_id in channels:
-            db_events: list[dict] = (
+            db_events: list[dict[str, Any]] = (
                 await self.bot.db.event_queue.find(
                     {"channel_id": channel_id, "message_id": None}
                 )
@@ -363,7 +363,10 @@ class EventCore(commands.Cog):
                 await self._replace_or_add_status(channel_name, embed, state_message)
 
     async def _replace_or_add_status(
-        self, target_channel: str, embed: Embed | None, prev_status: dict | None
+        self,
+        target_channel: str,
+        embed: Embed | None,
+        prev_status: dict[str, Any] | None,
     ) -> None:
         target_channel_id = (
             self.channels.get(target_channel) or self.channels["default"]

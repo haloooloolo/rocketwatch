@@ -2,7 +2,7 @@ import functools
 import logging
 import operator
 from io import BytesIO
-from typing import Any
+from typing import Any, TypedDict
 
 import matplotlib as mpl
 import matplotlib.colors as mcolors
@@ -23,6 +23,13 @@ from rocketwatch.utils.shared_w3 import w3
 from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.collateral")
+
+
+class NodeCollateral(TypedDict):
+    bonded: float
+    borrowed: float
+    rpl_stake: float
+    validators: int
 
 
 def get_percentiles(
@@ -47,8 +54,8 @@ async def collateral_distribution_raw(
 
 
 async def get_node_collateral_data(
-    db: AsyncDatabase,
-) -> dict[ChecksumAddress, dict[str, int | float]]:
+    db: AsyncDatabase[dict[str, Any]],
+) -> dict[ChecksumAddress, NodeCollateral]:
     pipeline: list[dict[str, Any]] = [
         {
             "$match": {
@@ -113,7 +120,7 @@ async def get_node_collateral_data(
 
 
 async def get_average_collateral_percentage_per_node(
-    db: AsyncDatabase, collateral_cap: int | None, bonded: bool
+    db: AsyncDatabase[dict[str, Any]], collateral_cap: int | None, bonded: bool
 ) -> dict[float, list[float]]:
     stakes = list((await get_node_collateral_data(db)).values())
     rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
@@ -175,7 +182,7 @@ class Collateral(commands.Cog):
         rpl_price = solidity.to_float(await rp.call("rocketNetworkPrices.getRPLPrice"))
         data = await get_node_collateral_data(self.bot.db)
 
-        def node_collateral(node: dict[str, int | float]) -> float:
+        def node_collateral(node: NodeCollateral) -> float:
             eth = node["bonded"] if bonded else node["borrowed"]
             if not eth:
                 return 0.0

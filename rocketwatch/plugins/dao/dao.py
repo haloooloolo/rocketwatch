@@ -158,14 +158,11 @@ class OnchainDAO(Cog):
 
         match dao_name:
             case "pDAO":
-                dao = ProtocolDAO()
-                embed = await self.get_pdao_votes_embed(dao, full)
+                embed = await self.get_pdao_votes_embed(ProtocolDAO(), full)
             case "oDAO":
-                dao = OracleDAO()
-                embed = await self.get_dao_votes_embed(dao, full)
+                embed = await self.get_dao_votes_embed(OracleDAO(), full)
             case "Security Council":
-                dao = SecurityCouncil()
-                embed = await self.get_dao_votes_embed(dao, full)
+                embed = await self.get_dao_votes_embed(SecurityCouncil(), full)
             case _:
                 raise ValueError(f"Invalid DAO name: {dao_name}")
 
