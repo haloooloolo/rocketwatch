@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
-      - run: uv run --python 3.14 --extra test pytest --cov=rocketwatch --cov-report=term-missing --cov-report=xml
+      - run: uv run --python 3.14 --group test pytest --cov=rocketwatch --cov-report=term-missing --cov-report=xml
       - uses: codecov/codecov-action@v6
         with:
           files: coverage.xml
