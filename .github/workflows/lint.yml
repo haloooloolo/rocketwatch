@@ -26,5 +26,5 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --extra dev
       - run: uv run mypy rocketwatch/
-      - run: uv sync --project sentinel
+      - run: uv sync --project sentinel --extra dev
       - run: uv run --project sentinel mypy sentinel/
