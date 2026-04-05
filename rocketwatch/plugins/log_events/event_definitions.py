@@ -2460,11 +2460,22 @@ class MegapoolValidatorAssignedEvent(LogEvent):
         event: LogEventData,
         receipt: TxReceipt,
     ) -> list[Embed]:
+        count = event.get("assignmentCount", 1)
         fmt = await self._fmt(args)
+
+        if count == 1:
+            return [
+                await build_small_event_embed(
+                    f":handshake: Validator {args['validatorId']} of node "
+                    f"{fmt['node']} has been assigned funds from the deposit pool!",
+                    args["transactionHash"],
+                )
+            ]
+
         return [
             await build_small_event_embed(
-                f":handshake: Validator {args['validatorId']} of node "
-                f"{fmt['node']} has been assigned funds from the deposit pool!",
+                f":handshake: **{count} validators** of node "
+                f"{fmt['node']} have been assigned funds from the deposit pool!",
                 args["transactionHash"],
             )
         ]
@@ -2678,10 +2689,12 @@ class ODAOUpgradePendingEvent(LogEvent):
             args["upgradeProposalID"],
             block=args["blockNumber"],
         )
-        contract_address: str = await rp.call(
-            "rocketDAONodeTrustedUpgrade.getUpgradeAddress",
-            args["upgradeProposalID"],
-            block=args["blockNumber"],
+        contract_address: ChecksumAddress = w3.to_checksum_address(
+            await rp.call(
+                "rocketDAONodeTrustedUpgrade.getUpgradeAddress",
+                args["upgradeProposalID"],
+                block=args["blockNumber"],
+            )
         )
         veto_deadline = await rp.call(
             "rocketDAONodeTrustedUpgrade.getEnd",
