@@ -15,3 +15,8 @@ strict = true
 
 [tool.ruff]
 extend = "../pyproject.toml"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.20.0",
+]
