@@ -66,8 +66,10 @@ def advanced_tnx_url(tx_hash: str) -> str:
     return ""
 
 
-def render_tree_legacy(data: dict, name: str) -> str:
-    def render_branch(_data: dict[str, dict | int]) -> tuple[list, list, int]:
+def render_tree_legacy(data: dict[str, Any], name: str) -> str:
+    def render_branch(
+        _data: dict[str, dict[str, Any] | int],
+    ) -> tuple[list[str], list[int], int]:
         _strings = []
         _values = []
         count = 0

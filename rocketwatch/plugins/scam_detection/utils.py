@@ -1,10 +1,13 @@
 import logging
-from collections.abc import Callable, Coroutine
-from typing import Any, NotRequired, TypedDict
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
 
 from discord import ButtonStyle, Color, Interaction, Member, Message, Thread, ui
 
 from rocketwatch.utils.config import cfg
+
+if TYPE_CHECKING:
+    from rocketwatch.bot import RocketWatch
 
 log = logging.getLogger("rocketwatch.scam_detection")
 
@@ -37,7 +40,7 @@ class ScamReport(TypedDict):
     user_banned: bool
     channel_id: NotRequired[int]
     message_id: NotRequired[int]
-    embeds: NotRequired[list[dict]]
+    embeds: NotRequired[list[dict[str, Any]]]
     removed: NotRequired[bool]
 
 
@@ -47,7 +50,7 @@ class RemovalVoteView(ui.View):
     def __init__(
         self,
         reportable: Message | Thread,
-        on_mark_safe: Callable[[str], Coroutine],
+        on_mark_safe: Callable[[str], Awaitable[None]],
     ):
         super().__init__(timeout=None)
         self.reportable = reportable
@@ -55,7 +58,11 @@ class RemovalVoteView(ui.View):
         self.safu_votes: set[int] = set()
 
     @ui.button(label="Mark Safu", style=ButtonStyle.blurple)
-    async def mark_safe(self, interaction: Interaction, button: ui.Button) -> None:
+    async def mark_safe(
+        self,
+        interaction: Interaction["RocketWatch"],
+        button: ui.Button["RemovalVoteView"],
+    ) -> None:
         if interaction.message is None:
             return
 

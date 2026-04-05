@@ -6,7 +6,7 @@ from rocketwatch.utils import solidity
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
 
-price_cache = {"block": 0, "rpl_price": 0, "reth_price": 0}
+price_cache: dict[str, float] = {"block": 0.0, "rpl_price": 0.0, "reth_price": 0.0}
 
 sea_creatures = {
     # 32 * 100: spouting whale emoji

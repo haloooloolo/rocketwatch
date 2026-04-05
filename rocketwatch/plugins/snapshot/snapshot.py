@@ -35,7 +35,7 @@ class Snapshot(EventPlugin):
 
     @staticmethod
     @retry(tries=3, delay=1)
-    async def _query_api(query: Query) -> list[dict] | dict:
+    async def _query_api(query: Query) -> list[dict[str, Any]] | dict[str, Any]:
         query_json = {"query": Operation(type="query", queries=[query]).render()}
         log.debug(f"Snapshot query: {query_json}")
         async with (
@@ -45,7 +45,7 @@ class Snapshot(EventPlugin):
             response = await resp.json()
         if "errors" in response:
             raise Exception(response["errors"])
-        result: list[dict] | dict = response["data"][query.name]
+        result: list[dict[str, Any]] | dict[str, Any] = response["data"][query.name]
         return result
 
     @dataclass(frozen=True)
@@ -433,23 +433,23 @@ class Snapshot(EventPlugin):
             embed.add_field(name="Timestamp", value=f"<t:{self.created}:R>")
 
             if self.vp >= 250:
-                conditional_args = {
-                    "event_name": "pdao_snapshot_vote",
-                    "image": self.proposal.create_image(include_title=False),
-                }
+                return Event(
+                    embed=embed,
+                    topic="snapshot",
+                    block_number=await ts_to_block(self.created),
+                    unique_id=f"snapshot_vote:{self.proposal.id}:{self.voter}:{self.created}",
+                    event_name="pdao_snapshot_vote",
+                    image=self.proposal.create_image(include_title=False),
+                )
             else:
-                conditional_args = {
-                    "event_name": "snapshot_vote",
-                    "thumbnail": self.proposal.create_image(include_title=False),
-                }
-
-            return Event(
-                embed=embed,
-                topic="snapshot",
-                block_number=await ts_to_block(self.created),
-                unique_id=f"snapshot_vote:{self.proposal.id}:{self.voter}:{self.created}",
-                **conditional_args,
-            )
+                return Event(
+                    embed=embed,
+                    topic="snapshot",
+                    block_number=await ts_to_block(self.created),
+                    unique_id=f"snapshot_vote:{self.proposal.id}:{self.voter}:{self.created}",
+                    event_name="snapshot_vote",
+                    thumbnail=self.proposal.create_image(include_title=False),
+                )
 
     @staticmethod
     async def fetch_proposal(proposal_id: str) -> Proposal | None:
@@ -458,7 +458,7 @@ class Snapshot(EventPlugin):
             arguments=[Argument(name="id", value=f'"{proposal_id}"')],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"],
         )
-        response: dict = await Snapshot._query_api(query)
+        response = cast(dict[str, Any], await Snapshot._query_api(query))
         return Snapshot.Proposal(**response) if response else None
 
     @staticmethod
@@ -482,7 +482,7 @@ class Snapshot(EventPlugin):
             ],
             fields=["id", "title", "choices", "start", "end", "scores", "quorum"],
         )
-        response: list[dict] = await Snapshot._query_api(query)
+        response = cast(list[dict[str, Any]], await Snapshot._query_api(query))
         return [Snapshot.Proposal(**d) for d in response]
 
     @staticmethod
@@ -511,17 +511,19 @@ class Snapshot(EventPlugin):
             ],
             fields=["id", "voter", "created", "vp", "choice", "reason"],
         )
-        response: list[dict] = await Snapshot._query_api(query)
+        response = cast(list[dict[str, Any]], await Snapshot._query_api(query))
         return [Snapshot.Vote(proposal=proposal, **d) for d in response]
 
     async def _get_new_events(self) -> list[Event]:
         now = datetime.now()
         events: list[Event] = []
 
-        proposal_db_changes: list[InsertOne | UpdateOne | DeleteOne] = []
-        vote_db_changes: list[InsertOne] = []
+        proposal_db_changes: list[
+            InsertOne[dict[str, Any]] | UpdateOne | DeleteOne
+        ] = []
+        vote_db_changes: list[InsertOne[dict[str, Any]]] = []
 
-        known_active_proposals: dict[str, dict] = {}
+        known_active_proposals: dict[str, dict[str, Any]] = {}
         async for stored_proposal in self.proposal_db.find():
             if stored_proposal["end"] >= now.timestamp():
                 known_active_proposals[stored_proposal["_id"]] = stored_proposal
@@ -598,11 +600,11 @@ class Snapshot(EventPlugin):
                 except IndexError:
                     prev_vote = None
 
-                event = await vote.create_event(prev_vote)
-                if event is None:
+                vote_event = await vote.create_event(prev_vote)
+                if vote_event is None:
                     continue
 
-                events.append(event)
+                events.append(vote_event)
                 db_update = InsertOne(
                     {
                         "_id": vote.id,

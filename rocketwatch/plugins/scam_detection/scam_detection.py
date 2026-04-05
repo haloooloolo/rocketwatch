@@ -349,7 +349,7 @@ class ScamDetection(Cog):
                 delete_after = 120
                 embed = self._build_automod_embed(report_msg, actions)
                 embed.set_footer(
-                    text=f"This message will be deleted in {humanize.naturaldelta(delete_after)}."
+                    text=f"This alert will disappear in {humanize.naturaldelta(delete_after)}."
                 )
                 await message.channel.send(embed=embed, delete_after=delete_after)
 
@@ -406,7 +406,7 @@ class ScamDetection(Cog):
                 delete_after = 3600
                 embed = self._build_automod_embed(report_msg, actions)
                 embed.set_footer(
-                    text=f"This message will be deleted in {humanize.naturaldelta(delete_after)}."
+                    text=f"This alert will disappear in {humanize.naturaldelta(delete_after)}."
                 )
                 await thread.parent.send(embed=embed, delete_after=delete_after)
 

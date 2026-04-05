@@ -20,7 +20,7 @@ log = logging.getLogger("rocketwatch.tvl")
 
 def minipool_split_rewards_logic(
     balance: float, node_share: float, commission: float, force_base: bool = False
-) -> dict:
+) -> dict[str, dict[str, float]]:
     d = {"base": {"reth": 0.0, "node": 0.0}, "rewards": {"reth": 0.0, "node": 0.0}}
     node_balance = 32 * node_share
     reth_balance = 32 - node_balance
@@ -45,7 +45,7 @@ def megapool_split_rewards(
     node_commission: float,
     voter_share: float,
     dao_share: float,
-) -> dict:
+) -> dict[str, float]:
     borrowed_portion = rewards * (1 - capital_ratio)
     reth_commission = 1 - node_commission - voter_share - dao_share
     reth = borrowed_portion * reth_commission
@@ -537,7 +537,7 @@ class TVL(Cog):
                 "Node Distributor Contracts"
             ]["rETH Share"]["_val"] = tmp[0]["reth_share"]
 
-        def set_val_of_branch(branch: dict, unit: str) -> float:
+        def set_val_of_branch(branch: dict[str, Any], unit: str) -> float:
             val = 0
             for child in branch:
                 if isinstance(branch[child], dict):

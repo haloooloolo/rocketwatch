@@ -23,7 +23,7 @@ _BEACON_PENDING = {
 
 
 def _classify_beacon_validator(
-    beacon: dict, contract_status: str
+    beacon: dict[str, Any], contract_status: str
 ) -> tuple[str | None, str | None]:
     """Classify a validator by beacon status. Returns (status, sub_status)."""
     match beacon["status"]:
@@ -51,7 +51,9 @@ def _classify_beacon_validator(
             return None, None
 
 
-def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, list]:
+def _classify_collection(
+    docs: list[dict[str, Any]], done_fn: Callable[[dict[str, Any]], bool]
+) -> tuple[dict[str, int | dict[str, int]], list[dict[str, Any]], list[dict[str, Any]]]:
     """Classify docs into state tree.
 
     Args:
@@ -102,7 +104,7 @@ def _classify_collection(docs: list, done_fn: Callable) -> tuple[dict, list, lis
     return result, exiting_valis, withdrawn_valis
 
 
-def _collapse_tree(data: dict) -> dict:
+def _collapse_tree(data: dict[str, Any]) -> dict[str, Any]:
     collapsed_data = {}
     for status in data:
         if isinstance(data[status], dict) and len(data[status]) == 1:
