@@ -3,7 +3,9 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+import humanize
 from discord import Member, Message
+from discord.utils import utcnow
 
 from rocketwatch.utils.config import cfg
 
@@ -22,8 +24,8 @@ Focus on the author's INTENT. Flag messages that are trying to:
 - Create artificial urgency or fear to pressure users into action
 - Deceive users through any other social engineering technique
 
-You will be given context about the user: their join date and number of previous \
-messages in the server. Brand-new users with few or no messages who jump straight \
+You will be given context about the user: how long they have been in the server and the number of previous \
+messages they have sent in the server. Brand-new users with few or no messages who jump straight \
 into offering help or directing others are highly suspicious.
 
 Do NOT flag messages that:
@@ -55,7 +57,7 @@ Examples:
 Respond with SAFE or SCAM: <reason in {MAX_REASON_WORDS} words max>"""
 
 USER_PROMPT_TEMPLATE = (
-    "User joined: {joined}\n"
+    "User has been in the server for: {membership_duration}\n"
     "Previous messages in server: {message_count}\n\n"
     "Evaluate this Discord message:\n\n{content}"
 )
@@ -155,14 +157,18 @@ class LLMScamChecker:
             ]
         content = json.dumps(data, indent=2)
 
-        joined = "unknown"
+        membership_duration = "unknown"
         if isinstance(message.author, Member) and message.author.joined_at:
-            joined = message.author.joined_at.strftime("%Y-%m-%d")
+            membership_duration = humanize.naturaltime(
+                utcnow() - message.author.joined_at
+            )
 
         prev_user_msg_count = user_msg_count - 1
 
         user_message = USER_PROMPT_TEMPLATE.format(
-            content=content, joined=joined, message_count=prev_user_msg_count
+            content=content,
+            membership_duration=membership_duration,
+            message_count=prev_user_msg_count,
         )
         result = (await self._provider.complete(SYSTEM_PROMPT, user_message)).strip()
         log.debug(f"AI scam check ({cfg.llm.provider}/{cfg.llm.model}): {result}")
