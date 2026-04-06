@@ -778,8 +778,12 @@ class ScamDetection(Cog):
                 ):
                     report_updates.append("- Timeout has been lifted.")
 
-                if thread := moderator.guild.get_thread(report["channel_id"]):  # noqa: SIM102
-                    if await self._sentinel.unlock_thread(thread, "Report dismissed"):
+                if channel := await self.bot.get_or_fetch_channel(report["channel_id"]):  # noqa: SIM102
+                    if isinstance(
+                        channel, Thread
+                    ) and await self._sentinel.unlock_thread(
+                        channel, "Report dismissed"
+                    ):
                         report_updates.append("- Thread has been unlocked.")
 
                 await self._resolve_report(
