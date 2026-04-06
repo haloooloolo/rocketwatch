@@ -46,6 +46,7 @@ The optional `[api.defaults]` section sets guardrail values inherited by all key
 | `timeout_member_max_duration` | Maximum duration of user timeouts in seconds; 0 to disable timeouts; omit for no limit |
 | `kick_member_max_age` | Allow kicking members who joined less than this many seconds ago; 0 to disable kicks; omit for no limit |
 | `ban_member_max_age` | Allow banning members who joined less than this many seconds ago; 0 to disable bans; omit for no limit |
+| `revision_window` | How long undo actions (unban, unlock, remove timeout) remain available after the original action, in seconds; omit for no limit |
 | `max_actions_per_hour` | Rate limit for this key; omit for no limit |
 
 Each `[[api.keys]]` entry defines a key:
@@ -94,6 +95,14 @@ Guardrails: server must be in the allowlist, message must be younger than `delet
 
 Locks and archives the thread, preventing non-moderators from posting or unarchiving. Guardrails: server must be in the allowlist, thread must be younger than `lock_thread_max_age`.
 
+### `POST /unlock_thread`
+
+```json
+{"guild_id": 123, "thread_id": 456, "reason": "..."}
+```
+
+Unlocks and unarchives a thread previously locked by the sentinel. Guardrails: server allowlist, thread must have been locked by the sentinel within the configured `revision_window` (if set). After a sentinel restart the tracking cache is empty, so previously locked threads cannot be unlocked.
+
 ### `POST /delete_thread`
 
 ```json
@@ -126,13 +135,21 @@ Guardrails: server allowlist, refuses to kick moderators, member must have joine
 
 Guardrails: server allowlist, refuses to ban moderators, member must have joined less than `ban_member_max_age` ago; 0 to disable.
 
-### `POST /is_banned`
+### `POST /unban_member`
 
 ```json
-{"guild_id": 123, "user_id": 456}
+{"guild_id": 123, "user_id": 456, "reason": "..."}
 ```
 
-Returns `{"banned": true, "reason": "...", "user_id": 456}` if the user is banned, or `{"banned": false, "user_id": 456}` otherwise. Guardrails: server allowlist only.
+Unbans a user previously banned by the sentinel. Guardrails: server allowlist, ban must have been applied by the sentinel within the configured `revision_window` (if set). After a sentinel restart the tracking cache is empty, so previously applied bans cannot be undone.
+
+### `POST /remove_timeout`
+
+```json
+{"guild_id": 123, "user_id": 456, "reason": "..."}
+```
+
+Removes a timeout previously applied by the sentinel. Guardrails: server allowlist, timeout must have been applied by the sentinel and not yet expired. After a sentinel restart the tracking cache is empty, so previously applied timeouts cannot be removed.
 
 ### `POST /is_timed_out`
 
@@ -141,6 +158,14 @@ Returns `{"banned": true, "reason": "...", "user_id": 456}` if the user is banne
 ```
 
 Returns `{"timed_out": true, "until": "...", "user_id": 456}` if the member is currently timed out, or `{"timed_out": false, "user_id": 456}` otherwise. Returns 404 if the member is not in the server. Guardrails: server allowlist only.
+
+### `POST /is_banned`
+
+```json
+{"guild_id": 123, "user_id": 456}
+```
+
+Returns `{"banned": true, "reason": "...", "user_id": 456}` if the user is banned, or `{"banned": false, "user_id": 456}` otherwise. Guardrails: server allowlist only.
 
 ### Error responses
 

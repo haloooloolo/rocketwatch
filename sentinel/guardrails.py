@@ -33,6 +33,39 @@ class RateLimiter:
 rate_limiter = RateLimiter()
 
 
+class ActionTracker:
+    """TTL cache tracking sentinel-applied bans and timeouts."""
+
+    def __init__(self) -> None:
+        self._expiry: dict[str, float] = {}
+
+    def _tag(self, key_secret: str, action: str, guild_id: int, user_id: int) -> str:
+        return f"{key_secret}:{action}:{guild_id}:{user_id}"
+
+    def _prune(self) -> None:
+        now = time.monotonic()
+        self._expiry = {k: v for k, v in self._expiry.items() if v > now}
+
+    def record(
+        self, key_secret: str, action: str, guild_id: int, user_id: int, ttl: float
+    ) -> None:
+        self._expiry[self._tag(key_secret, action, guild_id, user_id)] = (
+            time.monotonic() + ttl
+        )
+
+    def is_tracked(
+        self, key_secret: str, action: str, guild_id: int, user_id: int
+    ) -> bool:
+        self._prune()
+        return self._tag(key_secret, action, guild_id, user_id) in self._expiry
+
+    def remove(self, key_secret: str, action: str, guild_id: int, user_id: int) -> None:
+        self._expiry.pop(self._tag(key_secret, action, guild_id, user_id), None)
+
+
+action_tracker = ActionTracker()
+
+
 def check_guild(key: KeyConfig, guild_id: int) -> str | None:
     if guild_id not in key.allowed_server_ids:
         return "guild_not_allowed"

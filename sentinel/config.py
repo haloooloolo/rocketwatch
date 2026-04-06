@@ -15,6 +15,7 @@ class KeyDefaults(BaseModel):
     timeout_member_max_duration: int | None = None
     kick_member_max_age: int | None = None
     ban_member_max_age: int | None = None
+    revision_window: int | None = None
     max_actions_per_hour: int | None = None
 
 

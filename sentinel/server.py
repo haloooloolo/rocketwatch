@@ -9,6 +9,7 @@ from discord.ext.commands import Bot
 from sentinel.audit import log_action
 from sentinel.config import KeyConfig, cfg
 from sentinel.guardrails import (
+    action_tracker,
     check_guild,
     check_member_age,
     check_message_age,
@@ -30,10 +31,13 @@ def create_app(bot: Bot) -> web.Application:
     app[keys_key] = {key.secret: key for key in cfg.api.keys}
     app.router.add_post("/delete_message", handle_delete_message)
     app.router.add_post("/lock_thread", handle_lock_thread)
+    app.router.add_post("/unlock_thread", handle_unlock_thread)
     app.router.add_post("/delete_thread", handle_delete_thread)
     app.router.add_post("/timeout_member", handle_timeout_member)
     app.router.add_post("/kick_member", handle_kick_member)
     app.router.add_post("/ban_member", handle_ban_member)
+    app.router.add_post("/unban_member", handle_unban_member)
+    app.router.add_post("/remove_timeout", handle_remove_timeout)
     app.router.add_post("/is_banned", handle_is_banned)
     app.router.add_post("/is_timed_out", handle_is_timed_out)
     return app
@@ -173,9 +177,73 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
             {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
         )
 
+    action_tracker.record(
+        key.secret,
+        "lock_thread",
+        guild_id,
+        thread_id,
+        key.revision_window or float("inf"),
+    )
     log_action("lock_thread", guild_id, thread_id, reason, "success")
     return web.json_response(
         {"status": "ok", "action": "lock_thread", "thread_id": thread_id}
+    )
+
+
+async def handle_unlock_thread(request: web.Request) -> web.Response:
+    bot = request.app[bot_key]
+    key: KeyConfig = request["key"]
+    data = await request.json()
+
+    guild_id = data["guild_id"]
+    thread_id = data["thread_id"]
+    reason = data.get("reason", "")
+
+    if error := check_guild(key, guild_id):
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    if not action_tracker.is_tracked(key.secret, "lock_thread", guild_id, thread_id):
+        log_action("unlock_thread", guild_id, thread_id, reason, "not_sentinel_lock")
+        return web.json_response(
+            {"error": "not_sentinel_lock"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
+
+    thread = guild.get_thread(thread_id)
+    if thread is None:
+        try:
+            fetched = await guild.fetch_channel(thread_id)
+        except discord.NotFound:
+            log_action("unlock_thread", guild_id, thread_id, reason, "not_found")
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
+        if not isinstance(fetched, discord.Thread):
+            log_action("unlock_thread", guild_id, thread_id, reason, "not_found")
+            return web.json_response(
+                {"error": "thread_not_found"}, status=HTTPStatus.NOT_FOUND
+            )
+        thread = fetched
+
+    try:
+        await thread.edit(locked=False, archived=False, reason=reason)
+    except discord.Forbidden:
+        log_action("unlock_thread", guild_id, thread_id, reason, "forbidden")
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
+
+    action_tracker.remove(key.secret, "lock_thread", guild_id, thread_id)
+    log_action("unlock_thread", guild_id, thread_id, reason, "success")
+    return web.json_response(
+        {"status": "ok", "action": "unlock_thread", "thread_id": thread_id}
     )
 
 
@@ -309,6 +377,7 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
             {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
         )
 
+    action_tracker.record(key.secret, "timeout", guild_id, user_id, duration_seconds)
     log_action("timeout_member", guild_id, user_id, reason, "success")
     return web.json_response(
         {
@@ -317,6 +386,59 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
             "user_id": user_id,
             "until": until.isoformat(),
         }
+    )
+
+
+async def handle_remove_timeout(request: web.Request) -> web.Response:
+    bot = request.app[bot_key]
+    key: KeyConfig = request["key"]
+    data = await request.json()
+
+    guild_id = data["guild_id"]
+    user_id = data["user_id"]
+    reason = data.get("reason", "")
+
+    if error := check_guild(key, guild_id):
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    if not action_tracker.is_tracked(key.secret, "timeout", guild_id, user_id):
+        log_action("remove_timeout", guild_id, user_id, reason, "not_sentinel_timeout")
+        return web.json_response(
+            {"error": "not_sentinel_timeout"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
+
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        log_action("remove_timeout", guild_id, user_id, reason, "not_found")
+        return web.json_response(
+            {"error": "member_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
+
+    if not member.is_timed_out():
+        action_tracker.remove(key.secret, "timeout", guild_id, user_id)
+        return web.json_response({"error": "not_timed_out"}, status=HTTPStatus.CONFLICT)
+
+    try:
+        await member.timeout(None, reason=reason)
+    except discord.Forbidden:
+        log_action("remove_timeout", guild_id, user_id, reason, "forbidden")
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
+
+    action_tracker.remove(key.secret, "timeout", guild_id, user_id)
+    log_action("remove_timeout", guild_id, user_id, reason, "success")
+    return web.json_response(
+        {"status": "ok", "action": "remove_timeout", "user_id": user_id}
     )
 
 
@@ -434,9 +556,58 @@ async def handle_ban_member(request: web.Request) -> web.Response:
             {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
         )
 
+    action_tracker.record(
+        key.secret, "ban", guild_id, user_id, key.revision_window or float("inf")
+    )
     log_action("ban_member", guild_id, user_id, reason, "success")
     return web.json_response(
         {"status": "ok", "action": "ban_member", "user_id": user_id}
+    )
+
+
+async def handle_unban_member(request: web.Request) -> web.Response:
+    bot = request.app[bot_key]
+    key: KeyConfig = request["key"]
+    data = await request.json()
+
+    guild_id = data["guild_id"]
+    user_id = data["user_id"]
+    reason = data.get("reason", "")
+
+    if error := check_guild(key, guild_id):
+        return web.json_response(
+            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    if not action_tracker.is_tracked(key.secret, "ban", guild_id, user_id):
+        log_action("unban_member", guild_id, user_id, reason, "not_sentinel_ban")
+        return web.json_response(
+            {"error": "not_sentinel_ban"}, status=HTTPStatus.UNPROCESSABLE_ENTITY
+        )
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        return web.json_response(
+            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
+
+    try:
+        await guild.unban(discord.Object(user_id), reason=reason)
+    except discord.NotFound:
+        log_action("unban_member", guild_id, user_id, reason, "not_found")
+        return web.json_response(
+            {"error": "ban_not_found"}, status=HTTPStatus.NOT_FOUND
+        )
+    except discord.Forbidden:
+        log_action("unban_member", guild_id, user_id, reason, "forbidden")
+        return web.json_response(
+            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
+        )
+
+    action_tracker.remove(key.secret, "ban", guild_id, user_id)
+    log_action("unban_member", guild_id, user_id, reason, "success")
+    return web.json_response(
+        {"status": "ok", "action": "unban_member", "user_id": user_id}
     )
 
 

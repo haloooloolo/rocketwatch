@@ -69,6 +69,18 @@ class SentinelClient:
             },
         )
 
+    async def unlock_thread(self, thread: Thread, reason: str) -> bool:
+        if thread.guild is None:
+            return False
+        return await self._request(
+            "/unlock_thread",
+            {
+                "guild_id": thread.guild.id,
+                "thread_id": thread.id,
+                "reason": reason,
+            },
+        )
+
     async def delete_thread(self, thread: Thread, reason: str) -> bool:
         if thread.guild is None:
             return False
@@ -94,6 +106,20 @@ class SentinelClient:
             },
         )
 
+    async def remove_timeout(self, guild_id: int, user_id: int, reason: str) -> bool:
+        return await self._request(
+            "/remove_timeout",
+            {"guild_id": guild_id, "user_id": user_id, "reason": reason},
+        )
+
+    async def is_timed_out(self, guild_id: int, user_id: int) -> bool | None:
+        result = await self._post(
+            "/is_timed_out", {"guild_id": guild_id, "user_id": user_id}
+        )
+        if result and ("timed_out" in result):
+            return bool(result["timed_out"])
+        return None
+
     async def kick_member(self, member: Member, reason: str) -> bool:
         return await self._request(
             "/kick_member",
@@ -114,20 +140,18 @@ class SentinelClient:
             },
         )
 
+    async def unban_member(self, guild_id: int, user_id: int, reason: str) -> bool:
+        return await self._request(
+            "/unban_member",
+            {"guild_id": guild_id, "user_id": user_id, "reason": reason},
+        )
+
     async def is_banned(self, guild_id: int, user_id: int) -> bool | None:
         result = await self._post(
             "/is_banned", {"guild_id": guild_id, "user_id": user_id}
         )
         if result and ("banned" in result):
             return bool(result["banned"])
-        return None
-
-    async def is_timed_out(self, guild_id: int, user_id: int) -> bool | None:
-        result = await self._post(
-            "/is_timed_out", {"guild_id": guild_id, "user_id": user_id}
-        )
-        if result and ("timed_out" in result):
-            return bool(result["timed_out"])
         return None
 
     async def close(self) -> None:
