@@ -47,7 +47,7 @@ log = logging.getLogger("rocketwatch.scam_detection")
 
 REPUTABLE_MESSAGE_THRESHOLD = 50
 DEFAULT_USER_TIMEOUT = timedelta(hours=24)
-MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=2)
+MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=5)
 THREAD_ALERT_DELETE_AFTER = timedelta(minutes=60)
 
 
