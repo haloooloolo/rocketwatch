@@ -204,33 +204,6 @@ class TestIsBanned:
         assert result is None
 
 
-class TestIsTimedOut:
-    async def test_timed_out(self, sentinel_client):
-        member = make_mock_member(is_timed_out=True)
-        sentinel_client.mock_guild.fetch_member.return_value = member
-
-        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 1000)
-        assert result is True
-
-    async def test_not_timed_out(self, sentinel_client):
-        member = make_mock_member()
-        sentinel_client.mock_guild.fetch_member.return_value = member
-
-        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 1000)
-        assert result is False
-
-    async def test_member_not_found(self, sentinel_client):
-        from discord import NotFound
-
-        resp = MagicMock(status=404)
-        sentinel_client.mock_guild.fetch_member.side_effect = NotFound(
-            resp, "Not Found"
-        )
-
-        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 9999)
-        assert result is None
-
-
 class TestNonJsonErrorResponse:
     """Sentinel may return non-JSON errors (e.g. plain text 500 from a proxy)."""
 

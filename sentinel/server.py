@@ -35,12 +35,11 @@ def create_app(bot: Bot) -> web.Application:
     app.router.add_post("/unlock_thread", handle_unlock_thread)
     app.router.add_post("/delete_thread", handle_delete_thread)
     app.router.add_post("/timeout_member", handle_timeout_member)
+    app.router.add_post("/remove_timeout", handle_remove_timeout)
     app.router.add_post("/kick_member", handle_kick_member)
     app.router.add_post("/ban_member", handle_ban_member)
     app.router.add_post("/unban_member", handle_unban_member)
-    app.router.add_post("/remove_timeout", handle_remove_timeout)
     app.router.add_post("/is_banned", handle_is_banned)
-    app.router.add_post("/is_timed_out", handle_is_timed_out)
     return app
 
 
@@ -642,40 +641,3 @@ async def handle_is_banned(request: web.Request) -> web.Response:
         return web.json_response(
             {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
         )
-
-
-async def handle_is_timed_out(request: web.Request) -> web.Response:
-    bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
-    data = await request.json()
-
-    guild_id = data["guild_id"]
-    user_id = data["user_id"]
-
-    if error := check_guild(key, guild_id):
-        return web.json_response(
-            {"error": error}, status=HTTPStatus.UNPROCESSABLE_ENTITY
-        )
-
-    guild = bot.get_guild(guild_id)
-    if guild is None:
-        return web.json_response(
-            {"error": "guild_not_found"}, status=HTTPStatus.NOT_FOUND
-        )
-
-    try:
-        member = await guild.fetch_member(user_id)
-    except discord.NotFound:
-        return web.json_response(
-            {"error": "member_not_found"}, status=HTTPStatus.NOT_FOUND
-        )
-    except discord.Forbidden:
-        return web.json_response(
-            {"error": "missing_permissions"}, status=HTTPStatus.FORBIDDEN
-        )
-
-    timed_out = member.is_timed_out()
-    result = {"timed_out": timed_out, "user_id": user_id}
-    if timed_out and member.timed_out_until:
-        result["until"] = member.timed_out_until.isoformat()
-    return web.json_response(result)

@@ -112,14 +112,6 @@ class SentinelClient:
             {"guild_id": guild_id, "user_id": user_id, "reason": reason},
         )
 
-    async def is_timed_out(self, guild_id: int, user_id: int) -> bool | None:
-        result = await self._post(
-            "/is_timed_out", {"guild_id": guild_id, "user_id": user_id}
-        )
-        if result and ("timed_out" in result):
-            return bool(result["timed_out"])
-        return None
-
     async def kick_member(self, member: Member, reason: str) -> bool:
         return await self._request(
             "/kick_member",

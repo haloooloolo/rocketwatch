@@ -127,14 +127,6 @@ Guardrails: server allowlist, duration capped at `timeout_member_max_duration`, 
 
 Removes a timeout previously applied by the sentinel. Guardrails: server allowlist, timeout must have been applied by the sentinel and not yet expired. After a sentinel restart the tracking cache is empty, so previously applied timeouts cannot be removed.
 
-### `POST /is_timed_out`
-
-```json
-{"guild_id": 123, "user_id": 456}
-```
-
-Returns `{"timed_out": true, "until": "...", "user_id": 456}` if the member is currently timed out, or `{"timed_out": false, "user_id": 456}` otherwise. Returns 404 if the member is not in the server. Guardrails: server allowlist only.
-
 ### `POST /kick_member`
 
 ```json
