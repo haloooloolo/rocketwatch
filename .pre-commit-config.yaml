@@ -9,7 +9,21 @@ repos:
     hooks:
       - id: pytest
         name: pytest
-        entry: uv run pytest -x -q
+        entry: uv run --group test pytest -x -q
         language: system
         pass_filenames: false
         always_run: true
+      - id: mypy
+        name: mypy (rocketwatch)
+        entry: uv run --group test mypy rocketwatch/
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: mypy-sentinel
+        name: mypy (sentinel)
+        entry: uv run --project sentinel --group dev mypy --config-file sentinel/pyproject.toml sentinel/
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

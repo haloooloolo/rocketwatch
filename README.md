@@ -92,6 +92,15 @@ uv run .
 
 ## Development
 
+### Pre-commit hooks
+
+```sh
+uv run --group dev pre-commit install
+uv run --group dev pre-commit install --hook-type pre-push
+```
+
+This sets up ruff linting/formatting and pytest on commit, and mypy type checking on push.
+
 ### Linting
 
 ```sh
