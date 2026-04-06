@@ -339,7 +339,7 @@ class ScamDetection(Cog):
             # this might take a while with retries on failure
             # we'd rather be fast with the initial warning and then delete it after
 
-            automod_message_channel = message.channel
+            automod_message_channel: Any = message.channel
             alert_duration = MESSAGE_ALERT_DELETE_AFTER
 
             actions = []
@@ -562,8 +562,13 @@ class ScamDetection(Cog):
         except (KeyError, errors.NotFound, errors.Forbidden):
             return
 
-        if isinstance(thread, Thread):
-            await self.report_thread(thread, "Attempt to hide thread from main channel")
+        if not isinstance(thread, Thread):
+            return
+
+        if await self._sentinel.is_banned(thread.guild.id, thread.owner_id):
+            return  # owner already banned
+
+        await self.report_thread(thread, "Attempt to hide thread from main channel")
 
     async def _update_report(self, report: ScamReport, note: str) -> None:
         report_channel = await self._get_report_channel()

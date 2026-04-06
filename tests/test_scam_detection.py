@@ -164,13 +164,31 @@ class TestThreadStarterDeleted:
         thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
         detector._thread_creation_messages[thread_id] = thread_id
         detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
+        detector._sentinel.is_banned = AsyncMock(return_value=False)
         detector.report_thread = AsyncMock()
 
         await detector._check_thread_starter_deleted(thread_id)
 
+        detector._sentinel.is_banned.assert_awaited_once_with(
+            thread.guild.id, thread.owner_id
+        )
         detector.report_thread.assert_awaited_once_with(
             thread, "Attempt to hide thread from main channel"
         )
+        assert thread_id not in detector._thread_creation_messages
+
+    @pytest.mark.asyncio
+    async def test_starter_deleted_skips_banned_owner(self, detector):
+        thread_id = 123
+        thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
+        detector._thread_creation_messages[thread_id] = thread_id
+        detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
+        detector._sentinel.is_banned = AsyncMock(return_value=True)
+        detector.report_thread = AsyncMock()
+
+        await detector._check_thread_starter_deleted(thread_id)
+
+        detector.report_thread.assert_not_awaited()
         assert thread_id not in detector._thread_creation_messages
 
     @pytest.mark.asyncio

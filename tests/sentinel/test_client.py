@@ -48,6 +48,7 @@ async def sentinel_client():
     guild.get_thread = MagicMock(return_value=None)
     guild.fetch_channel = AsyncMock()
     guild.fetch_member = AsyncMock()
+    guild.fetch_ban = AsyncMock()
 
     bot = MagicMock()
     bot.get_guild = MagicMock(return_value=guild)
@@ -178,6 +179,56 @@ class TestBanMember:
         m = _make_discord_member(guild_id=999999)
         result = await sentinel_client.ban_member(m, "bad actor")
         assert result is False
+
+
+class TestIsBanned:
+    async def test_banned(self, sentinel_client):
+        ban_entry = MagicMock()
+        ban_entry.reason = "spam"
+        sentinel_client.mock_guild.fetch_ban.return_value = ban_entry
+
+        result = await sentinel_client.is_banned(TEST_GUILD_ID, 1000)
+        assert result is True
+
+    async def test_not_banned(self, sentinel_client):
+        from discord import NotFound
+
+        resp = MagicMock(status=404)
+        sentinel_client.mock_guild.fetch_ban.side_effect = NotFound(resp, "Not Found")
+
+        result = await sentinel_client.is_banned(TEST_GUILD_ID, 1000)
+        assert result is False
+
+    async def test_guild_not_allowed(self, sentinel_client):
+        result = await sentinel_client.is_banned(999999, 1000)
+        assert result is None
+
+
+class TestIsTimedOut:
+    async def test_timed_out(self, sentinel_client):
+        member = make_mock_member(is_timed_out=True)
+        sentinel_client.mock_guild.fetch_member.return_value = member
+
+        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 1000)
+        assert result is True
+
+    async def test_not_timed_out(self, sentinel_client):
+        member = make_mock_member()
+        sentinel_client.mock_guild.fetch_member.return_value = member
+
+        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 1000)
+        assert result is False
+
+    async def test_member_not_found(self, sentinel_client):
+        from discord import NotFound
+
+        resp = MagicMock(status=404)
+        sentinel_client.mock_guild.fetch_member.side_effect = NotFound(
+            resp, "Not Found"
+        )
+
+        result = await sentinel_client.is_timed_out(TEST_GUILD_ID, 9999)
+        assert result is None
 
 
 class TestNonJsonErrorResponse:

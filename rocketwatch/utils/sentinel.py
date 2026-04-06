@@ -1,5 +1,6 @@
 import logging
 from http import HTTPStatus
+from typing import Any
 
 import aiohttp
 from discord import Member, Message, Thread
@@ -25,21 +26,23 @@ class SentinelClient:
         return self._session
 
     @retry(tries=3, delay=2, backoff=2)
-    async def _post(self, endpoint: str, payload: dict[str, str | int]) -> bool:
+    async def _post(
+        self, endpoint: str, payload: dict[str, str | int]
+    ) -> dict[str, Any] | None:
         session = await self._get_session()
         async with session.post(endpoint, json=payload) as resp:
             if resp.status == HTTPStatus.OK:
                 log.info(f"POST {endpoint} -> {resp.status}")
-                return True
+                return dict(await resp.json())
             body = await resp.text()
             log.warning(f"POST {endpoint} -> {resp.status}: {body}")
-            return False
+            return None
 
     async def _request(self, endpoint: str, payload: dict[str, str | int]) -> bool:
         if not self._enabled:
             return False
         log.info(f"POST {endpoint} {payload}")
-        return bool(await self._post(endpoint, payload))
+        return await self._post(endpoint, payload) is not None
 
     async def delete_message(self, message: Message, reason: str) -> bool:
         if message.guild is None:
@@ -110,6 +113,22 @@ class SentinelClient:
                 "reason": reason,
             },
         )
+
+    async def is_banned(self, guild_id: int, user_id: int) -> bool | None:
+        result = await self._post(
+            "/is_banned", {"guild_id": guild_id, "user_id": user_id}
+        )
+        if result and ("banned" in result):
+            return bool(result["banned"])
+        return None
+
+    async def is_timed_out(self, guild_id: int, user_id: int) -> bool | None:
+        result = await self._post(
+            "/is_timed_out", {"guild_id": guild_id, "user_id": user_id}
+        )
+        if result and ("timed_out" in result):
+            return bool(result["timed_out"])
+        return None
 
     async def close(self) -> None:
         if self._session and not self._session.closed:

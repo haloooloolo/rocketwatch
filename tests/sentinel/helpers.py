@@ -78,6 +78,7 @@ def make_mock_guild(guild_id=TEST_GUILD_ID):
     guild.get_thread = MagicMock(return_value=None)
     guild.fetch_channel = AsyncMock()
     guild.fetch_member = AsyncMock()
+    guild.fetch_ban = AsyncMock()
     return guild
 
 

@@ -126,6 +126,22 @@ Guardrails: server allowlist, refuses to kick moderators, member must have joine
 
 Guardrails: server allowlist, refuses to ban moderators, member must have joined less than `ban_member_max_age` ago; 0 to disable.
 
+### `POST /is_banned`
+
+```json
+{"guild_id": 123, "user_id": 456}
+```
+
+Returns `{"banned": true, "reason": "...", "user_id": 456}` if the user is banned, or `{"banned": false, "user_id": 456}` otherwise. Guardrails: server allowlist only.
+
+### `POST /is_timed_out`
+
+```json
+{"guild_id": 123, "user_id": 456}
+```
+
+Returns `{"timed_out": true, "until": "...", "user_id": 456}` if the member is currently timed out, or `{"timed_out": false, "user_id": 456}` otherwise. Returns 404 if the member is not in the server. Guardrails: server allowlist only.
+
 ### Error responses
 
 | Status | Meaning |
