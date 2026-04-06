@@ -45,8 +45,6 @@ log = logging.getLogger("rocketwatch.beacon_events")
 def _build_finality_embed(
     event_name: str, finality_delay: int, epoch_number: int, timestamp: int
 ) -> Embed:
-    cl_explorer = cfg.consensus_layer.explorer
-
     if event_name == "finality_delay_event":
         embed = Embed(
             color=Color.from_rgb(235, 86, 86),
@@ -68,7 +66,7 @@ def _build_finality_embed(
 
     embed.add_field(
         name="Epoch",
-        value=f"[{epoch_number}](https://{cl_explorer}/epoch/{epoch_number})",
+        value=f"[{epoch_number}]({cfg.consensus_layer.explorer}/epoch/{epoch_number})",
     )
     embed.add_field(
         name="Timestamp",
@@ -356,7 +354,6 @@ class BeaconEvents(EventPlugin):
         validator_link = await cl_explorer_url(validator_index)
         slot = int(beacon_block["slot"])
         reward_str = format_value(block_reward_eth)
-        cl_explorer = cfg.consensus_layer.explorer
 
         is_smoothie = eth_utils.address.is_same_address(
             fee_recipient, await rp.get_address_by_name("rocketSmoothingPool")
@@ -384,7 +381,7 @@ class BeaconEvents(EventPlugin):
         embed.add_field(name="Node Operator", value=node_op_link)
         embed.add_field(
             name="Slot",
-            value=f"[{slot}](https://{cl_explorer}/slot/{slot})",
+            value=f"[{slot}]({cfg.consensus_layer.explorer}/slot/{slot})",
         )
 
         if is_smoothie:
