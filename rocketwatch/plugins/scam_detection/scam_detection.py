@@ -132,8 +132,9 @@ class ScamDetection(Cog):
 
         if (
             message.mentions
+            and (not message.reference)
             and isinstance(message.channel, Thread)
-            and message.channel.owner_id == message.author.id
+            and (message.channel.owner_id == message.author.id)
         ):
             await self.report_message(message, "Pinged user in new thread")
             return
