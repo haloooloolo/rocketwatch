@@ -10,6 +10,7 @@ from discord import (
     AppCommandType,
     DeletedReferencedMessage,
     File,
+    Guild,
     Interaction,
     Member,
     Message,
@@ -198,6 +199,29 @@ class ScamDetection(Cog):
                     db_filter, {"$set": {"warning_id": None, "removed": True}}
                 )
 
+    @Cog.listener()
+    async def on_member_update(self, before: Member, after: Member) -> None:
+        if before.is_timed_out() == after.is_timed_out():
+            return
+
+        db_filter = {
+            "guild_id": after.guild.id,
+            "user_id": after.id,
+        }
+        report = await self.bot.db.scam_reports.find_one(db_filter)
+        if report is None:
+            return
+
+        if after.is_timed_out():
+            await self._update_report(report["report_id"], "User has been timed out.")
+
+    @Cog.listener()
+    async def on_member_ban(self, guild: Guild, user: User) -> None:
+        db_filter = {"guild_id": guild.id, "user_id": user.id}
+        async with self._user_report_lock:
+            if report := await self.bot.db.scam_reports.find_one(db_filter):
+                await self._resolve_report(report["report_id"], "User has been banned.")
+
     # --- Commands ---
 
     @command()
@@ -301,7 +325,10 @@ class ScamDetection(Cog):
                 )
 
             report_channel = await self._get_report_channel()
-            report_msg = await report_channel.send(embed=report)
+            report_msg = await report_channel.send(
+                embed=report,
+                view=self._build_user_review_view(user) or discord_utils.MISSING,
+            )
             await self.bot.db.scam_reports.insert_one(
                 {
                     "type": "user",
@@ -313,6 +340,13 @@ class ScamDetection(Cog):
                     "report_id": report_msg.id,
                 }
             )
+
+            reporter_is_reputable = isinstance(
+                interaction.user, Member
+            ) and is_reputable(interaction.user)
+            if reporter_is_reputable:
+                await self._run_user_automod(user, reason, report_msg)
+
             await interaction.followup.send(content="Thanks for reporting!")
 
     # --- Reporting ---
@@ -479,6 +513,17 @@ class ScamDetection(Cog):
             await thread.parent.send(
                 embed=embed, delete_after=alert_duration.total_seconds()
             )
+
+    async def _run_user_automod(
+        self, member: Member, reason: str, report_msg: Message
+    ) -> None:
+        timeout_duration = DEFAULT_USER_TIMEOUT
+        try:
+            await self._sentinel.timeout_member(
+                member, int(timeout_duration.total_seconds()), reason
+            )
+        except Exception as e:
+            await self.bot.report_error(e)
 
     # --- Report generation ---
 
@@ -702,11 +747,15 @@ class ScamDetection(Cog):
                 if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
                     return
 
+                reported_member = await self.bot.get_or_fetch_member(
+                    moderator.guild.id, report["user_id"]
+                )
+                if not reported_member:
+                    return
+
                 report_updates = [f"Confirmed by {moderator.mention}."]
                 if await self._sentinel.ban_member(
-                    moderator.guild.get_member(report["user_id"])
-                    or await moderator.guild.fetch_member(report["user_id"]),
-                    reason=report["reason"],
+                    reported_member, reason=report["reason"]
                 ):
                     report_updates.append("- User has been banned.")
                 else:
@@ -732,6 +781,56 @@ class ScamDetection(Cog):
                 if thread := moderator.guild.get_thread(report["channel_id"]):  # noqa: SIM102
                     if await self._sentinel.unlock_thread(thread, "Report dismissed"):
                         report_updates.append("- Thread has been unlocked.")
+
+                await self._resolve_report(
+                    report["report_id"], "\n".join(report_updates)
+                )
+
+        return ReportReviewView(on_confirm, on_dismiss)
+
+    def _build_user_review_view(self, user: Member) -> ReportReviewView | None:
+        if not self._sentinel.enabled:
+            return None
+
+        db_filter: dict[str, Any] = {
+            "type": "user",
+            "guild_id": user.guild.id,
+            "user_id": user.id,
+        }
+
+        async def on_confirm(moderator: Member) -> None:
+            async with self._user_report_lock:
+                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
+                    return
+
+                reported_member = await self.bot.get_or_fetch_member(
+                    moderator.guild.id, report["user_id"]
+                )
+                if not reported_member:
+                    return
+
+                report_updates = [f"Confirmed by {moderator.mention}."]
+                if await self._sentinel.ban_member(
+                    reported_member, reason=report["reason"]
+                ):
+                    report_updates.append("- User has been banned.")
+                else:
+                    report_updates.append("- Failed to ban user.")
+
+                await self._resolve_report(
+                    report["report_id"], "\n".join(report_updates)
+                )
+
+        async def on_dismiss(moderator: Member) -> None:
+            async with self._user_report_lock:
+                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
+                    return
+
+                report_updates = [f"Marked safe by {moderator.mention}."]
+                if await self._sentinel.remove_timeout(
+                    user.guild.id, report["user_id"], "Report dismissed"
+                ):
+                    report_updates.append("- Timeout has been lifted.")
 
                 await self._resolve_report(
                     report["report_id"], "\n".join(report_updates)

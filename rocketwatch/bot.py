@@ -4,7 +4,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from discord import Guild, Intents, Interaction, Role, Thread, User
+from discord import Guild, Intents, Interaction, Member, Role, Thread, User
 from discord.abc import GuildChannel, Messageable, PrivateChannel
 from discord.ext.commands import Bot
 from pymongo import AsyncMongoClient
@@ -112,6 +112,10 @@ class RocketWatch(Bot):
 
     async def get_or_fetch_user(self, user_id: int) -> User:
         return self.get_user(user_id) or await self.fetch_user(user_id)
+
+    async def get_or_fetch_member(self, guild_id: int, user_id: int) -> Member | None:
+        guild: Guild = await self.get_or_fetch_guild(guild_id)
+        return guild.get_member(user_id) or await guild.fetch_member(user_id)
 
     async def get_or_fetch_role(self, guild_id: int, role_id: int) -> Role:
         guild = await self.get_or_fetch_guild(guild_id)
