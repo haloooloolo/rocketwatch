@@ -2,6 +2,7 @@ import asyncio
 import logging
 
 from aiohttp import web
+
 from sentinel.bot import SentinelBot
 from sentinel.config import cfg
 from sentinel.server import create_app
