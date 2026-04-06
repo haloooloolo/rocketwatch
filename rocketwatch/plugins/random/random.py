@@ -85,10 +85,9 @@ class Random(commands.Cog):
             if "address" not in entry:
                 description += f" {entry['name']}"
             else:
-                url = cfg.execution_layer.explorer
                 if not entry["name"]:
                     entry["name"] = s_hex(entry["address"])
-                target = f"[{entry['name']}]({url}/address/{entry['address']})"
+                target = f"[{entry['name']}]({cfg.execution_layer.explorer}/address/{entry['address']})"
                 description += f" {target}"
             if entry.get("category"):
                 description += f" `[{entry['category'].upper()}]`"
