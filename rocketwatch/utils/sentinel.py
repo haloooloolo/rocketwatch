@@ -139,6 +139,8 @@ class SentinelClient:
         )
 
     async def is_banned(self, guild_id: int, user_id: int) -> bool | None:
+        if not self.enabled:
+            return None
         result = await self._post(
             "/is_banned", {"guild_id": guild_id, "user_id": user_id}
         )
