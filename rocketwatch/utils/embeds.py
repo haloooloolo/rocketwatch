@@ -154,7 +154,6 @@ async def build_rich_event_embed(
 
     if receipt is not None:
         tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
-        tnx_fee_usd = round(await rp.get_eth_usdc_price() * tnx_fee / 10**18, 2)
         if tnx_fee >= 10**15:
             fee_str = f"{round(tnx_fee / 10**18, 3):,} ETH"
         elif tnx_fee >= 10**9:
@@ -163,6 +162,7 @@ async def build_rich_event_embed(
             fee_str = f"{tnx_fee:,} Wei"
 
         if cfg.rocketpool.chain == "mainnet":
+            tnx_fee_usd = round(await rp.get_eth_usdc_price() * tnx_fee / 10**18, 2)
             fee_str += f" ({tnx_fee_usd} USDC)"
 
         embed.add_field(name="Transaction Fee", value=fee_str, inline=False)
