@@ -6,6 +6,7 @@ import discord
 from aiohttp import web
 from aiohttp.typedefs import Handler
 from discord.ext.commands import Bot
+
 from sentinel.audit import log_action
 from sentinel.config import KeyConfig, cfg
 from sentinel.guardrails import (

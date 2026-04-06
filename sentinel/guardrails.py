@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 
 import discord
+
 from sentinel.config import KeyConfig
 
 
