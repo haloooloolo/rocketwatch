@@ -8,7 +8,6 @@ from typing import Any
 import humanize
 from discord import (
     AppCommandType,
-    Color,
     DeletedReferencedMessage,
     File,
     Interaction,
@@ -36,7 +35,6 @@ from rocketwatch.plugins.scam_detection.llm_check import LLMScamChecker
 from rocketwatch.plugins.scam_detection.utils import (
     ReportColor,
     ReportReviewView,
-    ScamReport,
     WarningConfirmView,
     is_reputable,
 )
@@ -181,17 +179,21 @@ class ScamDetection(Cog):
             db_filter = {"channel_id": after.id, "removed": False}
             async with self._thread_report_lock:
                 if report := await self.bot.db.scam_reports.find_one(db_filter):
-                    await self._update_report(report, "Thread has been locked.")
+                    await self._update_report(
+                        report["report_id"], "Thread has been locked."
+                    )
                     await self.bot.db.scam_reports.update_one(
                         db_filter, {"$set": {"removed": True}}
                     )
 
     @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
-        db_filter = {"type": "thread", "channel_id": event.thread_id, "removed": False}
+        db_filter = {"channel_id": event.thread_id, "removed": False}
         async with self._thread_report_lock:
             if report := await self.bot.db.scam_reports.find_one(db_filter):
-                await self._update_report(report, "Thread has been deleted.")
+                await self._update_report(
+                    report["report_id"], "Thread has been deleted."
+                )
                 await self.bot.db.scam_reports.update_one(
                     db_filter, {"$set": {"warning_id": None, "removed": True}}
                 )
@@ -257,7 +259,8 @@ class ScamDetection(Cog):
                         report = await self.bot.db.scam_reports.find_one(db_filter)
                         if report is not None:
                             await self._resolve_report(
-                                report, f"Marked safe by {moderator.mention}."
+                                report["report_id"],
+                                f"Marked safe by {moderator.mention}.",
                             )
 
                 confirm_view = WarningConfirmView(
@@ -411,17 +414,17 @@ class ScamDetection(Cog):
         automod_message_channel: Any = message.channel
         alert_duration = MESSAGE_ALERT_DELETE_AFTER
 
-        actions = []
+        automod_actions = []
         timeout_duration = DEFAULT_USER_TIMEOUT
         try:
             if await self._sentinel.delete_message(message, reason):
-                actions.append("message deleted")
+                automod_actions.append("message deleted")
             if (
                 isinstance(message.channel, Thread)
                 and (message.channel.owner_id == message.author.id)
                 and await self._sentinel.lock_thread(message.channel, reason)
             ):
-                actions.append(f"{message.channel.jump_url} locked")
+                automod_actions.append(f"{message.channel.jump_url} locked")
                 automod_message_channel = message.channel.parent
                 alert_duration = THREAD_ALERT_DELETE_AFTER
             if isinstance(
@@ -430,13 +433,15 @@ class ScamDetection(Cog):
                 message.author, int(timeout_duration.total_seconds()), reason
             ):
                 duration = humanize.naturaldelta(timeout_duration)
-                actions.append(f"{message.author.mention} timed out for {duration}")
+                automod_actions.append(
+                    f"{message.author.mention} timed out for {duration}"
+                )
         except Exception as e:
             await self.bot.report_error(e)
             return
 
-        if actions and isinstance(automod_message_channel, Messageable):
-            embed = self._build_automod_embed(report_msg, actions)
+        if automod_actions and isinstance(automod_message_channel, Messageable):
+            embed = self._build_automod_embed(report_msg, automod_actions)
             embed.set_footer(
                 text=f"This alert will disappear in {humanize.naturaldelta(alert_duration)}."
             )
@@ -447,12 +452,12 @@ class ScamDetection(Cog):
     async def _run_thread_automod(
         self, thread: Thread, reason: str, report_msg: Message
     ) -> None:
-        actions = []
+        automod_actions = []
         timeout_duration = DEFAULT_USER_TIMEOUT
         alert_duration = THREAD_ALERT_DELETE_AFTER
         try:
             if await self._sentinel.lock_thread(thread, reason):
-                actions.append(f"{thread.jump_url} locked")
+                automod_actions.append(f"{thread.jump_url} locked")
             if (
                 thread.owner_id
                 and (member := thread.guild.get_member(thread.owner_id))
@@ -461,13 +466,13 @@ class ScamDetection(Cog):
                 )
             ):
                 duration = humanize.naturaldelta(timeout_duration)
-                actions.append(f"{member.mention} timed out for {duration}")
+                automod_actions.append(f"{member.mention} timed out for {duration}")
         except Exception as e:
             await self.bot.report_error(e)
             return
 
-        if actions and isinstance(thread.parent, Messageable):
-            embed = self._build_automod_embed(report_msg, actions)
+        if automod_actions and isinstance(thread.parent, Messageable):
+            embed = self._build_automod_embed(report_msg, automod_actions)
             embed.set_footer(
                 text=f"This alert will disappear in {humanize.naturaldelta(alert_duration)}."
             )
@@ -591,7 +596,9 @@ class ScamDetection(Cog):
                 message = await channel.fetch_message(report["warning_id"])
                 await message.delete()
 
-            await self._update_report(report, "Original message has been deleted.")
+            await self._update_report(
+                report["report_id"], "Original message has been deleted."
+            )
             await self.bot.db.scam_reports.update_one(
                 db_filter, {"$set": {"warning_id": None, "removed": True}}
             )
@@ -611,33 +618,27 @@ class ScamDetection(Cog):
 
         await self.report_thread(thread, "Attempt to hide thread from main channel")
 
-    async def _update_report(
-        self, report: ScamReport, note: str, color: Color = ReportColor.WARN
-    ) -> None:
-        report_channel = await self._get_report_channel()
+    async def _update_report(self, report_msg_id: int, note: str) -> None:
         try:
-            message = await report_channel.fetch_message(report["report_id"])
+            report_channel = await self._get_report_channel()
+            message = await report_channel.fetch_message(report_msg_id)
             embed = message.embeds[0]
             embed.description = (embed.description or "") + f"\n\n**{note}**"
-            embed.color = color
+            embed.color = ReportColor.WARN
             await message.edit(embed=embed)
         except Exception as e:
             await self.bot.report_error(e)
 
-    async def _resolve_report(self, report: ScamReport, note: str) -> None:
-        report_channel = await self._get_report_channel()
+    async def _resolve_report(self, report_msg_id: int, note: str) -> None:
         try:
-            message = await report_channel.fetch_message(report["report_id"])
+            report_channel = await self._get_report_channel()
+            message = await report_channel.fetch_message(report_msg_id)
             embed = message.embeds[0]
             embed.description = (embed.description or "") + f"\n\n**{note}**"
             embed.color = ReportColor.OK
             await message.edit(embed=embed, view=None)
         except Exception as e:
             await self.bot.report_error(e)
-        db_filter = {"report_id": report["report_id"]}
-        await self.bot.db.scam_reports.update_one(
-            db_filter, {"$set": {"warning_id": None}}
-        )
 
     async def _add_message_report_to_db(
         self,
@@ -711,7 +712,9 @@ class ScamDetection(Cog):
                 else:
                     report_updates.append("- Failed to ban user.")
 
-                await self._resolve_report(report, "\n".join(report_updates))
+                await self._resolve_report(
+                    report["report_id"], "\n".join(report_updates)
+                )
 
         async def on_dismiss(moderator: Member) -> None:
             async with self._message_report_lock, self._thread_report_lock:
@@ -730,7 +733,9 @@ class ScamDetection(Cog):
                     if await self._sentinel.unlock_thread(thread, "Report dismissed"):
                         report_updates.append("- Thread has been unlocked.")
 
-                await self._resolve_report(report, "\n".join(report_updates))
+                await self._resolve_report(
+                    report["report_id"], "\n".join(report_updates)
+                )
 
         return ReportReviewView(on_confirm, on_dismiss)
 
