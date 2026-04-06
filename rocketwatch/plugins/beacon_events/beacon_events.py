@@ -180,7 +180,6 @@ class BeaconEvents(EventPlugin):
         )
         node_op_link = await el_explorer_url(rp_pool["node_operator"], prefix=sea)
         validator_link = await cl_explorer_url(validator_index)
-        cl_explorer = cfg.consensus_layer.explorer
 
         embed = Embed(
             title=":x: Missed Block Proposal",
@@ -189,7 +188,7 @@ class BeaconEvents(EventPlugin):
         embed.add_field(name="Node Operator", value=node_op_link)
         embed.add_field(
             name="Slot",
-            value=f"[{slot_number}](https://{cl_explorer}/slot/{slot_number})",
+            value=f"[{slot_number}]({cfg.consensus_layer.explorer}/slot/{slot_number})",
         )
         embed.add_field(
             name="Timestamp",
