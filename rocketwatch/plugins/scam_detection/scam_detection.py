@@ -275,7 +275,7 @@ class ScamDetection(Cog):
                     "message_id": message.id,
                 }
 
-                async def on_automod_confirm() -> None:
+                async def on_warning_confirm() -> None:
                     await self._run_message_automod(message, reason, report_msg)
 
                 async def on_warning_dismiss(moderator: Member) -> None:
@@ -288,7 +288,7 @@ class ScamDetection(Cog):
                             )
 
                 confirm_view = WarningConfirmView(
-                    on_automod_confirm, on_warning_dismiss
+                    on_warning_confirm, on_warning_dismiss
                 )
 
             warning_msg = await message.reply(
@@ -785,6 +785,15 @@ class ScamDetection(Cog):
                         channel, "Report dismissed"
                     ):
                         report_updates.append("- Thread has been unlocked.")
+
+                if warning_id := report.get("warning_id"):
+                    channel = await self.bot.get_or_fetch_channel(report["channel_id"])
+                    if isinstance(channel, Messageable):
+                        with contextlib.suppress(
+                            errors.NotFound, errors.Forbidden, errors.HTTPException
+                        ):
+                            warning_msg = await channel.fetch_message(warning_id)
+                            await warning_msg.delete()
 
                 await self._resolve_report(
                     report["report_id"], "\n".join(report_updates)
