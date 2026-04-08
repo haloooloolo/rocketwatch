@@ -18,20 +18,20 @@ from rocketwatch.bot import RocketWatch
 if TYPE_CHECKING:
     from discord import User
     from discord.ext.voice_recv.opus import VoiceData
-from rocketwatch.plugins.transcription.pipeline import TranscriptionPipeline
-from rocketwatch.plugins.transcription.recorder import CallRecorder
+from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
+from rocketwatch.plugins.voice_summary.recorder import CallRecorder
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.llm import create_provider
 
-TRANSCRIPTIONS_DIR = Path("../transcriptions")
+TRANSCRIPTIONS_DIR = Path("../voice_calls")
 
-log = logging.getLogger("rocketwatch.transcription")
+log = logging.getLogger("rocketwatch.voice_summary")
 logging.getLogger("discord.ext.voice_recv.reader").setLevel(logging.WARNING)
 
 
-class Transcription(Cog):
+class VoiceSummary(Cog):
     def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self._config = cfg.transcription
@@ -289,4 +289,4 @@ class Transcription(Cog):
 
 
 async def setup(bot: RocketWatch) -> None:
-    await bot.add_cog(Transcription(bot))
+    await bot.add_cog(VoiceSummary(bot))
