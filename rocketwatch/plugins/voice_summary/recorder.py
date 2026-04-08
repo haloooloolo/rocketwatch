@@ -18,6 +18,9 @@ BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
 MIN_SEGMENT_DURATION = 1.0  # seconds
 MIN_SEGMENT_BYTES = int(MIN_SEGMENT_DURATION * BYTES_PER_SECOND) + 44  # +WAV header
 
+SILENCE_DURATION = 2.0  # seconds of packet gap before splitting
+MAX_SEGMENT_DURATION = 60.0  # seconds before forcing a split
+
 
 class UserStream:
     """Buffers PCM audio for a single user, writing WAV files to disk."""
@@ -53,11 +56,12 @@ class UserStream:
         if not self._wav:
             self._start_segment(timestamp)
         else:
-            # Start a new segment if there's a significant gap (>5s)
-            expected = self._last_timestamp + len(pcm) / (
-                SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
-            )
-            if timestamp - expected > 5.0:
+            # Start a new segment on packet gap or max duration
+            expected = self._last_timestamp + len(pcm) / BYTES_PER_SECOND
+            if (
+                timestamp - expected > SILENCE_DURATION
+                or timestamp - self._segment_start >= MAX_SEGMENT_DURATION
+            ):
                 self._start_segment(timestamp)
 
         self._last_timestamp = timestamp

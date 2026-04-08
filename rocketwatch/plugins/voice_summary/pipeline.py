@@ -4,8 +4,6 @@ from pathlib import Path
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from pydub import AudioSegment
-from pydub.silence import detect_nonsilent
 
 from rocketwatch.utils.config import STTConfig
 from rocketwatch.utils.llm import LLMProvider
@@ -63,64 +61,45 @@ class TranscriptionPipeline:
     async def transcribe_wav(
         self,
         wav_path: Path,
-        offset: float,
-    ) -> list[tuple[float, str]]:
-        """Transcribe a single WAV file, splitting on silence gaps.
-
-        Returns list of (absolute_offset_seconds, text) tuples.
-        """
+    ) -> str | None:
+        """Transcribe a single WAV file. Returns the text, or None if empty."""
         client = AsyncOpenAI(api_key=self._stt.api_key)
 
-        audio = AudioSegment.from_wav(str(wav_path))
-        ranges = detect_nonsilent(
-            audio, min_silence_len=5000, silence_thresh=audio.dBFS - 16
+        buf = io.BytesIO(wav_path.read_bytes())
+        buf.name = wav_path.name
+
+        response = await client.audio.transcriptions.create(
+            model=self._stt.model,
+            file=buf,
+            response_format="json",
         )
-        if not ranges:
-            return []
 
-        results: list[tuple[float, str]] = []
-
-        for i, (start_ms, end_ms) in enumerate(ranges):
-            chunk = audio[start_ms:end_ms]
-
-            buf = io.BytesIO()
-            chunk.export(buf, format="mp3")
-            buf.seek(0)
-            buf.name = f"chunk_{i}.mp3"
-
-            response = await client.audio.transcriptions.create(
-                model=self._stt.model,
-                file=buf,
-                response_format="json",
-            )
-
-            text = response.text
-            if text and text.strip():
-                results.append((offset + start_ms / 1000.0, text.strip()))
-
-        return results
+        text = response.text
+        if text and text.strip():
+            return text.strip()
+        return None
 
     @staticmethod
     def format_transcript(
-        chunks: dict[int, list[tuple[float, str]]],
+        segments: dict[int, list[tuple[float, str]]],
         usernames: dict[int, str],
     ) -> str:
-        """Sort all chunks by timestamp and format as a transcript string.
+        """Sort all segments by timestamp and format as a transcript string.
 
         Args:
-            chunks: user_id -> [(absolute_offset, text), ...]
+            segments: user_id -> [(offset_seconds, text), ...]
             usernames: user_id -> display name
         """
-        segments: list[_Segment] = []
-        for user_id, user_chunks in chunks.items():
+        entries: list[_Segment] = []
+        for user_id, user_segments in segments.items():
             speaker = usernames.get(user_id, f"User {user_id}")
-            for start, text in user_chunks:
-                segments.append(_Segment(start=start, speaker=speaker, text=text))
+            for start, text in user_segments:
+                entries.append(_Segment(start=start, speaker=speaker, text=text))
 
-        segments.sort(key=lambda s: s.start)
+        entries.sort(key=lambda s: s.start)
 
         lines: list[str] = []
-        for seg in segments:
+        for seg in entries:
             minutes = int(seg.start) // 60
             seconds = int(seg.start) % 60
             lines.append(f"[{minutes}:{seconds:02d}] {seg.speaker}: {seg.text}")
@@ -151,13 +130,15 @@ class TranscriptionPipeline:
 
         Summary is None if the LLM determines there is no substantive content.
         """
-        chunks: dict[int, list[tuple[float, str]]] = {}
-        for user_id, wav_segments in user_segments.items():
-            user_chunks: list[tuple[float, str]] = []
-            for offset, wav_path in wav_segments:
-                user_chunks.extend(await self.transcribe_wav(wav_path, offset))
-            chunks[user_id] = user_chunks
+        segments: dict[int, list[tuple[float, str]]] = {}
+        for user_id, wav_list in user_segments.items():
+            user_segs: list[tuple[float, str]] = []
+            for offset, wav_path in wav_list:
+                text = await self.transcribe_wav(wav_path)
+                if text:
+                    user_segs.append((offset, text))
+            segments[user_id] = user_segs
 
-        transcript = self.format_transcript(chunks, usernames)
+        transcript = self.format_transcript(segments, usernames)
         summary = await self.summarize(transcript)
         return transcript, summary
