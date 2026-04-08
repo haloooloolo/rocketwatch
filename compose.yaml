@@ -7,7 +7,7 @@ services:
     volumes:
       - ./rocketwatch/contracts/rocketpool:/app/rocketwatch/contracts/rocketpool
       - ./rocketwatch/config.toml:/app/rocketwatch/config.toml
-      - ./transcriptions:/app/transcriptions
+      - ./voice_calls:/app/voice_calls
     restart: unless-stopped
     depends_on:
       - mongodb

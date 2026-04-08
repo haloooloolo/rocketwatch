@@ -7,7 +7,7 @@ from pathlib import Path
 
 from discord.opus import Decoder as OpusDecoder
 
-log = logging.getLogger("rocketwatch.transcription.recorder")
+log = logging.getLogger("rocketwatch.voice_summary.recorder")
 
 # Discord audio: 48kHz, 16-bit signed, stereo
 SAMPLE_RATE = OpusDecoder.SAMPLING_RATE  # 48000

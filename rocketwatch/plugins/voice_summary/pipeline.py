@@ -10,7 +10,7 @@ from pydub.silence import detect_nonsilent
 from rocketwatch.utils.config import STTConfig
 from rocketwatch.utils.llm import LLMProvider
 
-log = logging.getLogger("rocketwatch.transcription.pipeline")
+log = logging.getLogger("rocketwatch.voice_summary.pipeline")
 
 SUMMARIZE_SYSTEM_PROMPT = """\
 You are summarizing a Rocket Pool community call transcript for Discord server members \
