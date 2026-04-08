@@ -42,7 +42,7 @@ class UserStream:
 
     def _start_segment(self, timestamp: float) -> None:
         self._close_wav()
-        path = self._out_dir / f"user_{self.user_id}_{self._segment_index}.wav"
+        path = self._out_dir / f"{self.user_id}_{self._segment_index}.wav"
         self._wav = wave.open(str(path), "wb")  # noqa: SIM115
         self._wav.setnchannels(CHANNELS)
         self._wav.setsampwidth(SAMPLE_WIDTH)
