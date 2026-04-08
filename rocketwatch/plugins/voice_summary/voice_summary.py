@@ -6,7 +6,7 @@ import logging
 from concurrent.futures import Future
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import davey
 from discord import File, Member, VoiceChannel, VoiceClient, VoiceState
@@ -335,10 +335,13 @@ class VoiceSummary(Cog):
     def _manifest_path(self) -> Path:
         return self._get_artifact_dir() / "raw" / "manifest.json"
 
-    def _load_manifest(self) -> dict:
+    def _load_manifest(self) -> dict[str, Any]:
         """Load the manifest from disk, or return an empty dict."""
         if self._manifest_path.exists():
-            return json.loads(self._manifest_path.read_text(encoding="utf-8"))
+            result: dict[str, Any] = json.loads(
+                self._manifest_path.read_text(encoding="utf-8")
+            )
+            return result
         return {}
 
     def _update_manifest(
@@ -381,9 +384,10 @@ class VoiceSummary(Cog):
 
         embed = Embed(title="Voice Call Summary", description=summary[:4096])
 
-        files = [TextFile(transcript, "transcript.txt")]
+        files = []
         if audio_path and audio_path.exists():
             files.append(File(audio_path, filename="recording.mp3"))
+        files.append(TextFile(transcript, "transcript.txt"))
         await channel.send(embed=embed, files=files)
         log.info("Transcript and summary posted")
 
