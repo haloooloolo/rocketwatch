@@ -75,15 +75,15 @@ output_channel_id = 0
 min_users = 5
 leave_grace_seconds = 120
 
+[transcription.stt]
+provider = "openai"
+api_key = ""
+model = "gpt-4o-transcribe"
+
 [transcription.llm]
 provider = ""  # "anthropic", "openai", or "google"
 api_key = ""
 model = ""
-
-[transcription.stt]
-provider = "openai"
-api_key = ""
-model = "whisper-1"
 
 [sentinel]
 api_url = ""
