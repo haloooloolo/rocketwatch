@@ -169,8 +169,8 @@ class VoiceSummary(Cog):
         log.info(f"Streaming transcription started for {wav_path.name}")
         try:
             assert self._pipeline is not None
-            text = await self._pipeline.transcribe_wav(wav_path) or ""
-            self._set_manifest_text(wav_path.name, text)
+            text = await self._pipeline.transcribe_wav(wav_path)
+            self._set_manifest_text(user_id, wav_path.name, text)
             log.info(f"Streaming transcription complete for {wav_path.name}")
         except Exception:
             log.exception(f"Streaming transcription failed for {wav_path.name}")
@@ -217,14 +217,19 @@ class VoiceSummary(Cog):
         manifest = self._load_manifest()
         segments_dir = self._get_artifact_dir() / "segments"
 
-        for entries in manifest.values():
-            remaining = [e for e in entries if "text" not in e]
-            if remaining:
-                log.info(f"Transcribing {len(remaining)} remaining segments")
-                for entry in remaining:
-                    wav_path = segments_dir / entry["file"]
-                    text = await self._pipeline.transcribe_wav(wav_path) or ""
-                    self._set_manifest_text(entry["file"], text)
+        remaining: list[tuple[int, str]] = []
+        for uid_str, entries in manifest.items():
+            user_id = int(uid_str)
+            remaining.extend([(user_id, e["file"]) for e in entries if "text" not in e])
+
+        if not remaining:
+            return
+
+        log.info(f"Transcribing {len(remaining)} remaining segments")
+        for user_id, wav_name in remaining:
+            wav_path = segments_dir / wav_name
+            text = await self._pipeline.transcribe_wav(wav_path)
+            self._set_manifest_text(user_id, wav_name, text)
 
     def _collect_segments(self) -> dict[int, list[tuple[float, str]]]:
         """Read the manifest and return all segments grouped by user ID."""
@@ -304,12 +309,13 @@ class VoiceSummary(Cog):
             self._save_transcript(transcript)
 
             summary = await self._pipeline.summarize(transcript)
+            audio = await asyncio.to_thread(self._save_audio, user_segments)
+
             if not summary:
                 log.info("No substantive content, discarding")
                 return
 
             summary = self._mentionify(summary, usernames)
-            audio = await asyncio.to_thread(self._save_audio, user_segments)
             await self._post_results(transcript, summary, audio)
         except Exception as e:
             await self.bot.report_error(e)
@@ -374,17 +380,16 @@ class VoiceSummary(Cog):
         manifest[uid].append({"file": wav_name, "offset": offset})
         self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    def _set_manifest_text(self, wav_name: str, text: str) -> None:
+    def _set_manifest_text(self, user_id: int, wav_name: str, text: str) -> None:
         """Set the transcription text for an existing manifest entry."""
         manifest = self._load_manifest()
-        for entries in manifest.values():
-            for entry in entries:
-                if entry["file"] == wav_name:
-                    entry["text"] = text
-                    self._manifest_path.write_text(
-                        json.dumps(manifest, indent=2), encoding="utf-8"
-                    )
-                    return
+        for entry in manifest.get(str(user_id), []):
+            if entry["file"] == wav_name:
+                entry["text"] = text
+                self._manifest_path.write_text(
+                    json.dumps(manifest, indent=2), encoding="utf-8"
+                )
+                return
 
     def _save_transcript(self, transcript: str) -> None:
         """Save transcript to disk."""

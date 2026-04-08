@@ -15,9 +15,6 @@ CHANNELS = OpusDecoder.CHANNELS  # 2
 SAMPLE_WIDTH = OpusDecoder.SAMPLE_SIZE // OpusDecoder.CHANNELS  # 2 bytes (16-bit)
 BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
 
-MIN_SEGMENT_DURATION = 1.0  # seconds
-MIN_SEGMENT_BYTES = int(MIN_SEGMENT_DURATION * BYTES_PER_SECOND) + 44  # +WAV header
-
 SILENCE_DURATION = 2.0  # seconds of packet gap before splitting
 MAX_SEGMENT_DURATION = 60.0  # seconds before forcing a split
 
@@ -79,8 +76,7 @@ class UserStream:
             self._wav = None
             if self._on_segment_closed and self._segments:
                 offset, path = self._segments[-1]
-                if path.stat().st_size >= MIN_SEGMENT_BYTES:
-                    self._on_segment_closed(self.user_id, offset, path)
+                self._on_segment_closed(self.user_id, offset, path)
 
     def close(self) -> None:
         self._close_wav()
@@ -148,11 +144,7 @@ class CallRecorder:
             stream._on_segment_closed = None
         result: dict[int, list[tuple[float, Path]]] = {}
         for user_id, stream in self._streams.items():
-            segments = [
-                (offset, path)
-                for offset, path in stream.get_segments()
-                if path.stat().st_size >= MIN_SEGMENT_BYTES
-            ]
+            segments = stream.get_segments()
             if segments:
                 result[user_id] = segments
 

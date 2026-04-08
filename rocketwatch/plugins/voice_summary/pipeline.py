@@ -61,7 +61,7 @@ class TranscriptionPipeline:
     async def transcribe_wav(
         self,
         wav_path: Path,
-    ) -> str | None:
+    ) -> str:
         """Transcribe a single WAV file. Returns the text, or None if empty."""
         client = AsyncOpenAI(api_key=self._stt.api_key)
 
@@ -73,11 +73,7 @@ class TranscriptionPipeline:
             file=buf,
             response_format="json",
         )
-
-        text = response.text
-        if text and text.strip():
-            return text.strip()
-        return None
+        return response.text.strip()
 
     @staticmethod
     def format_transcript(
@@ -134,8 +130,7 @@ class TranscriptionPipeline:
         for user_id, wav_list in user_segments.items():
             user_segs: list[tuple[float, str]] = []
             for offset, wav_path in wav_list:
-                text = await self.transcribe_wav(wav_path)
-                if text:
+                if text := await self.transcribe_wav(wav_path):
                     user_segs.append((offset, text))
             segments[user_id] = user_segs
 
