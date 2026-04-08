@@ -128,6 +128,9 @@ async def build_rich_event_embed(
     for name, value, inline in fields or []:
         embed.add_field(name=name, value=value, inline=inline)
 
+    if not tx_hash.startswith("0x"):
+        tx_hash = HexStr("0x" + tx_hash)
+
     el_explorer = cfg.execution_layer.explorer
     tx_link = await el_explorer_url(tx_hash)
     tx_advanced = advanced_tnx_url(tx_hash)
