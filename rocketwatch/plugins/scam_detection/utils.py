@@ -96,24 +96,19 @@ class ReportReviewView(ui.View):
         self._on_confirm = on_confirm
         self._on_dismiss = on_dismiss
 
-    async def _check_moderator(self, interaction: Interaction["RocketWatch"]) -> bool:
-        if (
-            isinstance(interaction.user, Member)
-            and interaction.user.guild_permissions.ban_members
-        ):
-            return True
-        await interaction.response.send_message(
-            content="Only moderators can review reports.", ephemeral=True
-        )
-        return False
-
     @ui.button(label="Confirm Scam", style=ButtonStyle.danger)
     async def confirm(
         self,
         interaction: Interaction["RocketWatch"],
         button: ui.Button["ReportReviewView"],
     ) -> None:
-        if not await self._check_moderator(interaction):
+        if not (
+            isinstance(interaction.user, Member)
+            and interaction.user.guild_permissions.ban_members
+        ):
+            await interaction.response.send_message(
+                content="Only admins can confirm reports.", ephemeral=True
+            )
             return
         assert isinstance(interaction.user, Member)
         await interaction.response.edit_message(view=None)
@@ -125,7 +120,13 @@ class ReportReviewView(ui.View):
         interaction: Interaction["RocketWatch"],
         button: ui.Button["ReportReviewView"],
     ) -> None:
-        if not await self._check_moderator(interaction):
+        if not (
+            isinstance(interaction.user, Member)
+            and interaction.user.guild_permissions.moderate_members
+        ):
+            await interaction.response.send_message(
+                content="Only moderators can dismiss reports.", ephemeral=True
+            )
             return
         assert isinstance(interaction.user, Member)
         await interaction.response.edit_message(view=None)
