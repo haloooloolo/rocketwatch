@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
+import json
 import logging
+from concurrent.futures import Future
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import davey
-from discord import Member, VoiceChannel, VoiceClient, VoiceState
+from discord import File, Member, VoiceChannel, VoiceClient, VoiceState
 from discord.abc import Messageable
 from discord.ext.commands import Cog
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
@@ -19,7 +20,6 @@ from rocketwatch.bot import RocketWatch
 if TYPE_CHECKING:
     from discord import User
     from discord.ext.voice_recv.opus import VoiceData
-import json
 
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
 from rocketwatch.plugins.voice_summary.recorder import CallRecorder
@@ -43,7 +43,7 @@ class VoiceSummary(Cog):
         self._artifact_dir: Path | None = None
         self._grace_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
-        self._pending_futures: list[concurrent.futures.Future[None]] = []
+        self._pending_futures: list[Future[None]] = []
 
         llm = create_provider(self._config.llm)
         if llm and self._config.stt.provider:
@@ -230,8 +230,6 @@ class VoiceSummary(Cog):
                 log.info("Empty recording, discarding")
                 return
 
-            self._save_audio(user_segments)
-
             # Determine which WAVs have already been transcribed from manifest
             manifest = self._load_manifest()
             transcribed_files: set[str] = set()
@@ -289,7 +287,8 @@ class VoiceSummary(Cog):
             ):
                 summary = summary.replace(name, f"<@{user_id}>")
 
-            await self._post_results(transcript, summary)
+            audio_path = await asyncio.to_thread(self._save_audio, user_segments)
+            await self._post_results(transcript, summary, audio_path)
         except Exception as e:
             await self.bot.report_error(e)
         finally:
@@ -308,8 +307,8 @@ class VoiceSummary(Cog):
     def _save_audio(
         self,
         user_segments: dict[int, list[tuple[float, Path]]],
-    ) -> None:
-        """Mix per-user WAV files into a single MP3."""
+    ) -> Path | None:
+        """Mix per-user WAV files into a single MP3. Returns the path, or None."""
         out_dir = self._get_artifact_dir()
 
         mixed: AudioSegment | None = None
@@ -325,8 +324,12 @@ class VoiceSummary(Cog):
                     mixed = mixed.overlay(track, position=int(offset * 1000))
 
         if mixed:
-            mixed.export(out_dir / "audio.mp3", format="mp3")
+            path = out_dir / "recording.mp3"
+            mixed = mixed.set_channels(1)
+            mixed.export(path, format="mp3", bitrate="64k")
             log.info(f"Audio saved to {out_dir}")
+            return path
+        return None
 
     @property
     def _manifest_path(self) -> Path:
@@ -365,7 +368,9 @@ class VoiceSummary(Cog):
         (out_dir / "transcript.txt").write_text(transcript, encoding="utf-8")
         log.info(f"Transcript saved to {out_dir}")
 
-    async def _post_results(self, transcript: str, summary: str) -> None:
+    async def _post_results(
+        self, transcript: str, summary: str, audio_path: Path | None
+    ) -> None:
         channel_id = self._config.output_channel_id
         if not channel_id:
             log.warning("No output channel configured")
@@ -376,8 +381,10 @@ class VoiceSummary(Cog):
 
         embed = Embed(title="Voice Call Summary", description=summary[:4096])
 
-        transcript_file = TextFile(transcript, "transcript.txt")
-        await channel.send(embed=embed, file=transcript_file)
+        files = [TextFile(transcript, "transcript.txt")]
+        if audio_path and audio_path.exists():
+            files.append(File(audio_path, filename="recording.mp3"))
+        await channel.send(embed=embed, files=files)
         log.info("Transcript and summary posted")
 
     async def cog_unload(self) -> None:
