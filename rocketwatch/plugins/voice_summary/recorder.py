@@ -1,8 +1,8 @@
 import contextlib
-import json
 import logging
 import time
 import wave
+from collections.abc import Callable
 from pathlib import Path
 
 from discord.opus import Decoder as OpusDecoder
@@ -22,9 +22,15 @@ MIN_SEGMENT_BYTES = int(MIN_SEGMENT_DURATION * BYTES_PER_SECOND) + 44  # +WAV he
 class UserStream:
     """Buffers PCM audio for a single user, writing WAV files to disk."""
 
-    def __init__(self, user_id: int, out_dir: Path) -> None:
+    def __init__(
+        self,
+        user_id: int,
+        out_dir: Path,
+        on_segment_closed: Callable[[int, float, Path], None] | None = None,
+    ) -> None:
         self.user_id = user_id
         self._out_dir = out_dir
+        self._on_segment_closed = on_segment_closed
         self._segment_index = 0
         self._wav: wave.Wave_write | None = None
         self._segment_start: float = 0.0
@@ -67,6 +73,10 @@ class UserStream:
         if self._wav:
             self._wav.close()
             self._wav = None
+            if self._on_segment_closed and self._segments:
+                offset, path = self._segments[-1]
+                if path.stat().st_size >= MIN_SEGMENT_BYTES:
+                    self._on_segment_closed(self.user_id, offset, path)
 
     def close(self) -> None:
         self._close_wav()
@@ -79,12 +89,18 @@ class CallRecorder:
     bypassing discord-ext-voice-recv's broken Opus decoder.
     """
 
-    def __init__(self, out_dir: Path, start_time: float | None = None) -> None:
+    def __init__(
+        self,
+        out_dir: Path,
+        start_time: float | None = None,
+        on_segment_closed: Callable[[int, float, Path], None] | None = None,
+    ) -> None:
         self._out_dir = out_dir
         self._out_dir.mkdir(parents=True, exist_ok=True)
         self._streams: dict[int, UserStream] = {}
         self._decoders: dict[int, OpusDecoder] = {}
         self._start_time = start_time or time.monotonic()
+        self._on_segment_closed = on_segment_closed
         self._recording = True
 
     def on_opus(self, user_id: int, opus_data: bytes) -> None:
@@ -95,7 +111,9 @@ class CallRecorder:
         if user_id not in self._decoders:
             log.info(f"Receiving audio from user {user_id}")
             self._decoders[user_id] = OpusDecoder()
-            self._streams[user_id] = UserStream(user_id, self._out_dir)
+            self._streams[user_id] = UserStream(
+                user_id, self._out_dir, self._on_segment_closed
+            )
 
         try:
             pcm = self._decoders[user_id].decode(opus_data, fec=False)
@@ -119,11 +137,12 @@ class CallRecorder:
     def get_user_segments(self) -> dict[int, list[tuple[float, Path]]]:
         """Return per-user WAV file paths with their start offsets.
 
-        Also writes a manifest.json alongside the WAV files so the
-        segment timestamps can be recovered from disk.
+        Suppresses the on_segment_closed callback to avoid duplicate
+        transcription of final segments that are closed during finalization.
         """
+        for stream in self._streams.values():
+            stream._on_segment_closed = None
         result: dict[int, list[tuple[float, Path]]] = {}
-        manifest: dict[str, list[dict[str, str | float]]] = {}
         for user_id, stream in self._streams.items():
             segments = [
                 (offset, path)
@@ -132,13 +151,6 @@ class CallRecorder:
             ]
             if segments:
                 result[user_id] = segments
-                manifest[str(user_id)] = [
-                    {"offset": offset, "file": path.name} for offset, path in segments
-                ]
-
-        if manifest:
-            manifest_path = self._out_dir / "manifest.json"
-            manifest_path.write_text(json.dumps(manifest, indent=2))
 
         return result
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from rocketwatch.bot import RocketWatch
 if TYPE_CHECKING:
     from discord import User
     from discord.ext.voice_recv.opus import VoiceData
+import json
+
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
 from rocketwatch.plugins.voice_summary.recorder import CallRecorder
 from rocketwatch.utils.config import cfg
@@ -40,6 +43,7 @@ class VoiceSummary(Cog):
         self._artifact_dir: Path | None = None
         self._grace_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
+        self._pending_futures: list[concurrent.futures.Future[None]] = []
 
         llm = create_provider(self._config.llm)
         if llm and self._config.stt.provider:
@@ -110,7 +114,18 @@ class VoiceSummary(Cog):
             return
 
         self._voice_client = vc
-        self._recorder = CallRecorder(self._get_artifact_dir() / "raw")
+        loop = asyncio.get_running_loop()
+
+        def on_segment_closed(user_id: int, offset: float, wav_path: Path) -> None:
+            future = asyncio.run_coroutine_threadsafe(
+                self._transcribe_segment(user_id, offset, wav_path), loop
+            )
+            self._pending_futures.append(future)
+
+        self._recorder = CallRecorder(
+            self._get_artifact_dir() / "raw",
+            on_segment_closed=on_segment_closed,
+        )
 
         def sink_callback(user: Member | User | None, data: VoiceData) -> None:
             if not user or not self._recorder:
@@ -145,6 +160,19 @@ class VoiceSummary(Cog):
             await self._stop_and_process()
         except asyncio.CancelledError:
             pass
+
+    async def _transcribe_segment(
+        self, user_id: int, offset: float, wav_path: Path
+    ) -> None:
+        """Transcribe a single WAV segment during recording."""
+        log.info(f"Streaming transcription started for {wav_path.name}")
+        try:
+            assert self._pipeline is not None
+            chunks = await self._pipeline.transcribe_wav(wav_path, offset)
+            self._update_manifest(user_id, wav_path.name, offset, chunks)
+            log.info(f"Streaming transcription complete for {wav_path.name}")
+        except Exception:
+            log.exception(f"Streaming transcription failed for {wav_path.name}")
 
     async def _stop_and_process(self) -> None:
         current = asyncio.current_task()
@@ -188,12 +216,55 @@ class VoiceSummary(Cog):
             return
 
         try:
+            # Wait for in-flight streaming transcriptions to finish
+            if self._pending_futures:
+                log.info(
+                    f"Waiting for {len(self._pending_futures)} pending transcriptions"
+                )
+                await asyncio.gather(
+                    *(asyncio.wrap_future(f) for f in self._pending_futures)
+                )
+
             user_segments = recorder.get_user_segments()
             if not user_segments:
                 log.info("Empty recording, discarding")
                 return
 
             self._save_audio(user_segments)
+
+            # Determine which WAVs have already been transcribed from manifest
+            manifest = self._load_manifest()
+            transcribed_files: set[str] = set()
+            for entries in manifest.values():
+                for entry in entries:
+                    transcribed_files.add(entry["file"])
+
+            # Transcribe only segments not already in the manifest
+            for user_id, wav_segments in user_segments.items():
+                remaining = [
+                    (offset, path)
+                    for offset, path in wav_segments
+                    if path.name not in transcribed_files
+                ]
+                if remaining:
+                    log.info(
+                        f"Transcribing {len(remaining)} remaining segments "
+                        f"for user {user_id}"
+                    )
+                    for offset, wav_path in remaining:
+                        chunks = await self._pipeline.transcribe_wav(wav_path, offset)
+                        self._update_manifest(user_id, wav_path.name, offset, chunks)
+
+            # Read final manifest from disk and collect all chunks
+            manifest = self._load_manifest()
+            all_chunks: dict[int, list[tuple[float, str]]] = {}
+            for uid_str, entries in manifest.items():
+                user_id = int(uid_str)
+                for entry in entries:
+                    for chunk in entry["chunks"]:
+                        all_chunks.setdefault(user_id, []).append(
+                            (chunk["offset"], chunk["text"])
+                        )
 
             # Resolve user IDs to display names
             usernames: dict[int, str] = {}
@@ -204,7 +275,7 @@ class VoiceSummary(Cog):
                 else:
                     usernames[user_id] = str(user_id)
 
-            transcript = await self._pipeline.transcribe_users(user_segments, usernames)
+            transcript = TranscriptionPipeline.format_transcript(all_chunks, usernames)
             self._save_transcript(transcript)
 
             summary = await self._pipeline.summarize(transcript)
@@ -224,6 +295,7 @@ class VoiceSummary(Cog):
         finally:
             recorder.cleanup()
             self._artifact_dir = None
+            self._pending_futures = []
 
     def _get_artifact_dir(self) -> Path:
         """Get or create the artifact directory for the current recording."""
@@ -255,6 +327,37 @@ class VoiceSummary(Cog):
         if mixed:
             mixed.export(out_dir / "audio.mp3", format="mp3")
             log.info(f"Audio saved to {out_dir}")
+
+    @property
+    def _manifest_path(self) -> Path:
+        return self._get_artifact_dir() / "raw" / "manifest.json"
+
+    def _load_manifest(self) -> dict:
+        """Load the manifest from disk, or return an empty dict."""
+        if self._manifest_path.exists():
+            return json.loads(self._manifest_path.read_text(encoding="utf-8"))
+        return {}
+
+    def _update_manifest(
+        self,
+        user_id: int,
+        wav_name: str,
+        offset: float,
+        chunks: list[tuple[float, str]],
+    ) -> None:
+        """Add a transcribed segment entry to the manifest on disk."""
+        manifest = self._load_manifest()
+        uid = str(user_id)
+        if uid not in manifest:
+            manifest[uid] = []
+        manifest[uid].append(
+            {
+                "file": wav_name,
+                "offset": offset,
+                "chunks": [{"offset": o, "text": t} for o, t in chunks],
+            }
+        )
+        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def _save_transcript(self, transcript: str) -> None:
         """Save transcript to disk."""

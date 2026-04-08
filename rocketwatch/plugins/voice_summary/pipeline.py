@@ -60,14 +60,17 @@ class TranscriptionPipeline:
         self._stt = stt_config
         self._llm = llm_provider
 
-    async def _transcribe_wav(
-        self, wav_path: Path, client: AsyncOpenAI
+    async def transcribe_wav(
+        self,
+        wav_path: Path,
+        offset: float,
     ) -> list[tuple[float, str]]:
         """Transcribe a single WAV file, splitting on silence gaps.
 
-        Returns list of (offset_seconds, text). Loads one chunk at a time
-        to keep memory usage low.
+        Returns list of (absolute_offset_seconds, text) tuples.
         """
+        client = AsyncOpenAI(api_key=self._stt.api_key)
+
         audio = AudioSegment.from_wav(str(wav_path))
         ranges = detect_nonsilent(
             audio, min_silence_len=5000, silence_thresh=audio.dBFS - 16
@@ -76,6 +79,7 @@ class TranscriptionPipeline:
             return []
 
         results: list[tuple[float, str]] = []
+
         for i, (start_ms, end_ms) in enumerate(ranges):
             chunk = audio[start_ms:end_ms]
 
@@ -92,50 +96,36 @@ class TranscriptionPipeline:
 
             text = response.text
             if text and text.strip():
-                results.append((start_ms / 1000.0, text.strip()))
+                results.append((offset + start_ms / 1000.0, text.strip()))
 
         return results
 
-    async def transcribe_users(
-        self,
-        user_segments: dict[int, list[tuple[float, Path]]],
+    @staticmethod
+    def format_transcript(
+        chunks: dict[int, list[tuple[float, str]]],
         usernames: dict[int, str],
     ) -> str:
-        """Transcribe per-user audio segments and interleave by timestamp.
+        """Sort all chunks by timestamp and format as a transcript string.
 
         Args:
-            user_segments: user_id -> [(offset_seconds, wav_path), ...]
+            chunks: user_id -> [(absolute_offset, text), ...]
             usernames: user_id -> display name
         """
-        client = AsyncOpenAI(api_key=self._stt.api_key)
         segments: list[_Segment] = []
-
-        for user_id, wav_segments in user_segments.items():
+        for user_id, user_chunks in chunks.items():
             speaker = usernames.get(user_id, f"User {user_id}")
-            log.info(f"Transcribing audio for {speaker} ({len(wav_segments)} segments)")
+            for start, text in user_chunks:
+                segments.append(_Segment(start=start, speaker=speaker, text=text))
 
-            for offset, wav_path in wav_segments:
-                chunks = await self._transcribe_wav(wav_path, client)
-                for chunk_offset, text in chunks:
-                    segments.append(
-                        _Segment(
-                            start=offset + chunk_offset,
-                            speaker=speaker,
-                            text=text,
-                        )
-                    )
-
-        # Sort by timestamp
         segments.sort(key=lambda s: s.start)
 
-        # Format with timestamps and speaker labels
         lines: list[str] = []
         for seg in segments:
             minutes = int(seg.start) // 60
             seconds = int(seg.start) % 60
             lines.append(f"[{minutes}:{seconds:02d}] {seg.speaker}: {seg.text}")
 
-        return "\n\n".join(lines)
+        return "\n".join(lines)
 
     async def summarize(self, transcript: str) -> str | None:
         """Summarize a transcript using the configured LLM.
@@ -161,6 +151,13 @@ class TranscriptionPipeline:
 
         Summary is None if the LLM determines there is no substantive content.
         """
-        transcript = await self.transcribe_users(user_segments, usernames)
+        chunks: dict[int, list[tuple[float, str]]] = {}
+        for user_id, wav_segments in user_segments.items():
+            user_chunks: list[tuple[float, str]] = []
+            for offset, wav_path in wav_segments:
+                user_chunks.extend(await self.transcribe_wav(wav_path, offset))
+            chunks[user_id] = user_chunks
+
+        transcript = self.format_transcript(chunks, usernames)
         summary = await self.summarize(transcript)
         return transcript, summary
