@@ -1,43 +1,28 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import re
-from concurrent.futures import Future
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
-import davey
 from discord import (
     AllowedMentions,
     File,
     Member,
-    VoiceChannel,
-    VoiceClient,
     VoiceState,
     ui,
 )
 from discord.abc import Messageable
+from discord.channel import VocalGuildChannel
 from discord.ext.commands import Cog
-from discord.ext.voice_recv import BasicSink, VoiceRecvClient
-from pydub import AudioSegment
 
 from rocketwatch.bot import RocketWatch
-
-if TYPE_CHECKING:
-    from discord import User
-    from discord.ext.voice_recv.opus import VoiceData
-
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
-from rocketwatch.plugins.voice_summary.recorder import CallRecorder
+from rocketwatch.plugins.voice_summary.session import CallSession
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import ACCENT_COLOR
 from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.llm import create_provider
-
-TRANSCRIPTIONS_DIR = Path("../voice_calls")
 
 log = logging.getLogger("rocketwatch.voice_summary")
 logging.getLogger("discord.ext.voice_recv.reader").setLevel(logging.WARNING)
@@ -47,24 +32,18 @@ class VoiceSummary(Cog):
     def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self._config = cfg.transcription
-        self._recorder: CallRecorder | None = None
-        self._voice_client: VoiceClient | None = None
-        self._artifact_dir: Path | None = None
+        self._session: CallSession | None = None
         self._grace_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
-        self._pending_futures: list[Future[None]] = []
 
         llm = create_provider(self._config.llm)
-        if llm and self._config.stt.provider:
-            self._pipeline: TranscriptionPipeline | None = TranscriptionPipeline(
-                stt_config=self._config.stt,
-                llm_provider=llm,
-            )
-        else:
-            self._pipeline = None
-            log.warning("Transcription plugin loaded but LLM/STT not configured")
+        assert llm and self._config.stt.provider
+        self._pipeline = TranscriptionPipeline(
+            stt_config=self._config.stt,
+            llm_provider=llm,
+        )
 
-    def _count_voice_users(self, channel: VoiceChannel) -> int:
+    def _count_voice_users(self, channel: VocalGuildChannel) -> int:
         """Count non-bot members in a voice channel."""
         return sum(1 for m in channel.members if not m.bot)
 
@@ -75,27 +54,24 @@ class VoiceSummary(Cog):
         before: VoiceState,
         after: VoiceState,
     ) -> None:
-        if member.bot or not self._config.voice_channel_id or not self._pipeline:
+        if member.bot:
             return
 
-        target_id = self._config.voice_channel_id
-
-        # Someone joined the target channel
-        if after.channel and after.channel.id == target_id:
-            assert isinstance(after.channel, VoiceChannel)
-            self._cancel_grace()
-            count = self._count_voice_users(after.channel)
-            if count >= self._config.min_users and not self._recorder:
-                await self._start_recording(after.channel)
-
-        # Someone left the target channel
-        if before.channel and before.channel.id == target_id:
-            assert isinstance(before.channel, VoiceChannel)
+        # left old channel
+        if before.channel is not None:
             count = self._count_voice_users(before.channel)
-            if count == 0 and self._recorder:
+            if count == 0:
                 await self._stop_and_process()
-            elif count < self._config.min_users and self._recorder:
+            else:
                 self._start_grace()
+
+        # joined new channel
+        if after.channel is not None:
+            count = self._count_voice_users(after.channel)
+            if count >= self._config.min_users:
+                self._cancel_grace()
+                if not self._session:
+                    await self._start_recording(after.channel)
 
     def _start_grace(self) -> None:
         """Start the grace period before auto-disconnecting."""
@@ -114,53 +90,17 @@ class VoiceSummary(Cog):
         except asyncio.CancelledError:
             pass
 
-    async def _start_recording(self, channel: VoiceChannel) -> None:
+    async def _start_recording(self, channel: VocalGuildChannel) -> None:
         log.info(f"Auto-joining voice channel: {channel.name}")
+        self._session = CallSession(self._pipeline)
         try:
-            vc = await channel.connect(cls=VoiceRecvClient)
+            await self._session.start(channel)
         except Exception:
             log.exception("Failed to connect to voice channel")
+            self._session = None
             return
 
-        self._voice_client = vc
-        loop = asyncio.get_running_loop()
-
-        def on_segment_closed(user_id: int, offset: float, wav_path: Path) -> None:
-            future = asyncio.run_coroutine_threadsafe(
-                self._transcribe_segment(user_id, offset, wav_path), loop
-            )
-            self._pending_futures.append(future)
-
-        self._recorder = CallRecorder(
-            self._get_artifact_dir() / "segments",
-            on_segment_closed=on_segment_closed,
-        )
-
-        def sink_callback(user: Member | User | None, data: VoiceData) -> None:
-            if not user or not self._recorder:
-                return
-
-            opus_data = data.packet.decrypted_data
-            if not opus_data:
-                return
-
-            # Decrypt DAVE (E2E encryption) layer
-            dave_session = vc._connection.dave_session
-            if dave_session and not dave_session.can_passthrough(user.id):
-                try:
-                    opus_data = dave_session.decrypt(
-                        user.id, davey.MediaType.audio, opus_data
-                    )
-                except Exception:
-                    return
-
-            self._recorder.on_opus(user.id, opus_data)
-
-        vc.listen(BasicSink(sink_callback, decode=False))
-
-        # Start max-duration timeout
         self._timeout_task = asyncio.create_task(self._recording_timeout())
-        log.info("Recording started")
 
     async def _recording_timeout(self) -> None:
         try:
@@ -170,20 +110,6 @@ class VoiceSummary(Cog):
         except asyncio.CancelledError:
             pass
 
-    async def _transcribe_segment(
-        self, user_id: int, offset: float, wav_path: Path
-    ) -> None:
-        """Transcribe a single WAV segment during recording."""
-        self._add_manifest_entry(user_id, wav_path.name, offset)
-        log.info(f"Streaming transcription started for {wav_path.name}")
-        try:
-            assert self._pipeline is not None
-            text = await self._pipeline.transcribe_wav(wav_path)
-            self._set_manifest_text(user_id, wav_path.name, text)
-            log.info(f"Streaming transcription complete for {wav_path.name}")
-        except Exception:
-            log.exception(f"Streaming transcription failed for {wav_path.name}")
-
     def _cancel_scheduled_tasks(self) -> None:
         """Cancel grace and timeout tasks, if running."""
         current = asyncio.current_task()
@@ -192,66 +118,6 @@ class VoiceSummary(Cog):
                 task.cancel()
         self._grace_task = None
         self._timeout_task = None
-
-    async def _stop_recording(self) -> tuple[CallRecorder, VoiceClient | None] | None:
-        """Stop recording and disconnect from voice. Returns recorder + vc."""
-        self._cancel_scheduled_tasks()
-
-        recorder = self._recorder
-        vc = self._voice_client
-        self._recorder = None
-        self._voice_client = None
-
-        if not recorder:
-            return None
-
-        recorder.stop()
-        if vc and vc.is_connected():
-            await vc.disconnect()
-
-        return recorder, vc
-
-    async def _await_pending_transcriptions(self) -> None:
-        """Wait for all in-flight streaming transcriptions to finish."""
-        if self._pending_futures:
-            log.info(f"Waiting for {len(self._pending_futures)} pending transcriptions")
-            await asyncio.gather(
-                *(asyncio.wrap_future(f) for f in self._pending_futures)
-            )
-            self._pending_futures = []
-
-    async def _transcribe_remaining(self) -> None:
-        """Transcribe manifest entries that have no text yet."""
-        assert self._pipeline is not None
-        manifest = self._load_manifest()
-        segments_dir = self._get_artifact_dir() / "segments"
-
-        remaining: list[tuple[int, str]] = []
-        for uid_str, entries in manifest.items():
-            user_id = int(uid_str)
-            remaining.extend([(user_id, e["file"]) for e in entries if "text" not in e])
-
-        if not remaining:
-            return
-
-        log.info(f"Transcribing {len(remaining)} remaining segments")
-        for user_id, wav_name in remaining:
-            wav_path = segments_dir / wav_name
-            text = await self._pipeline.transcribe_wav(wav_path)
-            self._set_manifest_text(user_id, wav_name, text)
-
-    def _collect_segments(self) -> dict[int, list[tuple[float, str]]]:
-        """Read the manifest and return all segments grouped by user ID."""
-        manifest = self._load_manifest()
-        segments: dict[int, list[tuple[float, str]]] = {}
-        for uid_str, entries in manifest.items():
-            user_id = int(uid_str)
-            for entry in entries:
-                if entry.get("text"):
-                    segments.setdefault(user_id, []).append(
-                        (entry["offset"], entry["text"])
-                    )
-        return segments
 
     async def _resolve_usernames(self, user_ids: set[int]) -> dict[int, str]:
         """Resolve user IDs to display names."""
@@ -274,51 +140,43 @@ class VoiceSummary(Cog):
         return text
 
     async def _stop_and_process(self) -> None:
-        result = await self._stop_recording()
-        if not result:
-            return
-        recorder, _ = result
+        self._cancel_scheduled_tasks()
 
-        if not self._pipeline:
-            recorder.cleanup()
+        session = self._session
+        self._session = None
+        if not session:
+            return
+
+        recorder = await session.stop()
+        if not recorder:
             return
 
         if recorder.speaker_count == 0:
             log.info("No speakers detected, discarding recording")
-            recorder.cleanup()
+            session.cleanup()
             return
 
         try:
-            await self._await_pending_transcriptions()
+            await session.await_pending_transcriptions()
 
             user_segments = recorder.get_user_segments()
             if not user_segments:
                 log.info("Empty recording, discarding")
                 return
 
-            # Register final segments (closed during get_user_segments)
-            manifest = self._load_manifest()
-            known_files: set[str] = set()
-            for entries in manifest.values():
-                for entry in entries:
-                    known_files.add(entry["file"])
-            for user_id, wav_segments in user_segments.items():
-                for offset, path in wav_segments:
-                    if path.name not in known_files:
-                        self._add_manifest_entry(user_id, path.name, offset)
+            session.register_final_segments(user_segments)
+            await session.transcribe_remaining()
 
-            await self._transcribe_remaining()
-
-            all_segments = self._collect_segments()
+            all_segments = session.collect_segments()
             usernames = await self._resolve_usernames(set(user_segments))
 
             transcript = TranscriptionPipeline.format_transcript(
                 all_segments, usernames
             )
-            self._save_transcript(transcript)
+            session.save_transcript(transcript)
 
             summary = await self._pipeline.summarize(transcript)
-            audio = await asyncio.to_thread(self._save_audio, user_segments)
+            audio = await asyncio.to_thread(session.mix_audio, user_segments)
 
             if not summary:
                 log.info("No substantive content, discarding")
@@ -329,82 +187,7 @@ class VoiceSummary(Cog):
         except Exception as e:
             await self.bot.report_error(e)
         finally:
-            recorder.cleanup()
-            self._artifact_dir = None
-            self._pending_futures = []
-
-    def _get_artifact_dir(self) -> Path:
-        """Get or create the artifact directory for the current recording."""
-        if self._artifact_dir is None:
-            timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M")
-            self._artifact_dir = TRANSCRIPTIONS_DIR / timestamp
-        self._artifact_dir.mkdir(parents=True, exist_ok=True)
-        return self._artifact_dir
-
-    def _save_audio(
-        self,
-        user_segments: dict[int, list[tuple[float, Path]]],
-    ) -> Path:
-        """Mix per-user WAV files into a single MP3."""
-        out_dir = self._get_artifact_dir()
-
-        mixed: AudioSegment | None = None
-        for _uid, segments in user_segments.items():
-            for offset, wav_path in segments:
-                track = AudioSegment.from_wav(str(wav_path))
-                if mixed is None:
-                    mixed = AudioSegment.silent(duration=int(offset * 1000)) + track
-                else:
-                    end_ms = int(offset * 1000) + len(track)
-                    if end_ms > len(mixed):
-                        mixed += AudioSegment.silent(duration=end_ms - len(mixed))
-                    mixed = mixed.overlay(track, position=int(offset * 1000))
-
-        assert mixed is not None, "No audio segments to mix"
-        path = out_dir / "recording.mp3"
-        mixed = mixed.set_channels(1)
-        mixed.export(path, format="mp3", bitrate="64k")
-        log.info(f"Audio saved to {out_dir}")
-        return path
-
-    @property
-    def _manifest_path(self) -> Path:
-        return self._get_artifact_dir() / "segments" / "manifest.json"
-
-    def _load_manifest(self) -> dict[str, Any]:
-        """Load the manifest from disk, or return an empty dict."""
-        if self._manifest_path.exists():
-            result: dict[str, Any] = json.loads(
-                self._manifest_path.read_text(encoding="utf-8")
-            )
-            return result
-        return {}
-
-    def _add_manifest_entry(self, user_id: int, wav_name: str, offset: float) -> None:
-        """Register a WAV segment in the manifest (no text until transcribed)."""
-        manifest = self._load_manifest()
-        uid = str(user_id)
-        if uid not in manifest:
-            manifest[uid] = []
-        manifest[uid].append({"file": wav_name, "offset": offset})
-        self._manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-
-    def _set_manifest_text(self, user_id: int, wav_name: str, text: str) -> None:
-        """Set the transcription text for an existing manifest entry."""
-        manifest = self._load_manifest()
-        for entry in manifest.get(str(user_id), []):
-            if entry["file"] == wav_name:
-                entry["text"] = text
-                self._manifest_path.write_text(
-                    json.dumps(manifest, indent=2), encoding="utf-8"
-                )
-                return
-
-    def _save_transcript(self, transcript: str) -> None:
-        """Save transcript to disk."""
-        out_dir = self._get_artifact_dir()
-        (out_dir / "transcript.txt").write_text(transcript, encoding="utf-8")
-        log.info(f"Transcript saved to {out_dir}")
+            session.cleanup()
 
     async def _post_results(
         self, transcript: str, summary: str, audio_path: Path
@@ -441,14 +224,11 @@ class VoiceSummary(Cog):
         log.info("Transcript and summary posted")
 
     async def cog_unload(self) -> None:
-        self._cancel_grace()
-        if self._timeout_task and not self._timeout_task.done():
-            self._timeout_task.cancel()
-        if self._voice_client and self._voice_client.is_connected():
-            await self._voice_client.disconnect()
-        if self._recorder:
-            self._recorder.stop()
-            self._recorder.cleanup()
+        self._cancel_scheduled_tasks()
+        if self._session:
+            await self._session.stop()
+            self._session.cleanup()
+            self._session = None
 
 
 async def setup(bot: RocketWatch) -> None:
