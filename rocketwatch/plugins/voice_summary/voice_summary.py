@@ -46,6 +46,11 @@ class VoiceSummary(Cog):
         """Count non-bot members in a voice channel."""
         return sum(1 for m in channel.members if not m.bot)
 
+    def _get_recorded_channel(self) -> VocalGuildChannel | None:
+        if self._session and self._session.voice_client:
+            return self._session.voice_client.channel
+        return None
+
     @Cog.listener()
     async def on_voice_state_update(
         self,
@@ -56,8 +61,10 @@ class VoiceSummary(Cog):
         if member.bot:
             return
 
-        # left old channel
-        if before.channel is not None:
+        recorded_channel = self._get_recorded_channel()
+
+        # left recorded channel
+        if before.channel and (before.channel == recorded_channel):
             count = self._count_voice_users(before.channel)
             if count == 0:
                 await self._stop_recording()
@@ -68,13 +75,15 @@ class VoiceSummary(Cog):
         if after.channel is not None:
             count = self._count_voice_users(after.channel)
             if count >= self._config.min_users:
-                self._cancel_grace()
-                if not self._session:
+                if after.channel == recorded_channel:
+                    self._cancel_grace()
+                elif not self._session:
                     await self._start_recording(after.channel)
 
     def _start_grace(self) -> None:
         """Start the grace period before auto-disconnecting."""
-        self._cancel_grace()
+        if self._grace_task and not self._grace_task.done():
+            return
         self._grace_task = asyncio.create_task(
             self._delayed_stop(self._config.leave_grace_seconds)
         )
