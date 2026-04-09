@@ -16,8 +16,8 @@ class DiscordConfig(BaseModel):
 
 
 class ExecutionLayerEndpoint(BaseModel):
-    current: str
-    mainnet: str | None = None
+    current: list[str]
+    mainnet: list[str] | None = None
 
 
 class ExecutionLayerConfig(BaseModel):
@@ -27,7 +27,7 @@ class ExecutionLayerConfig(BaseModel):
 
 class ConsensusLayerConfig(BaseModel):
     explorer: str
-    endpoint: str
+    endpoint: list[str]
     beaconcha_secret: str
 
 

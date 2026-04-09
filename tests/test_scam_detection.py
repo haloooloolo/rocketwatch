@@ -31,12 +31,12 @@ def _get_test_cfg():
         execution_layer=ExecutionLayerConfig(
             explorer="https://etherscan.io",
             endpoint=ExecutionLayerEndpoint(
-                current="http://localhost:8545", mainnet="http://localhost:8545"
+                current=["http://localhost:8545"], mainnet=["http://localhost:8545"]
             ),
         ),
         consensus_layer=ConsensusLayerConfig(
             explorer="https://beaconcha.in",
-            endpoint="http://localhost:5052",
+            endpoint=["http://localhost:5052"],
             beaconcha_secret="test",
         ),
         mongodb=MongoDBConfig(uri="mongodb://localhost:27017"),
