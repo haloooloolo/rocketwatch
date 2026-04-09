@@ -3,13 +3,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from concurrent.futures import Future
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import davey
-from discord import File, Member, VoiceChannel, VoiceClient, VoiceState
+from discord import (
+    AllowedMentions,
+    File,
+    Member,
+    VoiceChannel,
+    VoiceClient,
+    VoiceState,
+    ui,
+)
 from discord.abc import Messageable
 from discord.ext.commands import Cog
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
@@ -24,7 +33,7 @@ if TYPE_CHECKING:
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
 from rocketwatch.plugins.voice_summary.recorder import CallRecorder
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.embeds import ACCENT_COLOR
 from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.llm import create_provider
 
@@ -261,7 +270,7 @@ class VoiceSummary(Cog):
         for user_id, name in sorted(
             usernames.items(), key=lambda x: len(x[1]), reverse=True
         ):
-            text = text.replace(name, f"<@{user_id}>")
+            text = re.sub(re.escape(name), f"<@{user_id}>", text, flags=re.IGNORECASE)
         return text
 
     async def _stop_and_process(self) -> None:
@@ -408,13 +417,27 @@ class VoiceSummary(Cog):
         channel = await self.bot.get_or_fetch_channel(channel_id)
         assert isinstance(channel, Messageable)
 
-        embed = Embed(title="Voice Call Summary", description=summary[:4096])
+        view = ui.LayoutView()
+        view.add_item(
+            ui.Container(
+                ui.TextDisplay("# Voice Call Summary"),
+                ui.Separator(),
+                ui.TextDisplay(summary[:4000]),
+                ui.Separator(),
+                ui.TextDisplay("-# Attachments"),
+                ui.File("attachment://recording.mp3"),
+                ui.File("attachment://transcript.txt"),
+                accent_color=ACCENT_COLOR,
+            )
+        )
 
         files = [
             File(audio_path, filename="recording.mp3"),
             TextFile(transcript, "transcript.txt"),
         ]
-        await channel.send(embed=embed, files=files)
+        await channel.send(
+            view=view, files=files, allowed_mentions=AllowedMentions.none()
+        )
         log.info("Transcript and summary posted")
 
     async def cog_unload(self) -> None:

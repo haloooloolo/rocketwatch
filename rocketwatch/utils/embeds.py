@@ -30,6 +30,8 @@ from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.embeds")
 
+ACCENT_COLOR = Color.from_rgb(226, 116, 57)
+
 _ADDRESS_NAMES: dict[str, str] = json.loads(
     (
         Path(__file__).resolve().parent.parent / "strings" / "addresses.en.json"
@@ -49,7 +51,7 @@ class Embed(discord.Embed):
         timestamp: datetime | None = None,
     ) -> None:
         if color is None:
-            color = Color.from_rgb(226, 116, 57)
+            color = ACCENT_COLOR
         super().__init__(
             color=color,
             title=title,
