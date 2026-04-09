@@ -261,7 +261,7 @@ class ScamDetection(Cog):
             report_msg = await report_channel.send(
                 embed=report,
                 file=attachment,
-                view=self._build_review_view(message) or discord_utils.MISSING,
+                view=self._build_review_view() or discord_utils.MISSING,
             )
 
             moderator = await self.bot.get_or_fetch_user(
@@ -270,26 +270,7 @@ class ScamDetection(Cog):
 
             confirm_view: WarningConfirmView | None = None
             if not reporter_is_reputable and self._sentinel.enabled:
-                db_filter: dict[str, Any] = {
-                    "type": "message",
-                    "message_id": message.id,
-                }
-
-                async def on_warning_confirm() -> None:
-                    await self._run_message_automod(message, reason, report_msg)
-
-                async def on_warning_dismiss(moderator: Member) -> None:
-                    async with self._message_report_lock:
-                        report = await self.bot.db.scam_reports.find_one(db_filter)
-                        if report is not None:
-                            await self._resolve_report(
-                                report["report_id"],
-                                f"Marked safe by {moderator.mention}.",
-                            )
-
-                confirm_view = WarningConfirmView(
-                    on_warning_confirm, on_warning_dismiss
-                )
+                confirm_view = WarningConfirmView()
 
             warning_msg = await message.reply(
                 content=f"{moderator.mention} {report_msg.jump_url}",
@@ -327,7 +308,7 @@ class ScamDetection(Cog):
             report_channel = await self._get_report_channel()
             report_msg = await report_channel.send(
                 embed=report,
-                view=self._build_user_review_view(user) or discord_utils.MISSING,
+                view=self._build_review_view() or discord_utils.MISSING,
             )
             await self.bot.db.scam_reports.insert_one(
                 {
@@ -398,7 +379,7 @@ class ScamDetection(Cog):
             report_msg = await report_channel.send(
                 embed=report,
                 file=attachment,
-                view=self._build_review_view(message) or discord_utils.MISSING,
+                view=self._build_review_view() or discord_utils.MISSING,
             )
             await self._add_message_report_to_db(
                 message, reason, warning_msg, report_msg
@@ -422,7 +403,7 @@ class ScamDetection(Cog):
             report_channel = await self._get_report_channel()
             report_msg = await report_channel.send(
                 embed=report,
-                view=self._build_review_view(thread) or discord_utils.MISSING,
+                view=self._build_review_view() or discord_utils.MISSING,
             )
             await self.bot.db.scam_reports.insert_one(
                 {
@@ -724,133 +705,13 @@ class ScamDetection(Cog):
         assert isinstance(channel, Messageable)
         return channel
 
-    def _build_review_view(
-        self, reportable: Message | Thread
-    ) -> ReportReviewView | None:
+    def _build_review_view(self) -> ReportReviewView | None:
         if not self._sentinel.enabled:
             return None
-
-        if isinstance(reportable, Message):
-            db_filter: dict[str, Any] = {
-                "type": "message",
-                "message_id": reportable.id,
-            }
-        else:
-            db_filter = {"type": "thread", "channel_id": reportable.id}
-
-        guild_id = (
-            reportable.guild.id if reportable.guild else reportable.channel.guild.id  # type: ignore[union-attr]
-        )
-
-        async def on_confirm(moderator: Member) -> None:
-            async with self._message_report_lock, self._thread_report_lock:
-                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
-                    return
-
-                reported_member = await self.bot.get_or_fetch_member(
-                    moderator.guild.id, report["user_id"]
-                )
-                if not reported_member:
-                    return
-
-                report_updates = [f"Confirmed by {moderator.mention}."]
-                if await self._sentinel.ban_member(
-                    reported_member, reason=report["reason"]
-                ):
-                    report_updates.append("- User has been banned.")
-                else:
-                    report_updates.append("- Failed to ban user.")
-
-                await self._resolve_report(
-                    report["report_id"], "\n".join(report_updates)
-                )
-
-        async def on_dismiss(moderator: Member) -> None:
-            async with self._message_report_lock, self._thread_report_lock:
-                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
-                    return
-
-                user_id = report["user_id"]
-                report_updates = [f"Marked safe by {moderator.mention}."]
-
-                if await self._sentinel.remove_timeout(
-                    guild_id, user_id, "Report dismissed"
-                ):
-                    report_updates.append("- Timeout has been lifted.")
-
-                if channel := await self.bot.get_or_fetch_channel(report["channel_id"]):  # noqa: SIM102
-                    if isinstance(
-                        channel, Thread
-                    ) and await self._sentinel.unlock_thread(
-                        channel, "Report dismissed"
-                    ):
-                        report_updates.append("- Thread has been unlocked.")
-
-                if warning_id := report.get("warning_id"):
-                    channel = await self.bot.get_or_fetch_channel(report["channel_id"])
-                    if isinstance(channel, Messageable):
-                        with contextlib.suppress(
-                            errors.NotFound, errors.Forbidden, errors.HTTPException
-                        ):
-                            warning_msg = await channel.fetch_message(warning_id)
-                            await warning_msg.delete()
-
-                await self._resolve_report(
-                    report["report_id"], "\n".join(report_updates)
-                )
-
-        return ReportReviewView(on_confirm, on_dismiss)
-
-    def _build_user_review_view(self, user: Member) -> ReportReviewView | None:
-        if not self._sentinel.enabled:
-            return None
-
-        db_filter: dict[str, Any] = {
-            "type": "user",
-            "guild_id": user.guild.id,
-            "user_id": user.id,
-        }
-
-        async def on_confirm(moderator: Member) -> None:
-            async with self._user_report_lock:
-                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
-                    return
-
-                reported_member = await self.bot.get_or_fetch_member(
-                    moderator.guild.id, report["user_id"]
-                )
-                if not reported_member:
-                    return
-
-                report_updates = [f"Confirmed by {moderator.mention}."]
-                if await self._sentinel.ban_member(
-                    reported_member, reason=report["reason"]
-                ):
-                    report_updates.append("- User has been banned.")
-                else:
-                    report_updates.append("- Failed to ban user.")
-
-                await self._resolve_report(
-                    report["report_id"], "\n".join(report_updates)
-                )
-
-        async def on_dismiss(moderator: Member) -> None:
-            async with self._user_report_lock:
-                if not (report := await self.bot.db.scam_reports.find_one(db_filter)):
-                    return
-
-                report_updates = [f"Marked safe by {moderator.mention}."]
-                if await self._sentinel.remove_timeout(
-                    user.guild.id, report["user_id"], "Report dismissed"
-                ):
-                    report_updates.append("- Timeout has been lifted.")
-
-                await self._resolve_report(
-                    report["report_id"], "\n".join(report_updates)
-                )
-
-        return ReportReviewView(on_confirm, on_dismiss)
+        return ReportReviewView()
 
 
 async def setup(bot: RocketWatch) -> None:
+    bot.add_view(ReportReviewView())
+    bot.add_view(WarningConfirmView())
     await bot.add_cog(ScamDetection(bot))

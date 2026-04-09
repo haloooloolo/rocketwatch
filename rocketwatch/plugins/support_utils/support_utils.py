@@ -1,5 +1,6 @@
 import builtins
 import logging
+import re
 from datetime import UTC, datetime
 from operator import itemgetter
 from typing import Any
@@ -30,11 +31,10 @@ async def generate_template_embed(
         codec_options=CodecOptions(tz_aware=True)
     )
     last_edit = await dumps_col.find_one({"template": template_name}, sort=[("ts", -1)])
-    embed = Embed(title=template["title"])
-    embed.description = template["description"] or ""
+    description: str = template["description"] or ""
     if last_edit and template_name != "announcement":
-        embed.description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
-    return embed
+        description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
+    return Embed(title=template["title"], description=description)
 
 
 # Define a simple View that gives us a counter button
@@ -59,22 +59,41 @@ class AdminView(ui.View):
         )
 
 
+class DeleteMessageButton(
+    ui.DynamicItem[ui.Button[Any]],
+    template=r"button:delete:(?P<id>\d+)",
+):
+    def __init__(self, user_id: int) -> None:
+        super().__init__(
+            ui.Button(
+                emoji="<:delete:1364953621191721002>",
+                style=ButtonStyle.gray,
+                custom_id=f"button:delete:{user_id}",
+            )
+        )
+        self.user_id = user_id
+
+    @classmethod
+    async def from_custom_id(
+        cls,
+        interaction: Interaction[Any],
+        item: ui.Item[Any],
+        match: re.Match[str],
+    ) -> "DeleteMessageButton":
+        return cls(int(match["id"]))
+
+    async def callback(self, interaction: Interaction[Any]) -> None:
+        if (interaction.user.id == self.user_id) and interaction.message:
+            await interaction.message.delete()
+            log.warning(
+                f"Message deleted by {interaction.user} in {interaction.channel}"
+            )
+
+
 class DeletableView(ui.View):
     def __init__(self, user: User | Member):
         super().__init__(timeout=None)
-        self.user = user
-
-    @ui.button(emoji="<:delete:1364953621191721002>", style=ButtonStyle.gray)
-    async def delete(
-        self, interaction: Interaction["RocketWatch"], _: ui.Button["DeletableView"]
-    ) -> None:
-        if (
-            (interaction.user == self.user) or has_perms(interaction)
-        ) and interaction.message:
-            await interaction.message.delete()
-            log.warning(
-                f"Support template message deleted by {interaction.user} in {interaction.channel}"
-            )
+        self.add_item(DeleteMessageButton(user.id))
 
 
 class AdminModal(ui.Modal, title="Change Template Message"):
@@ -423,5 +442,6 @@ class SupportUtils(GroupCog, name="support"):
 
 
 async def setup(self: RocketWatch) -> None:
+    self.add_dynamic_items(DeleteMessageButton)
     await self.add_cog(SupportUtils(self))
     await self.add_cog(SupportGlobal(self))
