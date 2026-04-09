@@ -58,11 +58,8 @@ class TranscriptionPipeline:
         self._stt = stt_config
         self._llm = llm_provider
 
-    async def transcribe_wav(
-        self,
-        wav_path: Path,
-    ) -> str:
-        """Transcribe a single WAV file. Returns the text, or None if empty."""
+    async def transcribe_wav(self, wav_path: Path) -> str:
+        """Transcribe a single WAV file."""
         client = AsyncOpenAI(api_key=self._stt.api_key)
 
         buf = io.BytesIO(wav_path.read_bytes())

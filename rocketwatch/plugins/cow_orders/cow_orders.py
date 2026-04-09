@@ -83,7 +83,7 @@ class CoWOrders(EventPlugin):
 
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         url = etherscan_url.replace("etherscan.io", "explorer.cow.fi")
-        embed = Embed(description=f"[cow explorer]({url})")
+        embed = Embed(description=f"[CoW Explorer]({url})")
         await interaction.followup.send(embed=embed)
 
     async def _get_new_events(self) -> list[Event]:
