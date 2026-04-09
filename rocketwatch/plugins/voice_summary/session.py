@@ -286,12 +286,13 @@ class CallSession:
         self.save_transcript(transcript)
 
         summary = await self._pipeline.summarize(transcript)
+        audio = await asyncio.to_thread(self.mix_audio, user_segments)
+
         if not summary:
             log.info("No substantive content, discarding")
             return None
 
         summary = self._mentionify(summary, usernames)
-        audio = await asyncio.to_thread(self.mix_audio, user_segments)
 
         return CallResult(
             transcript=transcript,
