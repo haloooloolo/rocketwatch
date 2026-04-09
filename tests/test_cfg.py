@@ -74,23 +74,6 @@ class TestConfigConstruction:
         cfg = _minimal_config(log_level="INFO")
         assert cfg.log_level == "INFO"
 
-    def test_archive_endpoint_optional(self):
-        cfg = _minimal_config()
-        assert cfg.execution_layer.endpoint.archive is None
-
-    def test_archive_endpoint_set(self):
-        cfg = _minimal_config(
-            execution_layer=ExecutionLayerConfig(
-                explorer="https://etherscan.io",
-                endpoint=ExecutionLayerEndpoint(
-                    current="http://localhost:8545",
-                    mainnet="http://localhost:8545",
-                    archive="http://localhost:8546",
-                ),
-            )
-        )
-        assert cfg.execution_layer.endpoint.archive == "http://localhost:8546"
-
 
 class TestConfigValidation:
     def test_missing_required_field(self):

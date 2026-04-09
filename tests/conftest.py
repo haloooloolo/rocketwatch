@@ -8,7 +8,6 @@ import discord
 _shared_w3_stub = ModuleType("rocketwatch.utils.shared_w3")
 _shared_w3_stub.w3 = MagicMock()
 _shared_w3_stub.w3_mainnet = MagicMock()
-_shared_w3_stub.w3_archive = MagicMock()
 _shared_w3_stub.bacon = MagicMock()
 sys.modules["rocketwatch.utils.shared_w3"] = _shared_w3_stub
 

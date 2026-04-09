@@ -16,7 +16,7 @@ from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.rocketpool import rp
-from rocketwatch.utils.shared_w3 import w3, w3_archive
+from rocketwatch.utils.shared_w3 import w3
 from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.apr")
@@ -61,7 +61,7 @@ class APR(commands.Cog):
         # get latest block update from the db
         latest_db_block = await self.bot.db.reth_apr.find_one(sort=[("block", -1)])
         latest_db_block = 0 if latest_db_block is None else latest_db_block["block"]
-        cursor_block = (await w3_archive.eth.get_block("latest")).get("number", 0)
+        cursor_block = (await w3.eth.get_block("latest")).get("number", 0)
         while True:
             # get address of rocketNetworkBalances contract at cursor block
             address = await rp.uncached_get_address_by_name(

@@ -29,12 +29,8 @@ def _get_web3(endpoint: str) -> AsyncWeb3[AsyncHTTPProvider]:
 
 w3 = _get_web3(cfg.execution_layer.endpoint.current)
 w3_mainnet = w3
-w3_archive = w3
 
-if cfg.rocketpool.chain.lower() != "mainnet":
+if cfg.execution_layer.endpoint.mainnet is not None:
     w3_mainnet = _get_web3(cfg.execution_layer.endpoint.mainnet)
-
-if cfg.execution_layer.endpoint.archive is not None:
-    w3_archive = _get_web3(cfg.execution_layer.endpoint.archive)
 
 bacon = Bacon(cfg.consensus_layer.endpoint, request_timeout=60)

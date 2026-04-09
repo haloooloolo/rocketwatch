@@ -17,8 +17,7 @@ class DiscordConfig(BaseModel):
 
 class ExecutionLayerEndpoint(BaseModel):
     current: str
-    mainnet: str
-    archive: str | None = None
+    mainnet: str | None = None
 
 
 class ExecutionLayerConfig(BaseModel):
