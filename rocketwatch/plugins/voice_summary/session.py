@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from concurrent.futures import Future
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -16,21 +18,32 @@ from pydub import AudioSegment
 
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
 from rocketwatch.plugins.voice_summary.recorder import CallRecorder
+from rocketwatch.utils.config import cfg
 
 if TYPE_CHECKING:
     from discord import User
     from discord.ext.voice_recv.opus import VoiceData
+
+    from rocketwatch.bot import RocketWatch
 
 log = logging.getLogger("rocketwatch.voice_summary.session")
 
 TRANSCRIPTIONS_DIR = Path("../voice_calls")
 
 
+@dataclass
+class CallResult:
+    transcript: str
+    summary: str
+    audio_path: Path
+
+
 class CallSession:
     """Encapsulates all state and artifact management for a single voice call."""
 
-    def __init__(self, pipeline: TranscriptionPipeline) -> None:
+    def __init__(self, pipeline: TranscriptionPipeline, bot: RocketWatch) -> None:
         self._pipeline = pipeline
+        self._bot = bot
         self.recorder: CallRecorder | None = None
         self.voice_client: VoiceClient | None = None
         self._artifact_dir: Path | None = None
@@ -225,8 +238,63 @@ class CallSession:
                 )
                 return
 
-    def cleanup(self) -> None:
-        """Close open file handles and clear pending futures."""
-        if self.recorder:
-            self.recorder.cleanup()
-        self._pending_futures = []
+    @staticmethod
+    def _mentionify(text: str, usernames: dict[int, str]) -> str:
+        """Replace display names with Discord mentions."""
+        for user_id, name in sorted(
+            usernames.items(), key=lambda x: len(x[1]), reverse=True
+        ):
+            text = re.sub(re.escape(name), f"<@{user_id}>", text, flags=re.IGNORECASE)
+        return text
+
+    async def _resolve_usernames(self, user_ids: set[int]) -> dict[int, str]:
+        """Resolve user IDs to display names."""
+        usernames: dict[int, str] = {}
+        guild_id = cfg.discord.owner.server_id
+        for user_id in user_ids:
+            if member := await self._bot.get_or_fetch_member(guild_id, user_id):
+                usernames[user_id] = member.display_name
+            else:
+                usernames[user_id] = str(user_id)
+        return usernames
+
+    async def finalize(self) -> CallResult | None:
+        """Stop recording, transcribe, and produce the final transcript and summary.
+
+        Returns None if there is nothing substantive to report.
+        """
+        recorder = await self.stop()
+        if not recorder or recorder.speaker_count == 0:
+            if recorder and recorder.speaker_count == 0:
+                log.info("No speakers detected, discarding recording")
+            return None
+
+        await self.await_pending_transcriptions()
+
+        user_segments = recorder.get_user_segments()
+        if not user_segments:
+            log.info("Empty recording, discarding")
+            return None
+
+        self.register_final_segments(user_segments)
+        await self.transcribe_remaining()
+
+        all_segments = self.collect_segments()
+        usernames = await self._resolve_usernames(set(user_segments))
+
+        transcript = TranscriptionPipeline.format_transcript(all_segments, usernames)
+        self.save_transcript(transcript)
+
+        summary = await self._pipeline.summarize(transcript)
+        if not summary:
+            log.info("No substantive content, discarding")
+            return None
+
+        summary = self._mentionify(summary, usernames)
+        audio = await asyncio.to_thread(self.mix_audio, user_segments)
+
+        return CallResult(
+            transcript=transcript,
+            summary=summary,
+            audio_path=audio,
+        )

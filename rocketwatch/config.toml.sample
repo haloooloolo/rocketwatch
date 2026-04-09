@@ -70,7 +70,6 @@ api_key = ""
 model = ""
 
 [transcription]
-voice_channel_id = 0
 output_channel_id = 0
 min_users = 5
 leave_grace_seconds = 120

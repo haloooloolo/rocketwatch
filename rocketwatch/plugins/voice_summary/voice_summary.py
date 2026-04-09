@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
-from pathlib import Path
 
 from discord import (
     AllowedMentions,
@@ -18,7 +16,7 @@ from discord.ext.commands import Cog
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
-from rocketwatch.plugins.voice_summary.session import CallSession
+from rocketwatch.plugins.voice_summary.session import CallResult, CallSession
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import ACCENT_COLOR
 from rocketwatch.utils.file import TextFile
@@ -43,7 +41,8 @@ class VoiceSummary(Cog):
             llm_provider=llm,
         )
 
-    def _count_voice_users(self, channel: VocalGuildChannel) -> int:
+    @staticmethod
+    def _count_voice_users(channel: VocalGuildChannel) -> int:
         """Count non-bot members in a voice channel."""
         return sum(1 for m in channel.members if not m.bot)
 
@@ -61,7 +60,7 @@ class VoiceSummary(Cog):
         if before.channel is not None:
             count = self._count_voice_users(before.channel)
             if count == 0:
-                await self._stop_and_process()
+                await self._stop_recording()
             else:
                 self._start_grace()
 
@@ -76,23 +75,18 @@ class VoiceSummary(Cog):
     def _start_grace(self) -> None:
         """Start the grace period before auto-disconnecting."""
         self._cancel_grace()
-        self._grace_task = asyncio.create_task(self._grace_countdown())
+        self._grace_task = asyncio.create_task(
+            self._delayed_stop(self._config.leave_grace_seconds)
+        )
 
     def _cancel_grace(self) -> None:
         if self._grace_task and not self._grace_task.done():
             self._grace_task.cancel()
             self._grace_task = None
 
-    async def _grace_countdown(self) -> None:
-        try:
-            await asyncio.sleep(self._config.leave_grace_seconds)
-            await self._stop_and_process()
-        except asyncio.CancelledError:
-            pass
-
     async def _start_recording(self, channel: VocalGuildChannel) -> None:
         log.info(f"Auto-joining voice channel: {channel.name}")
-        self._session = CallSession(self._pipeline)
+        self._session = CallSession(self._pipeline, self.bot)
         try:
             await self._session.start(channel)
         except Exception:
@@ -100,13 +94,13 @@ class VoiceSummary(Cog):
             self._session = None
             return
 
-        self._timeout_task = asyncio.create_task(self._recording_timeout())
+        self._timeout_task = asyncio.create_task(self._delayed_stop(180 * 60))
 
-    async def _recording_timeout(self) -> None:
+    async def _delayed_stop(self, delay: float) -> None:
+        """Wait, then stop and process the current session."""
         try:
-            await asyncio.sleep(180 * 60)
-            log.warning("Max recording duration reached, stopping")
-            await self._stop_and_process()
+            await asyncio.sleep(delay)
+            await self._stop_recording()
         except asyncio.CancelledError:
             pass
 
@@ -119,27 +113,7 @@ class VoiceSummary(Cog):
         self._grace_task = None
         self._timeout_task = None
 
-    async def _resolve_usernames(self, user_ids: set[int]) -> dict[int, str]:
-        """Resolve user IDs to display names."""
-        usernames: dict[int, str] = {}
-        guild_id = cfg.discord.owner.server_id
-        for user_id in user_ids:
-            if member := await self.bot.get_or_fetch_member(guild_id, user_id):
-                usernames[user_id] = member.display_name
-            else:
-                usernames[user_id] = str(user_id)
-        return usernames
-
-    @staticmethod
-    def _mentionify(text: str, usernames: dict[int, str]) -> str:
-        """Replace display names with Discord mentions."""
-        for user_id, name in sorted(
-            usernames.items(), key=lambda x: len(x[1]), reverse=True
-        ):
-            text = re.sub(re.escape(name), f"<@{user_id}>", text, flags=re.IGNORECASE)
-        return text
-
-    async def _stop_and_process(self) -> None:
+    async def _stop_recording(self) -> None:
         self._cancel_scheduled_tasks()
 
         session = self._session
@@ -147,51 +121,16 @@ class VoiceSummary(Cog):
         if not session:
             return
 
-        recorder = await session.stop()
-        if not recorder:
-            return
-
-        if recorder.speaker_count == 0:
-            log.info("No speakers detected, discarding recording")
-            session.cleanup()
-            return
-
         try:
-            await session.await_pending_transcriptions()
-
-            user_segments = recorder.get_user_segments()
-            if not user_segments:
-                log.info("Empty recording, discarding")
+            result = await session.finalize()
+            if not result:
                 return
 
-            session.register_final_segments(user_segments)
-            await session.transcribe_remaining()
-
-            all_segments = session.collect_segments()
-            usernames = await self._resolve_usernames(set(user_segments))
-
-            transcript = TranscriptionPipeline.format_transcript(
-                all_segments, usernames
-            )
-            session.save_transcript(transcript)
-
-            summary = await self._pipeline.summarize(transcript)
-            audio = await asyncio.to_thread(session.mix_audio, user_segments)
-
-            if not summary:
-                log.info("No substantive content, discarding")
-                return
-
-            summary = self._mentionify(summary, usernames)
-            await self._post_results(transcript, summary, audio)
+            await self._post_results(result)
         except Exception as e:
             await self.bot.report_error(e)
-        finally:
-            session.cleanup()
 
-    async def _post_results(
-        self, transcript: str, summary: str, audio_path: Path
-    ) -> None:
+    async def _post_results(self, result: CallResult) -> None:
         channel_id = self._config.output_channel_id
         if not channel_id:
             log.warning("No output channel configured")
@@ -205,7 +144,7 @@ class VoiceSummary(Cog):
             ui.Container(
                 ui.TextDisplay("# Voice Call Summary"),
                 ui.Separator(),
-                ui.TextDisplay(summary[:4000]),
+                ui.TextDisplay(result.summary[:4000]),
                 ui.Separator(),
                 ui.TextDisplay("-# Attachments"),
                 ui.File("attachment://recording.mp3"),
@@ -215,8 +154,8 @@ class VoiceSummary(Cog):
         )
 
         files = [
-            File(audio_path, filename="recording.mp3"),
-            TextFile(transcript, "transcript.txt"),
+            File(result.audio_path, filename="recording.mp3"),
+            TextFile(result.transcript, "transcript.txt"),
         ]
         await channel.send(
             view=view, files=files, allowed_mentions=AllowedMentions.none()
@@ -227,7 +166,6 @@ class VoiceSummary(Cog):
         self._cancel_scheduled_tasks()
         if self._session:
             await self._session.stop()
-            self._session.cleanup()
             self._session = None
 
 

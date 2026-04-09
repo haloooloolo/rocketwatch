@@ -75,7 +75,6 @@ class ScamDetectionConfig(BaseModel):
 class TranscriptionConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     stt: STTConfig = STTConfig()
-    voice_channel_id: int = 0
     output_channel_id: int = 0
     min_users: int = 5
     leave_grace_seconds: int = 120
