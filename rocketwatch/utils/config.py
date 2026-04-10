@@ -64,7 +64,7 @@ class LLMConfig(BaseModel):
 class STTConfig(BaseModel):
     provider: Literal["openai", ""] = ""
     api_key: str = ""
-    model: str = "whisper-1"
+    model: str = ""
 
 
 class ScamDetectionConfig(BaseModel):
