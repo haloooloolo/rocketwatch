@@ -176,16 +176,22 @@ class ScamDetection(Cog):
 
     @Cog.listener()
     async def on_thread_update(self, before: Thread, after: Thread) -> None:
-        if not before.locked and after.locked:
-            db_filter = {"channel_id": after.id, "removed": False}
-            async with self._thread_report_lock:
-                if report := await self.bot.db.scam_reports.find_one(db_filter):
-                    await self._update_report(
-                        report["report_id"], "Thread has been locked."
-                    )
-                    await self.bot.db.scam_reports.update_one(
-                        db_filter, {"$set": {"removed": True}}
-                    )
+        if before.locked or (not after.locked):
+            return
+
+        db_filter = {"channel_id": after.id, "removed": False}
+        async with self._thread_report_lock:
+            if reports := await self.bot.db.scam_reports.find(db_filter).to_list():
+                await self.bot.db.scam_reports.update_many(
+                    db_filter, {"$set": {"removed": True}}
+                )
+                update_msg = "Thread has been locked."
+                await asyncio.gather(
+                    *[
+                        self._update_report(report["report_id"], update_msg)
+                        for report in reports
+                    ]
+                )
 
     @Cog.listener()
     async def on_raw_thread_delete(self, event: RawThreadDeleteEvent) -> None:
@@ -204,23 +210,36 @@ class ScamDetection(Cog):
         if before.is_timed_out() == after.is_timed_out():
             return
 
-        db_filter = {
-            "guild_id": after.guild.id,
-            "user_id": after.id,
-        }
-        report = await self.bot.db.scam_reports.find_one(db_filter)
-        if report is None:
+        db_filter = {"guild_id": after.guild.id, "user_id": after.id}
+        reports = await self.bot.db.scam_reports.find(db_filter).to_list()
+        if not reports:
             return
 
+        update_msg: str
         if after.is_timed_out():
-            await self._update_report(report["report_id"], "User has been timed out.")
+            update_msg = "User has been timed out."
+        else:
+            update_msg = "User timeout has been lifted."
+
+        await asyncio.gather(
+            *[
+                self._update_report(report["report_id"], update_msg)
+                for report in reports
+            ]
+        )
 
     @Cog.listener()
     async def on_member_ban(self, guild: Guild, user: User) -> None:
         db_filter = {"guild_id": guild.id, "user_id": user.id}
         async with self._user_report_lock:
-            if report := await self.bot.db.scam_reports.find_one(db_filter):
-                await self._resolve_report(report["report_id"], "User has been banned.")
+            if reports := await self.bot.db.scam_reports.find(db_filter).to_list():
+                update_msg = "User has been banned."
+                await asyncio.gather(
+                    *[
+                        self._resolve_report(report["report_id"], update_msg)
+                        for report in reports
+                    ]
+                )
 
     # --- Commands ---
 
@@ -431,22 +450,37 @@ class ScamDetection(Cog):
 
         automod_actions = []
         timeout_duration = DEFAULT_USER_TIMEOUT
+
         try:
-            if await self._sentinel.delete_message(message, reason):
-                automod_actions.append("message deleted")
+            delete_request = self._sentinel.delete_message(message, reason)
+
+            if isinstance(message.author, Member):
+                timeout_request = self._sentinel.timeout_member(
+                    message.author, int(timeout_duration.total_seconds()), reason
+                )
+            else:
+                timeout_request = asyncio.sleep(0, result=False)
+
             if (
                 isinstance(message.channel, Thread)
-                and (message.channel.owner_id == message.author.id)
-                and await self._sentinel.lock_thread(message.channel, reason)
+                and message.channel.owner_id == message.author.id
             ):
+                lock_request = self._sentinel.lock_thread(message.channel, reason)
+            else:
+                lock_request = asyncio.sleep(0, result=False)
+
+            deleted, timed_out, locked = await asyncio.gather(
+                delete_request, timeout_request, lock_request
+            )
+
+            if deleted:
+                automod_actions.append("message deleted")
+            if locked:
                 automod_actions.append(f"{message.channel.jump_url} locked")
+                assert isinstance(message.channel, Thread)
                 automod_message_channel = message.channel.parent
                 alert_duration = THREAD_ALERT_DELETE_AFTER
-            if isinstance(
-                message.author, Member
-            ) and await self._sentinel.timeout_member(
-                message.author, int(timeout_duration.total_seconds()), reason
-            ):
+            if timed_out:
                 duration = humanize.naturaldelta(timeout_duration)
                 automod_actions.append(
                     f"{message.author.mention} timed out for {duration}"
@@ -470,16 +504,23 @@ class ScamDetection(Cog):
         automod_actions = []
         timeout_duration = DEFAULT_USER_TIMEOUT
         alert_duration = THREAD_ALERT_DELETE_AFTER
+
         try:
-            if await self._sentinel.lock_thread(thread, reason):
-                automod_actions.append(f"{thread.jump_url} locked")
-            if (
-                thread.owner_id
-                and (member := thread.guild.get_member(thread.owner_id))
-                and await self._sentinel.timeout_member(
+            if thread.owner_id and (member := thread.guild.get_member(thread.owner_id)):
+                timeout_request = self._sentinel.timeout_member(
                     member, int(timeout_duration.total_seconds()), reason
                 )
-            ):
+            else:
+                timeout_request = asyncio.sleep(0, result=False)
+
+            lock_request = self._sentinel.lock_thread(thread, reason)
+
+            timed_out, locked = await asyncio.gather(timeout_request, lock_request)
+
+            if locked:
+                automod_actions.append(f"{thread.jump_url} locked")
+            if timed_out:
+                assert member is not None
                 duration = humanize.naturaldelta(timeout_duration)
                 automod_actions.append(f"{member.mention} timed out for {duration}")
         except Exception as e:
@@ -648,6 +689,9 @@ class ScamDetection(Cog):
         try:
             report_channel = await self._get_report_channel()
             message = await report_channel.fetch_message(report_msg_id)
+            if message.embeds and (message.embeds[0].color == ReportColor.OK):
+                return
+
             embed = message.embeds[0]
             embed.description = (embed.description or "") + f"\n\n**{note}**"
             embed.color = ReportColor.WARN
