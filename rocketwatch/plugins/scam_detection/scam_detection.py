@@ -579,9 +579,9 @@ class ScamDetection(Cog):
 
         report.description = warning.description + (
             "\n"
-            f"User ID:    `{message.author.id}` ({message.author.mention})\n"
-            f"Message ID: `{message.id}` ({message.jump_url})\n"
-            f"Channel ID: `{message.channel.id}` ({message.channel.jump_url})\n"
+            f"User:    {message.author.mention}\n"
+            f"Message: ({message.jump_url}\n"
+            f"Channel: {message.channel.jump_url})\n"
             "\n"
             "Original message has been attached as a file.\n"
             "Please review and take appropriate action."
@@ -615,8 +615,8 @@ class ScamDetection(Cog):
         report.description = warning.description + (
             "\n"
             f"Thread Name: `{thread.name}`\n"
-            f"Thread ID:   `{thread.id}` ({thread.jump_url})\n"
-            f"User ID:     `{thread_owner.id}` ({thread_owner.mention})\n"
+            f"Thread:      {thread.jump_url}\n"
+            f"User:        {thread_owner.mention}\n"
             "\n"
             "Please review and take appropriate action."
         )
@@ -638,7 +638,7 @@ class ScamDetection(Cog):
         report.description += (
             "\n"
             f"Name:  `{user.display_name}`\n"
-            f"ID:    `{user.id}` ({user.mention})\n"
+            f"User:   {user.mention}\n"
             f"Roles: [{', '.join(role.mention for role in user.roles[1:])}]\n"
             "\n"
             "Please review and take appropriate action."
