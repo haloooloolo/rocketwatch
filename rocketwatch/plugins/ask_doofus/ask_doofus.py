@@ -28,7 +28,7 @@ class AskDoofus(commands.Cog):
             session.post(
                 "https://rpgovsearch.com/api/ask",
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=300),
+                timeout=aiohttp.ClientTimeout(total=60),
             ) as resp,
         ):
             resp.raise_for_status()
