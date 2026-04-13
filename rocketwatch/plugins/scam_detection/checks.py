@@ -43,6 +43,8 @@ class ScamChecks:
         self.x_url_pattern = re.compile(
             rf"https?://(?:www\.)?{_x_domains}/(\w+)", re.IGNORECASE
         )
+        # Catches "ticket" misspellings in X usernames (tcket, tlcket, t1cket, etc.)
+        self.x_ticket_pattern = re.compile(r"t[i1l]?[ck]+[e3l][tl]", re.IGNORECASE)
 
     def run_all(self, message: Message) -> str | None:
         checks = [
@@ -266,6 +268,8 @@ class ScamChecks:
         for m in self.x_url_pattern.finditer(message.content):
             username = m.group(1).lower()
             if any(kw in username for kw in suspicious_keywords):
+                return "Link to suspicious X account"
+            if self.x_ticket_pattern.search(username):
                 return "Link to suspicious X account"
         return None
 

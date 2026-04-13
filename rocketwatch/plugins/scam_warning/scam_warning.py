@@ -9,6 +9,7 @@ from discord.ext import commands
 from discord.ext.commands import is_owner
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.plugins.scam_detection.common import is_reputable
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
 
@@ -89,11 +90,8 @@ class ScamWarning(commands.Cog):
         if message.author == self.bot.user:
             return
 
-        if (
-            isinstance(message.author, Member)
-            and message.author.guild_permissions.moderate_members
-        ):
-            log.info(f"{message.author} is a moderator, skipping warning.")
+        if isinstance(message.author, Member) and is_reputable(message.author):
+            log.info(f"{message.author} is reputable, skipping warning.")
             return
 
         msg_time = message.created_at.replace(tzinfo=None)

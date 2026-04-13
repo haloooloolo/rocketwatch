@@ -9,6 +9,7 @@ from bson import CodecOptions
 from discord import ButtonStyle, Interaction, Member, TextStyle, User, app_commands, ui
 from discord.app_commands import Choice, Group, choices
 from discord.ext.commands import Cog, GroupCog
+from discord.utils import format_dt
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -33,7 +34,7 @@ async def generate_template_embed(
     last_edit = await dumps_col.find_one({"template": template_name}, sort=[("ts", -1)])
     description: str = template["description"] or ""
     if last_edit and template_name != "announcement":
-        description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> <t:{last_edit['ts'].timestamp():.0f}:R>*"
+        description += f"\n\n*Last Edited by <@{last_edit['author']['id']}> {format_dt(last_edit['ts'], 'R')}*"
     return Embed(title=template["title"], description=description)
 
 
@@ -407,7 +408,7 @@ class SupportUtils(GroupCog, name="support"):
         embed = Embed(title="Templates")
         embed.description = (
             "".join(
-                f"\n`{template['_id']}` - <t:{template.get('last_edited_date', datetime.now()).timestamp():.0f}:R>"
+                f"\n`{template['_id']}` - {format_dt(template.get('last_edited_date', datetime.now()), 'R')}"
                 for template in templates
             )
             + ""

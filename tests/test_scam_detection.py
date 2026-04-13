@@ -164,17 +164,26 @@ class TestThreadStarterDeleted:
         thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
         detector._thread_creation_messages[thread_id] = thread_id
         detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
-        detector._sentinel.is_banned = AsyncMock(return_value=False)
-        detector.report_thread = AsyncMock()
+        detector._ctx.sentinel.is_banned = AsyncMock(return_value=False)
 
-        await detector._check_thread_starter_deleted(thread_id)
+        from rocketwatch.plugins.scam_detection.thread_report import (
+            check_thread_starter_deleted,
+        )
 
-        detector._sentinel.is_banned.assert_awaited_once_with(
-            thread.guild.id, thread.owner_id
-        )
-        detector.report_thread.assert_awaited_once_with(
-            thread, "Attempt to hide thread from main channel"
-        )
+        with patch(
+            "rocketwatch.plugins.scam_detection.thread_report.report_thread",
+            new_callable=AsyncMock,
+        ) as mock_report:
+            await check_thread_starter_deleted(
+                detector._ctx, thread_id, detector._thread_creation_messages
+            )
+
+            detector._ctx.sentinel.is_banned.assert_awaited_once_with(
+                thread.guild.id, thread.owner_id
+            )
+            mock_report.assert_awaited_once_with(
+                detector._ctx, thread, "Attempt to hide thread from main channel"
+            )
         assert thread_id not in detector._thread_creation_messages
 
     @pytest.mark.asyncio
@@ -183,16 +192,34 @@ class TestThreadStarterDeleted:
         thread = self._make_thread(thread_id, 999, cfg.rocketpool.support.server_id)
         detector._thread_creation_messages[thread_id] = thread_id
         detector.bot.get_or_fetch_channel = AsyncMock(return_value=thread)
-        detector._sentinel.is_banned = AsyncMock(return_value=True)
-        detector.report_thread = AsyncMock()
+        detector._ctx.sentinel.is_banned = AsyncMock(return_value=True)
 
-        await detector._check_thread_starter_deleted(thread_id)
+        from rocketwatch.plugins.scam_detection.thread_report import (
+            check_thread_starter_deleted,
+        )
 
-        detector.report_thread.assert_not_awaited()
+        with patch(
+            "rocketwatch.plugins.scam_detection.thread_report.report_thread",
+            new_callable=AsyncMock,
+        ) as mock_report:
+            await check_thread_starter_deleted(
+                detector._ctx, thread_id, detector._thread_creation_messages
+            )
+
+            mock_report.assert_not_awaited()
         assert thread_id not in detector._thread_creation_messages
 
     @pytest.mark.asyncio
     async def test_starter_deleted_ignores_untracked(self, detector):
-        detector.report_thread = AsyncMock()
-        await detector._check_thread_starter_deleted(456)
-        detector.report_thread.assert_not_awaited()
+        from rocketwatch.plugins.scam_detection.thread_report import (
+            check_thread_starter_deleted,
+        )
+
+        with patch(
+            "rocketwatch.plugins.scam_detection.thread_report.report_thread",
+            new_callable=AsyncMock,
+        ) as mock_report:
+            await check_thread_starter_deleted(
+                detector._ctx, 456, detector._thread_creation_messages
+            )
+            mock_report.assert_not_awaited()
