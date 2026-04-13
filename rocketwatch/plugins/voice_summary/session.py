@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 import davey
 from discord import Member, VoiceClient
-from discord.channel import VocalGuildChannel
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
 from pydub import AudioSegment
 
@@ -62,10 +61,13 @@ class CallSession:
     def _manifest_path(self) -> Path:
         return self.artifact_dir / "segments" / "manifest.json"
 
-    async def start(self, channel: VocalGuildChannel) -> None:
-        """Connect to voice and begin recording."""
-        vc = await channel.connect(cls=VoiceRecvClient)
+    async def start(self, vc: VoiceRecvClient) -> None:
+        """Begin recording on a voice client, waiting for connection if needed."""
         self.voice_client = vc
+        if not vc.is_connected():
+            connected = await asyncio.to_thread(vc.wait_until_connected)
+            if not connected:
+                raise ConnectionError("Voice client failed to connect")
         loop = asyncio.get_running_loop()
 
         def on_segment_closed(user_id: int, offset: float, wav_path: Path) -> None:

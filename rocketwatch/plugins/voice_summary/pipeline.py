@@ -34,7 +34,7 @@ class SummaryResult(BaseModel):
     )
     summary: str = Field(
         default="",
-        description="The structured summary of the transcript. Always provide a summary.",
+        description="The structured summary of the transcript.",
     )
 
 

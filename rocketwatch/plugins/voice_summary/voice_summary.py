@@ -6,13 +6,16 @@ import logging
 from discord import (
     AllowedMentions,
     File,
+    Interaction,
     Member,
     VoiceState,
     ui,
 )
 from discord.abc import Messageable
-from discord.channel import VocalGuildChannel
-from discord.ext.commands import Cog
+from discord.app_commands import command, guilds
+from discord.channel import StageChannel, VocalGuildChannel, VoiceChannel
+from discord.ext.commands import Cog, is_owner
+from discord.ext.voice_recv import VoiceRecvClient
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
@@ -31,6 +34,7 @@ class VoiceSummary(Cog):
         self.bot = bot
         self._config = cfg.transcription
         self._session: CallSession | None = None
+        self._starting = False
         self._grace_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
 
@@ -58,6 +62,14 @@ class VoiceSummary(Cog):
         before: VoiceState,
         after: VoiceState,
     ) -> None:
+        # Bot's own voice state changed — manage session lifecycle
+        if member.id == self.bot.user.id:  # type: ignore[union-attr]
+            if before.channel and (before.channel != after.channel) and self._session:
+                await self._stop_recording()
+            if after.channel and (not self._session):
+                await self._start_recording(after.channel)
+            return
+
         if member.bot:
             return
 
@@ -67,7 +79,7 @@ class VoiceSummary(Cog):
         if before.channel and (before.channel == recorded_channel):
             count = self._count_voice_users(before.channel)
             if count == 0:
-                await self._stop_recording()
+                await self._disconnect_voice()
             else:
                 self._start_grace()
 
@@ -78,7 +90,7 @@ class VoiceSummary(Cog):
                 if after.channel == recorded_channel:
                     self._cancel_grace()
                 elif not self._session:
-                    await self._start_recording(after.channel)
+                    await self._connect_voice(after.channel)
 
     def _start_grace(self) -> None:
         """Start the grace period before auto-disconnecting."""
@@ -93,23 +105,45 @@ class VoiceSummary(Cog):
             self._grace_task.cancel()
             self._grace_task = None
 
-    async def _start_recording(self, channel: VocalGuildChannel) -> None:
-        log.info(f"Auto-joining voice channel: {channel.name}")
-        self._session = CallSession(self._pipeline, self.bot)
+    async def _connect_voice(self, channel: VocalGuildChannel) -> None:
+        """Connect to a voice channel. Session setup happens via voice state event."""
+        if channel.guild.voice_client or self._starting:
+            return
         try:
-            await self._session.start(channel)
+            await channel.connect(cls=VoiceRecvClient)
         except Exception:
             log.exception("Failed to connect to voice channel")
-            self._session = None
-            return
 
-        self._timeout_task = asyncio.create_task(self._delayed_stop(180 * 60))
+    async def _start_recording(self, channel: VocalGuildChannel) -> None:
+        """Set up a recording session on a channel the bot is already in."""
+        if self._starting:
+            return
+        self._starting = True
+        try:
+            vc = channel.guild.voice_client
+            if not vc:
+                log.warning("No voice client found, cannot start recording")
+                return
+
+            log.info(f"Starting recording in voice channel: {channel.name}")
+            self._session = CallSession(self._pipeline, self.bot)
+            assert isinstance(vc, VoiceRecvClient)
+            await self._session.start(vc)
+            self._timeout_task = asyncio.create_task(self._delayed_stop(180 * 60))
+        finally:
+            self._starting = False
+
+    async def _disconnect_voice(self) -> None:
+        """Disconnect from voice. Session cleanup happens via voice state event."""
+        self._cancel_scheduled_tasks()
+        if self._session and self._session.voice_client:
+            await self._session.voice_client.disconnect()
 
     async def _delayed_stop(self, delay: float) -> None:
-        """Wait, then stop and process the current session."""
+        """Wait, then disconnect from voice."""
         try:
             await asyncio.sleep(delay)
-            await self._stop_recording()
+            await self._disconnect_voice()
         except asyncio.CancelledError:
             pass
 
@@ -170,6 +204,36 @@ class VoiceSummary(Cog):
             view=view, files=files, allowed_mentions=AllowedMentions.none()
         )
         log.info("Transcript and summary posted")
+
+    @command()
+    @guilds(cfg.discord.owner.server_id)
+    @is_owner()
+    async def start_recording(
+        self, interaction: Interaction, channel: VoiceChannel | StageChannel
+    ) -> None:
+        """Manually start recording in a voice channel."""
+        await interaction.response.defer(ephemeral=True)
+
+        if self._session:
+            await interaction.followup.send("Already recording.")
+            return
+
+        await self._connect_voice(channel)
+        await interaction.followup.send(f"Recording started in {channel.jump_url}.")
+
+    @command()
+    @guilds(cfg.discord.owner.server_id)
+    @is_owner()
+    async def stop_recording(self, interaction: Interaction) -> None:
+        """Manually stop recording and produce the summary."""
+        await interaction.response.defer(ephemeral=True)
+
+        if not self._session:
+            await interaction.followup.send("Not currently recording.")
+            return
+
+        await self._disconnect_voice()
+        await interaction.followup.send("Recording stopped.")
 
     async def cog_unload(self) -> None:
         self._cancel_scheduled_tasks()

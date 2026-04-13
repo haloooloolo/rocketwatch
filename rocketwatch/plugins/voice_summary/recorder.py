@@ -15,7 +15,7 @@ CHANNELS = OpusDecoder.CHANNELS  # 2
 SAMPLE_WIDTH = OpusDecoder.SAMPLE_SIZE // OpusDecoder.CHANNELS  # 2 bytes (16-bit)
 BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
 
-SILENCE_DURATION = 2.0  # seconds of packet gap before splitting
+SILENCE_DURATION = 1.0  # seconds of packet gap before splitting
 MAX_SEGMENT_DURATION = 60.0  # seconds before forcing a split
 
 
