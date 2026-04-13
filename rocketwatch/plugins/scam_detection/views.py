@@ -22,53 +22,11 @@ class ReportReviewView(ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
 
-    @ui.button(
-        label="Confirm Scam", style=ButtonStyle.danger, custom_id="report:confirm"
-    )
-    async def confirm(
-        self,
-        interaction: Interaction["RocketWatch"],
-        button: ui.Button["ReportReviewView"],
-    ) -> None:
-        if not (
-            isinstance(interaction.user, Member)
-            and interaction.user.guild_permissions.ban_members
-        ):
-            await interaction.response.send_message(
-                content="Only admins can confirm reports.", ephemeral=True
-            )
-            return
-        assert isinstance(interaction.user, Member)
-        assert interaction.message is not None
-        if not (cog := _get_cog(interaction)):
-            return
-        report_id = interaction.message.id
-        await interaction.response.edit_message(view=None)
-
-        if not (
-            report := await interaction.client.db.scam_reports.find_one(
-                {"report_id": report_id}
-            )
-        ):
-            return
-        if not (
-            reported_member := await interaction.client.get_or_fetch_member(
-                interaction.user.guild.id, report["user_id"]
-            )
-        ):
-            return
-        updates = [f"Confirmed by {interaction.user.mention}."]
-        if await cog._ctx.sentinel.ban_member(reported_member, reason=report["reason"]):
-            updates.append("- User has been banned.")
-        else:
-            updates.append("- Failed to ban user.")
-        await resolve_report(cog._ctx, report_id, "\n".join(updates))
-
     @ui.button(label="Mark Safe", style=ButtonStyle.success, custom_id="report:dismiss")
     async def dismiss(
         self,
         interaction: Interaction["RocketWatch"],
-        button: ui.Button["ReportReviewView"],
+        _button: ui.Button["ReportReviewView"],
     ) -> None:
         if not (
             isinstance(interaction.user, Member) and is_reputable(interaction.user)
@@ -120,4 +78,46 @@ class ReportReviewView(ui.View):
                         warning_msg = await channel.fetch_message(warning_id)
                         await warning_msg.delete()
 
+        await resolve_report(cog._ctx, report_id, "\n".join(updates))
+
+    @ui.button(
+        label="Confirm Scam", style=ButtonStyle.danger, custom_id="report:confirm"
+    )
+    async def confirm(
+        self,
+        interaction: Interaction["RocketWatch"],
+        _button: ui.Button["ReportReviewView"],
+    ) -> None:
+        if not (
+            isinstance(interaction.user, Member)
+            and interaction.user.guild_permissions.ban_members
+        ):
+            await interaction.response.send_message(
+                content="Only admins can confirm reports.", ephemeral=True
+            )
+            return
+        assert isinstance(interaction.user, Member)
+        assert interaction.message is not None
+        if not (cog := _get_cog(interaction)):
+            return
+        report_id = interaction.message.id
+        await interaction.response.edit_message(view=None)
+
+        if not (
+            report := await interaction.client.db.scam_reports.find_one(
+                {"report_id": report_id}
+            )
+        ):
+            return
+        if not (
+            reported_member := await interaction.client.get_or_fetch_member(
+                interaction.user.guild.id, report["user_id"]
+            )
+        ):
+            return
+        updates = [f"Confirmed by {interaction.user.mention}."]
+        if await cog._ctx.sentinel.ban_member(reported_member, reason=report["reason"]):
+            updates.append("- User has been banned.")
+        else:
+            updates.append("- Failed to ban user.")
         await resolve_report(cog._ctx, report_id, "\n".join(updates))
