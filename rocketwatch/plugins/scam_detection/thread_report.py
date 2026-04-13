@@ -10,6 +10,7 @@ from pymongo import ReturnDocument
 from rocketwatch.plugins.scam_detection.common import (
     DEFAULT_USER_TIMEOUT,
     THREAD_ALERT_DELETE_AFTER,
+    AutomodAction,
     ReportColor,
     ReportContext,
     build_automod_embed,
@@ -95,8 +96,9 @@ def _build_review_view(ctx: ReportContext) -> ReportReviewView | None:
 
 async def run_thread_automod(
     ctx: ReportContext, thread: Thread, reason: str, report_msg: Message
-) -> None:
-    automod_actions = []
+) -> set[AutomodAction]:
+    actions: set[AutomodAction] = set()
+    action_descriptions: list[str] = []
     timeout_duration = DEFAULT_USER_TIMEOUT
     alert_duration = THREAD_ALERT_DELETE_AFTER
 
@@ -113,23 +115,27 @@ async def run_thread_automod(
         timed_out, locked = await asyncio.gather(timeout_request, lock_request)
 
         if locked:
-            automod_actions.append(f"{thread.jump_url} locked")
+            actions.add(AutomodAction.THREAD_LOCKED)
+            action_descriptions.append(f"{thread.jump_url} locked")
         if timed_out:
+            actions.add(AutomodAction.MEMBER_TIMED_OUT)
             assert member is not None
             duration = humanize.naturaldelta(timeout_duration)
-            automod_actions.append(f"{member.mention} timed out for {duration}")
+            action_descriptions.append(f"{member.mention} timed out for {duration}")
     except Exception as e:
         await ctx.bot.report_error(e)
-        return
+        return actions
 
-    if automod_actions and isinstance(thread.parent, Messageable):
-        embed = build_automod_embed(report_msg, automod_actions)
+    if action_descriptions and isinstance(thread.parent, Messageable):
+        embed = build_automod_embed(report_msg, action_descriptions)
         embed.set_footer(
             text=f"This alert will disappear in {humanize.naturaldelta(alert_duration)}."
         )
         await thread.parent.send(
             embed=embed, delete_after=alert_duration.total_seconds()
         )
+
+    return actions
 
 
 async def report_thread(ctx: ReportContext, thread: Thread, reason: str) -> None:
@@ -142,29 +148,34 @@ async def report_thread(ctx: ReportContext, thread: Thread, reason: str) -> None
         warning, report = _generate_embeds(thread, reason)
         report.description = (report.description or "") + (
             "\n"
-            f"Thread: `{thread.name}` ({thread.jump_url})\n"
-            f"User: {thread_owner.mention}\n"
+            f"**Thread**: `{thread.name}` ({thread.jump_url})\n"
+            f"**User**: {thread_owner.mention}\n"
         )
         if thread.created_at:
-            report.description += f"Created: {format_dt(thread.created_at, 'R')}\n"
-        report.description += f"Messages: {thread.message_count}\n"
-        report.description += f"Members: {thread.member_count}\n"
-
-        try:
-            warning_msg = await thread.send(embed=warning)
-        except errors.Forbidden:
-            log.warning(f"Failed to send warning message in thread {thread.id}")
-            warning_msg = None
+            report.description += f"**Created**: {format_dt(thread.created_at, 'R')}\n"
+        report.description += f"**Messages**: {thread.message_count}\n"
+        report.description += f"**Members**: {thread.member_count}\n"
 
         report_channel = await get_report_channel(ctx)
         report_msg = await report_channel.send(
             embed=report,
             view=_build_review_view(ctx) or MISSING,
         )
-        await _finalize_report(ctx, thread, reason, warning_msg, report_msg)
+        await _finalize_report(ctx, thread, reason, None, report_msg)
     except Exception:
         await _release_claim(ctx, thread.id)
         raise
+
+    warning.url = report_msg.jump_url
+    try:
+        warning_msg = await thread.send(embed=warning)
+    except (errors.NotFound, errors.Forbidden):
+        log.warning(f"Failed to send warning message in thread {thread.id}")
+    else:
+        await ctx.bot.db.scam_reports.update_one(
+            {"type": "thread", "channel_id": thread.id},
+            {"$set": {"warning_id": warning_msg.id}},
+        )
 
     await run_thread_automod(ctx, thread, reason, report_msg)
 

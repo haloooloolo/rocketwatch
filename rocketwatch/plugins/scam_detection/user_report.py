@@ -6,6 +6,7 @@ from pymongo import ReturnDocument
 
 from rocketwatch.plugins.scam_detection.common import (
     DEFAULT_USER_TIMEOUT,
+    AutomodAction,
     ReportColor,
     ReportContext,
     get_report_channel,
@@ -62,13 +63,13 @@ def _generate_report_embed(user: Member, reason: str) -> Embed:
     report.description = f"**Reason**: {reason}\n"
     report.description += (
         "\n"
-        f"User: `{user.display_name}` ({user.mention})\n"
-        f"Created: {format_dt(user.created_at, 'R')}\n"
+        f"**User**: `{user.display_name}` ({user.mention})\n"
+        f"**Created**: {format_dt(user.created_at, 'R')}\n"
     )
     if user.joined_at:
-        report.description += f"Joined: {format_dt(user.joined_at, 'R')}\n"
+        report.description += f"**Joined**: {format_dt(user.joined_at, 'R')}\n"
     report.description += (
-        f"Roles: [{', '.join(role.mention for role in user.roles[1:])}]\n"
+        f"**Roles**: [{', '.join(role.mention for role in user.roles[1:])}]\n"
     )
     report.set_thumbnail(url=user.display_avatar.url)
     return report
@@ -81,15 +82,22 @@ def _build_review_view(ctx: ReportContext) -> ReportReviewView | None:
 
 
 async def run_user_automod(
-    ctx: ReportContext, member: Member, reason: str, report_msg: Message
-) -> None:
+    ctx: ReportContext, member: Member, reason: str
+) -> set[AutomodAction]:
+    actions: set[AutomodAction] = set()
     timeout_duration = DEFAULT_USER_TIMEOUT
     try:
-        await ctx.sentinel.timeout_member(
+        timed_out = await ctx.sentinel.timeout_member(
             member, int(timeout_duration.total_seconds()), reason
         )
     except Exception as e:
         await ctx.bot.report_error(e)
+        return actions
+
+    if timed_out:
+        actions.add(AutomodAction.MEMBER_TIMED_OUT)
+
+    return actions
 
 
 async def manual_user_report(
@@ -131,6 +139,6 @@ async def manual_user_report(
         interaction.user
     )
     if reporter_is_reputable:
-        await run_user_automod(ctx, user, reason, report_msg)
+        await run_user_automod(ctx, user, reason)
 
     await interaction.followup.send(content="Thanks for reporting!")

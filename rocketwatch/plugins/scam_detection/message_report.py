@@ -24,6 +24,7 @@ from rocketwatch.plugins.scam_detection.common import (
     DEFAULT_USER_TIMEOUT,
     MESSAGE_ALERT_DELETE_AFTER,
     THREAD_ALERT_DELETE_AFTER,
+    AutomodAction,
     ReportColor,
     ReportContext,
     build_automod_embed,
@@ -60,7 +61,31 @@ class WarningConfirmView(ui.View):
         )
         return False
 
-    @ui.button(label="Confirm", style=ButtonStyle.danger, custom_id="warning:confirm")
+    @ui.button(label="Dismiss", style=ButtonStyle.danger, custom_id="warning:dismiss")
+    async def dismiss(
+        self,
+        interaction: Interaction["RocketWatch"],
+        button: ui.Button["WarningConfirmView"],
+    ) -> None:
+        if not await self._check_reputable(interaction):
+            return
+        assert isinstance(interaction.user, Member)
+        assert interaction.message is not None
+        if not (cog := _get_cog(interaction)):
+            return
+        warning_id = interaction.message.id
+        await interaction.message.delete()
+
+        if report := await interaction.client.db.scam_reports.find_one(
+            {"warning_id": warning_id}
+        ):
+            await resolve_report(
+                cog._ctx,
+                report["report_id"],
+                f"Marked safe by {interaction.user.mention}.",
+            )
+
+    @ui.button(label="Confirm", style=ButtonStyle.success, custom_id="warning:confirm")
     async def confirm(
         self,
         interaction: Interaction["RocketWatch"],
@@ -93,33 +118,6 @@ class WarningConfirmView(ui.View):
             return
 
         await run_message_automod(cog._ctx, message, report["reason"], report_msg)
-
-    @ui.button(label="Dismiss", style=ButtonStyle.success, custom_id="warning:dismiss")
-    async def dismiss(
-        self,
-        interaction: Interaction["RocketWatch"],
-        button: ui.Button["WarningConfirmView"],
-    ) -> None:
-        if not await self._check_reputable(interaction):
-            return
-        assert isinstance(interaction.user, Member)
-        assert interaction.message is not None
-        if not (cog := _get_cog(interaction)):
-            return
-        warning_id = interaction.message.id
-        await interaction.message.delete()
-
-        if report := await interaction.client.db.scam_reports.find_one(
-            {"warning_id": warning_id}
-        ):
-            await resolve_report(
-                cog._ctx,
-                report["report_id"],
-                f"Marked safe by {interaction.user.mention}.",
-            )
-
-
-_CLAIM_FILTER = {"type": "message", "message_id": 0}  # template, message_id replaced
 
 
 def serialize_message(message: Message) -> str:
@@ -165,9 +163,9 @@ def _generate_embeds(message: Message, reason: str) -> tuple[Embed, Embed, File]
     report = Embed(title="💬 Suspicious Message", color=ReportColor.ALERT)
     report.description = (
         f"**Reason**: {reason}\n\n"
-        f"User: {message.author.mention}\n"
-        f"Message: {message.jump_url}\n"
-        f"Channel: {message.channel.jump_url}\n"
+        f"**User**: {message.author.mention}\n"
+        f"**Message**: {message.jump_url}\n"
+        f"**Channel**: {message.channel.jump_url}\n"
     )
 
     attachment = TextFile(serialize_message(message), filename="message.json")
@@ -209,11 +207,12 @@ def _build_review_view(ctx: ReportContext) -> ReportReviewView | None:
 
 async def run_message_automod(
     ctx: ReportContext, message: Message, reason: str, report_msg: Message
-) -> None:
+) -> set[AutomodAction]:
     automod_message_channel: Any = message.channel
     alert_duration = MESSAGE_ALERT_DELETE_AFTER
 
-    automod_actions = []
+    actions: set[AutomodAction] = set()
+    action_descriptions: list[str] = []
     timeout_duration = DEFAULT_USER_TIMEOUT
 
     try:
@@ -239,27 +238,34 @@ async def run_message_automod(
         )
 
         if deleted:
-            automod_actions.append("message deleted")
+            actions.add(AutomodAction.MESSAGE_DELETED)
+            action_descriptions.append("message deleted")
         if locked:
-            automod_actions.append(f"{message.channel.jump_url} locked")
+            actions.add(AutomodAction.THREAD_LOCKED)
+            action_descriptions.append(f"{message.channel.jump_url} locked")
             assert isinstance(message.channel, Thread)
             automod_message_channel = message.channel.parent
             alert_duration = THREAD_ALERT_DELETE_AFTER
         if timed_out:
+            actions.add(AutomodAction.MEMBER_TIMED_OUT)
             duration = humanize.naturaldelta(timeout_duration)
-            automod_actions.append(f"{message.author.mention} timed out for {duration}")
+            action_descriptions.append(
+                f"{message.author.mention} timed out for {duration}"
+            )
     except Exception as e:
         await ctx.bot.report_error(e)
-        return
+        return actions
 
-    if automod_actions and isinstance(automod_message_channel, Messageable):
-        embed = build_automod_embed(report_msg, automod_actions)
+    if action_descriptions and isinstance(automod_message_channel, Messageable):
+        embed = build_automod_embed(report_msg, action_descriptions)
         embed.set_footer(
             text=f"This alert will disappear in {humanize.naturaldelta(alert_duration)}."
         )
         await automod_message_channel.send(
             embed=embed, delete_after=alert_duration.total_seconds()
         )
+
+    return actions
 
 
 async def report_message(ctx: ReportContext, message: Message, reason: str) -> None:
@@ -276,15 +282,6 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
 
     try:
         warning, report, attachment = _generate_embeds(message, reason)
-        warning_msg = None
-
-        try:
-            warning_msg = await message.reply(
-                embed=warning,
-                mention_author=False,
-            )
-        except errors.Forbidden:
-            log.warning(f"Failed to send warning message in reply to {message.id}")
 
         report_channel = await get_report_channel(ctx)
         report_msg = await report_channel.send(
@@ -292,12 +289,27 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
             file=attachment,
             view=_build_review_view(ctx) or MISSING,
         )
-        await _finalize_report(ctx, message, reason, warning_msg, report_msg)
+        await _finalize_report(ctx, message, reason, None, report_msg)
     except Exception:
         await _release_claim(ctx, message.id)
         raise
 
-    await run_message_automod(ctx, message, reason, report_msg)
+    actions = await run_message_automod(ctx, message, reason, report_msg)
+
+    if AutomodAction.MESSAGE_DELETED not in actions:
+        warning.url = report_msg.jump_url
+        try:
+            warning_msg = await message.reply(
+                embed=warning,
+                mention_author=False,
+            )
+        except (errors.NotFound, errors.Forbidden):
+            log.warning(f"Failed to send warning message in reply to {message.id}")
+        else:
+            await ctx.bot.db.scam_reports.update_one(
+                {"type": "message", "message_id": message.id},
+                {"$set": {"warning_id": warning_msg.id}},
+            )
 
 
 async def manual_message_report(
@@ -344,24 +356,42 @@ async def manual_message_report(
         )
 
         moderator = await ctx.bot.get_or_fetch_user(cfg.rocketpool.support.moderator_id)
+        warning.url = report_msg.jump_url
 
-        confirm_view: WarningConfirmView | None = None
-        if not reporter_is_reputable and ctx.sentinel.enabled:
-            confirm_view = WarningConfirmView()
+        if reporter_is_reputable:
+            await _finalize_report(ctx, message, reason, None, report_msg)
+        else:
+            confirm_view: WarningConfirmView | None = None
+            if ctx.sentinel.enabled:
+                confirm_view = WarningConfirmView()
 
-        warning_msg = await message.reply(
-            content=f"{moderator.mention} {report_msg.jump_url}",
-            embed=warning,
-            view=confirm_view or MISSING,
-            mention_author=False,
-        )
-        await _finalize_report(ctx, message, reason, warning_msg, report_msg)
+            warning_msg = await message.reply(
+                content=moderator.mention,
+                embed=warning,
+                view=confirm_view or MISSING,
+                mention_author=False,
+            )
+            await _finalize_report(ctx, message, reason, warning_msg, report_msg)
     except Exception:
         await _release_claim(ctx, message.id)
         raise
 
     if reporter_is_reputable:
-        await run_message_automod(ctx, message, reason, report_msg)
+        actions = await run_message_automod(ctx, message, reason, report_msg)
+        if AutomodAction.MESSAGE_DELETED not in actions:
+            try:
+                warning_msg = await message.reply(
+                    content=f"{moderator.mention} {report_msg.jump_url}",
+                    embed=warning,
+                    mention_author=False,
+                )
+            except (errors.NotFound, errors.Forbidden):
+                log.warning(f"Failed to send warning message in reply to {message.id}")
+            else:
+                await ctx.bot.db.scam_reports.update_one(
+                    {"type": "message", "message_id": message.id},
+                    {"$set": {"warning_id": warning_msg.id}},
+                )
 
     await interaction.followup.send(content="Thanks for reporting!")
 

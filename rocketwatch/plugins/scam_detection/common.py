@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from enum import Enum
 from typing import Any, NotRequired, TypedDict
 
 from discord import Color, Member, Message
@@ -17,6 +18,12 @@ REPUTABLE_MESSAGE_THRESHOLD = 50
 DEFAULT_USER_TIMEOUT = timedelta(hours=24)
 MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=5)
 THREAD_ALERT_DELETE_AFTER = timedelta(minutes=60)
+
+
+class AutomodAction(Enum):
+    MESSAGE_DELETED = "message_deleted"
+    THREAD_LOCKED = "thread_locked"
+    MEMBER_TIMED_OUT = "member_timed_out"
 
 
 @dataclass
