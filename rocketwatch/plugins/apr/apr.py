@@ -70,7 +70,7 @@ class APR(commands.Cog):
                 block=cursor_block,
                 address=address,
             )
-            if self.bot.db.reth_apr.find_one({"block": balance_block}):
+            if await self.bot.db.reth_apr.find_one({"block": balance_block}):
                 log.debug(
                     "Block %s already exists in database, stopping", balance_block
                 )
