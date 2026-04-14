@@ -12,7 +12,7 @@ from discord import (
     ui,
 )
 from discord.abc import Messageable
-from discord.app_commands import command, guilds
+from discord.app_commands import command, default_permissions
 from discord.channel import StageChannel, VocalGuildChannel, VoiceChannel
 from discord.ext.commands import Cog, is_owner
 from discord.ext.voice_recv import VoiceRecvClient
@@ -206,7 +206,7 @@ class VoiceSummary(Cog):
         log.info("Transcript and summary posted")
 
     @command()
-    @guilds(cfg.discord.owner.server_id)
+    @default_permissions()
     @is_owner()
     async def start_recording(
         self, interaction: Interaction, channel: VoiceChannel | StageChannel
@@ -222,7 +222,7 @@ class VoiceSummary(Cog):
         await interaction.followup.send(f"Recording started in {channel.jump_url}.")
 
     @command()
-    @guilds(cfg.discord.owner.server_id)
+    @default_permissions()
     @is_owner()
     async def stop_recording(self, interaction: Interaction) -> None:
         """Manually stop recording and produce the summary."""
