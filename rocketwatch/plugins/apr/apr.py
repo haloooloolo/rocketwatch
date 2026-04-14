@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from io import BytesIO
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -125,11 +125,12 @@ class APR(commands.Cog):
         e.description = "For some comparisons against other LST: [dune dashboard](https://dune.com/rp_community/lst-comparison)"
 
         # get the last 30 datapoints
-        datapoints = (
+        datapoints = cast(
+            list[APRDatapoint],
             await self.bot.db.reth_apr.find()
             .sort("block", -1)
             .limit(180 + 38)
-            .to_list(None)
+            .to_list(None),
         )
         if len(datapoints) == 0:
             e.description = "No data available yet."
@@ -313,11 +314,12 @@ class APR(commands.Cog):
         e.description = ""
 
         # get the last 30 datapoints
-        datapoints = (
+        datapoints = cast(
+            list[APRDatapoint],
             await self.bot.db.reth_apr.find()
             .sort("block", -1)
             .limit(180 + 38)
-            .to_list(None)
+            .to_list(None),
         )
         if len(datapoints) == 0:
             e.description = "No data available yet."

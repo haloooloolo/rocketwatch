@@ -165,13 +165,13 @@ class TVL(Cog):
             )
         ).to_list(1)
         if len(tmp) > 0:
-            tmp = tmp[0]
+            tmp_doc = tmp[0]
             data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"][
                 "Locked on Beacon Chain"
-            ]["_val"] = tmp["beacon_balance"]
+            ]["_val"] = tmp_doc["beacon_balance"]
             data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"][
                 "Contract Balance"
-            ]["_val"] = tmp["execution_balance"]
+            ]["_val"] = tmp_doc["execution_balance"]
 
         # Staking Minipools:
         minipools = await self.bot.db.minipools.find(

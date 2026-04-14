@@ -342,7 +342,7 @@ class Proposals(commands.Cog):
         max_slot = proposals[-1]["slot"]
         # get versions used after max_slot - window
         start_slot = max_slot - int(5 * 60 * 24 * window_length)
-        recent_versions = await (
+        recent_version_docs = await (
             await self.bot.db.proposals.aggregate(
                 [
                     {
@@ -356,7 +356,7 @@ class Proposals(commands.Cog):
                 ]
             )
         ).to_list()
-        recent_versions = [v["_id"] for v in recent_versions]
+        recent_versions: list[str] = [v["_id"] for v in recent_version_docs]
         data = {}
         versions = []
         proposal_buffer = []
