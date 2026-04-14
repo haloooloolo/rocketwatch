@@ -56,12 +56,10 @@ class APR(commands.Cog):
     async def cog_unload(self) -> None:
         self.task.cancel()
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(minutes=15)
     async def task(self) -> None:
-        # get latest block update from the db
-        latest_db_block = await self.bot.db.reth_apr.find_one(sort=[("block", -1)])
-        latest_db_block = 0 if (latest_db_block is None) else latest_db_block["block"]
         cursor_block = (await w3.eth.get_block("latest")).get("number", 0)
+        log.debug("Starting APR task at block %s", cursor_block)
         while True:
             # get address of rocketNetworkBalances contract at cursor block
             address = await rp.uncached_get_address_by_name(
@@ -73,11 +71,15 @@ class APR(commands.Cog):
                 address=address,
             )
             if self.bot.db.reth_apr.find_one({"block": balance_block}):
+                log.debug(
+                    "Block %s already exists in database, stopping", balance_block
+                )
                 break
 
             block_time = (await w3.eth.get_block(balance_block)).get("timestamp", 0)
             # abort if the blocktime is older than 120 days
             if block_time < (datetime.now().timestamp() - 120 * 24 * 60 * 60):
+                log.debug("Block %s is older than 120 days, stopping", balance_block)
                 break
             reth_ratio = solidity.to_float(
                 await rp.call("rocketTokenRETH.getExchangeRate", block=cursor_block)
@@ -96,6 +98,12 @@ class APR(commands.Cog):
                     "value": reth_ratio,
                     "effectiveness": effectiveness,
                 }
+            )
+            log.info(
+                "Inserted APR datapoint: block=%s, reth_ratio=%.6f, effectiveness=%.2f",
+                balance_block,
+                reth_ratio,
+                effectiveness,
             )
             cursor_block = balance_block - 1
 
