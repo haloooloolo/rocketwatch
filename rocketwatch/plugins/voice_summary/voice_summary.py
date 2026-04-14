@@ -63,7 +63,7 @@ class VoiceSummary(Cog):
         after: VoiceState,
     ) -> None:
         # Bot's own voice state changed — manage session lifecycle
-        if member.id == self.bot.user.id:  # type: ignore[union-attr]
+        if self.bot.user and (member.id == self.bot.user.id):
             if before.channel and (before.channel != after.channel) and self._session:
                 await self._stop_recording()
             if after.channel and (not self._session):
