@@ -67,6 +67,7 @@ class TranscriptionPipeline:
 
         response = await client.audio.transcriptions.create(
             model=self._stt.model,
+            language="en",
             file=buf,
             response_format="json",
         )
