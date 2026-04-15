@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, cast
 
 from bidict import bidict
-from cachetools import FIFOCache
+from cachetools import LRUCache
 from eth_abi import abi
 from eth_typing import BlockIdentifier, ChecksumAddress
 from web3.constants import ADDRESS_ZERO
@@ -20,8 +20,6 @@ from rocketwatch.utils.readable import decode_abi
 from rocketwatch.utils.shared_w3 import w3, w3_mainnet
 
 log = logging.getLogger("rocketwatch.rocketpool")
-
-ContractProps = tuple[str, ChecksumAddress | None, bool]
 
 
 class ValidatorInfo(NamedTuple):
@@ -46,9 +44,8 @@ class NoAddressFound(Exception):
 
 
 class RocketPool:
-    ADDRESS_CACHE: FIFOCache[str, ChecksumAddress] = FIFOCache(maxsize=2048)
-    ABI_CACHE: FIFOCache[str, str] = FIFOCache(maxsize=2048)
-    CONTRACT_CACHE: FIFOCache[ContractProps, AsyncContract] = FIFOCache(maxsize=2048)
+    ADDRESS_CACHE: LRUCache[str, ChecksumAddress] = LRUCache(maxsize=128)
+    ABI_CACHE: LRUCache[str, str] = LRUCache(maxsize=128)
 
     def __init__(self) -> None:
         self.addresses: bidict[str, ChecksumAddress] = bidict()
@@ -59,7 +56,6 @@ class RocketPool:
 
     async def flush(self) -> None:
         log.warning("FLUSHING RP CACHE")
-        self.CONTRACT_CACHE.clear()
         self.ABI_CACHE.clear()
         self.ADDRESS_CACHE.clear()
         self.addresses.clear()
@@ -185,7 +181,9 @@ class RocketPool:
     ) -> ChecksumAddress:
         log.debug(f"Retrieving address for {name} Contract")
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.address", name])
-        storage = await self.get_contract_by_name("rocketStorage")
+        storage = await self.assemble_contract(
+            "rocketStorage", self.addresses["rocketStorage"]
+        )
         address: ChecksumAddress = await storage.functions.getAddress(sha3).call(
             block_identifier=block
         )
@@ -224,12 +222,16 @@ class RocketPool:
 
     async def get_string(self, key: str) -> str:
         sha3 = w3.solidity_keccak(["string"], [key])
-        storage = await self.get_contract_by_name("rocketStorage")
+        storage = await self.assemble_contract(
+            "rocketStorage", self.addresses["rocketStorage"]
+        )
         return str(await storage.functions.getString(sha3).call())
 
     async def get_uint(self, key: str) -> int:
         sha3 = w3.solidity_keccak(["string"], [key])
-        storage = await self.get_contract_by_name("rocketStorage")
+        storage = await self.assemble_contract(
+            "rocketStorage", self.addresses["rocketStorage"]
+        )
         return int(await storage.functions.getUint(sha3).call())
 
     async def get_protocol_version(self) -> tuple[int, ...]:
@@ -239,14 +241,27 @@ class RocketPool:
     async def get_abi_by_name(self, name: str) -> str:
         if name in self.ABI_CACHE:
             return self.ABI_CACHE[name]
-        abi = await self.uncached_get_abi_by_name(name)
-        self.ABI_CACHE[name] = abi
-        return abi
+        abi_str = await self.uncached_get_abi_by_name(name)
+        self.ABI_CACHE[name] = abi_str
+        return abi_str
 
     async def uncached_get_abi_by_name(self, name: str) -> str:
         log.debug(f"Retrieving abi for {name} contract")
+
+        if name.startswith("Constellation."):
+            short_name = name.removeprefix("Constellation.")
+            abi_path = f"./contracts/constellation/{short_name}.abi.json"
+        else:
+            abi_path = f"./contracts/{name}.abi.json"
+
+        if os.path.exists(abi_path):
+            with open(abi_path) as f:
+                return f.read()
+
         sha3 = w3.solidity_keccak(["string", "string"], ["contract.abi", name])
-        storage = await self.get_contract_by_name("rocketStorage")
+        storage = await self.assemble_contract(
+            "rocketStorage", self.addresses["rocketStorage"]
+        )
         compressed_string = await storage.functions.getString(sha3).call()
         if not compressed_string:
             raise Exception(f"No abi found for {name} contract")
@@ -258,30 +273,11 @@ class RocketPool:
         address: ChecksumAddress | None = None,
         mainnet: bool = False,
     ) -> AsyncContract:
-        cache_key: ContractProps = (name, address, mainnet)
-        if cache_key in self.CONTRACT_CACHE:
-            return self.CONTRACT_CACHE[cache_key]
-
-        if name.startswith("Constellation."):
-            short_name = name.removeprefix("Constellation.")
-            abi_path = f"./contracts/constellation/{short_name}.abi.json"
-        else:
-            abi_path = f"./contracts/{name}.abi.json"
-
-        if os.path.exists(abi_path):
-            with open(abi_path) as f:
-                abi = f.read()
-        else:
-            abi = await self.get_abi_by_name(name)
-
-        if mainnet:
-            contract = w3_mainnet.eth.contract(address=address, abi=abi)
-        else:
-            contract = w3.eth.contract(address=address, abi=abi)
-
-        contract = cast(AsyncContract, contract)
-        self.CONTRACT_CACHE[cache_key] = contract
-        return contract
+        contract_abi = await self.get_abi_by_name(name)
+        provider = w3_mainnet if mainnet else w3
+        return cast(
+            AsyncContract, provider.eth.contract(address=address, abi=contract_abi)
+        )
 
     def get_name_by_address(self, address: ChecksumAddress) -> str | None:
         return self.addresses.inverse.get(address, None)
@@ -361,7 +357,9 @@ class RocketPool:
 
     async def is_megapool(self, address: ChecksumAddress) -> bool:
         sha3 = w3.solidity_keccak(["string", "address"], ["megapool.exists", address])
-        storage = await self.get_contract_by_name("rocketStorage")
+        storage = await self.assemble_contract(
+            "rocketStorage", self.addresses["rocketStorage"]
+        )
         return bool(await storage.functions.getBool(sha3).call())
 
     async def get_eth_usdc_price(self) -> float:
