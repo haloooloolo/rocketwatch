@@ -14,7 +14,6 @@ from web3.types import EventData, TxReceipt
 
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import block_to_ts
-from rocketwatch.utils.config import cfg
 from rocketwatch.utils.dao import (
     DefaultDAO,
     ProtocolDAO,
@@ -277,43 +276,18 @@ class PriceUpdateEvent(LogEvent):
 
 
 class TransferEvent(LogEvent):
-    """Handles rETH/RPL/LUSD Transfer events.
+    """Handles rETH Transfer events (whale transfers >= 1000 rETH)."""
 
-    If ``from`` is a DAO multisig → pdao_erc20_transfer_event (small).
-    For rETH: whale transfer if amount >= 1000 (large).
-    Otherwise: filtered out.
-    """
+    event_name = "reth_transfer_event"
 
     class Args(FromNodeContext):
         to: WalletAddress
         value: int
 
-    def __init__(self, event_name: str, token_prefix: str) -> None:
-        self.event_name = event_name
-        self._token_prefix = token_prefix
-
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         amount = args["value"] / 10**18
-
-        if args["from"] in cfg.rocketpool.dao_multisigs:
-            token_contract = await rp.assemble_contract(
-                name="ERC20", address=event["address"]
-            )
-            symbol = await token_contract.functions.symbol().call()
-            fmt = await self._fmt(args)
-            args["event_name"] = "pdao_erc20_transfer_event"
-            return [
-                await build_small_event_embed(
-                    f":moneybag: {fmt['from']} transferred "
-                    f"**{format_value(amount)} {symbol}** to {fmt['to']}!",
-                    args["transactionHash"],
-                )
-            ]
-
-        if self._token_prefix != "reth":
-            return []
 
         if amount < 1000:
             return []
@@ -3014,9 +2988,6 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
     "unstETH": {
         "WithdrawalRequested": UnstETHWithdrawalEvent(),
     },
-    "LUSD": {
-        "Transfer": TransferEvent("lusd_transfer_event", "lusd"),
-    },
     "rocketExitArbitrage": {
         "Arbitrage": ExitArbitrageEvent(),
     },
@@ -3030,7 +3001,7 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "RewardsClaimed": NodeMerkleRewardsClaimedEvent(),
     },
     "rocketTokenRETH": {
-        "Transfer": TransferEvent("reth_transfer_event", "reth"),
+        "Transfer": TransferEvent(),
         "TokensBurned": RETHBurnEvent(),
     },
     "rocketDepositPool": {
@@ -3061,7 +3032,6 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
     },
     "rocketTokenRPL": {
         "RPLInflationLog": RPLInflationEvent(),
-        "Transfer": TransferEvent("rpl_transfer_event", "rpl"),
         "RPLFixedSupplyBurn": RPLMigrationEvent(),
     },
     "rocketRewardsPool": {
