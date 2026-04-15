@@ -404,13 +404,13 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_megapool_data(self) -> None:
+        delegate_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
+        proxy_abi = await rp.get_abi_by_name("rocketMegapoolProxy")
+
         async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
-            mp = await rp.assemble_contract(
-                "rocketMegapoolDelegate", address=n["megapool"]["address"]
-            )
-            proxy = await rp.assemble_contract(
-                "rocketMegapoolProxy", address=n["megapool"]["address"]
-            )
+            addr = n["megapool"]["address"]
+            mp = w3.eth.contract(address=addr, abi=delegate_abi)
+            proxy = w3.eth.contract(address=addr, abi=proxy_abi)
             return [
                 (
                     mp.functions.getValidatorCount(),
@@ -523,14 +523,13 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def add_static_minipool_data(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
+        minipool_abi = await rp.get_abi_by_name("rocketMinipool")
 
         async def lamb(n: dict[str, Any]) -> list[MulticallSpec]:
             return [
                 (
-                    (
-                        await rp.assemble_contract(
-                            "rocketMinipool", address=n["address"]
-                        )
+                    w3.eth.contract(
+                        address=n["address"], abi=minipool_abi
                     ).functions.getNodeAddress(),
                     True,
                     w3.to_checksum_address,
@@ -622,11 +621,10 @@ class DBUpkeepTask(commands.Cog):
     @timerun_async
     async def update_dynamic_minipool_data(self) -> None:
         mc = await rp.get_contract_by_name("multicall3")
+        minipool_abi = await rp.get_abi_by_name("rocketMinipool")
 
         async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
-            minipool_contract = await rp.assemble_contract(
-                "rocketMinipool", address=n["address"]
-            )
+            minipool_contract = w3.eth.contract(address=n["address"], abi=minipool_abi)
             return [
                 (
                     minipool_contract.functions.getStatus(),
@@ -875,6 +873,8 @@ class DBUpkeepTask(commands.Cog):
 
     @timerun_async
     async def update_dynamic_megapool_validator_data(self) -> None:
+        mp_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
+
         validators = await self.bot.db.megapool_validators.find(
             {"status": {"$nin": ["exited", "dissolved"]}},
             {"megapool": 1, "validator_id": 1},
@@ -888,10 +888,8 @@ class DBUpkeepTask(commands.Cog):
             end = min((i + 1) * self.batch_size, total)
             log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
             fns = [
-                (
-                    await rp.assemble_contract(
-                        "rocketMegapoolDelegate", address=v["megapool"]
-                    )
+                w3.eth.contract(
+                    address=v["megapool"], abi=mp_abi
                 ).functions.getValidatorInfo(v["validator_id"])
                 for v in batch
             ]
