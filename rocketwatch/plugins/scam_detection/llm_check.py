@@ -33,6 +33,7 @@ Do NOT flag messages that:
 - Offer genuine (even if clumsy) technical help
 - Discuss problems, errors, or frustrations — even emotional ones
 - Contain links shared in good faith
+- Inquire about partnering, collaborating or integrating with the protocol
 
 Examples:
 
@@ -53,6 +54,9 @@ Examples:
 
 "My node has been offline for 2 days and I keep getting penalties, is there something wrong with the network?"
 -> is_scam=false, reason="Asking for help"
+
+"Is rocket pool open for a partnership with an ICO Platform? I'm from Legion"
+-> is_scam=false, reason="Partnership proposal"
 """
 
 

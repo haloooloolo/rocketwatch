@@ -36,7 +36,7 @@ class ScamChecks:
         )
         # Detects fullwidth/homoglyph dots used to disguise domains
         self.homoglyph_url_pattern = re.compile(
-            r"https?://[^\s]*[\uff61\u3002\uff0e]",  # fullwidth/CJK dots
+            r"https?://[^\s]*[\uff61\u3002\uff0e\u2024\u2027\u30fb]",  # fullwidth/CJK/homoglyph dots
         )
         # Extracts username from X/Twitter URL variants
         _x_domains = r"(?:x|twitter|fxtwitter|fixvx|xcancel|vxtwitter)\.com"
