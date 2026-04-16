@@ -93,7 +93,7 @@ class ReportReviewView(ui.View):
         _button: ui.Button[ReportReviewView],
     ) -> None:
         member = await member_from_interaction(interaction)
-        if not (member and is_reputable(member)):
+        if not (member and member.guild_permissions.ban_members):
             await interaction.response.send_message(
                 content="Only admins can confirm reports.", ephemeral=True
             )
