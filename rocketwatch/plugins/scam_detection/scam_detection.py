@@ -106,22 +106,30 @@ class ScamDetection(Cog):
             self._thread_creation_messages[message.id] = thread_id
             return
 
-        if isinstance(message.author, Member) and is_reputable(message.author):
-            log.info(f"Ignoring message sent by trusted user ({message.author})")
-            return
-
-        if reason := self._checks.run_all(message):
-            await report_message(self._ctx, message, reason)
-            return
-
         if (not message.content) and (not message.embeds):
             log.debug("Ignoring message with empty content")
+            return
+
+        member: Member | None
+        if isinstance(message.author, Member):
+            member = message.author
+        else:
+            member = await self.bot.get_or_fetch_member(
+                message.guild.id, message.author.id
+            )
+
+        if member and is_reputable(member):
+            log.info(f"Ignoring message sent by trusted user ({message.author})")
             return
 
         if user_msg_count >= REPUTABLE_MESSAGE_THRESHOLD:
             log.debug(
                 f"Ignoring message because user has {user_msg_count} previous messages"
             )
+            return
+
+        if reason := self._checks.run_all(message):
+            await report_message(self._ctx, message, reason)
             return
 
         if (
