@@ -2,10 +2,14 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING
 
-from discord import ButtonStyle, Interaction, Member, Thread, errors, ui
+from discord import ButtonStyle, Interaction, Thread, errors, ui
 from discord.abc import Messageable
 
-from rocketwatch.plugins.scam_detection.common import is_reputable, resolve_report
+from rocketwatch.plugins.scam_detection.common import (
+    is_reputable,
+    member_from_interaction,
+    resolve_report,
+)
 
 if TYPE_CHECKING:
     from rocketwatch.bot import RocketWatch
@@ -14,7 +18,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("rocketwatch.scam_detection")
 
 
-def _get_cog(interaction: Interaction["RocketWatch"]) -> "ScamDetection | None":
+def _get_cog(interaction: Interaction[RocketWatch]) -> "ScamDetection | None":
     return interaction.client.get_cog("ScamDetection")  # type: ignore[return-value]
 
 
@@ -25,17 +29,15 @@ class ReportReviewView(ui.View):
     @ui.button(label="Mark Safe", style=ButtonStyle.success, custom_id="report:dismiss")
     async def dismiss(
         self,
-        interaction: Interaction["RocketWatch"],
+        interaction: Interaction[RocketWatch],
         _button: ui.Button["ReportReviewView"],
     ) -> None:
-        if not (
-            isinstance(interaction.user, Member) and is_reputable(interaction.user)
-        ):
+        member = await member_from_interaction(interaction)
+        if not (member and is_reputable(member)):
             await interaction.response.send_message(
                 content="Only moderators can dismiss reports.", ephemeral=True
             )
             return
-        assert isinstance(interaction.user, Member)
         assert interaction.message is not None
         if not (cog := _get_cog(interaction)):
             return
@@ -49,7 +51,7 @@ class ReportReviewView(ui.View):
         ):
             return
 
-        guild_id = report.get("guild_id") or interaction.user.guild.id
+        guild_id = report.get("guild_id") or member.guild.id
         updates = [f"Marked safe by {interaction.user.mention}."]
 
         if await cog._ctx.sentinel.remove_timeout(
@@ -85,18 +87,15 @@ class ReportReviewView(ui.View):
     )
     async def confirm(
         self,
-        interaction: Interaction["RocketWatch"],
+        interaction: Interaction[RocketWatch],
         _button: ui.Button["ReportReviewView"],
     ) -> None:
-        if not (
-            isinstance(interaction.user, Member)
-            and interaction.user.guild_permissions.ban_members
-        ):
+        member = await member_from_interaction(interaction)
+        if not (member and is_reputable(member)):
             await interaction.response.send_message(
                 content="Only admins can confirm reports.", ephemeral=True
             )
             return
-        assert isinstance(interaction.user, Member)
         assert interaction.message is not None
         if not (cog := _get_cog(interaction)):
             return
@@ -111,7 +110,7 @@ class ReportReviewView(ui.View):
             return
         if not (
             reported_member := await interaction.client.get_or_fetch_member(
-                interaction.user.guild.id, report["user_id"]
+                member.guild.id, report["user_id"]
             )
         ):
             return

@@ -26,7 +26,7 @@ def _channel_name(interaction: Interaction) -> str:
 
 
 class RWCommandTree(CommandTree["RocketWatch"]):
-    async def _call(self, interaction: Interaction["RocketWatch"]) -> None:
+    async def _call(self, interaction: Interaction[RocketWatch]) -> None:
         if not cfg.modules.enable_commands:
             return
 
@@ -111,7 +111,7 @@ class RWCommandTree(CommandTree["RocketWatch"]):
             await self.client.report_error(e)
 
     async def on_error(
-        self, interaction: Interaction["RocketWatch"], error: AppCommandError
+        self, interaction: Interaction[RocketWatch], error: AppCommandError
     ) -> None:
         cmd_name = interaction.command.name if interaction.command else "unknown"
         channel_name = _channel_name(interaction)

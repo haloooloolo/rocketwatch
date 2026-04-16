@@ -10,7 +10,6 @@ from discord import (
     DeletedReferencedMessage,
     File,
     Interaction,
-    Member,
     Message,
     Thread,
     errors,
@@ -30,6 +29,8 @@ from rocketwatch.plugins.scam_detection.common import (
     build_automod_embed,
     get_report_channel,
     is_reputable,
+    member_from_interaction,
+    member_from_message,
     resolve_report,
     update_report,
 )
@@ -45,7 +46,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("rocketwatch.scam_detection")
 
 
-def _get_cog(interaction: Interaction["RocketWatch"]) -> "ScamDetection | None":
+def _get_cog(interaction: Interaction[RocketWatch]) -> "ScamDetection | None":
     return interaction.client.get_cog("ScamDetection")  # type: ignore[return-value]
 
 
@@ -53,8 +54,9 @@ class WarningConfirmView(ui.View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
 
-    async def _check_reputable(self, interaction: Interaction["RocketWatch"]) -> bool:
-        if isinstance(interaction.user, Member) and is_reputable(interaction.user):
+    async def _check_reputable(self, interaction: Interaction[RocketWatch]) -> bool:
+        member = await member_from_interaction(interaction)
+        if member and is_reputable(member):
             return True
         await interaction.response.send_message(
             content="Only moderators can confirm or dismiss reports.", ephemeral=True
@@ -64,12 +66,11 @@ class WarningConfirmView(ui.View):
     @ui.button(label="Dismiss", style=ButtonStyle.danger, custom_id="warning:dismiss")
     async def dismiss(
         self,
-        interaction: Interaction["RocketWatch"],
+        interaction: Interaction[RocketWatch],
         button: ui.Button["WarningConfirmView"],
     ) -> None:
         if not await self._check_reputable(interaction):
             return
-        assert isinstance(interaction.user, Member)
         assert interaction.message is not None
         if not (cog := _get_cog(interaction)):
             return
@@ -88,7 +89,7 @@ class WarningConfirmView(ui.View):
     @ui.button(label="Confirm", style=ButtonStyle.success, custom_id="warning:confirm")
     async def confirm(
         self,
-        interaction: Interaction["RocketWatch"],
+        interaction: Interaction[RocketWatch],
         button: ui.Button["WarningConfirmView"],
     ) -> None:
         if not await self._check_reputable(interaction):
@@ -218,9 +219,9 @@ async def run_message_automod(
     try:
         delete_request = ctx.sentinel.delete_message(message, reason)
 
-        if isinstance(message.author, Member):
+        if member := await member_from_message(ctx.bot, message):
             timeout_request = ctx.sentinel.timeout_member(
-                message.author, int(timeout_duration.total_seconds()), reason
+                member, int(timeout_duration.total_seconds()), reason
             )
         else:
             timeout_request = asyncio.sleep(0, result=False)
@@ -313,7 +314,7 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
 
 
 async def manual_message_report(
-    ctx: ReportContext, interaction: Interaction, message: Message
+    ctx: ReportContext, interaction: Interaction[RocketWatch], message: Message
 ) -> None:
     await interaction.response.defer(ephemeral=True)
 
@@ -344,9 +345,6 @@ async def manual_message_report(
     try:
         reason = f"Manual report by {interaction.user.mention}"
         warning, report, attachment = _generate_embeds(message, reason)
-        reporter_is_reputable = isinstance(interaction.user, Member) and is_reputable(
-            interaction.user
-        )
 
         report_channel = await get_report_channel(ctx)
         report_msg = await report_channel.send(
@@ -358,7 +356,8 @@ async def manual_message_report(
         moderator = await ctx.bot.get_or_fetch_user(cfg.rocketpool.support.moderator_id)
         warning.url = report_msg.jump_url
 
-        if reporter_is_reputable:
+        reporter = await member_from_interaction(interaction)
+        if reporter_is_reputable := (reporter and is_reputable(reporter)):
             await _finalize_report(ctx, message, reason, None, report_msg)
         else:
             confirm_view: WarningConfirmView | None = None

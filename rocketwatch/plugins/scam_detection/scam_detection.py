@@ -24,6 +24,7 @@ from rocketwatch.plugins.scam_detection.common import (
     REPUTABLE_MESSAGE_THRESHOLD,
     ReportContext,
     is_reputable,
+    member_from_message,
     resolve_report,
     update_report,
 )
@@ -110,14 +111,7 @@ class ScamDetection(Cog):
             log.debug("Ignoring message with empty content")
             return
 
-        member: Member | None
-        if isinstance(message.author, Member):
-            member = message.author
-        else:
-            member = await self.bot.get_or_fetch_member(
-                message.guild.id, message.author.id
-            )
-
+        member = await member_from_message(self.bot, message)
         if member and is_reputable(member):
             log.info(f"Ignoring message sent by trusted user ({message.author})")
             return
@@ -228,16 +222,20 @@ class ScamDetection(Cog):
 
     @command()
     @guilds(cfg.rocketpool.support.server_id)
-    async def report_user(self, interaction: Interaction, user: Member) -> None:
+    async def report_user(
+        self, interaction: Interaction[RocketWatch], user: Member
+    ) -> None:
         """Generate a suspicious user report and send it to the report channel"""
         await manual_user_report(self._ctx, interaction, user)
 
     async def _manual_message_report(
-        self, interaction: Interaction, message: Message
+        self, interaction: Interaction[RocketWatch], message: Message
     ) -> None:
         await manual_message_report(self._ctx, interaction, message)
 
-    async def _manual_user_report(self, interaction: Interaction, user: Member) -> None:
+    async def _manual_user_report(
+        self, interaction: Interaction[RocketWatch], user: Member
+    ) -> None:
         await manual_user_report(self._ctx, interaction, user)
 
     # --- Helpers ---

@@ -33,7 +33,7 @@ class InstructionsView(ui.View):
 
     @ui.button(label="Instructions", style=ButtonStyle.blurple)
     async def instructions(
-        self, interaction: Interaction["RocketWatch"], _: ui.Button["InstructionsView"]
+        self, interaction: Interaction[RocketWatch], _: ui.Button["InstructionsView"]
     ) -> None:
         mp_contract = await rp.assemble_contract("rocketMinipoolDelegate")
         bud_calldata = bytes.fromhex(

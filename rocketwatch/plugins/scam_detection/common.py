@@ -4,7 +4,7 @@ from datetime import timedelta
 from enum import Enum
 from typing import Any, NotRequired, TypedDict
 
-from discord import Color, Member, Message
+from discord import Color, Interaction, Member, Message
 from discord.abc import Messageable
 
 from rocketwatch.bot import RocketWatch
@@ -54,13 +54,13 @@ class ScamReport(TypedDict):
     thread_removed: NotRequired[bool]
 
 
-def is_reputable(user: Member) -> bool:
+def is_reputable(member: Member) -> bool:
     return any(
         (
-            user.id == cfg.discord.owner.user_id,
-            user.id in cfg.rocketpool.support.user_ids,
-            {role.id for role in user.roles} & set(cfg.rocketpool.support.role_ids),
-            user.guild_permissions.moderate_members,
+            member.id == cfg.discord.owner.user_id,
+            member.id in cfg.rocketpool.support.user_ids,
+            {role.id for role in member.roles} & set(cfg.rocketpool.support.role_ids),
+            member.guild_permissions.moderate_members,
         )
     )
 
@@ -69,6 +69,26 @@ async def get_report_channel(ctx: ReportContext) -> Messageable:
     channel = await ctx.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
     assert isinstance(channel, Messageable)
     return channel
+
+
+async def member_from_message(bot: RocketWatch, message: Message) -> Member | None:
+    if isinstance(message.author, Member):
+        return message.author
+    if not message.guild:
+        return None
+    return await bot.get_or_fetch_member(message.guild.id, message.author.id)
+
+
+async def member_from_interaction(
+    interaction: Interaction[RocketWatch],
+) -> Member | None:
+    if isinstance(interaction.user, Member):
+        return interaction.user
+    if not interaction.guild:
+        return None
+    return await interaction._client.get_or_fetch_member(
+        interaction.guild.id, interaction.user.id
+    )
 
 
 def build_automod_embed(report_msg: Message, actions: list[str]) -> Embed:

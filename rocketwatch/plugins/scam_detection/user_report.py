@@ -1,4 +1,5 @@
 import logging
+from typing import TYPE_CHECKING
 
 from discord import Interaction, Member, Message
 from discord.utils import MISSING, format_dt
@@ -11,9 +12,13 @@ from rocketwatch.plugins.scam_detection.common import (
     ReportContext,
     get_report_channel,
     is_reputable,
+    member_from_interaction,
 )
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
 from rocketwatch.utils.embeds import Embed
+
+if TYPE_CHECKING:
+    from rocketwatch.bot import RocketWatch
 
 log = logging.getLogger("rocketwatch.scam_detection")
 
@@ -101,7 +106,7 @@ async def run_user_automod(
 
 
 async def manual_user_report(
-    ctx: ReportContext, interaction: Interaction, user: Member
+    ctx: ReportContext, interaction: Interaction[RocketWatch], user: Member
 ) -> None:
     await interaction.response.defer(ephemeral=True)
 
@@ -135,10 +140,8 @@ async def manual_user_report(
         await _release_claim(ctx, user.guild.id, user.id)
         raise
 
-    reporter_is_reputable = isinstance(interaction.user, Member) and is_reputable(
-        interaction.user
-    )
-    if reporter_is_reputable:
+    reporter = await member_from_interaction(interaction)
+    if reporter and is_reputable(reporter):
         await run_user_automod(ctx, user, reason)
 
     await interaction.followup.send(content="Thanks for reporting!")

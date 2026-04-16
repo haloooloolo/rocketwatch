@@ -47,7 +47,7 @@ class AdminView(ui.View):
 
     @ui.button(label="Edit", style=ButtonStyle.blurple)
     async def edit(
-        self, interaction: Interaction["RocketWatch"], _: ui.Button["AdminView"]
+        self, interaction: Interaction[RocketWatch], _: ui.Button["AdminView"]
     ) -> None:
         template = await self.db.support_bot.find_one({"_id": self.template_name})
         if not template:
