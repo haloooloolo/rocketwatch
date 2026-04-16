@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import json
@@ -46,7 +48,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("rocketwatch.scam_detection")
 
 
-def _get_cog(interaction: Interaction[RocketWatch]) -> "ScamDetection | None":
+def _get_cog(interaction: Interaction[RocketWatch]) -> ScamDetection | None:
     return interaction.client.get_cog("ScamDetection")  # type: ignore[return-value]
 
 
@@ -67,7 +69,7 @@ class WarningConfirmView(ui.View):
     async def dismiss(
         self,
         interaction: Interaction[RocketWatch],
-        button: ui.Button["WarningConfirmView"],
+        button: ui.Button[WarningConfirmView],
     ) -> None:
         if not await self._check_reputable(interaction):
             return
@@ -90,7 +92,7 @@ class WarningConfirmView(ui.View):
     async def confirm(
         self,
         interaction: Interaction[RocketWatch],
-        button: ui.Button["WarningConfirmView"],
+        button: ui.Button[WarningConfirmView],
     ) -> None:
         if not await self._check_reputable(interaction):
             return

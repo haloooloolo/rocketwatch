@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import logging
 from typing import TYPE_CHECKING
@@ -18,7 +20,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("rocketwatch.scam_detection")
 
 
-def _get_cog(interaction: Interaction[RocketWatch]) -> "ScamDetection | None":
+def _get_cog(interaction: Interaction[RocketWatch]) -> ScamDetection | None:
     return interaction.client.get_cog("ScamDetection")  # type: ignore[return-value]
 
 
@@ -30,7 +32,7 @@ class ReportReviewView(ui.View):
     async def dismiss(
         self,
         interaction: Interaction[RocketWatch],
-        _button: ui.Button["ReportReviewView"],
+        _button: ui.Button[ReportReviewView],
     ) -> None:
         member = await member_from_interaction(interaction)
         if not (member and is_reputable(member)):
@@ -88,7 +90,7 @@ class ReportReviewView(ui.View):
     async def confirm(
         self,
         interaction: Interaction[RocketWatch],
-        _button: ui.Button["ReportReviewView"],
+        _button: ui.Button[ReportReviewView],
     ) -> None:
         member = await member_from_interaction(interaction)
         if not (member and is_reputable(member)):
