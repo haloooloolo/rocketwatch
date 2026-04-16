@@ -65,6 +65,10 @@ def is_reputable(member: Member) -> bool:
     )
 
 
+def is_admin(member: Member) -> bool:
+    return member.guild_permissions.ban_members
+
+
 async def get_report_channel(ctx: ReportContext) -> Messageable:
     channel = await ctx.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
     assert isinstance(channel, Messageable)
@@ -86,7 +90,7 @@ async def member_from_interaction(
         return interaction.user
     if not interaction.guild:
         return None
-    return await interaction._client.get_or_fetch_member(
+    return await interaction.client.get_or_fetch_member(
         interaction.guild.id, interaction.user.id
     )
 

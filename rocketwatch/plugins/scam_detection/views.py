@@ -8,6 +8,7 @@ from discord import ButtonStyle, Interaction, Thread, errors, ui
 from discord.abc import Messageable
 
 from rocketwatch.plugins.scam_detection.common import (
+    is_admin,
     is_reputable,
     member_from_interaction,
     resolve_report,
@@ -93,7 +94,7 @@ class ReportReviewView(ui.View):
         _button: ui.Button[ReportReviewView],
     ) -> None:
         member = await member_from_interaction(interaction)
-        if not (member and member.guild_permissions.ban_members):
+        if not (member and is_admin(member)):
             await interaction.response.send_message(
                 content="Only admins can confirm reports.", ephemeral=True
             )

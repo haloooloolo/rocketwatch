@@ -96,8 +96,14 @@ class ScamChecks:
                 "imgur.com",
                 "bluesky.app",
             ]
-            if not any(domain in link for domain in trusted_domains):
-                return "Invite to external server"
+            if any(domain in link for domain in trusted_domains):
+                return None
+            # Event share links (discord.gg/<code>?event=<id>) point to a scheduled
+            # activity on the target server rather than a bare invite — treat as benign.
+            tail = content[match.end() :]
+            if re.match(r"\?event=\d+", tail):
+                return None
+            return "Invite to external server"
         return None
 
     def _tap_on_this(self, message: Message) -> str | None:
