@@ -203,19 +203,15 @@ class CallSession:
 
     def mix_audio(self, user_segments: dict[int, list[tuple[float, Path]]]) -> Path:
         """Mix per-user WAV files into a single MP3."""
-        mixed: AudioSegment | None = None
-        for _uid, segments in user_segments.items():
+        mixed = AudioSegment.empty()
+        for segments in user_segments.values():
             for offset, wav_path in segments:
                 track = AudioSegment.from_wav(str(wav_path))
-                if mixed is None:
-                    mixed = AudioSegment.silent(duration=int(offset * 1000)) + track
-                else:
-                    end_ms = int(offset * 1000) + len(track)
-                    if end_ms > len(mixed):
-                        mixed += AudioSegment.silent(duration=end_ms - len(mixed))
-                    mixed = mixed.overlay(track, position=int(offset * 1000))
+                end_ms = int(offset * 1000) + len(track)
+                if end_ms > len(mixed):
+                    mixed += AudioSegment.silent(duration=end_ms - len(mixed))
+                mixed = mixed.overlay(track, position=int(offset * 1000))
 
-        assert mixed is not None, "No audio segments to mix"
         path = self.artifact_dir / "recording.mp3"
         mixed = mixed.set_channels(1)
         mixed.export(path, format="mp3", bitrate="64k")
