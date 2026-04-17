@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any
 
 from discord import (
     AllowedMentions,
@@ -12,14 +13,17 @@ from discord import (
     ui,
 )
 from discord.abc import Messageable
-from discord.app_commands import command, default_permissions
+from discord.app_commands import command
 from discord.channel import StageChannel, VocalGuildChannel, VoiceChannel
 from discord.ext.commands import Cog, is_owner
 from discord.ext.voice_recv import VoiceRecvClient
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
-from rocketwatch.plugins.voice_summary.session import CallResult, CallSession
+from rocketwatch.plugins.voice_summary.session import (
+    CallResult,
+    CallSession,
+)
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import ACCENT_COLOR
 from rocketwatch.utils.file import TextFile
@@ -35,6 +39,8 @@ class VoiceSummary(Cog):
         self._config = cfg.transcription
         self._session: CallSession | None = None
         self._starting = False
+        self._stopping = False
+        self._resume_task: asyncio.Task[None] | None = None
         self._grace_task: asyncio.Task[None] | None = None
         self._timeout_task: asyncio.Task[None] | None = None
 
@@ -55,24 +61,25 @@ class VoiceSummary(Cog):
             return self._session.voice_client.channel
         return None
 
-    @Cog.listener()
-    async def on_voice_state_update(
-        self,
-        member: Member,
-        before: VoiceState,
-        after: VoiceState,
+    async def _handle_bot_voice_state_change(
+        self, before: VoiceState, after: VoiceState
     ) -> None:
-        # Bot's own voice state changed — manage session lifecycle
-        if self.bot.user and (member.id == self.bot.user.id):
-            if before.channel and (before.channel != after.channel) and self._session:
-                await self._stop_recording()
-            if after.channel and (not self._session):
-                await self._start_recording(after.channel)
-            return
+        if before.channel and (before.channel != after.channel) and self._session:
+            if (after.channel is None) and (not self._stopping):
+                # Try to rejoin and resume the existing session
+                self._resume_task = asyncio.create_task(
+                    self._resume_session(before.channel)
+                )
+                return
 
-        if member.bot:
-            return
+            await self._stop_recording()
 
+        if after.channel and (not self._session):
+            await self._start_recording(after.channel)
+
+    async def _handle_member_voice_state_change(
+        self, before: VoiceState, after: VoiceState
+    ) -> None:
         recorded_channel = self._get_recorded_channel()
 
         # left recorded channel
@@ -91,6 +98,24 @@ class VoiceSummary(Cog):
                     self._cancel_grace()
                 elif not self._session:
                     await self._connect_voice(after.channel)
+
+    @Cog.listener()
+    async def on_voice_state_update(
+        self,
+        member: Member,
+        before: VoiceState,
+        after: VoiceState,
+    ) -> None:
+        if self.bot.user and (member.id == self.bot.user.id):
+            # bot's own voice state changed
+            await self._handle_bot_voice_state_change(before, after)
+            return
+
+        if member.bot:
+            # we don't care about other bots
+            return
+
+        await self._handle_member_voice_state_change(before, after)
 
     def _start_grace(self) -> None:
         """Start the grace period before auto-disconnecting."""
@@ -135,9 +160,31 @@ class VoiceSummary(Cog):
 
     async def _disconnect_voice(self) -> None:
         """Disconnect from voice. Session cleanup happens via voice state event."""
+        self._stopping = True
         self._cancel_scheduled_tasks()
         if self._session and self._session.voice_client:
             await self._session.voice_client.disconnect()
+        elif self._session:
+            # No active voice client (e.g. mid-resume) — finalize directly
+            await self._stop_recording()
+
+    async def _resume_session(self, channel: VocalGuildChannel) -> None:
+        """Rejoin the given channel and re-attach recording to the existing session."""
+        log.warning(f"Voice connection lost in {channel.name}, attempting to resume")
+        for attempt in range(5):
+            if self._stopping or not self._session:
+                return
+            try:
+                vc = await channel.connect(cls=VoiceRecvClient)
+                await self._session.resume(vc)
+                log.info("Voice session resumed")
+                return
+            except Exception:
+                log.exception(f"Resume attempt {attempt + 1} failed")
+            await asyncio.sleep(2**attempt)
+
+        log.error("Could not resume voice session, finalizing")
+        await self._stop_recording()
 
     async def _delayed_stop(self, delay: float) -> None:
         """Wait, then disconnect from voice."""
@@ -148,19 +195,21 @@ class VoiceSummary(Cog):
             pass
 
     def _cancel_scheduled_tasks(self) -> None:
-        """Cancel grace and timeout tasks, if running."""
+        """Cancel grace, timeout, and resume tasks, if running."""
         current = asyncio.current_task()
-        for task in (self._grace_task, self._timeout_task):
+        for task in (self._grace_task, self._timeout_task, self._resume_task):
             if task and task is not current and not task.done():
                 task.cancel()
         self._grace_task = None
         self._timeout_task = None
+        self._resume_task = None
 
     async def _stop_recording(self) -> None:
         self._cancel_scheduled_tasks()
 
         session = self._session
         self._session = None
+        self._stopping = False
         if not session:
             return
 
@@ -182,31 +231,49 @@ class VoiceSummary(Cog):
         channel = await self.bot.get_or_fetch_channel(channel_id)
         assert isinstance(channel, Messageable)
 
+        guild = getattr(channel, "guild", None)
+        upload_limit = guild.filesize_limit if guild else (10 * 1024 * 1024)
+        audio_size = result.audio_path.stat().st_size
+
+        file_components: list[ui.File[Any]] = []
+        files: list[File] = []
+
+        if audio_size < upload_limit:
+            file_components.append(ui.File("attachment://recording.mp3"))
+            files.append(File(result.audio_path, filename="recording.mp3"))
+        else:
+            log.warning(
+                f"Skipping audio attachment: {audio_size} bytes exceeds "
+                f"upload limit of {upload_limit} bytes"
+            )
+
+        file_components.append(ui.File("attachment://transcript.txt"))
+        files.append(TextFile(result.transcript, "transcript.txt"))
+
+        header = "# Voice Call Summary"
+        footer = "-# Attachments"
+        # Discord caps total displayable text per message at 4000 chars
+        max_body_size = 4000 - len(header) - len(footer)
+
         view = ui.LayoutView()
         view.add_item(
             ui.Container(
-                ui.TextDisplay("# Voice Call Summary"),
+                ui.TextDisplay(header),
                 ui.Separator(),
-                ui.TextDisplay(result.summary[:4000]),
+                ui.TextDisplay(result.summary[:max_body_size]),
                 ui.Separator(),
-                ui.TextDisplay("-# Attachments"),
-                ui.File("attachment://recording.mp3"),
-                ui.File("attachment://transcript.txt"),
+                ui.TextDisplay(footer),
+                *file_components,
                 accent_color=ACCENT_COLOR,
             )
         )
 
-        files = [
-            File(result.audio_path, filename="recording.mp3"),
-            TextFile(result.transcript, "transcript.txt"),
-        ]
         await channel.send(
             view=view, files=files, allowed_mentions=AllowedMentions.none()
         )
         log.info("Transcript and summary posted")
 
     @command()
-    @default_permissions()
     @is_owner()
     async def start_recording(
         self, interaction: Interaction, channel: VoiceChannel | StageChannel
@@ -222,10 +289,9 @@ class VoiceSummary(Cog):
         await interaction.followup.send(f"Recording started in {channel.jump_url}.")
 
     @command()
-    @default_permissions()
     @is_owner()
     async def stop_recording(self, interaction: Interaction) -> None:
-        """Manually stop recording and produce the summary."""
+        """Manually stop voice recording and produce summary."""
         await interaction.response.defer(ephemeral=True)
 
         if not self._session:
@@ -236,6 +302,7 @@ class VoiceSummary(Cog):
         await interaction.followup.send("Recording stopped.")
 
     async def cog_unload(self) -> None:
+        self._stopping = True
         self._cancel_scheduled_tasks()
         if self._session:
             await self._session.stop()

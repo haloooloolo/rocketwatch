@@ -17,7 +17,6 @@ from pydub import AudioSegment
 
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
 from rocketwatch.plugins.voice_summary.recorder import CallRecorder
-from rocketwatch.utils.config import cfg
 
 if TYPE_CHECKING:
     from discord import User
@@ -63,11 +62,6 @@ class CallSession:
 
     async def start(self, vc: VoiceRecvClient) -> None:
         """Begin recording on a voice client, waiting for connection if needed."""
-        self.voice_client = vc
-        if not vc.is_connected():
-            connected = await asyncio.to_thread(vc.wait_until_connected)
-            if not connected:
-                raise ConnectionError("Voice client failed to connect")
         loop = asyncio.get_running_loop()
 
         def on_segment_closed(user_id: int, offset: float, wav_path: Path) -> None:
@@ -80,6 +74,22 @@ class CallSession:
             self.artifact_dir / "segments",
             on_segment_closed=on_segment_closed,
         )
+        await self._attach_sink(vc)
+        log.info("Recording started")
+
+    async def resume(self, vc: VoiceRecvClient) -> None:
+        """Re-attach recording to a new voice client after an unexpected disconnect."""
+        if not self.recorder:
+            raise RuntimeError("Cannot resume: no active recording")
+        await self._attach_sink(vc)
+        log.info("Recording resumed")
+
+    async def _attach_sink(self, vc: VoiceRecvClient) -> None:
+        self.voice_client = vc
+        if not vc.is_connected():
+            connected = await asyncio.to_thread(vc.wait_until_connected)
+            if not connected:
+                raise ConnectionError("Voice client failed to connect")
 
         def sink_callback(user: Member | User | None, data: VoiceData) -> None:
             if not user or not self.recorder:
@@ -102,23 +112,21 @@ class CallSession:
             self.recorder.on_opus(user.id, opus_data)
 
         vc.listen(BasicSink(sink_callback, decode=False))
-        log.info("Recording started")
 
-    async def stop(self) -> CallRecorder | None:
+    async def stop(self) -> tuple[CallRecorder | None, VoiceClient | None]:
         """Stop recording and disconnect. Returns the recorder if active."""
         recorder = self.recorder
         vc = self.voice_client
         self.recorder = None
         self.voice_client = None
 
-        if not recorder:
-            return None
+        if recorder:
+            recorder.stop()
 
-        recorder.stop()
         if vc and vc.is_connected():
             await vc.disconnect()
 
-        return recorder
+        return recorder, vc
 
     async def _transcribe_segment(
         self, user_id: int, offset: float, wav_path: Path
@@ -249,15 +257,27 @@ class CallSession:
             text = re.sub(re.escape(name), f"<@{user_id}>", text, flags=re.IGNORECASE)
         return text
 
-    async def _resolve_usernames(self, user_ids: set[int]) -> dict[int, str]:
-        """Resolve user IDs to display names."""
+    async def _resolve_usernames(
+        self, guild_id: int, user_ids: set[int]
+    ) -> dict[int, str]:
+        """Resolve user IDs to display names, falling back to the global user."""
         usernames: dict[int, str] = {}
-        guild_id = cfg.discord.owner.server_id
+
         for user_id in user_ids:
-            if member := await self._bot.get_or_fetch_member(guild_id, user_id):
+            usernames[user_id] = str(user_id)
+            try:
+                member = await self._bot.get_or_fetch_member(guild_id, user_id)
                 usernames[user_id] = member.display_name
-            else:
-                usernames[user_id] = str(user_id)
+                continue
+            except Exception:
+                pass
+            try:
+                user = await self._bot.get_or_fetch_user(user_id)
+                usernames[user_id] = user.display_name
+                continue
+            except Exception:
+                pass
+
         return usernames
 
     async def finalize(self) -> CallResult | None:
@@ -265,9 +285,9 @@ class CallSession:
 
         Returns None if there is nothing substantive to report.
         """
-        recorder = await self.stop()
-        if not recorder or recorder.speaker_count == 0:
-            if recorder and recorder.speaker_count == 0:
+        recorder, vc = await self.stop()
+        if not (vc and recorder and recorder.speaker_count > 0):
+            if recorder and (recorder.speaker_count == 0):
                 log.info("No speakers detected, discarding recording")
             return None
 
@@ -282,7 +302,9 @@ class CallSession:
         await self.transcribe_remaining()
 
         all_segments = self.collect_segments()
-        usernames = await self._resolve_usernames(set(user_segments))
+        usernames = await self._resolve_usernames(
+            vc.channel.guild.id, set(user_segments)
+        )
 
         transcript = TranscriptionPipeline.format_transcript(all_segments, usernames)
         self.save_transcript(transcript)

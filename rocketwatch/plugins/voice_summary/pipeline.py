@@ -10,6 +10,8 @@ from rocketwatch.utils.llm import LLMProvider
 
 log = logging.getLogger("rocketwatch.voice_summary.pipeline")
 
+SUMMARY_CHAR_LIMIT = 3800
+
 SUMMARIZE_SYSTEM_PROMPT = """\
 You are summarizing a Rocket Pool community call transcript for Discord server members \
 who missed the call. Produce a structured summary with the following sections:
@@ -20,12 +22,23 @@ who missed the call. Produce a structured summary with the following sections:
 - **Open Questions**: Unresolved topics or debates that need follow-up
 
 Attribute key statements to speakers by name when relevant. \
-Omit any section that has no content. Use bullet points and keep the summary concise. \
+Omit any section that has no content. Use bullet points. \
 Give equal attention to all parts of the transcript, regardless of when they occurred.
+
+HARD LIMIT: the summary must be at most 500 words; aim for 300-450. Prefer brevity \
+over exhaustiveness: collapse related points into single bullets, drop minor tangents, \
+and tighten wording. One concise sentence per bullet — no sub-bullets, no long paragraphs.
 
 If the transcript contains no substantive discussion worth summarizing \
 (e.g. only greetings, idle chatter, silence, or people joining/leaving), \
 set has_content to false and leave summary empty."""
+
+SHORTEN_SYSTEM_PROMPT = """\
+You will be given a structured summary that is too long for its destination. \
+Rewrite it to be shorter while preserving the same section structure and the most \
+important facts, decisions, and action items. Drop minor details, merge related \
+bullets, and tighten wording. Keep bullet points and section headers. \
+Return only the shortened summary, nothing else."""
 
 
 class SummaryResult(BaseModel):
@@ -113,7 +126,21 @@ class TranscriptionPipeline:
         )
         if not result.has_content:
             return None
-        return result.summary
+
+        summary = result.summary
+        for attempt in range(2):
+            if len(summary) <= SUMMARY_CHAR_LIMIT:
+                break
+            log.info(
+                f"Summary is {len(summary)} chars, shortening (attempt {attempt + 1})"
+            )
+            summary = await self._llm.complete(
+                SHORTEN_SYSTEM_PROMPT,
+                f"Shorten this summary to under {SUMMARY_CHAR_LIMIT} characters "
+                f"(currently {len(summary)}):\n\n{summary}",
+                max_tokens=2048,
+            )
+        return summary
 
     async def process_users(
         self,
