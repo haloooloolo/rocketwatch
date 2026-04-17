@@ -115,7 +115,7 @@ class RocketWatch(Bot):
     async def get_or_fetch_user(self, user_id: int) -> User:
         return self.get_user(user_id) or await self.fetch_user(user_id)
 
-    async def get_or_fetch_member(self, guild_id: int, user_id: int) -> Member | None:
+    async def get_or_fetch_member(self, guild_id: int, user_id: int) -> Member:
         guild: Guild = await self.get_or_fetch_guild(guild_id)
         return guild.get_member(user_id) or await guild.fetch_member(user_id)
 
