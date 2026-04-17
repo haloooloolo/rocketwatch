@@ -31,7 +31,10 @@ and tighten wording. One concise sentence per bullet — no sub-bullets, no long
 
 If the transcript contains no substantive discussion worth summarizing \
 (e.g. only greetings, idle chatter, silence, or people joining/leaving), \
-set has_content to false and leave summary empty."""
+set has_content to false and leave summary empty.
+
+The `summary` field must be a plain markdown string — bold section headings \
+followed by bullet points. Do NOT emit JSON, arrays, or nested objects inside it."""
 
 SHORTEN_SYSTEM_PROMPT = """\
 You will be given a structured summary that is too long for its destination. \
