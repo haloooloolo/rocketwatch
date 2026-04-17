@@ -116,14 +116,14 @@ class ScamDetection(Cog):
             log.info(f"Ignoring message sent by trusted user ({message.author})")
             return
 
+        if reason := self._checks.run_all(message):
+            await report_message(self._ctx, message, reason)
+            return
+
         if user_msg_count >= REPUTABLE_MESSAGE_THRESHOLD:
             log.debug(
                 f"Ignoring message because user has {user_msg_count} previous messages"
             )
-            return
-
-        if reason := self._checks.run_all(message):
-            await report_message(self._ctx, message, reason)
             return
 
         if (
