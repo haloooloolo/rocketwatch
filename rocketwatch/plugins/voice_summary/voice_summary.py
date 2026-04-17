@@ -30,7 +30,6 @@ from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.llm import create_provider
 
 log = logging.getLogger("rocketwatch.voice_summary")
-logging.getLogger("discord.ext.voice_recv.reader").setLevel(logging.WARNING)
 
 
 class VoiceSummary(Cog):
