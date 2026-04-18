@@ -1,0 +1,37 @@
+[
+    {
+        "inputs": [{"internalType": "address", "name": "pool", "type": "address"}],
+        "name": "getPoolTokenInfo",
+        "outputs": [
+            {"internalType": "contract IERC20[]", "name": "tokens", "type": "address[]"},
+            {
+                "components": [
+                    {"internalType": "uint8", "name": "tokenType", "type": "uint8"},
+                    {"internalType": "contract IRateProvider", "name": "rateProvider", "type": "address"},
+                    {"internalType": "bool", "name": "paysYieldFees", "type": "bool"}
+                ],
+                "internalType": "struct TokenInfo[]",
+                "name": "tokenInfo",
+                "type": "tuple[]"
+            },
+            {"internalType": "uint256[]", "name": "balancesRaw", "type": "uint256[]"},
+            {"internalType": "uint256[]", "name": "lastBalancesLiveScaled18", "type": "uint256[]"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": false,
+        "inputs": [
+            {"indexed": true, "internalType": "address", "name": "pool", "type": "address"},
+            {"indexed": true, "internalType": "contract IERC20", "name": "tokenIn", "type": "address"},
+            {"indexed": true, "internalType": "contract IERC20", "name": "tokenOut", "type": "address"},
+            {"indexed": false, "internalType": "uint256", "name": "amountIn", "type": "uint256"},
+            {"indexed": false, "internalType": "uint256", "name": "amountOut", "type": "uint256"},
+            {"indexed": false, "internalType": "uint256", "name": "swapFeePercentage", "type": "uint256"},
+            {"indexed": false, "internalType": "uint256", "name": "swapFeeAmount", "type": "uint256"}
+        ],
+        "name": "Swap",
+        "type": "event"
+    }
+]

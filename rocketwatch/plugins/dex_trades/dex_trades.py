@@ -29,10 +29,10 @@ log = logging.getLogger("rocketwatch.dex_trades")
 _BUY_COLOR = Color.from_rgb(86, 235, 86)
 _SELL_COLOR = Color.from_rgb(235, 86, 86)
 
-_RPL_USD_THRESHOLD_LARGE = 10_000
+_RPL_USD_THRESHOLD_LARGE = 25_000
 _RETH_USD_THRESHOLD_LARGE = 100_000
 
-_RPL_USD_THRESHOLD_SMALL = 1_000
+_RPL_USD_THRESHOLD_SMALL = 2500
 _RETH_USD_THRESHOLD_SMALL = 10_000
 
 
@@ -102,6 +102,7 @@ class DexTrades(EventPlugin):
         # contracts (lazily initialized)
         self._settlement: AsyncContract | None = None
         self._balancer_vault: AsyncContract | None = None
+        self._balancer_v3_vault: AsyncContract | None = None
         self._curve_pools: list[AsyncContract] | None = None
 
         self._uni_pools: (
@@ -132,8 +133,9 @@ class DexTrades(EventPlugin):
         # CoW
         self._settlement = await rp.assemble_contract("CoWSettlement", _COW_SETTLEMENT)
 
-        # Balancer
-        self._balancer_vault = await rp.get_contract_by_name("BalancerVault")
+        # Balancer V2 + V3 (distinct vaults, distinct event schemas)
+        self._balancer_vault = await rp.get_contract_by_name("BalancerV2Vault")
+        self._balancer_v3_vault = await rp.get_contract_by_name("BalancerV3Vault")
 
         # Curve
         self._curve_pools = []
@@ -567,6 +569,74 @@ class DexTrades(EventPlugin):
 
         return swaps
 
+    # ── Balancer V3 ─────────────────────────────────────────────────
+
+    async def _fetch_balancer_v3_swaps(
+        self, from_block: BlockNumber, to_block: BlockNumber
+    ) -> list[DexSwap]:
+        assert self._balancer_v3_vault is not None
+        assert self._tokens is not None
+
+        swap_event = self._balancer_v3_vault.events.Swap()
+        # V3 Swap: (pool, tokenIn, tokenOut, ...) — topic[0]=sig, [1]=pool,
+        # [2]=tokenIn, [3]=tokenOut. Filter token topics same way as V2.
+        padded_tokens = ["0x" + addr[2:].lower().zfill(64) for addr in self._tokens]
+
+        all_logs = []
+        for topic_pos in (2, 3):
+            topics: list[Any] = [swap_event.topic, None, None, None]
+            topics[topic_pos] = padded_tokens
+            all_logs.extend(
+                await w3.eth.get_logs(
+                    {
+                        "address": self._balancer_v3_vault.address,
+                        "topics": topics,
+                        "fromBlock": from_block,
+                        "toBlock": to_block,
+                    }
+                )
+            )
+
+        if not all_logs:
+            return []
+
+        seen: set[tuple[Any, ...]] = set()
+        unique_logs = []
+        for raw_log in all_logs:
+            key = (raw_log["transactionHash"], raw_log["logIndex"])
+            if key not in seen:
+                seen.add(key)
+                unique_logs.append(raw_log)
+
+        decoded: list[EventData] = [swap_event.process_log(log) for log in unique_logs]
+
+        swaps: list[DexSwap] = []
+        for event in decoded:
+            args = event["args"]
+            token_in = w3.to_checksum_address(args["tokenIn"])
+            token_out = w3.to_checksum_address(args["tokenOut"])
+
+            tx_hash = HexStr(event["transactionHash"].to_0x_hex())
+            tx = await w3.eth.get_transaction(tx_hash)
+            owner = w3.to_checksum_address(tx["from"])
+
+            swaps.append(
+                DexSwap(
+                    dex="balancer",
+                    sell_token=token_in,
+                    sell_amount=args["amountIn"],
+                    buy_token=token_out,
+                    buy_amount=args["amountOut"],
+                    owner=owner,
+                    tx_hash=tx_hash,
+                    block_number=BlockNumber(event["blockNumber"]),
+                    tx_index=event["transactionIndex"],
+                    log_index=event["logIndex"],
+                )
+            )
+
+        return swaps
+
     # ── Curve ───────────────────────────────────────────────────────
 
     async def _fetch_curve_swaps(
@@ -692,6 +762,7 @@ class DexTrades(EventPlugin):
             self._fetch_uniswap_swaps,
             self._fetch_uniswap_v4_swaps,
             self._fetch_balancer_swaps,
+            self._fetch_balancer_v3_swaps,
             self._fetch_curve_swaps,
         ):
             try:

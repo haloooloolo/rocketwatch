@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 import aiohttp
 import numpy as np
@@ -729,7 +729,7 @@ class BalancerV2(DEX):
 
         @classmethod
         async def create(cls, pool_id: HexStr) -> "BalancerV2.WeightedPool":
-            vault = await rp.get_contract_by_name("BalancerVault", mainnet=True)
+            vault = await rp.get_contract_by_name("BalancerV2Vault", mainnet=True)
             tokens = (await vault.functions.getPoolTokens(pool_id).call())[0]
             token_0 = await ERC20Token.create(tokens[0])
             token_1 = await ERC20Token.create(tokens[1])
@@ -764,16 +764,291 @@ class BalancerV2(DEX):
 
             return Liquidity(price, depth_at)
 
-    def __init__(self, pools: list[WeightedPool]):
-        # missing support for other pool types
+    class MetaStablePool(DEX.LiquidityPool):
+        """Balancer V2 MetaStable pool with 2 tokens + rate providers.
+
+        Uses Curve-style stableswap math on ``normalized`` balances, where each
+        raw balance is multiplied by its rate-provider rate (e.g. rETH's
+        ``getExchangeRate``). Solves for depth by bisecting on the new token_0
+        balance whose post-swap spot price matches the target.
+        """
+
+        # Minimal ABI — we only need getAmplificationParameter on the pool
+        _POOL_ABI: ClassVar[list[dict[str, Any]]] = [
+            {
+                "inputs": [],
+                "name": "getAmplificationParameter",
+                "outputs": [
+                    {"name": "value", "type": "uint256"},
+                    {"name": "isUpdating", "type": "bool"},
+                    {"name": "precision", "type": "uint256"},
+                ],
+                "stateMutability": "view",
+                "type": "function",
+            }
+        ]
+
+        def __init__(
+            self,
+            pool_id: HexStr,
+            vault: AsyncContract,
+            pool_contract: AsyncContract,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
+            rate_fn_0: Callable[[], Any] | None,
+            rate_fn_1: Callable[[], Any] | None,
+            primary_is_token_0: bool = False,
+        ):
+            self.id = pool_id
+            self.vault = vault
+            self.pool_contract = pool_contract
+            self.token_0 = token_0
+            self.token_1 = token_1
+            # Async callables returning real rate (e.g. 1.057 for rETH). None = 1.
+            self.rate_fn_0 = rate_fn_0
+            self.rate_fn_1 = rate_fn_1
+            self.primary_is_token_0 = primary_is_token_0
+
+        @classmethod
+        async def create(
+            cls,
+            pool_id: HexStr,
+            rate_fn_0: Callable[[], Any] | None = None,
+            rate_fn_1: Callable[[], Any] | None = None,
+            primary_is_token_0: bool = False,
+        ) -> "BalancerV2.MetaStablePool":
+            vault = await rp.get_contract_by_name("BalancerV2Vault", mainnet=True)
+            tokens = (await vault.functions.getPoolTokens(pool_id).call())[0]
+            pool_addr = w3.to_checksum_address(pool_id[:42])
+            pool_contract = w3.eth.contract(address=pool_addr, abi=cls._POOL_ABI)
+            token_0 = await ERC20Token.create(tokens[0])
+            token_1 = await ERC20Token.create(tokens[1])
+            return cls(
+                pool_id,
+                vault,
+                pool_contract,
+                token_0,
+                token_1,
+                rate_fn_0,
+                rate_fn_1,
+                primary_is_token_0,
+            )
+
+        @staticmethod
+        def _compute_invariant(amp: float, x0: float, x1: float) -> float:
+            """Newton iteration for n=2 stableswap invariant D (Balancer V2 form).
+
+            D_P = D^(n+1) / (n^n * prod(x)); for n=2 that's D^3 / (4*x0*x1).
+            D_new = (n*D + A*n*S) * D / (n*(1+A)*D - D_P)
+            """
+            S = x0 + x1
+            if S == 0:
+                return 0.0
+            D = S
+            for _ in range(255):
+                D_prev = D
+                D_P = (D**3) / (4 * x0 * x1)
+                D = (2 * D + 2 * amp * S) * D / (2 * (1 + amp) * D - D_P)
+                if abs(D - D_prev) < 1e-9:
+                    break
+            return D
+
+        @staticmethod
+        def _balance_given_invariant(amp: float, D: float, x_other: float) -> float:
+            """Solve for token balance given the other balance and D (n=2 quadratic).
+
+            Uses a rationalized form to avoid catastrophic cancellation when
+            b is large and positive.
+            """
+            a = 16 * amp * x_other
+            b = 4 * x_other * (4 * amp * x_other + D - 4 * amp * D)
+            disc_sqrt = math.sqrt(b * b + 4 * a * (D**3))
+            if b >= 0:
+                return 2 * (D**3) / (b + disc_sqrt)
+            return (-b + disc_sqrt) / (2 * a)
+
+        @staticmethod
+        def _spot_price(amp: float, D: float, x0: float, x1: float) -> float:
+            """∂f/∂x0 / ∂f/∂x1 — raw t1 received per raw t0 input (infinitesimal)."""
+            df0 = 4 * amp + D**3 / (4 * x0**2 * x1)
+            df1 = 4 * amp + D**3 / (4 * x0 * x1**2)
+            return df0 / df1
+
+        async def _get_state(self) -> tuple[float, float, float, float, float]:
+            """Return (N0, N1, amp, r0, r1) — normalized balances, amp, rates."""
+            (_, balances, _), amp_tuple = await rp.multicall(
+                [
+                    self.vault.functions.getPoolTokens(self.id),
+                    self.pool_contract.functions.getAmplificationParameter(),
+                ]
+            )
+            amp = float(amp_tuple[0]) / float(amp_tuple[2])
+            r0 = float(await self.rate_fn_0()) if self.rate_fn_0 else 1.0
+            r1 = float(await self.rate_fn_1()) if self.rate_fn_1 else 1.0
+            N0 = balances[0] / 10**self.token_0.decimals * r0
+            N1 = balances[1] / 10**self.token_1.decimals * r1
+            return N0, N1, amp, r0, r1
+
+        async def get_price(self) -> float:
+            N0, N1, amp, r0, r1 = await self._get_state()
+            D = self._compute_invariant(amp, N0, N1)
+            return self._spot_price(amp, D, N0, N1) * r0 / r1
+
+        async def get_normalized_price(self) -> float:
+            return await self.get_price()
+
+        async def get_liquidity(self) -> Liquidity | None:
+            N0, N1, amp, r0, r1 = await self._get_state()
+            if N0 <= 0 or N1 <= 0:
+                log.warning("Empty balances in MetaStable pool")
+                return None
+
+            D = self._compute_invariant(amp, N0, N1)
+            spot_norm_0 = self._spot_price(amp, D, N0, N1)
+            # Real swap rate (raw t1 per raw t0) = spot_norm * r0/r1
+            primary_0 = self.primary_is_token_0
+
+            def depth_at(_price: float) -> float:
+                # _price is real "quote per primary" in base-ETH-equivalent units.
+                # liq_price = (raw_spot or 1/raw_spot) * rate_quote, so inverting:
+                #  primary=token_0 (real_price = raw_spot * r1):
+                #      raw_spot = _price/r1, spot_norm = raw_spot * r1/r0 = _price/r0
+                #  primary=token_1 (real_price = 1/raw_spot * r0):
+                #      raw_spot = r0/_price, spot_norm = raw_spot * r1/r0 = r1/_price
+                if _price <= 0:
+                    return 0.0
+                spot_target = _price / r0 if primary_0 else r1 / _price
+
+                # Bisect on N0 (normalized token_0 balance): adding N0 → spot drops.
+                if spot_target < spot_norm_0:
+                    lo, hi = N0, N0 * 1e6
+                elif spot_target > spot_norm_0:
+                    lo, hi = 1e-18, N0
+                else:
+                    return 0.0
+
+                for _ in range(80):
+                    mid = (lo + hi) / 2
+                    mid_N1 = BalancerV2.MetaStablePool._balance_given_invariant(
+                        amp, D, mid
+                    )
+                    mid_spot = BalancerV2.MetaStablePool._spot_price(
+                        amp, D, mid, mid_N1
+                    )
+                    if mid_spot < spot_target:
+                        hi = mid
+                    else:
+                        lo = mid
+                    if abs(hi - lo) / max(hi, 1.0) < 1e-12:
+                        break
+
+                mid_N0 = (lo + hi) / 2
+                mid_N1 = BalancerV2.MetaStablePool._balance_given_invariant(
+                    amp, D, mid_N0
+                )
+                # Return quote delta in "real base" units (normalized dN already
+                # includes the quote rate, so this is base-ETH-equivalent for
+                # a pool whose quote token has a non-trivial rate provider).
+                return abs(mid_N1 - N1) if primary_0 else abs(mid_N0 - N0)
+
+            raw_spot = spot_norm_0 * r0 / r1  # raw t1 per raw t0
+            rate_quote = r1 if primary_0 else r0
+            liq_price_raw = raw_spot if primary_0 else 1.0 / raw_spot
+            return Liquidity(liq_price_raw * rate_quote, depth_at)
+
+    def __init__(self, pools: list[DEX.LiquidityPool]):
         super().__init__(pools)
 
     def __str__(self) -> str:
-        return "Balancer"
+        return "Balancer V2"
 
     @property
     def color(self) -> str:
         return "#C0C0C0"
+
+
+class BalancerV3(DEX):
+    """Balancer V3 — singleton vault (different address from V2), new stable pools.
+
+    Reuses V2 MetaStablePool's stableswap math; only state fetching differs.
+    """
+
+    class StablePool(BalancerV2.MetaStablePool):
+        def __init__(
+            self,
+            pool_address: ChecksumAddress,
+            vault: AsyncContract,
+            pool_contract: AsyncContract,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
+            primary_is_token_0: bool = False,
+        ):
+            # Bypass V2 __init__ since our state model differs (no pool_id, no
+            # V2 vault, no rate callbacks — V3 vault returns pre-scaled balances)
+            self.pool_address = pool_address
+            self.vault = vault
+            self.pool_contract = pool_contract
+            self.token_0 = token_0
+            self.token_1 = token_1
+            self.primary_is_token_0 = primary_is_token_0
+
+        @classmethod
+        async def create(  # type: ignore[override]
+            cls,
+            pool_address: ChecksumAddress,
+            primary_is_token_0: bool = False,
+        ) -> "BalancerV3.StablePool":
+            vault = await rp.get_contract_by_name("BalancerV3Vault", mainnet=True)
+            pool_contract = w3.eth.contract(address=pool_address, abi=cls._POOL_ABI)
+            tokens, _, _, _ = await vault.functions.getPoolTokenInfo(
+                pool_address
+            ).call()
+            token_0 = await ERC20Token.create(tokens[0])
+            token_1 = await ERC20Token.create(tokens[1])
+            return cls(
+                pool_address,
+                vault,
+                pool_contract,
+                token_0,
+                token_1,
+                primary_is_token_0,
+            )
+
+        async def _get_state(
+            self,
+        ) -> tuple[float, float, float, float, float]:
+            """Return (N0, N1, amp, r0, r1). V3 vault pre-scales balances, so we
+            back out the rate from balancesRaw + lastBalancesLiveScaled18."""
+            pool_info_call = self.vault.functions.getPoolTokenInfo(self.pool_address)
+            amp_call = self.pool_contract.functions.getAmplificationParameter()
+            pool_info, amp_tuple = await rp.multicall([pool_info_call, amp_call])
+            _, _, balances_raw, balances_live = pool_info
+            amp = float(amp_tuple[0]) / float(amp_tuple[2])
+
+            # balancesLiveScaled18 = rawBalance * tokenScalingFactor * rate / 1e18,
+            # where tokenScalingFactor = 10**(18 - decimals). Derive each rate.
+            def _rate(raw: int, live: int, decimals: int) -> float:
+                # Balancer V3: live_scaled18 = raw * 10^(18-decimals) * rate / 1e18;
+                # rate is itself 1e18-scaled, so human rate = live / (raw * 10^(18-decimals)).
+                if raw == 0:
+                    return 1.0
+                return float(live) / float(raw * 10 ** (18 - decimals))
+
+            r0 = _rate(balances_raw[0], balances_live[0], self.token_0.decimals)
+            r1 = _rate(balances_raw[1], balances_live[1], self.token_1.decimals)
+            N0 = balances_live[0] / 1e18
+            N1 = balances_live[1] / 1e18
+            return N0, N1, amp, r0, r1
+
+    def __init__(self, pools: list[StablePool]):
+        super().__init__(pools)
+
+    def __str__(self) -> str:
+        return "Balancer V3"
+
+    @property
+    def color(self) -> str:
+        return "#8F8F8F"
 
 
 class UniswapV3(DEX):
@@ -797,15 +1072,25 @@ class UniswapV3(DEX):
             tick_spacing: int,
             token_0: ERC20Token,
             token_1: ERC20Token,
+            primary_is_token_0: bool = False,
         ):
             self.pool_address = pool_address
             self.contract = contract
             self.tick_spacing = tick_spacing
             self.token_0 = token_0
             self.token_1 = token_1
+            # When True, token_0 is the asset being priced; .price and depth_at
+            # are in "token_1 per token_0" and depth is returned in token_1.
+            # Default False matches Uniswap's address-ordering convention when
+            # the primary asset happens to have the higher address.
+            self.primary_is_token_0 = primary_is_token_0
 
         @classmethod
-        async def create(cls, pool_address: ChecksumAddress) -> "UniswapV3.Pool":
+        async def create(
+            cls,
+            pool_address: ChecksumAddress,
+            primary_is_token_0: bool = False,
+        ) -> "UniswapV3.Pool":
             contract = await rp.assemble_contract(
                 "UniswapV3Pool", pool_address, mainnet=True
             )
@@ -818,7 +1103,14 @@ class UniswapV3(DEX):
             )
             token_0 = await ERC20Token.create(token_0_addr)
             token_1 = await ERC20Token.create(token_1_addr)
-            return cls(pool_address, contract, tick_spacing, token_0, token_1)
+            return cls(
+                pool_address,
+                contract,
+                tick_spacing,
+                token_0,
+                token_1,
+                primary_is_token_0,
+            )
 
         # on-chain read hooks — V4 overrides these to go through StateView
         def _fn_slot0(self) -> AsyncContractFunction:
@@ -908,10 +1200,23 @@ class UniswapV3(DEX):
             ask_path = sorted((t for t in ticks if t <= current_tick), reverse=True)
             bid_path = sorted(t for t in ticks if t > current_tick)
             balance_norm = 10 ** (self.token_1.decimals - self.token_0.decimals)
+            primary_0 = self.primary_is_token_0
+
+            def _quote_delta(
+                active_L: float, tick_lower: float, tick_upper: float
+            ) -> float:
+                t0, t1 = self.liquidity_to_tokens(active_L, tick_lower, tick_upper)
+                return t1 if primary_0 else t0
 
             def depth_at(_price: float) -> float:
                 if _price <= 0:
-                    target: float = UniswapV3.MAX_TICK
+                    target: float = (
+                        UniswapV3.MIN_TICK if primary_0 else UniswapV3.MAX_TICK
+                    )
+                elif primary_0:
+                    # _price is token_1 per token_0 (e.g. WETH per rETH);
+                    # pool tick = log_1.0001(raw_t1/raw_t0) = log(_price * balance_norm)
+                    target = UniswapV3.price_to_tick(_price * balance_norm)
                 else:
                     target = -UniswapV3.price_to_tick(_price / balance_norm)
 
@@ -920,36 +1225,38 @@ class UniswapV3(DEX):
                 cumulative = 0.0
 
                 if target <= calculated_tick:
-                    # ask side: walk descending toward target
                     for tick in ask_path:
                         if target >= tick:
-                            liq_0, _ = self.liquidity_to_tokens(active, target, last)
-                            return cumulative + liq_0
-                        liq_0, _ = self.liquidity_to_tokens(active, tick, last)
-                        cumulative += liq_0
+                            return cumulative + _quote_delta(active, target, last)
+                        cumulative += _quote_delta(active, tick, last)
                         active -= net_liquidity[tick]
                         last = tick
                 else:
-                    # bid side: walk ascending toward target
                     for tick in bid_path:
                         if target <= tick:
-                            liq_0, _ = self.liquidity_to_tokens(active, last, target)
-                            return cumulative + liq_0
-                        liq_0, _ = self.liquidity_to_tokens(active, last, tick)
-                        cumulative += liq_0
+                            return cumulative + _quote_delta(active, last, target)
+                        cumulative += _quote_delta(active, last, tick)
                         active += net_liquidity[tick]
                         last = tick
 
                 return cumulative
 
-            return Liquidity(balance_norm / price, depth_at)
+            quote_price = price / balance_norm if primary_0 else balance_norm / price
+            return Liquidity(quote_price, depth_at)
 
     def __init__(self, pools: list[Pool]):
         super().__init__(pools)
 
     @classmethod
-    async def create(cls, pool_addresses: list[ChecksumAddress]) -> "UniswapV3":
-        pools = [await UniswapV3.Pool.create(addr) for addr in pool_addresses]
+    async def create(
+        cls,
+        pool_addresses: list[ChecksumAddress],
+        primary_is_token_0: bool = False,
+    ) -> "UniswapV3":
+        pools = [
+            await UniswapV3.Pool.create(addr, primary_is_token_0)
+            for addr in pool_addresses
+        ]
         return cls(pools)
 
     def __str__(self) -> str:
@@ -975,6 +1282,7 @@ class UniswapV4(DEX):
             self.tick_spacing = tick_spacing
             self.token_0 = token_0
             self.token_1 = token_1
+            self.primary_is_token_0 = False
 
         @classmethod
         async def create(  # type: ignore[override]
