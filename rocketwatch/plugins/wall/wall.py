@@ -160,7 +160,7 @@ class Wall(commands.GroupCog, name="wall"):
     async def _get_dex_reth(self) -> set[DEX]:
         if self.dex_reth is None:
             # Both V3 rETH/WETH pools: primary=rETH=token_0 (rETH sorts before WETH)
-            reth_v3 = await UniswapV3.create(
+            reth_uni_v3 = await UniswapV3.create(
                 [
                     cast(
                         ChecksumAddress,
@@ -185,7 +185,7 @@ class Wall(commands.GroupCog, name="wall"):
                     )
                 ]
             )
-            self.dex_reth = {reth_v3, reth_bal_v3}
+            self.dex_reth = {reth_uni_v3, reth_bal_v3}
         return self.dex_reth
 
     @staticmethod

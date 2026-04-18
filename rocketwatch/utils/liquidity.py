@@ -871,6 +871,11 @@ class BalancerV2(DEX):
         @staticmethod
         def _spot_price(amp: float, D: float, x0: float, x1: float) -> float:
             """∂f/∂x0 / ∂f/∂x1 — raw t1 received per raw t0 input (infinitesimal)."""
+            if x0 == 0:
+                return float("inf")
+            if x1 == 0:
+                return float("-inf")
+
             df0 = 4 * amp + D**3 / (4 * x0**2 * x1)
             df1 = 4 * amp + D**3 / (4 * x0 * x1**2)
             return df0 / df1
