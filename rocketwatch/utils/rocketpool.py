@@ -365,14 +365,14 @@ class RocketPool:
     async def get_eth_usdc_price(self) -> float:
         from rocketwatch.utils.liquidity import UniswapV3
 
-        pool_address = await self.get_address_by_name("UniV3_USDC_ETH")
+        pool_address = await self.get_address_by_name("UniswapV3_USDC_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
         return float(1.0 / await pool.get_normalized_price())
 
     async def get_reth_eth_price(self) -> float:
         from rocketwatch.utils.liquidity import UniswapV3
 
-        pool_address = await self.get_address_by_name("UniV3_rETH_ETH")
+        pool_address = await self.get_address_by_name("UniswapV3_rETH_ETH")
         pool = await UniswapV3.Pool.create(pool_address)
         return float(await pool.get_normalized_price())
 
