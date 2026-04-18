@@ -366,12 +366,14 @@ async def manual_message_report(
             if ctx.sentinel.enabled:
                 confirm_view = WarningConfirmView()
 
-            warning_msg = await message.reply(
-                content=moderator.mention,
-                embed=warning,
-                view=confirm_view or MISSING,
-                mention_author=False,
-            )
+            warning_msg: Message | None = None
+            with contextlib.suppress(Exception):
+                warning_msg = await message.reply(
+                    content=moderator.mention,
+                    embed=warning,
+                    view=confirm_view or MISSING,
+                    mention_author=False,
+                )
             await _finalize_report(ctx, message, reason, warning_msg, report_msg)
     except Exception:
         await _release_claim(ctx, message.id)
