@@ -1,0 +1,14 @@
+services:
+  rocketwatch:
+    volumes:
+      - ./memray-output:/tmp/memray
+    command:
+      - bash
+      - -c
+      - |
+        uv pip install --system --no-cache memray &&
+        memray run --live-remote --live-port 1234 __main__.py
+    cap_add:
+      - SYS_PTRACE
+    ports:
+      - "1234:1234"
