@@ -2774,68 +2774,6 @@ class ODAOContractAddedEvent(LogEvent):
 # ===================================================================
 
 
-class OTCSwapEvent(LogEvent):
-    event_name = "otc_swap_event"
-
-    class Args(LogEventContext):
-        signerToken: ContractAddress
-        senderToken: ContractAddress
-        signerAmount: int
-        senderAmount: int
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        rpl = await rp.get_address_by_name("rocketTokenRPL")
-        if args["signerToken"] != rpl and args["senderToken"] != rpl:
-            return []
-
-        topics = event.get("topics", [])
-        seller = w3.to_checksum_address(f"0x{topics[2][-40:]}")
-        buyer = w3.to_checksum_address(f"0x{topics[3][-40:]}")
-
-        s = await rp.assemble_contract(name="ERC20", address=args["signerToken"])
-        sell_token = await s.functions.symbol().call()
-        sell_decimals = await s.functions.decimals().call()
-        b = await rp.assemble_contract(name="ERC20", address=args["senderToken"])
-        buy_token = await b.functions.symbol().call()
-        buy_decimals = await b.functions.decimals().call()
-
-        sell_amount = solidity.to_float(args["signerAmount"], sell_decimals)
-        buy_amount = solidity.to_float(args["senderAmount"], buy_decimals)
-
-        if args["signerToken"] == rpl:
-            exchange_rate = buy_amount / sell_amount
-            other_token = buy_token
-        else:
-            exchange_rate = sell_amount / buy_amount
-            other_token = sell_token
-
-        seller_link = await _addr(seller)
-        buyer_link = await _addr(buyer)
-        rate_str = f"`{format_value(exchange_rate)} RPL/{other_token}`"
-        if other_token.lower() == "weth":
-            market_rate = await rp.call("rocketNetworkPrices.getRPLPrice")
-            discount = (1 - exchange_rate / solidity.to_float(market_rate)) * 100
-            rate_str += (
-                f" (`{format_value(discount)}%` Discount, "
-                f"oDAO: `{format_value(solidity.to_float(market_rate))} RPL/ETH`)"
-            )
-
-        return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                title=":currency_exchange: OTC Swap",
-                description=(
-                    f"{seller_link} exchanged {format_value(sell_amount)} {sell_token} "
-                    f"for {format_value(buy_amount)} {buy_token} with {buyer_link}"
-                ),
-                fields=[("Exchange Rate", rate_str, False)],
-            )
-        ]
-
-
 class UnstETHWithdrawalEvent(LogEvent):
     event_name = "unsteth_withdrawal_requested_event"
 
@@ -3047,9 +2985,6 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "RPLStaked(address,address,uint256,uint256)": RPLStakeEvent(),
         "RPLWithdrawn": RPLWithdrawEvent(),
         "RPLSlashed": NodeRPLSlashEvent(),
-    },
-    "AirSwap": {
-        "Swap": OTCSwapEvent(),
     },
     "rocketMinipoolPenalty": {
         "MaxPenaltyRateUpdated": ODAOMinipoolPenaltyEvent(),
