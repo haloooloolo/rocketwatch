@@ -857,15 +857,16 @@ class BalancerV2(DEX):
         def _balance_given_invariant(amp: float, D: float, x_other: float) -> float:
             """Solve for token balance given the other balance and D (n=2 quadratic).
 
-            Uses a rationalized form to avoid catastrophic cancellation when
-            b is large and positive.
+            Inverts the same fixed-point ``_compute_invariant`` converges to,
+            ``D_P = 2*amp*(D - S)``; that rearranges to
+            ``8*amp*x_other*x^2 + 8*amp*x_other*(x_other - D)*x + D^3 = 0``.
+            Returns the larger (equilibrium-adjacent) positive root.
             """
-            a = 16 * amp * x_other
-            b = 4 * x_other * (4 * amp * x_other + D - 4 * amp * D)
-            disc_sqrt = math.sqrt(b * b + 4 * a * (D**3))
-            if b >= 0:
-                return 2 * (D**3) / (b + disc_sqrt)
-            return (-b + disc_sqrt) / (2 * a)
+            a = 8 * amp * x_other
+            b = 8 * amp * x_other * (x_other - D)
+            disc = b * b - 4 * a * (D**3)
+            sqrt_disc = math.sqrt(max(disc, 0.0))
+            return (-b + sqrt_disc) / (2 * a)
 
         @staticmethod
         def _spot_price(amp: float, D: float, x0: float, x1: float) -> float:
