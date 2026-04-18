@@ -42,6 +42,7 @@ from rocketwatch.utils.liquidity import (
     Liquidity,
     Market,
     UniswapV3,
+    UniswapV4,
 )
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.time_debug import timerun, timerun_async
@@ -95,6 +96,40 @@ class Wall(commands.Cog):
                         cast(
                             ChecksumAddress,
                             "0xcf15aD9bE9d33384B74b94D63D06B4A9Bd82f640",
+                        ),
+                    ]
+                ),
+                await UniswapV4.create(
+                    [
+                        # 1% ETH/RPL
+                        (
+                            HexStr(
+                                "0xf54ebae2cdfe65593f7b9dbf655f498796c7744107a69d78456627faf98dc36f"
+                            ),
+                            200,
+                            cast(
+                                ChecksumAddress,
+                                "0x0000000000000000000000000000000000000000",
+                            ),
+                            cast(
+                                ChecksumAddress,
+                                "0xD33526068D116cE69F19A9ee46F0bd304F21A51f",
+                            ),
+                        ),
+                        # 0.45% USDC/RPL
+                        (
+                            HexStr(
+                                "0xd36acc983941d38f6edb0ff6f6ee730e59cba0f2f720fea3ce240ae9b90fc4d0"
+                            ),
+                            90,
+                            cast(
+                                ChecksumAddress,
+                                "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                            ),
+                            cast(
+                                ChecksumAddress,
+                                "0xD33526068D116cE69F19A9ee46F0bd304F21A51f",
+                            ),
                         ),
                     ]
                 ),

@@ -10,6 +10,7 @@ import aiohttp
 import numpy as np
 from eth_typing import ChecksumAddress, HexStr
 from web3.contract import AsyncContract
+from web3.contract.async_contract import AsyncContractFunction
 
 from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
@@ -671,6 +672,9 @@ class ERC20Token:
     @classmethod
     async def create(cls, address: ChecksumAddress) -> "ERC20Token":
         address = w3.to_checksum_address(address)
+        if int(address, 16) == 0:
+            # native ETH (Uniswap V4 convention)
+            return cls(address, "ETH", 18)
         contract = await rp.assemble_contract("ERC20", address, mainnet=True)
         symbol, decimals = await rp.multicall(
             [contract.functions.symbol(), contract.functions.decimals()]
@@ -816,6 +820,19 @@ class UniswapV3(DEX):
             token_1 = await ERC20Token.create(token_1_addr)
             return cls(pool_address, contract, tick_spacing, token_0, token_1)
 
+        # on-chain read hooks — V4 overrides these to go through StateView
+        def _fn_slot0(self) -> AsyncContractFunction:
+            return self.contract.functions.slot0()
+
+        def _fn_liquidity(self) -> AsyncContractFunction:
+            return self.contract.functions.liquidity()
+
+        def _fn_ticks(self, tick: int) -> AsyncContractFunction:
+            return self.contract.functions.ticks(tick)
+
+        def _fn_tick_bitmap(self, word: int) -> AsyncContractFunction:
+            return self.contract.functions.tickBitmap(word)
+
         def tick_to_word_and_bit(self, tick: int) -> tuple[int, int]:
             compressed = int(tick // self.tick_spacing)
             if (tick < 0) and (tick % self.tick_spacing):
@@ -826,18 +843,16 @@ class UniswapV3(DEX):
             return word_position, bit_position
 
         async def get_ticks_net_liquidity(self, ticks: list[int]) -> dict[int, int]:
-            results = await rp.multicall(
-                [self.contract.functions.ticks(tick) for tick in ticks]
-            )
+            results = await rp.multicall([self._fn_ticks(tick) for tick in ticks])
             return dict(zip(ticks, [r[1] for r in results], strict=False))
 
         async def get_initialized_ticks(self, current_tick: int) -> list[int]:
             ticks = []
             active_word, b = self.tick_to_word_and_bit(current_tick)
 
-            word_range = list(range(active_word - 5, active_word + 5))
+            word_range = list(range(active_word - 20, active_word + 20))
             bitmaps = await rp.multicall(
-                [self.contract.functions.tickBitmap(word) for word in word_range]
+                [self._fn_tick_bitmap(word) for word in word_range]
             )
 
             for word, tick_bitmap in zip(word_range, bitmaps, strict=False):
@@ -866,7 +881,7 @@ class UniswapV3(DEX):
             return balance_0, balance_1
 
         async def get_price(self) -> float:
-            sqrt96x = (await self.contract.functions.slot0().call())[0]
+            sqrt96x = (await self._fn_slot0().call())[0]
             return float((sqrt96x**2) / (2**192))
 
         async def get_normalized_price(self) -> float:
@@ -877,7 +892,7 @@ class UniswapV3(DEX):
 
         async def get_liquidity(self) -> Liquidity | None:
             price = await self.get_price()
-            initial_liquidity = await self.contract.functions.liquidity().call()
+            initial_liquidity = await self._fn_liquidity().call()
 
             calculated_tick = UniswapV3.price_to_tick(price)
             current_tick = int(calculated_tick)
@@ -889,72 +904,43 @@ class UniswapV3(DEX):
 
             log.debug(f"Found {len(ticks)} initialized ticks!")
 
-            async def get_cumulative_liquidity(_ticks: list[int]) -> list[float]:
-                cumulative_liquidity: float = 0
-                last_tick = calculated_tick
-                active_liquidity = initial_liquidity
-
-                net_liquidity: dict[int, int] = await self.get_ticks_net_liquidity(
-                    _ticks
-                )
-                liquidity = []
-
-                # assume liquidity in token 0 for now
-                for tick in _ticks:
-                    if tick > last_tick:
-                        liq_0, _ = self.liquidity_to_tokens(
-                            active_liquidity, last_tick, tick
-                        )
-                        active_liquidity += net_liquidity[tick]
-                    else:
-                        liq_0, _ = self.liquidity_to_tokens(
-                            active_liquidity, tick, last_tick
-                        )
-                        active_liquidity -= net_liquidity[tick]
-
-                    cumulative_liquidity += liq_0
-                    liquidity.append(cumulative_liquidity)
-                    last_tick = tick
-
-                return liquidity
-
-            _ask_ticks = [t for t in reversed(ticks) if t <= current_tick] + [
-                UniswapV3.MIN_TICK
-            ]
-            ask_liquidity = [0.0] + await get_cumulative_liquidity(_ask_ticks)
-            ask_ticks: list[int | float] = [calculated_tick, *_ask_ticks]
-
-            _bid_ticks = [t for t in ticks if t > current_tick] + [UniswapV3.MAX_TICK]
-            bid_liquidity = [0.0] + await get_cumulative_liquidity(_bid_ticks)
-            bid_ticks: list[int | float] = [calculated_tick, *_bid_ticks]
-
+            net_liquidity = await self.get_ticks_net_liquidity(ticks)
+            ask_path = sorted((t for t in ticks if t <= current_tick), reverse=True)
+            bid_path = sorted(t for t in ticks if t > current_tick)
             balance_norm = 10 ** (self.token_1.decimals - self.token_0.decimals)
 
             def depth_at(_price: float) -> float:
-                tick: float
                 if _price <= 0:
-                    tick = UniswapV3.MAX_TICK
+                    target: float = UniswapV3.MAX_TICK
                 else:
-                    tick = -UniswapV3.price_to_tick(_price / balance_norm)
+                    target = -UniswapV3.price_to_tick(_price / balance_norm)
 
-                if tick <= calculated_tick:
-                    i = int(np.searchsorted(-np.array(ask_ticks), -tick, "right"))
-                    liq_ticks = ask_ticks
-                    liquidity_levels = ask_liquidity
+                active = initial_liquidity
+                last = calculated_tick
+                cumulative = 0.0
+
+                if target <= calculated_tick:
+                    # ask side: walk descending toward target
+                    for tick in ask_path:
+                        if target >= tick:
+                            liq_0, _ = self.liquidity_to_tokens(active, target, last)
+                            return cumulative + liq_0
+                        liq_0, _ = self.liquidity_to_tokens(active, tick, last)
+                        cumulative += liq_0
+                        active -= net_liquidity[tick]
+                        last = tick
                 else:
-                    i = int(np.searchsorted(np.array(bid_ticks), tick, "right"))
-                    liq_ticks = bid_ticks
-                    liquidity_levels = bid_liquidity
+                    # bid side: walk ascending toward target
+                    for tick in bid_path:
+                        if target <= tick:
+                            liq_0, _ = self.liquidity_to_tokens(active, last, target)
+                            return cumulative + liq_0
+                        liq_0, _ = self.liquidity_to_tokens(active, last, tick)
+                        cumulative += liq_0
+                        active += net_liquidity[tick]
+                        last = tick
 
-                if i >= len(liquidity_levels):
-                    return liquidity_levels[-1]
-
-                range_share = abs(tick - liq_ticks[i - 1]) / abs(
-                    liq_ticks[i] - liq_ticks[i - 1]
-                )
-                range_liquidity = abs(liquidity_levels[i] - liquidity_levels[i - 1])
-                # linear interpolation should be fine since ticks are exponential
-                return liquidity_levels[i - 1] + range_share * range_liquidity
+                return cumulative
 
             return Liquidity(balance_norm / price, depth_at)
 
@@ -967,8 +953,69 @@ class UniswapV3(DEX):
         return cls(pools)
 
     def __str__(self) -> str:
-        return "Uniswap"
+        return "Uniswap V3"
 
     @property
     def color(self) -> str:
         return "#A02C6C"
+
+
+class UniswapV4(DEX):
+    class Pool(UniswapV3.Pool):
+        def __init__(
+            self,
+            pool_id: HexStr,
+            state_view: AsyncContract,
+            tick_spacing: int,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
+        ):
+            self.pool_id = pool_id
+            self.state_view = state_view
+            self.tick_spacing = tick_spacing
+            self.token_0 = token_0
+            self.token_1 = token_1
+
+        @classmethod
+        async def create(  # type: ignore[override]
+            cls,
+            pool_id: HexStr,
+            tick_spacing: int,
+            currency_0: ChecksumAddress,
+            currency_1: ChecksumAddress,
+        ) -> "UniswapV4.Pool":
+            state_view = await rp.get_contract_by_name(
+                "UniswapV4StateView", mainnet=True
+            )
+            token_0 = await ERC20Token.create(currency_0)
+            token_1 = await ERC20Token.create(currency_1)
+            return cls(pool_id, state_view, tick_spacing, token_0, token_1)
+
+        def _fn_slot0(self) -> AsyncContractFunction:
+            return self.state_view.functions.getSlot0(self.pool_id)
+
+        def _fn_liquidity(self) -> AsyncContractFunction:
+            return self.state_view.functions.getLiquidity(self.pool_id)
+
+        def _fn_ticks(self, tick: int) -> AsyncContractFunction:
+            return self.state_view.functions.getTickInfo(self.pool_id, tick)
+
+        def _fn_tick_bitmap(self, word: int) -> AsyncContractFunction:
+            return self.state_view.functions.getTickBitmap(self.pool_id, word)
+
+    def __init__(self, pools: list[Pool]):
+        super().__init__(pools)
+
+    @classmethod
+    async def create(
+        cls,
+        pools: list[tuple[HexStr, int, ChecksumAddress, ChecksumAddress]],
+    ) -> "UniswapV4":
+        return cls([await UniswapV4.Pool.create(*args) for args in pools])
+
+    def __str__(self) -> str:
+        return "Uniswap V4"
+
+    @property
+    def color(self) -> str:
+        return "#D63384"

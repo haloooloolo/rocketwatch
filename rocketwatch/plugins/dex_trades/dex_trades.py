@@ -41,11 +41,11 @@ def _addr(s: str) -> ChecksumAddress:
 
 
 _COW_SETTLEMENT = _addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41")
-_UNI_RETH_POOLS = [
+_UNI_V3_RETH_POOLS = [
     _addr("0x553e9C493678d8606d6a5ba284643dB2110Df823"),
     _addr("0xa4e0faA58465A2D369aa21B3e42d43374c6F9613"),
 ]
-_UNI_RPL_POOLS = [
+_UNI_V3_RPL_POOLS = [
     _addr("0xe42318eA3b998e8355a3Da364EB9D48eC725Eb45"),
 ]
 _CURVE_POOLS = [
@@ -149,7 +149,7 @@ class DexTrades(EventPlugin):
 
         # Uniswap V3 - ABI is "UniswapV3Pool", addresses are per-pool
         self._uni_pools = []
-        for pool_addr in _UNI_RETH_POOLS + _UNI_RPL_POOLS:
+        for pool_addr in _UNI_V3_RETH_POOLS + _UNI_V3_RPL_POOLS:
             pool = await rp.assemble_contract("UniswapV3Pool", pool_addr)
             token0 = w3.to_checksum_address(await pool.functions.token0().call())
             token1 = w3.to_checksum_address(await pool.functions.token1().call())
