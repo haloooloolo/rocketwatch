@@ -198,6 +198,22 @@ class TestStableswapMath:
         assert result > 0
         assert math.isfinite(result)
 
+    def test_balance_given_invariant_infeasible_x_other(self):
+        """Regression: if bisection probes x_other far beyond D (infeasible
+        region), return a finite positive value instead of ~0, which would
+        otherwise trip ZeroDivisionError in `_spot_price`."""
+        amp = 61.7
+        x0, x1 = 1236.0, 1198.0
+        D = self.M._compute_invariant(amp, x0, x1)
+        # x_other = N0 * 1e6 is the old (buggy) bisection upper bound.
+        huge = x0 * 1e6
+        result = self.M._balance_given_invariant(amp, D, huge)
+        assert result > 0
+        assert math.isfinite(result)
+        # And _spot_price should not crash on the returned pair.
+        spot = self.M._spot_price(amp, D, huge, result)
+        assert math.isfinite(spot)
+
     def test_spot_price_at_peg(self):
         """Symmetric balances → spot = 1."""
         amp = 50.0

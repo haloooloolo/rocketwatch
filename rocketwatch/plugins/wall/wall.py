@@ -306,7 +306,6 @@ class Wall(commands.GroupCog, name="wall"):
         bottom_formatter: ticker.Formatter,
         top_formatter: ticker.Formatter,
         y_right_formatter: ticker.Formatter,
-        extra_ref_lines: list[tuple[float, str]] | None = None,
     ) -> figure.Figure:
         fig, ax = plt.subplots(figsize=(10, 5))
 
@@ -366,8 +365,6 @@ class Wall(commands.GroupCog, name="wall"):
             x, np.array(y[::-1]), colors=colors[::-1], edgecolor="black", linewidth=0.3
         )
         ax.axvline(primary_price, color="black", linestyle="--", linewidth=1)
-        for ref_price, ref_color in extra_ref_lines or []:
-            ax.axvline(ref_price, color=ref_color, linestyle=":", linewidth=1)
 
         range_size = x[-1] - x[0]
         ax.set_xlim((x[0], x[-1]))
@@ -418,7 +415,6 @@ class Wall(commands.GroupCog, name="wall"):
         y_right_formatter: ticker.Formatter,
         cex_set: set[CEX],
         dex_set: set[DEX],
-        extra_ref_lines: list[tuple[float, str]] | None = None,
     ) -> None:
         embed = Embed(title=config.title)
 
@@ -475,7 +471,6 @@ class Wall(commands.GroupCog, name="wall"):
             bottom_formatter=bottom_formatter,
             top_formatter=top_formatter,
             y_right_formatter=y_right_formatter,
-            extra_ref_lines=extra_ref_lines,
         )
         fig.savefig(buffer, format="png")
         plt.close(fig)
@@ -484,8 +479,8 @@ class Wall(commands.GroupCog, name="wall"):
         embed.add_field(
             name="Current Price",
             value=(
-                f"{config.primary_prefix}{primary_price:,.5f} | "
-                f"{config.secondary_prefix}{secondary_price:,.5f}"
+                f"{config.primary_prefix}{primary_price:#,.6g} | "
+                f"{config.secondary_prefix}{secondary_price:#,.6g}"
             ).replace("Ξ ", "Ξ"),
         )
         embed.add_field(
@@ -594,10 +589,6 @@ class Wall(commands.GroupCog, name="wall"):
             if market_price is None or market_price <= 0:
                 raise RuntimeError("no rETH pools returned liquidity")
 
-            reth_contract = await rp.get_contract_by_name("rocketTokenRETH")
-            protocol_rate = (
-                await reth_contract.functions.getExchangeRate().call()
-            ) / 1e18
             eth_usd = await rp.get_eth_usdc_price()
             reth_usd = market_price * eth_usd
         except Exception as e:
@@ -636,7 +627,6 @@ class Wall(commands.GroupCog, name="wall"):
             ),
             cex_set=set(),
             dex_set=dex_set,
-            extra_ref_lines=[(protocol_rate, "#666666")],
         )
 
 

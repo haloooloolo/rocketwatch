@@ -860,22 +860,31 @@ class BalancerV2(DEX):
             Inverts the same fixed-point ``_compute_invariant`` converges to,
             ``D_P = 2*amp*(D - S)``; that rearranges to
             ``8*amp*x_other*x^2 + 8*amp*x_other*(x_other - D)*x + D^3 = 0``.
-            Returns the larger (equilibrium-adjacent) positive root.
+            Returns the larger (equilibrium-adjacent) positive root, or a tiny
+            positive value when no real solution exists (x_other outside the
+            feasible region). The rationalized form avoids catastrophic
+            cancellation for large positive ``b``.
             """
             a = 8 * amp * x_other
             b = 8 * amp * x_other * (x_other - D)
             disc = b * b - 4 * a * (D**3)
-            sqrt_disc = math.sqrt(max(disc, 0.0))
-            return (-b + sqrt_disc) / (2 * a)
+            if disc <= 0:
+                # Infeasible — no positive real root; caller's bisection will
+                # steer away. Return a vanishing value to keep depth_at finite.
+                return max(D - x_other, 1e-30)
+            sqrt_disc = math.sqrt(disc)
+            if b <= 0:
+                return (-b + sqrt_disc) / (2 * a)
+            # b > 0: -b + sqrt_disc cancels catastrophically. Use Vieta's:
+            # x1 * x2 = c/a = D^3 / (8*amp*x_other), so the larger-in-magnitude
+            # root is (-b - sqrt_disc)/(2a) (negative) and the smaller is
+            # 2c / (-b - sqrt_disc) (also negative). Both are negative →
+            # infeasible for positive balance.
+            return max(D - x_other, 1e-30)
 
         @staticmethod
         def _spot_price(amp: float, D: float, x0: float, x1: float) -> float:
             """∂f/∂x0 / ∂f/∂x1 — raw t1 received per raw t0 input (infinitesimal)."""
-            if x0 == 0:
-                return float("inf")
-            if x1 == 0:
-                return float("-inf")
-
             df0 = 4 * amp + D**3 / (4 * x0**2 * x1)
             df1 = 4 * amp + D**3 / (4 * x0 * x1**2)
             return df0 / df1
@@ -925,11 +934,15 @@ class BalancerV2(DEX):
                     return 0.0
                 spot_target = _price / r0 if primary_0 else r1 / _price
 
-                # Bisect on N0 (normalized token_0 balance): adding N0 → spot drops.
+                # Bisect on N0 (normalized token_0 balance): adding N0 → spot
+                # drops. Feasibility of the invariant requires roughly N0 < D
+                # (beyond that, no positive N1 satisfies the stableswap curve),
+                # so cap the upper bound well below D. Likewise the lower bound
+                # cannot reach 0 without N1 blowing up.
                 if spot_target < spot_norm_0:
-                    lo, hi = N0, N0 * 1e6
+                    lo, hi = N0, min(N0 * 1e3, D * 0.999)
                 elif spot_target > spot_norm_0:
-                    lo, hi = 1e-18, N0
+                    lo, hi = max(N0 * 1e-3, D * 1e-6), N0
                 else:
                     return 0.0
 
