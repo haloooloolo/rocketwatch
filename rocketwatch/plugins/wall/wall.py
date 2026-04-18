@@ -589,6 +589,10 @@ class Wall(commands.GroupCog, name="wall"):
             if market_price is None or market_price <= 0:
                 raise RuntimeError("no rETH pools returned liquidity")
 
+            reth_contract = await rp.get_contract_by_name("rocketTokenRETH")
+            protocol_rate = (
+                await reth_contract.functions.getExchangeRate().call()
+            ) / 1e18
             eth_usd = await rp.get_eth_usdc_price()
             reth_usd = market_price * eth_usd
         except Exception as e:
@@ -616,10 +620,11 @@ class Wall(commands.GroupCog, name="wall"):
             config=config,
             primary_price=market_price,
             secondary_price=reth_usd,
-            # Bottom = % relative to current price:
-            # scaled value = x * (100/primary) - 100 = (x/primary - 1) * 100.
+            # Bottom = % relative to the protocol rate. The dashed vertical
+            # line (drawn at primary_price = market_price by _plot_data) then
+            # reads as the pool's discount/premium vs. the canonical peg.
             bottom_formatter=self._get_formatter(
-                "+.3g", scale=100 / market_price, offset=-100, suffix="%"
+                "+.3g", scale=100 / protocol_rate, offset=-100, suffix="%"
             ),
             top_formatter=self._get_formatter(".4f", prefix="Ξ "),
             y_right_formatter=self._get_formatter(
