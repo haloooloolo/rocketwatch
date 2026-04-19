@@ -185,13 +185,9 @@ class Random(commands.Cog):
                 )
         else:
             e.title = "Possible Sea Creatures"
-            e.description = "RPL (both old and new), rETH and ETH are consider as assets for the sea creature determination!"
+            e.description = ""
             for holding_value, sea_creature in sea_creatures.items():
-                e.add_field(
-                    name=f"{sea_creature}:",
-                    value=f"holds over {holding_value} ETH worth of assets",
-                    inline=False,
-                )
+                e.description += f"{sea_creature}: {holding_value} ETH\n"
         await interaction.followup.send(embed=e)
 
     @command()
