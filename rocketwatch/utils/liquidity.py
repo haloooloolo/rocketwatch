@@ -1122,7 +1122,9 @@ class Curve(DEX):
             S = x0 + x1
             if S == 0:
                 return 0.0
-            Ann = A * 4  # n=2 → n^n = 4
+            # Ann = amp · n, matching Curve's reference math (the contract
+            # returns what Curve calls "amp", already scaled by n^(n-1)).
+            Ann = A * 2
             D = S
             for _ in range(255):
                 D_prev = D
@@ -1136,8 +1138,9 @@ class Curve(DEX):
         def _balance_given_invariant(A: float, D: float, x_other: float) -> float:
             """Solve Curve's quadratic ``y^2 + (b - D)·y - c = 0`` for y given
             the other balance and invariant D."""
-            Ann = A * 4
-            c = D * D * D / (Ann * 2 * x_other)  # c = D^(n+1) / (Ann · n · prod_other)
+            Ann = A * 2  # n=2 → Ann = amp * n per Curve's convention
+            # c = D^(n+1) / (Ann · n^n · prod_other); for n=2: D^3 / (4·Ann·x_other)
+            c = D * D * D / (Ann * 4 * x_other)
             b = x_other + D / Ann
             # Newton on y² + (b-D)·y - c = 0
             y = D
@@ -1151,7 +1154,7 @@ class Curve(DEX):
         @staticmethod
         def _spot_price(A: float, D: float, x0: float, x1: float) -> float:
             """∂f/∂x0 / ∂f/∂x1 for Curve's invariant — raw t1 per raw t0."""
-            Ann = A * 4
+            Ann = A * 2  # n=2 → Ann = amp * n per Curve's convention
             df0 = Ann + D**3 / (4 * x0**2 * x1)
             df1 = Ann + D**3 / (4 * x0 * x1**2)
             return df0 / df1

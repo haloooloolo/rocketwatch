@@ -12,6 +12,7 @@ import pytest
 from rocketwatch.utils.liquidity import (
     BalancerV2,
     Binance,
+    Curve,
     ERC20Token,
     UniswapV3,
 )
@@ -237,3 +238,90 @@ class TestStableswapMath:
         new_x1 = self.M._balance_given_invariant(amp, D, new_x0)
         new_D = self.M._compute_invariant(amp, new_x0, new_x1)
         assert new_D == pytest.approx(D, rel=1e-6)
+
+
+# --- Curve stableswap math (A·n^n form) -------------------------------------
+
+
+class TestCurveStableswapMath:
+    """Curve's classic stableswap uses a different invariant form than
+    Balancer's (A·n^n vs A·n). The two classes have separate static math."""
+
+    C = Curve.StablePool
+
+    def test_invariant_matches_standard_curve_equation(self):
+        """D satisfies Curve's invariant ``Ann·S + D = Ann·D + D_P`` where
+        ``Ann = amp·n`` (amp is Curve's contract-level A, scaled by n^(n-1))
+        and ``D_P = D^(n+1)/(n^n·prod)``."""
+        A = 100.0
+        x0, x1 = 1000.0, 1200.0
+        D = self.C._compute_invariant(A, x0, x1)
+        Ann = A * 2  # n=2 → Ann = amp * n
+        lhs = Ann * (x0 + x1) + D
+        rhs = Ann * D + D**3 / (4 * x0 * x1)
+        assert lhs == pytest.approx(rhs, rel=1e-6)
+
+    def test_invariant_at_peg(self):
+        """Symmetric balances with high A → D ≈ S."""
+        A = 500.0
+        x0 = x1 = 1000.0
+        D = self.C._compute_invariant(A, x0, x1)
+        # With very high A, stableswap approaches constant-sum → D → S.
+        assert pytest.approx(2000.0, rel=1e-3) == D
+
+    def test_invariant_zero_sum_short_circuits(self):
+        assert self.C._compute_invariant(100.0, 0.0, 0.0) == 0.0
+
+    def test_balance_given_invariant_roundtrip(self):
+        A = 100.0
+        x0, x1 = 1000.0, 1500.0
+        D = self.C._compute_invariant(A, x0, x1)
+        solved_x1 = self.C._balance_given_invariant(A, D, x0)
+        assert solved_x1 == pytest.approx(x1, rel=1e-6)
+
+    def test_spot_price_at_peg(self):
+        A = 100.0
+        D = self.C._compute_invariant(A, 1000.0, 1000.0)
+        assert self.C._spot_price(A, D, 1000.0, 1000.0) == pytest.approx(1.0)
+
+    def test_spot_price_direction(self):
+        """More token_0 than token_1 → spot < 1 (each extra t0 buys less t1)."""
+        A = 100.0
+        D = self.C._compute_invariant(A, 2000.0, 1000.0)
+        assert self.C._spot_price(A, D, 2000.0, 1000.0) < 1.0
+
+    def test_swap_conservation(self):
+        A = 100.0
+        x0, x1 = 1000.0, 1200.0
+        D = self.C._compute_invariant(A, x0, x1)
+        new_x0 = x0 * 1.01
+        new_x1 = self.C._balance_given_invariant(A, D, new_x0)
+        new_D = self.C._compute_invariant(A, new_x0, new_x1)
+        assert new_D == pytest.approx(D, rel=1e-6)
+
+
+# --- ERC20Token native-ETH sentinels ----------------------------------------
+
+
+class TestERC20TokenEthSentinels:
+    """Native-ETH short-circuits in ERC20Token.create — Uniswap V4 uses 0x0,
+    Curve uses 0xEEee…EEeE. w3.to_checksum_address is mocked in conftest, so
+    patch it to pass the address through unchanged."""
+
+    @pytest.fixture(autouse=True)
+    def _passthrough_checksum(self, monkeypatch):
+        from rocketwatch.utils import liquidity
+
+        monkeypatch.setattr(liquidity.w3, "to_checksum_address", lambda a: a)
+
+    @pytest.mark.asyncio
+    async def test_v4_zero_address_returns_eth(self):
+        token = await ERC20Token.create("0x0000000000000000000000000000000000000000")
+        assert token.symbol == "ETH"
+        assert token.decimals == 18
+
+    @pytest.mark.asyncio
+    async def test_curve_ee_sentinel_returns_eth(self):
+        token = await ERC20Token.create("0xEEeEeEeEeEeEeeEeEeEeEEEEeeeeEeeeeeeeEEeE")
+        assert token.symbol == "ETH"
+        assert token.decimals == 18
