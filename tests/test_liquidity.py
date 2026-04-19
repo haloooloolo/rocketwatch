@@ -157,22 +157,25 @@ class TestStableswapMath:
 
     M = BalancerV2.MetaStablePool
 
-    def test_invariant_matches_fixed_point_at_peg(self):
-        """D is a fixed point of Balancer V2's iteration, which satisfies
-        D_P = 2*amp*(D - S) where D_P = D^3 / (4*x0*x1) and amp is
-        Balancer's scaled amplification (Curve's A * n)."""
+    def test_invariant_matches_curve_equation_at_peg(self):
+        """MetaStablePool now delegates to Curve's math; D satisfies
+        ``Ann·S + D = Ann·D + D^3/(4·x0·x1)`` where Ann = amp·n (n=2)."""
         amp = 50.0
         x0 = x1 = 1000.0
         D = self.M._compute_invariant(amp, x0, x1)
-        d_p = D**3 / (4 * x0 * x1)
-        assert d_p == pytest.approx(2 * amp * (D - (x0 + x1)), rel=1e-6)
+        Ann = amp * 2
+        lhs = Ann * (x0 + x1) + D
+        rhs = Ann * D + D**3 / (4 * x0 * x1)
+        assert lhs == pytest.approx(rhs, rel=1e-6)
 
-    def test_invariant_matches_fixed_point_imbalanced(self):
+    def test_invariant_matches_curve_equation_imbalanced(self):
         amp = 100.0
         x0, x1 = 1000.0, 1500.0
         D = self.M._compute_invariant(amp, x0, x1)
-        d_p = D**3 / (4 * x0 * x1)
-        assert d_p == pytest.approx(2 * amp * (D - (x0 + x1)), rel=1e-6)
+        Ann = amp * 2
+        lhs = Ann * (x0 + x1) + D
+        rhs = Ann * D + D**3 / (4 * x0 * x1)
+        assert lhs == pytest.approx(rhs, rel=1e-6)
 
     def test_invariant_zero_sum_short_circuits(self):
         assert self.M._compute_invariant(50.0, 0.0, 0.0) == 0.0
@@ -222,7 +225,8 @@ class TestStableswapMath:
         assert self.M._spot_price(amp, D, 1000.0, 1000.0) == pytest.approx(1.0)
 
     def test_spot_price_direction(self):
-        """More x0 than x1 → spot < 1 (token_0 abundant → less t1 per t0)."""
+        """Curve's invariant gives spot monotonically *decreasing* in x0
+        (more token_0 abundant → each dN0 buys less dN1), so x0 > x1 → spot < 1."""
         amp = 50.0
         D = self.M._compute_invariant(amp, 2000.0, 1000.0)
         assert self.M._spot_price(amp, D, 2000.0, 1000.0) < 1.0

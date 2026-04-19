@@ -839,60 +839,20 @@ class BalancerV2(DEX):
                 primary_is_token_0,
             )
 
+        # Balancer V2 MetaStable and V3 stable pools both use Curve's
+        # standard stableswap math; delegate to Curve.StablePool to keep a
+        # single source of truth.
         @staticmethod
         def _compute_invariant(amp: float, x0: float, x1: float) -> float:
-            """Newton iteration for n=2 stableswap invariant D (Balancer V2 form).
-
-            D_P = D^(n+1) / (n^n * prod(x)); for n=2 that's D^3 / (4*x0*x1).
-            D_new = (n*D + A*n*S) * D / (n*(1+A)*D - D_P)
-            """
-            S = x0 + x1
-            if S == 0:
-                return 0.0
-            D = S
-            for _ in range(255):
-                D_prev = D
-                D_P = (D**3) / (4 * x0 * x1)
-                D = (2 * D + 2 * amp * S) * D / (2 * (1 + amp) * D - D_P)
-                if abs(D - D_prev) < 1e-9:
-                    break
-            return D
+            return Curve.StablePool._compute_invariant(amp, x0, x1)
 
         @staticmethod
         def _balance_given_invariant(amp: float, D: float, x_other: float) -> float:
-            """Solve for token balance given the other balance and D (n=2 quadratic).
-
-            Inverts the same fixed-point ``_compute_invariant`` converges to,
-            ``D_P = 2*amp*(D - S)``; that rearranges to
-            ``8*amp*x_other*x^2 + 8*amp*x_other*(x_other - D)*x + D^3 = 0``.
-            Returns the larger (equilibrium-adjacent) positive root, or a tiny
-            positive value when no real solution exists (x_other outside the
-            feasible region). The rationalized form avoids catastrophic
-            cancellation for large positive ``b``.
-            """
-            a = 8 * amp * x_other
-            b = 8 * amp * x_other * (x_other - D)
-            disc = b * b - 4 * a * (D**3)
-            if disc <= 0:
-                # Infeasible — no positive real root; caller's bisection will
-                # steer away. Return a vanishing value to keep depth_at finite.
-                return max(D - x_other, 1e-30)
-            sqrt_disc = math.sqrt(disc)
-            if b <= 0:
-                return (-b + sqrt_disc) / (2 * a)
-            # b > 0: -b + sqrt_disc cancels catastrophically. Use Vieta's:
-            # x1 * x2 = c/a = D^3 / (8*amp*x_other), so the larger-in-magnitude
-            # root is (-b - sqrt_disc)/(2a) (negative) and the smaller is
-            # 2c / (-b - sqrt_disc) (also negative). Both are negative →
-            # infeasible for positive balance.
-            return max(D - x_other, 1e-30)
+            return Curve.StablePool._balance_given_invariant(amp, D, x_other)
 
         @staticmethod
         def _spot_price(amp: float, D: float, x0: float, x1: float) -> float:
-            """∂f/∂x0 / ∂f/∂x1 — raw t1 received per raw t0 input (infinitesimal)."""
-            df0 = 4 * amp + D**3 / (4 * x0**2 * x1)
-            df1 = 4 * amp + D**3 / (4 * x0 * x1**2)
-            return df0 / df1
+            return Curve.StablePool._spot_price(amp, D, x0, x1)
 
         async def _get_state(self) -> tuple[float, float, float, float, float]:
             """Return (N0, N1, amp, r0, r1) — normalized balances, amp, rates."""
@@ -939,11 +899,10 @@ class BalancerV2(DEX):
                     return 0.0
                 spot_target = _price / r0 if primary_0 else r1 / _price
 
-                # Bisect on N0 (normalized token_0 balance): adding N0 → spot
-                # drops. Feasibility of the invariant requires roughly N0 < D
-                # (beyond that, no positive N1 satisfies the stableswap curve),
-                # so cap the upper bound well below D. Likewise the lower bound
-                # cannot reach 0 without N1 blowing up.
+                # Bisect on N0 (normalized token_0 balance). Curve spot is
+                # monotonically *decreasing* in N0 (holding D fixed); adding
+                # N0 makes token_0 abundant so each dN0 buys less dN1. Cap the
+                # upper bound well below D for feasibility.
                 if spot_target < spot_norm_0:
                     lo, hi = N0, min(N0 * 1e3, D * 0.999)
                 elif spot_target > spot_norm_0:
@@ -994,7 +953,10 @@ class BalancerV2(DEX):
 class BalancerV3(DEX):
     """Balancer V3 — singleton vault (different address from V2), new stable pools.
 
-    Reuses V2 MetaStablePool's stableswap math; only state fetching differs.
+    Per Balancer V3 docs the stable pools use *Curve's* stableswap invariant
+    (not the Balancer V2 MetaStable variant), so the iteration and spot-price
+    formulas live on ``Curve.StablePool``. We inherit from V2 MetaStablePool
+    only for rate-handling scaffolding, and override the static math.
     """
 
     class StablePool(BalancerV2.MetaStablePool):

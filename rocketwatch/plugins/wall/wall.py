@@ -574,15 +574,7 @@ class Wall(commands.GroupCog, name="wall"):
         embed_on_fail = Embed(title="rETH Market Depth")
         try:
             dex_set = await self._get_dex_reth()
-            # Use the Balancer V3 rETH/waEthWETH pool as the market-price
-            oracle_pool = await BalancerV3.StablePool.create(
-                w3.to_checksum_address("0x1ea5870f7c037930ce1d5d8d9317c670e89e13e3"),
-                primary_is_token_0=False,
-            )
-            oracle_liq = await oracle_pool.get_liquidity()
-            if oracle_liq is None or oracle_liq.price <= 0:
-                raise RuntimeError("oracle pool returned no liquidity")
-            market_price = oracle_liq.price
+            market_price = await rp.get_reth_eth_price()
 
             reth_contract = await rp.get_contract_by_name("rocketTokenRETH")
             protocol_rate = (

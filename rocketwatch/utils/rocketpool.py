@@ -373,7 +373,7 @@ class RocketPool:
         from rocketwatch.utils.liquidity import UniswapV3
 
         pool_address = await self.get_address_by_name("UniswapV3_rETH_ETH")
-        pool = await UniswapV3.Pool.create(pool_address)
+        pool = await UniswapV3.Pool.create(pool_address, primary_is_token_0=True)
         return float(await pool.get_normalized_price())
 
 
