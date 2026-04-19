@@ -26,7 +26,7 @@ from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.dex_trades")
 
-_BUY_COLOR = Color.from_rgb(86, 235, 86)
+_BUY_COLOR = Color.from_rgb(76, 175, 80)
 _SELL_COLOR = Color.from_rgb(235, 86, 86)
 
 _RPL_USD_THRESHOLD_LARGE = 50_000
@@ -361,10 +361,11 @@ class DexTrades(EventPlugin):
             verb = "bought" if is_buy else "sold"
 
             color = _BUY_COLOR if is_buy else _SELL_COLOR
+            sea = await get_sea_creature_for_address(swap.owner)
             owner_link = await el_explorer_url(swap.owner)
 
             if usd_value < upper_threshold:
-                description = f"{emoji} {owner_link} {verb} **{format_value(our_amount_f)} {token}**"
+                description = f"{emoji} {sea}{owner_link} {verb} **{format_value(our_amount_f)} {token}**"
                 embed = await build_small_event_embed(
                     description=description,
                     tx_hash=swap.tx_hash,
@@ -372,7 +373,6 @@ class DexTrades(EventPlugin):
                 embed.color = color
             else:
                 title = f"{emoji} {token} {action}"
-                sea = await get_sea_creature_for_address(swap.owner)
                 description = (
                     f"{sea}{owner_link} {verb} **{format_value(our_amount_f)} {token}**"
                     f" for {format_value(other_amount_f)} {other_symbol}!"
