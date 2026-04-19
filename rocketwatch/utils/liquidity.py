@@ -669,11 +669,16 @@ class ERC20Token:
         self.symbol = symbol
         self.decimals = decimals
 
+    # Curve uses 0xEEeEeEeE... as a native-ETH sentinel; Uniswap V4 uses 0x0.
+    _ETH_SENTINELS: ClassVar[set[int]] = {
+        0,
+        int("0xEEeEeEeEeEeEeeEeEeEeEEEEeeeeEeeeeeeeEEeE", 16),
+    }
+
     @classmethod
     async def create(cls, address: ChecksumAddress) -> "ERC20Token":
         address = w3.to_checksum_address(address)
-        if int(address, 16) == 0:
-            # native ETH (Uniswap V4 convention)
+        if int(address, 16) in cls._ETH_SENTINELS:
             return cls(address, "ETH", 18)
         contract = await rp.assemble_contract("ERC20", address, mainnet=True)
         symbol, decimals = await rp.multicall(
@@ -1068,6 +1073,166 @@ class BalancerV3(DEX):
     @property
     def color(self) -> str:
         return "#8F8F8F"
+
+
+class Curve(DEX):
+    """Curve Finance classic stableswap (2-coin pools)."""
+
+    class StablePool(DEX.LiquidityPool):
+        def __init__(
+            self,
+            pool_address: ChecksumAddress,
+            contract: AsyncContract,
+            token_0: ERC20Token,
+            token_1: ERC20Token,
+            primary_is_token_0: bool = False,
+        ):
+            self.pool_address = pool_address
+            self.contract = contract
+            self.token_0 = token_0
+            self.token_1 = token_1
+            self.primary_is_token_0 = primary_is_token_0
+
+        @classmethod
+        async def create(
+            cls,
+            pool_address: ChecksumAddress,
+            primary_is_token_0: bool = False,
+        ) -> "Curve.StablePool":
+            contract = await rp.assemble_contract(
+                "curvePool", pool_address, mainnet=True
+            )
+            coin_0, coin_1 = await rp.multicall(
+                [contract.functions.coins(0), contract.functions.coins(1)]
+            )
+            token_0 = await ERC20Token.create(coin_0)
+            token_1 = await ERC20Token.create(coin_1)
+            return cls(pool_address, contract, token_0, token_1, primary_is_token_0)
+
+        # --- Curve stableswap math (A·n^n form) ------------------------------
+
+        @staticmethod
+        def _compute_invariant(A: float, x0: float, x1: float) -> float:
+            """Newton iteration for n=2 Curve stableswap invariant ``D``.
+
+            Solves ``A·n^n·S + D = A·n^n·D + D^(n+1)/(n^n·prod)`` via Curve's
+            standard iteration. ``A`` here is Curve's raw amplification
+            parameter (what ``pool.A()`` returns, e.g. 200).
+            """
+            S = x0 + x1
+            if S == 0:
+                return 0.0
+            Ann = A * 4  # n=2 → n^n = 4
+            D = S
+            for _ in range(255):
+                D_prev = D
+                D_P = D * D * D / (4 * x0 * x1)  # D^3 / (n^n · prod)
+                D = (Ann * S + 2 * D_P) * D / ((Ann - 1) * D + 3 * D_P)
+                if abs(D - D_prev) < 1e-9:
+                    break
+            return D
+
+        @staticmethod
+        def _balance_given_invariant(A: float, D: float, x_other: float) -> float:
+            """Solve Curve's quadratic ``y^2 + (b - D)·y - c = 0`` for y given
+            the other balance and invariant D."""
+            Ann = A * 4
+            c = D * D * D / (Ann * 2 * x_other)  # c = D^(n+1) / (Ann · n · prod_other)
+            b = x_other + D / Ann
+            # Newton on y² + (b-D)·y - c = 0
+            y = D
+            for _ in range(255):
+                y_prev = y
+                y = (y * y + c) / (2 * y + b - D)
+                if abs(y - y_prev) < 1e-9:
+                    break
+            return y
+
+        @staticmethod
+        def _spot_price(A: float, D: float, x0: float, x1: float) -> float:
+            """∂f/∂x0 / ∂f/∂x1 for Curve's invariant — raw t1 per raw t0."""
+            Ann = A * 4
+            df0 = Ann + D**3 / (4 * x0**2 * x1)
+            df1 = Ann + D**3 / (4 * x0 * x1**2)
+            return df0 / df1
+
+        async def _get_state(self) -> tuple[float, float, float]:
+            """Return ``(x0, x1, A)`` — human-scale balances and Curve A.
+
+            Uses ``balances(i)`` per coin rather than ``get_balances()`` —
+            some older Curve pools have a broken/stale ``get_balances`` and
+            only the per-index getter returns live values.
+            """
+            b0, b1, A_raw = await rp.multicall(
+                [
+                    self.contract.functions.balances(0),
+                    self.contract.functions.balances(1),
+                    self.contract.functions.A(),
+                ]
+            )
+            x0 = b0 / 10**self.token_0.decimals
+            x1 = b1 / 10**self.token_1.decimals
+            return x0, x1, float(A_raw)
+
+        async def get_price(self) -> float:
+            x0, x1, A = await self._get_state()
+            D = self._compute_invariant(A, x0, x1)
+            return self._spot_price(A, D, x0, x1)
+
+        async def get_normalized_price(self) -> float:
+            return await self.get_price()
+
+        async def get_liquidity(self) -> Liquidity | None:
+            x0, x1, A = await self._get_state()
+            if x0 <= 0 or x1 <= 0:
+                log.warning("Empty balances in Curve pool")
+                return None
+
+            D = self._compute_invariant(A, x0, x1)
+            spot_0 = self._spot_price(A, D, x0, x1)
+            primary_0 = self.primary_is_token_0
+
+            def depth_at(_price: float) -> float:
+                if _price <= 0:
+                    return 0.0
+                # _price = real "quote per primary". In Curve there are no rate
+                # providers, so the pool spot is already in raw units.
+                target_spot = _price if primary_0 else 1.0 / _price
+
+                if target_spot < spot_0:
+                    lo, hi = x0, min(x0 * 1e3, D * 0.999)
+                elif target_spot > spot_0:
+                    lo, hi = max(x0 * 1e-3, D * 1e-6), x0
+                else:
+                    return 0.0
+
+                for _ in range(80):
+                    mid = (lo + hi) / 2
+                    mid_other = Curve.StablePool._balance_given_invariant(A, D, mid)
+                    mid_spot = Curve.StablePool._spot_price(A, D, mid, mid_other)
+                    if mid_spot < target_spot:
+                        hi = mid
+                    else:
+                        lo = mid
+                    if abs(hi - lo) / max(hi, 1.0) < 1e-12:
+                        break
+
+                mid_x0 = (lo + hi) / 2
+                mid_x1 = Curve.StablePool._balance_given_invariant(A, D, mid_x0)
+                return abs(mid_x1 - x1) if primary_0 else abs(mid_x0 - x0)
+
+            liq_price = spot_0 if primary_0 else 1.0 / spot_0
+            return Liquidity(liq_price, depth_at)
+
+    def __init__(self, pools: list[StablePool]):
+        super().__init__(pools)
+
+    def __str__(self) -> str:
+        return "Curve"
+
+    @property
+    def color(self) -> str:
+        return "#3D61EB"
 
 
 class UniswapV3(DEX):
