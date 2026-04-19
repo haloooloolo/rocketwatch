@@ -193,22 +193,46 @@ class Wall(commands.GroupCog, name="wall"):
         markets: dict[K, Liquidity],
         x: np.ndarray,
         rpl_usd: float,
+        *,
+        same_units: bool = False,
     ) -> tuple[np.ndarray, float]:
         depth = np.zeros_like(x)
         liquidity = 0.0
 
         for liq in markets.values():
-            conv = liq.price / rpl_usd
-            depth += np.array(list(map(liq.depth_at, x * conv))) / conv
-            liquidity += (
-                liq.depth_at(float(x[0] * conv)) + liq.depth_at(float(x[-1] * conv))
-            ) / conv
+            if same_units:
+                # Pool quotes in the chart's native units. Treat each pool as
+                # if a smart router (CoW/1inch-style) had first arbed it to the
+                # chart center: the first depth_at(ref) of flow aligns the
+                # spot, and any additional flow extends the curve from there.
+                # This models routable liquidity, not per-pool raw state.
+                pool_spot = liq.price
+                offset = liq.depth_at(rpl_usd)
+                raw = np.array([liq.depth_at(float(xi)) for xi in x])
+                same_side = ((x - pool_spot) * (rpl_usd - pool_spot)) >= 0
+                aligned = np.where(same_side, np.abs(raw - offset), raw + offset)
+                depth += aligned
+                liquidity += float(aligned[0] + aligned[-1])
+            else:
+                # Different units (e.g. USD chart vs ETH/RPL DEX pool, or
+                # KRW/EUR-quoted CEX). conv serves as the unit-conversion
+                # factor back-derived from the pool's own spot.
+                conv = liq.price / rpl_usd
+                depth += np.array(list(map(liq.depth_at, x * conv))) / conv
+                liquidity += (
+                    liq.depth_at(float(x[0] * conv)) + liq.depth_at(float(x[-1] * conv))
+                ) / conv
 
         return depth, liquidity
 
     @timerun_async
     async def _get_cex_data(
-        self, cex_set: set[CEX], x: np.ndarray, ref_price: float
+        self,
+        cex_set: set[CEX],
+        x: np.ndarray,
+        ref_price: float,
+        *,
+        same_units: bool = False,
     ) -> OrderedDict[CEX, np.ndarray]:
         depth: dict[CEX, np.ndarray] = {}
         liquidity: dict[CEX, float] = {}
@@ -223,7 +247,7 @@ class Wall(commands.GroupCog, name="wall"):
                 if not isinstance(maybe_markets, BaseException):
                     markets: dict[Market, Liquidity] = maybe_markets
                     depth[cex], liquidity[cex] = self._get_market_depth_and_liquidity(
-                        markets, x, ref_price
+                        markets, x, ref_price, same_units=same_units
                     )
                 elif isinstance(maybe_markets, Exception):
                     await self.bot.report_error(maybe_markets)
@@ -234,14 +258,19 @@ class Wall(commands.GroupCog, name="wall"):
 
     @timerun
     async def _get_dex_data(
-        self, dex_set: set[DEX], x: np.ndarray, ref_price: float
+        self,
+        dex_set: set[DEX],
+        x: np.ndarray,
+        ref_price: float,
+        *,
+        same_units: bool = False,
     ) -> OrderedDict[DEX, np.ndarray]:
         depth: dict[DEX, np.ndarray] = {}
         liquidity: dict[DEX, float] = {}
         for dex in dex_set:
             if pools := await dex.get_liquidity():
                 depth[dex], liquidity[dex] = self._get_market_depth_and_liquidity(
-                    pools, x, ref_price
+                    pools, x, ref_price, same_units=same_units
                 )
 
         return OrderedDict(
@@ -415,6 +444,7 @@ class Wall(commands.GroupCog, name="wall"):
         y_right_formatter: ticker.Formatter,
         cex_set: set[CEX],
         dex_set: set[DEX],
+        same_units: bool = False,
     ) -> None:
         embed = Embed(title=config.title)
 
@@ -445,10 +475,14 @@ class Wall(commands.GroupCog, name="wall"):
 
         try:
             if sources != "CEX" and dex_set:
-                dex_data = await self._get_dex_data(dex_set, x, primary_price)
+                dex_data = await self._get_dex_data(
+                    dex_set, x, primary_price, same_units=same_units
+                )
                 source_desc.append(f"{len(dex_data)} DEX")
             if sources != "DEX" and cex_set:
-                cex_data = await self._get_cex_data(cex_set, x, primary_price)
+                cex_data = await self._get_cex_data(
+                    cex_set, x, primary_price, same_units=same_units
+                )
                 source_desc.append(f"{len(cex_data)} CEX")
         except Exception as e:
             await self.bot.report_error(e, interaction)
@@ -619,6 +653,7 @@ class Wall(commands.GroupCog, name="wall"):
             ),
             cex_set=set(),
             dex_set=dex_set,
+            same_units=True,
         )
 
 
