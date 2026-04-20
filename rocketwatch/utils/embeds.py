@@ -22,7 +22,7 @@ from web3.types import TxReceipt
 from rocketwatch.utils.block_time import block_to_ts
 from rocketwatch.utils.cached_ens import ens as ens
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.readable import advanced_tnx_url, s_hex
+from rocketwatch.utils.readable import advanced_txn_url, s_hex
 from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
@@ -75,8 +75,8 @@ EmbedField = tuple[str, str, bool]
 
 
 async def build_small_event_embed(description: str, tx_hash: HexStr) -> Embed:
-    """Create a compact one-line embed with a ``[tnx]`` link and empty footer."""
-    tx_link = await el_explorer_url(tx_hash, name="[tnx]")
+    """Create a compact one-line embed with a ``[txn]`` link and empty footer."""
+    tx_link = await el_explorer_url(tx_hash, name="[txn]")
     desc = f"{description} {tx_link}"
     if cfg.rocketpool.chain != "mainnet":
         desc += f" ({cfg.rocketpool.chain.capitalize()})"
@@ -103,7 +103,7 @@ async def build_event_embed(
 
     el_explorer = cfg.execution_layer.explorer
     tx_link = await el_explorer_url(tx_hash)
-    tx_advanced = advanced_tnx_url(tx_hash)
+    tx_advanced = advanced_txn_url(tx_hash)
     embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
     embed.add_field(
         name="Block Number",
@@ -135,7 +135,7 @@ async def build_rich_event_embed(
 
     el_explorer = cfg.execution_layer.explorer
     tx_link = await el_explorer_url(tx_hash)
-    tx_advanced = advanced_tnx_url(tx_hash)
+    tx_advanced = advanced_txn_url(tx_hash)
     embed.add_field(name="Transaction Hash", value=f"{tx_link}{tx_advanced}")
 
     if sender:
@@ -159,17 +159,17 @@ async def build_rich_event_embed(
     embed.add_field(name="Timestamp", value=f"<t:{ts}:R> (<t:{ts}:f>)", inline=False)
 
     if receipt is not None:
-        tnx_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
-        if tnx_fee >= 10**15:
-            fee_str = f"{round(tnx_fee / 10**18, 3):,} ETH"
-        elif tnx_fee >= 10**9:
-            fee_str = f"{round(tnx_fee / 10**9):,} Gwei"
+        txn_fee = receipt["gasUsed"] * receipt["effectiveGasPrice"]
+        if txn_fee >= 10**15:
+            fee_str = f"{round(txn_fee / 10**18, 3):,} ETH"
+        elif txn_fee >= 10**9:
+            fee_str = f"{round(txn_fee / 10**9):,} Gwei"
         else:
-            fee_str = f"{tnx_fee:,} Wei"
+            fee_str = f"{txn_fee:,} Wei"
 
         if cfg.rocketpool.chain == "mainnet":
-            tnx_fee_usd = round(await rp.get_eth_usdc_price() * tnx_fee / 10**18, 2)
-            fee_str += f" ({tnx_fee_usd} USDC)"
+            txn_fee_usd = round(await rp.get_eth_usdc_price() * txn_fee / 10**18, 2)
+            fee_str += f" ({txn_fee_usd} USDC)"
 
         embed.add_field(name="Transaction Fee", value=fee_str, inline=False)
 
@@ -272,20 +272,21 @@ async def el_explorer_url(
                 block=block,
             ):
                 _prefix += ":cup_with_straw:"
-            if not name:
-                if member_id := await rp.call(
-                    "rocketDAONodeTrusted.getMemberID", target, block=block
-                ):
-                    _prefix += "🔮"
-                    name = member_id
-                elif member_id := await rp.call(
-                    "rocketDAOSecurity.getMemberID", target, block=block
-                ):
-                    _prefix += "🔒"
-                    name = member_id
-                elif delegate_name := (await get_pdao_delegates()).get(target):
-                    _prefix += "🏛️"
-                    name = delegate_name
+
+            if member_id := await rp.call(
+                "rocketDAONodeTrusted.getMemberID", target, block=block
+            ):
+                _prefix += "🔮"
+                name = name or member_id
+            elif member_id := await rp.call(
+                "rocketDAOSecurity.getMemberID", target, block=block
+            ):
+                _prefix += "🔒"
+                name = name or member_id
+            elif delegate_name := (await get_pdao_delegates()).get(target):
+                _prefix += "🏛️"
+                name = name or delegate_name
+
         elif await rp.is_megapool(target):
             url = f"https://rocketdash.net/megapool/{target}{dashboard_network}"
         elif await rp.is_minipool(target):

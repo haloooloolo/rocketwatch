@@ -365,7 +365,7 @@ class DexTrades(EventPlugin):
             owner_link = await el_explorer_url(swap.owner)
 
             if usd_value < upper_threshold:
-                description = f"{emoji} {sea}{owner_link} {verb} **{format_value(our_amount_f)} {token}**"
+                description = f"{emoji} {sea}{owner_link} {verb} **{format_value(our_amount_f)} {token}**!"
                 embed = await build_small_event_embed(
                     description=description,
                     tx_hash=swap.tx_hash,

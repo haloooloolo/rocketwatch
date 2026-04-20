@@ -28,7 +28,7 @@ class ExecutionLayerConfig(BaseModel):
 class ConsensusLayerConfig(BaseModel):
     explorer: str
     endpoint: list[str]
-    beaconcha_secret: str
+    beaconcha_secret: str = ""
 
 
 class MongoDBConfig(BaseModel):

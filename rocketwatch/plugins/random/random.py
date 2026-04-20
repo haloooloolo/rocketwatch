@@ -581,8 +581,8 @@ class Random(commands.Cog):
                 await interaction.followup.send(content=m)
 
     @command()
-    async def decode_tnx(
-        self, interaction: Interaction, tnx_hash: str, contract_name: str | None = None
+    async def decode_txn(
+        self, interaction: Interaction, txn_hash: str, contract_name: str | None = None
     ) -> None:
         """
         Decode transaction calldata
@@ -590,21 +590,21 @@ class Random(commands.Cog):
         await interaction.response.defer(
             ephemeral=is_hidden_role_controlled(interaction)
         )
-        tnx: TxData = await w3.eth.get_transaction(HexStr(tnx_hash))
+        txn: TxData = await w3.eth.get_transaction(HexStr(txn_hash))
         contract: AsyncContract | None = None
         if contract_name:
             contract = await rp.get_contract_by_name(contract_name)
-        elif "to" in tnx:
-            contract = await rp.get_contract_by_address(tnx["to"])
+        elif "to" in txn:
+            contract = await rp.get_contract_by_address(txn["to"])
         assert contract is not None
-        data = contract.decode_function_input(tnx.get("input"))
+        data = contract.decode_function_input(txn.get("input"))
         await interaction.followup.send(content=f"```Input:\n{data}```")
 
     # --------- AUTOCOMPLETE --------- #
 
     @get_address_of_contract.autocomplete("contract")
     @get_abi_of_contract.autocomplete("contract")
-    @decode_tnx.autocomplete("contract_name")
+    @decode_txn.autocomplete("contract_name")
     async def match_contract_names(
         self, interaction: Interaction, current: str
     ) -> list[Choice[str]]:

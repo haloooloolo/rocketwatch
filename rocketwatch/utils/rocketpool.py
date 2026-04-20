@@ -194,24 +194,24 @@ class RocketPool:
         return address
 
     @staticmethod
-    async def get_revert_reason(tnx: TxData) -> str:
+    async def get_revert_reason(txn: TxData) -> str:
         try:
             await w3.eth.call(
                 {
-                    "from": tnx["from"],
-                    "to": tnx["to"],
-                    "data": tnx["input"],
-                    "gas": tnx["gas"],
-                    "gasPrice": tnx["gasPrice"],
-                    "value": tnx["value"],
+                    "from": txn["from"],
+                    "to": txn["to"],
+                    "data": txn["input"],
+                    "gas": txn["gas"],
+                    "gasPrice": txn["gasPrice"],
+                    "value": txn["value"],
                 },
-                block_identifier=tnx["blockNumber"],
+                block_identifier=txn["blockNumber"],
             )
         except ContractLogicError as err:
-            log.debug(f"Transaction: {tnx['hash']!r} ContractLogicError: {err}")
+            log.debug(f"Transaction: {txn['hash']!r} ContractLogicError: {err}")
             return ", ".join(err.args)
         except ValueError as err:
-            log.debug(f"Transaction: {tnx['hash']!r} ValueError: {err}")
+            log.debug(f"Transaction: {txn['hash']!r} ValueError: {err}")
             match err.args[0]["code"]:
                 case -32000:
                     return "Out of gas"

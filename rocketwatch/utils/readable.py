@@ -62,7 +62,7 @@ async def cl_explorer_url(target: str | int, name: str | None = None) -> str:
     return f"[{name}]({url}/validator/{target})"
 
 
-def advanced_tnx_url(tx_hash: str) -> str:
+def advanced_txn_url(tx_hash: str) -> str:
     return ""
 
 

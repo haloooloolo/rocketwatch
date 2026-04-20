@@ -222,11 +222,11 @@ class TxEvents(EventPlugin):
             await interaction.followup.send(content="Invalid transaction hash.")
             return
         await self._ensure_config()
-        tnx: TxData = await w3.eth.get_transaction(HexStr(tx_hash))
-        block: BlockData = await w3.eth.get_block(tnx["blockHash"])
+        txn: TxData = await w3.eth.get_transaction(HexStr(tx_hash))
+        block: BlockData = await w3.eth.get_block(txn["blockHash"])
 
         responses: list[Event] = await self.process_transaction(
-            block, tnx, tnx["to"], tnx["input"]
+            block, txn, txn["to"], txn["input"]
         )
         if responses:
             await interaction.followup.send(
@@ -272,16 +272,16 @@ class TxEvents(EventPlugin):
         # full_transactions=True guarantees Sequence[TxData], not Sequence[HexBytes]
         transactions = cast(Sequence[TxData], block.get("transactions", []))
         events: list[Event] = []
-        for tnx in transactions:
-            if "to" in tnx:
+        for txn in transactions:
+            if "to" in txn:
                 events.extend(
-                    await self.process_transaction(block, tnx, tnx["to"], tnx["input"])
+                    await self.process_transaction(block, txn, txn["to"], txn["input"])
                 )
             else:
                 log.debug(
                     "Skipping transaction %s as it has no `to` parameter. "
                     "Possible contract creation.",
-                    tnx["hash"].hex(),
+                    txn["hash"].hex(),
                 )
 
         return events
@@ -291,7 +291,7 @@ class TxEvents(EventPlugin):
     async def process_transaction(
         self,
         block: BlockData,
-        tnx: TxData,
+        txn: TxData,
         contract_address: ChecksumAddress,
         fn_input: HexBytes,
     ) -> list[Event]:
@@ -302,22 +302,22 @@ class TxEvents(EventPlugin):
         contract_name = rp.get_name_by_address(contract_address)
         if contract_name is None:
             return []
-        receipt: TxReceipt = await w3.eth.get_transaction_receipt(tnx["hash"])
+        receipt: TxReceipt = await w3.eth.get_transaction_receipt(txn["hash"])
 
-        if not self._should_process(contract_name, receipt, tnx):
+        if not self._should_process(contract_name, receipt, txn):
             return []
 
-        decoded = await self._decode_function(contract_address, fn_input, tnx)
+        decoded = await self._decode_function(contract_address, fn_input, txn)
         if decoded is None:
             return []
         event_cls, function_name, decoded_args = decoded
 
-        event: TxEventData = self._build_event(tnx, block, decoded_args, function_name)
+        event: TxEventData = self._build_event(txn, block, decoded_args, function_name)
 
         payload_events: list[Event] = []
         if isinstance(event_cls, ProposalExecuteEvent):
             payload_events = await self._handle_dao_proposal(
-                event_cls, event, block, tnx
+                event_cls, event, block, txn
             )
 
         args: dict[str, Any] = {
@@ -330,7 +330,7 @@ class TxEvents(EventPlugin):
         embeds = await event_cls.build_embeds(args, event, receipt)
 
         responses = self._wrap_embeds(
-            embeds, event_cls.event_name, tnx, event, payload_events
+            embeds, event_cls.event_name, txn, event, payload_events
         )
 
         if isinstance(event_cls, UpgradeTriggeredEvent):
@@ -339,12 +339,12 @@ class TxEvents(EventPlugin):
         return responses
 
     @staticmethod
-    def _should_process(contract_name: str, receipt: TxReceipt, tnx: TxData) -> bool:
+    def _should_process(contract_name: str, receipt: TxReceipt, txn: TxData) -> bool:
         if contract_name == "rocketNodeDeposit" and receipt["status"]:
-            log.info("Skipping successful node deposit %s", tnx["hash"].hex())
+            log.info("Skipping successful node deposit %s", txn["hash"].hex())
             return False
         if contract_name != "rocketNodeDeposit" and not receipt["status"]:
-            log.info("Skipping reverted transaction %s", tnx["hash"].hex())
+            log.info("Skipping reverted transaction %s", txn["hash"].hex())
             return False
         return True
 
@@ -352,7 +352,7 @@ class TxEvents(EventPlugin):
         self,
         contract_address: ChecksumAddress,
         fn_input: HexBytes,
-        tnx: TxData,
+        txn: TxData,
     ) -> tuple[TransactionEvent, str, dict[str, Any]] | None:
         try:
             contract = await rp.get_contract_by_address(contract_address)
@@ -360,7 +360,7 @@ class TxEvents(EventPlugin):
             decoded = contract.decode_function_input(fn_input)
         except ValueError:
             log.error(
-                "Skipping transaction %s as it has invalid input", tnx["hash"].hex()
+                "Skipping transaction %s as it has invalid input", txn["hash"].hex()
             )
             return None
         log.debug(decoded)
@@ -391,12 +391,12 @@ class TxEvents(EventPlugin):
 
     @staticmethod
     def _build_event(
-        tnx: TxData,
+        txn: TxData,
         block: BlockData,
         decoded_args: dict[str, Any],
         function_name: str,
     ) -> TxEventData:
-        event = cast(TxEventData, {**tnx})
+        event = cast(TxEventData, {**txn})
         event["args"] = decoded_args
         event["args"]["timestamp"] = block["timestamp"]
         event["args"]["function_name"] = function_name
@@ -407,7 +407,7 @@ class TxEvents(EventPlugin):
         event_cls: ProposalExecuteEvent,
         event: TxEventData,
         block: BlockData,
-        tnx: TxData,
+        txn: TxData,
     ) -> list[Event]:
         proposal_id: int = event["args"]["proposalID"]
         dao: ProtocolDAO | DefaultDAO
@@ -428,13 +428,13 @@ class TxEvents(EventPlugin):
 
         dao_contract = await dao._get_contract()
         dao_address: ChecksumAddress = dao_contract.address
-        return await self.process_transaction(block, tnx, dao_address, payload)
+        return await self.process_transaction(block, txn, dao_address, payload)
 
     @staticmethod
     def _wrap_embeds(
         embeds: list[Embed],
         event_name: str,
-        tnx: TxData,
+        txn: TxData,
         event: TxEventData,
         child_responses: list[Event],
     ) -> list[Event]:
@@ -444,7 +444,7 @@ class TxEvents(EventPlugin):
                 topic="transactions",
                 embed=embed,
                 event_name=event_name,
-                unique_id=f"{tnx['hash'].hex()}:{event_name}",
+                unique_id=f"{txn['hash'].hex()}:{event_name}",
                 block_number=event["blockNumber"],
                 transaction_index=event["transactionIndex"],
                 event_index=(999 - len(child_responses) - len(embeds) + len(responses)),

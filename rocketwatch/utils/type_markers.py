@@ -14,7 +14,15 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Annotated, Any, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    NotRequired,
+    Required,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from eth_typing import ChecksumAddress
 
@@ -116,6 +124,8 @@ def _get_marker(
     | None
 ):
     """Extract the formatting marker from an ``Annotated`` type, if any."""
+    if get_origin(hint) in (NotRequired, Required):
+        hint = get_args(hint)[0]
     if hasattr(hint, "__metadata__"):
         for m in hint.__metadata__:
             if isinstance(m, _MARKER_TYPES):

@@ -115,12 +115,12 @@ class Debug(Cog):
     @command()
     @guilds(cfg.discord.owner.server_id)
     @is_owner()
-    async def debug_transaction(self, interaction: Interaction, tnx_hash: str) -> None:
+    async def debug_transaction(self, interaction: Interaction, txn_hash: str) -> None:
         """
         Try to return the revert reason of a transaction.
         """
         await interaction.response.defer(ephemeral=True)
-        transaction_receipt = await w3.eth.get_transaction(HexStr(tnx_hash))
+        transaction_receipt = await w3.eth.get_transaction(HexStr(txn_hash))
         if revert_reason := await rp.get_revert_reason(transaction_receipt):
             await interaction.followup.send(
                 content=f"```Revert reason: {revert_reason}```"
