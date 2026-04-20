@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
-from typing import Any, NotRequired, TypedDict
+from typing import Any, TypedDict
 
 from discord import Color, Interaction, Member, Message
 from discord.abc import Messageable
@@ -47,11 +47,11 @@ class ScamReport(TypedDict):
     warning_id: int | None
     report_id: int
     user_banned: bool
-    channel_id: NotRequired[int]
-    message_id: NotRequired[int]
-    embeds: NotRequired[list[dict[str, Any]]]
-    message_deleted: NotRequired[bool]
-    thread_removed: NotRequired[bool]
+    channel_id: int
+    message_id: int
+    embeds: list[dict[str, Any]]
+    message_deleted: bool
+    thread_removed: bool
 
 
 def is_reputable(member: Member) -> bool:

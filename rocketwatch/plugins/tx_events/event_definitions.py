@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, ClassVar, NotRequired, TypedDict
+from typing import Any, ClassVar, TypedDict
 
 import humanize
 from eth_typing import BlockNumber, HexStr
@@ -42,7 +42,7 @@ class EventContext(TypedDict):
     blockNumber: BlockNumber
     event_name: str
     function_name: str
-    timestamp: NotRequired[int]
+    timestamp: int
 
 
 class TxEventData(TxData, total=False):
@@ -210,7 +210,7 @@ class PDAOSpendTreasuryEvent(TransactionEvent):
 
 class SettingEvent(TransactionEvent):
     class Args(EventContext):
-        settingContractName: NotRequired[str]
+        settingContractName: str
         settingPath: str
         value: int | bool
 
@@ -301,7 +301,7 @@ class TreasuryRecurringSpendEvent(TransactionEvent):
         amountPerPeriod: Wei
         periodLength: int
         numPeriods: int
-        startTime: NotRequired[int]
+        startTime: int
 
     def __init__(self, event_name: str, title: str, *, has_start_time: bool) -> None:
         self.event_name = event_name
@@ -457,8 +457,8 @@ class PDAOSetDelegateEvent(TransactionEvent):
     event_name = "pdao_set_delegate"
 
     class Args(EventContext):
-        delegate: NotRequired[NodeAddress]
-        newDelegate: NotRequired[NodeAddress]
+        delegate: NodeAddress
+        newDelegate: NodeAddress
 
     async def build_embeds(
         self, args: Args, event: TxEventData, receipt: TxReceipt

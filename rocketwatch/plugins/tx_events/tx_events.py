@@ -182,6 +182,7 @@ class TxEvents(EventPlugin):
                 "event_name": event_cls.event_name,
                 "transactionHash": HASH_ZERO,
                 "blockNumber": block_number,
+                "timestamp": 0,
             }
             embeds = await event_cls.build_embeds(args, event_data, _DUMMY_RECEIPT)
             if embeds:
