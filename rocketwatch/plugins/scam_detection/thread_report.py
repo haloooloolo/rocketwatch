@@ -103,13 +103,10 @@ async def run_thread_automod(
     alert_duration = THREAD_ALERT_DELETE_AFTER
 
     try:
-        if thread.owner_id and (member := thread.guild.get_member(thread.owner_id)):
-            timeout_request = ctx.sentinel.timeout_member(
-                member, int(timeout_duration.total_seconds()), reason
-            )
-        else:
-            timeout_request = asyncio.sleep(0, result=False)
-
+        member = await ctx.bot.get_or_fetch_member(thread.guild.id, thread.owner_id)
+        timeout_request = ctx.sentinel.timeout_member(
+            member, int(timeout_duration.total_seconds()), reason
+        )
         lock_request = ctx.sentinel.lock_thread(thread, reason)
 
         timed_out, locked = await asyncio.gather(timeout_request, lock_request)
