@@ -219,7 +219,7 @@ async def run_message_automod(
     timeout_duration = DEFAULT_USER_TIMEOUT
 
     try:
-        delete_request = ctx.sentinel.delete_message(message, reason)
+        deleted = await ctx.sentinel.delete_message(message, reason)
 
         if member := await member_from_message(ctx.bot, message):
             timeout_request = ctx.sentinel.timeout_member(
@@ -236,9 +236,7 @@ async def run_message_automod(
         else:
             lock_request = asyncio.sleep(0, result=False)
 
-        deleted, timed_out, locked = await asyncio.gather(
-            delete_request, timeout_request, lock_request
-        )
+        timed_out, locked = await asyncio.gather(timeout_request, lock_request)
 
         if deleted:
             actions.add(AutomodAction.MESSAGE_DELETED)
