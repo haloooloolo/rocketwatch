@@ -250,7 +250,9 @@ class CallSession:
         for user_id, name in sorted(
             usernames.items(), key=lambda x: len(x[1]), reverse=True
         ):
-            text = re.sub(re.escape(name), f"<@{user_id}>", text, flags=re.IGNORECASE)
+            text = re.sub(
+                re.escape(rf"\b{name}\b"), f"<@{user_id}>", text, flags=re.IGNORECASE
+            )
         return text
 
     async def _resolve_usernames(
