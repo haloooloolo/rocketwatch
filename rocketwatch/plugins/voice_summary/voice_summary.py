@@ -105,6 +105,9 @@ class VoiceSummary(Cog):
         before: VoiceState,
         after: VoiceState,
     ) -> None:
+        if member.guild.id != cfg.rocketpool.support.server_id:
+            return
+
         if self.bot.user and (member.id == self.bot.user.id):
             # bot's own voice state changed
             await self._handle_bot_voice_state_change(before, after)

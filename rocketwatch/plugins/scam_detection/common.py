@@ -38,6 +38,12 @@ class ReportColor:
     OK = Color.from_rgb(0, 255, 0)
 
 
+class PartnerBroadcast(TypedDict):
+    guild_id: int
+    channel_id: int
+    message_id: int
+
+
 class ScamReport(TypedDict):
     type: str
     guild_id: int | None
@@ -52,6 +58,7 @@ class ScamReport(TypedDict):
     embeds: list[dict[str, Any]]
     message_deleted: bool
     thread_removed: bool
+    partner_messages: list[PartnerBroadcast]
 
 
 def is_reputable(member: Member) -> bool:

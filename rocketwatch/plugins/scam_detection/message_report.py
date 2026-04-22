@@ -36,6 +36,7 @@ from rocketwatch.plugins.scam_detection.common import (
     resolve_report,
     update_report,
 )
+from rocketwatch.plugins.scam_detection.partner_sync import broadcast_user_report
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
@@ -296,6 +297,8 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
         await _release_claim(ctx, message.id)
         raise
 
+    await broadcast_user_report(ctx, message.author.id, report_msg)
+
     actions = await run_message_automod(ctx, message, reason, report_msg)
 
     if AutomodAction.MESSAGE_DELETED not in actions:
@@ -377,6 +380,8 @@ async def manual_message_report(
     except Exception:
         await _release_claim(ctx, message.id)
         raise
+
+    await broadcast_user_report(ctx, message.author.id, report_msg)
 
     if reporter_is_reputable:
         actions = await run_message_automod(ctx, message, reason, report_msg)

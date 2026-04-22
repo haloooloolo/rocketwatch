@@ -16,6 +16,7 @@ from rocketwatch.plugins.scam_detection.common import (
     is_reputable,
     member_from_interaction,
 )
+from rocketwatch.plugins.scam_detection.partner_sync import broadcast_user_report
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
 from rocketwatch.utils.embeds import Embed
 
@@ -141,6 +142,8 @@ async def manual_user_report(
     except Exception:
         await _release_claim(ctx, user.guild.id, user.id)
         raise
+
+    await broadcast_user_report(ctx, user.id, report_msg)
 
     reporter = await member_from_interaction(interaction)
     if reporter and is_reputable(reporter):

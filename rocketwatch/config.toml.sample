@@ -63,6 +63,10 @@ BalancerV3Vault = "0xbA1333333333a1BA1108E8412f11850A5C319bA9"
 UniswapV4PoolManager = "0x000000000004444c5dc75cB358380D2e3dE08A90"
 UniswapV4StateView = "0x7fFE42C4a5DEeA5b0feC41C94C136Cf115597227"
 
+# [[scam_detection.partners]]
+# guild_id = 0
+# report_channel_id = 0
+
 [scam_detection.llm]
 provider = ""  # "anthropic", "openai", or "google"
 api_key = ""

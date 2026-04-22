@@ -67,7 +67,13 @@ class STTConfig(BaseModel):
     model: str = ""
 
 
+class PartnerGuild(BaseModel):
+    guild_id: int
+    report_channel_id: int
+
+
 class ScamDetectionConfig(BaseModel):
+    partners: list[PartnerGuild] = []
     llm: LLMConfig = LLMConfig()
 
 
