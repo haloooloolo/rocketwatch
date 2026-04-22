@@ -68,6 +68,29 @@ _DEX_META: dict[str, tuple[str, str]] = {
     "curve": ("<:curve:1494119967044665484>", "Curve"),
 }
 
+# Swap event topics for the generic decoder.  Every address emitting one of
+# these signatures is treated as a pool; the graph builder decodes its log
+# regardless of whether it's a pool we actively monitor.
+_UNI_V2_SWAP_TOPIC = w3.keccak(
+    text="Swap(address,uint256,uint256,uint256,uint256,address)"
+)
+_UNI_V3_SWAP_TOPIC = w3.keccak(
+    text="Swap(address,address,int256,int256,uint160,uint128,int24)"
+)
+_UNI_V4_SWAP_TOPIC = w3.keccak(
+    text="Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)"
+)
+_BAL_V2_SWAP_TOPIC = w3.keccak(text="Swap(bytes32,address,address,uint256,uint256)")
+_BAL_V3_SWAP_TOPIC = w3.keccak(
+    text="Swap(address,address,address,uint256,uint256,uint256,uint256)"
+)
+_CURVE_EXCHANGE_TOPIC = w3.keccak(
+    text="TokenExchange(address,int128,uint256,int128,uint256)"
+)
+_WETH_DEPOSIT_TOPIC = w3.keccak(text="Deposit(address,uint256)")
+_WETH_WITHDRAWAL_TOPIC = w3.keccak(text="Withdrawal(address,uint256)")
+_WETH_ADDRESS = _addr("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+
 
 @dataclass
 class DexSwap:
@@ -86,6 +109,28 @@ class DexSwap:
     extra_fields: list[tuple[str, str, bool]] = field(default_factory=list)
 
 
+@dataclass
+class _GraphSwap:
+    """Single decoded swap leg used to populate the trade graph."""
+
+    pool: ChecksumAddress
+    token_in: ChecksumAddress
+    amount_in: int
+    token_out: ChecksumAddress
+    amount_out: int
+    owner: ChecksumAddress  # counterparty named in the event (router or user)
+    dex: str
+    log_index: int
+
+
+@dataclass
+class _TradeGraph:
+    # node address -> token address -> signed net flow
+    flows: dict[ChecksumAddress, dict[ChecksumAddress, int]]
+    pools: set[ChecksumAddress]
+    swaps: list[_GraphSwap]
+
+
 class CoWTradeArgs(TypedDict):
     owner: ChecksumAddress
     sellToken: ChecksumAddress
@@ -101,7 +146,7 @@ class DexTrades(EventPlugin):
         super().__init__(bot)
         # contracts (lazily initialized)
         self._settlement: AsyncContract | None = None
-        self._balancer_vault: AsyncContract | None = None
+        self._balancer_v2_vault: AsyncContract | None = None
         self._balancer_v3_vault: AsyncContract | None = None
         self._curve_pools: list[AsyncContract] | None = None
 
@@ -121,6 +166,23 @@ class DexTrades(EventPlugin):
         # Curve pool coin mappings (per pool)
         self._curve_coins: list[dict[int, ChecksumAddress]] | None = None
 
+        # Cache of pool_address -> (token0, token1) for both known and
+        # lazily-resolved pools seen during graph building.  Unresolvable
+        # addresses are remembered in _unresolvable_pools to avoid retry storms.
+        self._pool_tokens: dict[
+            ChecksumAddress, tuple[ChecksumAddress, ChecksumAddress]
+        ] = {}
+        self._unresolvable_pools: set[ChecksumAddress] = set()
+        # Generic event decoders (ABI-only; decode logs from any pool address).
+        self._v3_swap_decoder: Any = None
+        self._v2_swap_decoder: Any = None
+        self._curve_swap_decoder: Any = None
+        self._bal_v2_swap_decoder: Any = None
+        self._bal_v3_swap_decoder: Any = None
+        self._v4_swap_decoder: Any = None
+        self._weth_deposit_decoder: Any = None
+        self._weth_withdrawal_decoder: Any = None
+
     async def _ensure_setup(self) -> None:
         if self._tokens is not None:
             return
@@ -134,7 +196,7 @@ class DexTrades(EventPlugin):
         self._settlement = await rp.assemble_contract("CoWSettlement", _COW_SETTLEMENT)
 
         # Balancer V2 + V3 (distinct vaults, distinct event schemas)
-        self._balancer_vault = await rp.get_contract_by_name("BalancerV2Vault")
+        self._balancer_v2_vault = await rp.get_contract_by_name("BalancerV2Vault")
         self._balancer_v3_vault = await rp.get_contract_by_name("BalancerV3Vault")
 
         # Curve
@@ -164,21 +226,370 @@ class DexTrades(EventPlugin):
             pool_id: (_ETH_ADDRESS, self._rpl) for pool_id in _UNI_V4_RPL_POOL_IDS
         }
 
-    # ── Shared: filtering, classification, event building ───────────
+        # Pre-populate the pool-token cache for known pools so the graph
+        # builder doesn't RPC for them.
+        for pool, token0, token1 in self._uni_pools:
+            self._pool_tokens[pool.address] = (token0, token1)
+        for pool, coins in zip(self._curve_pools, self._curve_coins, strict=True):
+            self._pool_tokens[pool.address] = (coins[0], coins[1])
 
-    _TRANSFER_TOPIC = w3.keccak(text="Transfer(address,address,uint256)")
-    _WETH_DEPOSIT_TOPIC = w3.keccak(text="Deposit(address,uint256)")
-    _WETH_WITHDRAWAL_TOPIC = w3.keccak(text="Withdrawal(address,uint256)")
-    _WETH = w3.to_checksum_address("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+        # Decoders — ABI-bound once, used to decode logs from any address.
+        # Uni V3/V2 use an arbitrary address (decoder only reads topics + data).
+        v3_reference = self._uni_pools[0][0]
+        self._v3_swap_decoder = v3_reference.events.Swap()
+        v2_reference = await rp.assemble_contract("UniswapV2Pair", _WETH_ADDRESS)
+        self._v2_swap_decoder = v2_reference.events.Swap()
+        self._curve_swap_decoder = self._curve_pools[0].events.TokenExchange()
+        self._bal_v2_swap_decoder = self._balancer_v2_vault.events.Swap()
+        self._bal_v3_swap_decoder = self._balancer_v3_vault.events.Swap()
+        self._v4_swap_decoder = self._uni_v4_pm.events.Swap()
+        weth = await rp.assemble_contract("WETH", _WETH_ADDRESS)
+        self._weth_deposit_decoder = weth.events.Deposit()
+        self._weth_withdrawal_decoder = weth.events.Withdrawal()
+
+    # ── Trade graph: decode full receipt into a token-flow graph ────
+
+    async def _get_pool_tokens(
+        self, pool_addr: ChecksumAddress
+    ) -> tuple[ChecksumAddress, ChecksumAddress] | None:
+        """Resolve (token0, token1) for a pool via RPC, caching the result.
+        Tries Uni V2/V3 style (token0/token1) first, then Curve (coins).
+        Unresolvable addresses are remembered to avoid retry storms.
+        """
+        if pool_addr in self._pool_tokens:
+            return self._pool_tokens[pool_addr]
+        if pool_addr in self._unresolvable_pools:
+            return None
+
+        try:
+            pool = await rp.assemble_contract("UniswapV3Pool", pool_addr)
+            t0 = w3.to_checksum_address(await pool.functions.token0().call())
+            t1 = w3.to_checksum_address(await pool.functions.token1().call())
+        except Exception:
+            try:
+                pool = await rp.assemble_contract("curvePool", pool_addr)
+                t0 = w3.to_checksum_address(await pool.functions.coins(0).call())
+                t1 = w3.to_checksum_address(await pool.functions.coins(1).call())
+            except Exception:
+                self._unresolvable_pools.add(pool_addr)
+                return None
+
+        self._pool_tokens[pool_addr] = (t0, t1)
+        return (t0, t1)
+
+    async def _decode_swap(
+        self, raw_log: Any, tx_from: ChecksumAddress
+    ) -> _GraphSwap | None:
+        """Decode a single log into a _GraphSwap, dispatching on topic0.
+        Returns None if the log is not a swap event we understand or if the
+        pool's token pair can't be resolved.  WETH Deposit/Withdrawal are
+        modelled as synthetic swaps against a WETH wrapper pool.
+        """
+        if not raw_log["topics"]:
+            return None
+        topic0 = raw_log["topics"][0]
+        log_index = raw_log["logIndex"]
+        pool = w3.to_checksum_address(raw_log["address"])
+
+        try:
+            if topic0 == _UNI_V3_SWAP_TOPIC:
+                event = self._v3_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                tokens = await self._get_pool_tokens(pool)
+                if tokens is None:
+                    return None
+                token0, token1 = tokens
+                a0, a1 = int(args["amount0"]), int(args["amount1"])
+                # V3: positive = pool received (user sold), negative = pool sent
+                if a0 > 0:
+                    token_in, amt_in, token_out, amt_out = token0, a0, token1, -a1
+                else:
+                    token_in, amt_in, token_out, amt_out = token1, a1, token0, -a0
+                owner = w3.to_checksum_address(args["recipient"])
+                return _GraphSwap(
+                    pool,
+                    token_in,
+                    amt_in,
+                    token_out,
+                    amt_out,
+                    owner,
+                    "uniswap",
+                    log_index,
+                )
+
+            if topic0 == _UNI_V2_SWAP_TOPIC:
+                event = self._v2_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                tokens = await self._get_pool_tokens(pool)
+                if tokens is None:
+                    return None
+                token0, token1 = tokens
+                a0_in = int(args["amount0In"])
+                a1_in = int(args["amount1In"])
+                a0_out = int(args["amount0Out"])
+                a1_out = int(args["amount1Out"])
+                if a0_in > 0:
+                    token_in, amt_in, token_out, amt_out = token0, a0_in, token1, a1_out
+                else:
+                    token_in, amt_in, token_out, amt_out = token1, a1_in, token0, a0_out
+                owner = w3.to_checksum_address(args["to"])
+                return _GraphSwap(
+                    pool,
+                    token_in,
+                    amt_in,
+                    token_out,
+                    amt_out,
+                    owner,
+                    "uniswap",
+                    log_index,
+                )
+
+            if topic0 == _UNI_V4_SWAP_TOPIC:
+                event = self._v4_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                pool_id = HexStr("0x" + args["id"].hex())
+                # V4 pool keys aren't stored on-chain; only decode pools we
+                # know the token pair for.
+                assert self._uni_v4_pools is not None
+                if pool_id not in self._uni_v4_pools:
+                    return None
+                token0, token1 = self._uni_v4_pools[pool_id]
+                a0, a1 = int(args["amount0"]), int(args["amount1"])
+                # V4: from user's perspective — positive = user received
+                if a0 > 0:
+                    token_in, amt_in, token_out, amt_out = token1, -a1, token0, a0
+                else:
+                    token_in, amt_in, token_out, amt_out = token0, -a0, token1, a1
+                # V4 Swap event has no user field; fall back to tx sender
+                return _GraphSwap(
+                    pool,
+                    token_in,
+                    amt_in,
+                    token_out,
+                    amt_out,
+                    tx_from,
+                    "uniswap",
+                    log_index,
+                )
+
+            if topic0 == _BAL_V2_SWAP_TOPIC:
+                event = self._bal_v2_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                token_in = w3.to_checksum_address(args["tokenIn"])
+                token_out = w3.to_checksum_address(args["tokenOut"])
+                return _GraphSwap(
+                    pool,
+                    token_in,
+                    int(args["amountIn"]),
+                    token_out,
+                    int(args["amountOut"]),
+                    tx_from,
+                    "balancer",
+                    log_index,
+                )
+
+            if topic0 == _BAL_V3_SWAP_TOPIC:
+                event = self._bal_v3_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                # Balancer V3 Swap's topic[1] is the pool address, not the
+                # vault — treat that as the pool node so multiple V3 pools
+                # under the same vault don't collapse.
+                pool = w3.to_checksum_address(args["pool"])
+                token_in = w3.to_checksum_address(args["tokenIn"])
+                token_out = w3.to_checksum_address(args["tokenOut"])
+                return _GraphSwap(
+                    pool,
+                    token_in,
+                    int(args["amountIn"]),
+                    token_out,
+                    int(args["amountOut"]),
+                    tx_from,
+                    "balancer",
+                    log_index,
+                )
+
+            if topic0 == _CURVE_EXCHANGE_TOPIC:
+                event = self._curve_swap_decoder.process_log(raw_log)
+                args = event["args"]
+                tokens = await self._get_pool_tokens(pool)
+                if tokens is None:
+                    return None
+                coins = {0: tokens[0], 1: tokens[1]}
+                sold_id = int(args["sold_id"])
+                bought_id = int(args["bought_id"])
+                if sold_id not in coins or bought_id not in coins:
+                    return None  # pool with >2 coins; fall back to skip
+                return _GraphSwap(
+                    pool,
+                    coins[sold_id],
+                    int(args["tokens_sold"]),
+                    coins[bought_id],
+                    int(args["tokens_bought"]),
+                    w3.to_checksum_address(args["buyer"]),
+                    "curve",
+                    log_index,
+                )
+
+            if topic0 == _WETH_DEPOSIT_TOPIC and pool == _WETH_ADDRESS:
+                event = self._weth_deposit_decoder.process_log(raw_log)
+                args = event["args"]
+                amount = int(args["wad"])
+                dst = w3.to_checksum_address(args["dst"])
+                # Model wrap as ETH→WETH swap at 1:1 through the WETH contract
+                return _GraphSwap(
+                    _WETH_ADDRESS,
+                    _ETH_ADDRESS,
+                    amount,
+                    _WETH_ADDRESS,
+                    amount,
+                    dst,
+                    "uniswap",
+                    log_index,
+                )
+
+            if topic0 == _WETH_WITHDRAWAL_TOPIC and pool == _WETH_ADDRESS:
+                event = self._weth_withdrawal_decoder.process_log(raw_log)
+                args = event["args"]
+                amount = int(args["wad"])
+                src = w3.to_checksum_address(args["src"])
+                return _GraphSwap(
+                    _WETH_ADDRESS,
+                    _WETH_ADDRESS,
+                    amount,
+                    _ETH_ADDRESS,
+                    amount,
+                    src,
+                    "uniswap",
+                    log_index,
+                )
+        except Exception:
+            log.debug("Failed to decode swap log %s", log_index, exc_info=True)
+            return None
+
+        return None
+
+    async def _build_trade_graph(
+        self, tx_hash: HexStr, tx_from: ChecksumAddress, receipt_logs: list[Any]
+    ) -> _TradeGraph:
+        """Decode every swap-like log in the receipt and build a flow graph:
+        each swap contributes +in/-out at the pool node and -in/+out at the
+        counterparty.  Multi-hop trades through unmonitored pools therefore
+        show up as complete end-to-end flows at the initiating trader node.
+        """
+        flows: dict[ChecksumAddress, dict[ChecksumAddress, int]] = {}
+        pools: set[ChecksumAddress] = set()
+        swaps: list[_GraphSwap] = []
+
+        for raw_log in receipt_logs:
+            decoded = await self._decode_swap(raw_log, tx_from)
+            if decoded is None:
+                continue
+            swaps.append(decoded)
+            pools.add(decoded.pool)
+
+            pool_flows = flows.setdefault(decoded.pool, {})
+            pool_flows[decoded.token_in] = (
+                pool_flows.get(decoded.token_in, 0) + decoded.amount_in
+            )
+            pool_flows[decoded.token_out] = (
+                pool_flows.get(decoded.token_out, 0) - decoded.amount_out
+            )
+
+            owner_flows = flows.setdefault(decoded.owner, {})
+            owner_flows[decoded.token_in] = (
+                owner_flows.get(decoded.token_in, 0) - decoded.amount_in
+            )
+            owner_flows[decoded.token_out] = (
+                owner_flows.get(decoded.token_out, 0) + decoded.amount_out
+            )
+
+        return _TradeGraph(flows=flows, pools=pools, swaps=swaps)
+
+    def _resolve_graph(
+        self,
+        graph: _TradeGraph,
+        tx_hash: HexStr,
+        block_number: BlockNumber,
+        tx_index: int,
+        extra_fields: list[tuple[str, str, bool]],
+    ) -> list[DexSwap]:
+        """Emit one DexSwap per non-pool node whose net flow includes a
+        tracked token (RPL/rETH).  Counter-side is picked from the full flow
+        map so multi-hop routes through untracked tokens resolve correctly.
+        """
+        assert self._tokens is not None
+
+        result: list[DexSwap] = []
+        for node, flows in graph.flows.items():
+            if node in graph.pools or node == _ETH_ADDRESS:
+                continue
+
+            tracked_flows = {
+                t: v for t, v in flows.items() if t in self._tokens and v != 0
+            }
+            if not tracked_flows:
+                continue
+
+            tracked = max(tracked_flows, key=lambda t: abs(tracked_flows[t]))
+            tracked_amount = tracked_flows[tracked]
+
+            if tracked_amount > 0:
+                buy_token = tracked
+                sell_token = min(flows, key=lambda t: flows[t])
+                if flows[sell_token] >= 0 or sell_token == buy_token:
+                    continue
+                buy_amount = tracked_amount
+                sell_amount = abs(flows[sell_token])
+            else:
+                sell_token = tracked
+                buy_token = max(flows, key=lambda t: flows[t])
+                if flows[buy_token] <= 0 or buy_token == sell_token:
+                    continue
+                sell_amount = abs(tracked_amount)
+                buy_amount = flows[buy_token]
+
+            # Attribute dex by whichever swap touched this trader with the
+            # largest tracked-token amount.
+            dex = "uniswap"
+            best_touch = 0
+            best_log_index = 0
+            for s in graph.swaps:
+                if s.owner != node:
+                    continue
+                touched = 0
+                if s.token_in == tracked:
+                    touched = s.amount_in
+                elif s.token_out == tracked:
+                    touched = s.amount_out
+                if touched > best_touch:
+                    best_touch = touched
+                    dex = s.dex
+                    best_log_index = s.log_index
+
+            result.append(
+                DexSwap(
+                    dex=dex,
+                    sell_token=sell_token,
+                    sell_amount=sell_amount,
+                    buy_token=buy_token,
+                    buy_amount=buy_amount,
+                    owner=node,
+                    tx_hash=tx_hash,
+                    block_number=block_number,
+                    tx_index=tx_index,
+                    log_index=best_log_index,
+                    extra_fields=list(extra_fields),
+                )
+            )
+
+        return result
 
     async def _aggregate_by_tx(self, all_swaps: list[DexSwap]) -> list[DexSwap]:
-        """Aggregate swaps within the same transaction.
-
-        CoW Trade events already represent the full user trade, so if a tx
-        contains CoW swaps we keep only those (underlying DEX events would
-        double-count).  For non-CoW transactions with multiple swaps, fetch the
-        full receipt and net ERC-20 Transfer events for the tx sender to capture
-        the true end-to-end flow (including hops through pools we don't monitor).
+        """For each tx with at least one monitored-pool swap, fetch the full
+        receipt and build a trade graph spanning every swap event (including
+        unmonitored pools).  Emit one DexSwap per non-pool node with a
+        non-zero tracked-token flow.  CoW trades are authoritative and
+        short-circuit the graph; their underlying DEX legs are discarded.
         """
         by_tx: dict[HexStr, list[DexSwap]] = {}
         for swap in all_swaps:
@@ -188,100 +599,34 @@ class DexTrades(EventPlugin):
         for tx_hash, swaps in by_tx.items():
             cow_swaps = [s for s in swaps if s.dex == "cow"]
             if cow_swaps:
-                # CoW events are authoritative; drop underlying DEX legs
                 result.extend(cow_swaps)
                 continue
 
-            if len(swaps) == 1:
-                result.append(swaps[0])
+            try:
+                tx = await w3.eth.get_transaction(tx_hash)
+                receipt = await w3.eth.get_transaction_receipt(tx_hash)
+                tx_from = w3.to_checksum_address(tx["from"])
+                graph = await self._build_trade_graph(
+                    tx_hash, tx_from, list(receipt["logs"])
+                )
+            except Exception:
+                log.exception("Failed to build trade graph for %s", tx_hash)
                 continue
 
-            aggregated = await self._aggregate_from_receipt(tx_hash, swaps)
-            if aggregated:
-                result.append(aggregated)
-            else:
-                # Fallback: keep the largest individual swap
-                result.append(max(swaps, key=lambda s: s.buy_amount + s.sell_amount))
+            extra_fields = [f for s in swaps for f in s.extra_fields]
+            ref = swaps[0]
+            resolved = self._resolve_graph(
+                graph,
+                tx_hash,
+                ref.block_number,
+                ref.tx_index,
+                extra_fields,
+            )
+            if not resolved:
+                log.debug("Trade graph for %s resolved to no traders", tx_hash)
+            result.extend(resolved)
 
         return result
-
-    async def _aggregate_from_receipt(
-        self, tx_hash: HexStr, swaps: list[DexSwap]
-    ) -> DexSwap | None:
-        """Net ERC-20 Transfer events for the tx sender to get the true
-        end-to-end swap, even through intermediate pools we don't monitor.
-
-        Also accounts for native ETH via WETH Deposit/Withdrawal events:
-        a Deposit means ETH was wrapped (spent), a Withdrawal means ETH
-        was unwrapped (received).  Both are credited as WETH flows for
-        the user so that ETH<->WETH conversions don't create gaps.
-        """
-        tx = await w3.eth.get_transaction(tx_hash)
-        user = w3.to_checksum_address(tx["from"])
-        receipt = await w3.eth.get_transaction_receipt(tx_hash)
-
-        flows: dict[ChecksumAddress, int] = {}
-        for log in receipt["logs"]:
-            if not log["topics"]:
-                continue
-            topic0 = log["topics"][0]
-
-            # ERC-20 Transfer
-            if topic0 == self._TRANSFER_TOPIC and len(log["topics"]) >= 3:
-                from_addr = w3.to_checksum_address(log["topics"][1][-20:])
-                to_addr = w3.to_checksum_address(log["topics"][2][-20:])
-                amount = int.from_bytes(bytes(log["data"]), "big")
-                token = w3.to_checksum_address(log["address"])
-
-                if to_addr == user:
-                    flows[token] = flows.get(token, 0) + amount
-                if from_addr == user:
-                    flows[token] = flows.get(token, 0) - amount
-
-            # WETH Withdrawal → user received native ETH (treat as +WETH)
-            elif (
-                topic0 == self._WETH_WITHDRAWAL_TOPIC
-                and w3.to_checksum_address(log["address"]) == self._WETH
-            ):
-                src = w3.to_checksum_address(log["topics"][1][-20:])
-                amount = int.from_bytes(bytes(log["data"]), "big")
-                if src == user:
-                    flows[self._WETH] = flows.get(self._WETH, 0) + amount
-
-            # WETH Deposit → user spent native ETH (treat as -WETH)
-            elif (
-                topic0 == self._WETH_DEPOSIT_TOPIC
-                and w3.to_checksum_address(log["address"]) == self._WETH
-            ):
-                dst = w3.to_checksum_address(log["topics"][1][-20:])
-                amount = int.from_bytes(bytes(log["data"]), "big")
-                if dst == user:
-                    flows[self._WETH] = flows.get(self._WETH, 0) - amount
-
-        if not flows:
-            return None
-
-        buy_token = max(flows, key=lambda t: flows[t])
-        sell_token = min(flows, key=lambda t: flows[t])
-
-        if flows[buy_token] <= 0 or flows[sell_token] >= 0:
-            return None
-
-        ref = max(swaps, key=lambda s: s.buy_amount + s.sell_amount)
-
-        return DexSwap(
-            dex=ref.dex,
-            sell_token=sell_token,
-            sell_amount=abs(flows[sell_token]),
-            buy_token=buy_token,
-            buy_amount=flows[buy_token],
-            owner=user,
-            tx_hash=tx_hash,
-            block_number=ref.block_number,
-            tx_index=ref.tx_index,
-            log_index=ref.log_index,
-            extra_fields=[f for s in swaps for f in s.extra_fields],
-        )
 
     async def _get_prices(self) -> tuple[float, float]:
         """Return (rpl_usd, reth_usd) prices."""
@@ -292,6 +637,11 @@ class DexTrades(EventPlugin):
 
     async def _resolve_token(self, address: ChecksumAddress) -> tuple[str, int]:
         """Return (symbol, decimals) for an ERC-20 address."""
+        # Native ETH is represented by 0x0 (Uni V4) or 0xEE..EE (some routers)
+        if address == _ETH_ADDRESS or address == w3.to_checksum_address(
+            "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        ):
+            return "ETH", 18
         decimals = 18
         erc20 = await rp.assemble_contract(name="ERC20", address=address)
         with contextlib.suppress(Exception):
@@ -299,12 +649,7 @@ class DexTrades(EventPlugin):
         try:
             symbol = await erc20.functions.symbol().call()
         except Exception:
-            symbol = (
-                "ETH"
-                if address
-                == w3.to_checksum_address("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
-                else "UNKWN"
-            )
+            symbol = "UNKWN"
         return symbol, decimals
 
     async def _process_swaps(
@@ -316,21 +661,25 @@ class DexTrades(EventPlugin):
 
         events: list[Event] = []
         for swap in raw_swaps:
-            # Determine if this swap involves a tracked token and which side
-            if swap.buy_token in self._tokens:
-                token = self._token_names[swap.buy_token]
-                is_buy = True
+            # When both sides are tracked (RPL↔rETH), classify by RPL:
+            # RPL moves are more notable to this audience than rETH moves.
+            if self._rpl in (swap.buy_token, swap.sell_token):
+                tracked = self._rpl
+            elif self._reth in (swap.buy_token, swap.sell_token):
+                tracked = self._reth
+            else:
+                continue
+
+            is_buy = swap.buy_token == tracked
+            token = self._token_names[tracked]
+            if is_buy:
                 our_amount = swap.buy_amount
                 other_address = swap.sell_token
                 other_amount = swap.sell_amount
-            elif swap.sell_token in self._tokens:
-                token = self._token_names[swap.sell_token]
-                is_buy = False
+            else:
                 our_amount = swap.sell_amount
                 other_address = swap.buy_token
                 other_amount = swap.buy_amount
-            else:
-                continue
 
             our_amount_f = solidity.to_float(our_amount, 18)
 
@@ -393,7 +742,7 @@ class DexTrades(EventPlugin):
                     topic="dex_trade",
                     block_number=swap.block_number,
                     event_name=event_name,
-                    unique_id=f"dex_trade_{swap.tx_hash}:{swap.log_index}",
+                    unique_id=f"dex_trade_{swap.tx_hash}:{swap.owner}",
                     transaction_index=swap.tx_index,
                     event_index=swap.log_index,
                 )
@@ -501,13 +850,13 @@ class DexTrades(EventPlugin):
 
     # ── Balancer ────────────────────────────────────────────────────
 
-    async def _fetch_balancer_swaps(
+    async def _fetch_balancer_v2_swaps(
         self, from_block: BlockNumber, to_block: BlockNumber
     ) -> list[DexSwap]:
-        assert self._balancer_vault is not None
+        assert self._balancer_v2_vault is not None
         assert self._tokens is not None
 
-        swap_event = self._balancer_vault.events.Swap()
+        swap_event = self._balancer_v2_vault.events.Swap()
         # tokenIn and tokenOut are indexed (topics[2] and topics[3])
         # Query once for tokenIn=RPL/rETH, once for tokenOut=RPL/rETH
         padded_tokens = ["0x" + addr[2:].lower().zfill(64) for addr in self._tokens]
@@ -519,7 +868,7 @@ class DexTrades(EventPlugin):
             all_logs.extend(
                 await w3.eth.get_logs(
                     {
-                        "address": self._balancer_vault.address,
+                        "address": self._balancer_v2_vault.address,
                         "topics": topics,
                         "fromBlock": from_block,
                         "toBlock": to_block,
@@ -761,7 +1110,7 @@ class DexTrades(EventPlugin):
             self._fetch_cow_swaps,
             self._fetch_uniswap_swaps,
             self._fetch_uniswap_v4_swaps,
-            self._fetch_balancer_swaps,
+            self._fetch_balancer_v2_swaps,
             self._fetch_balancer_v3_swaps,
             self._fetch_curve_swaps,
         ):
