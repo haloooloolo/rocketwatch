@@ -34,7 +34,7 @@ class UserStream:
         self._segment_index = 0
         self._wav: wave.Wave_write | None = None
         self._segment_start: float = 0.0
-        self._last_timestamp: float = 0.0
+        self._next_expected_ts: float = 0.0
         self._segments: list[tuple[float, Path]] = []  # (offset, path)
 
     def _start_segment(self, timestamp: float) -> None:
@@ -45,7 +45,7 @@ class UserStream:
         self._wav.setsampwidth(SAMPLE_WIDTH)
         self._wav.setframerate(SAMPLE_RATE)
         self._segment_start = timestamp
-        self._last_timestamp = timestamp
+        self._next_expected_ts = timestamp
         self._segments.append((timestamp, path))
         self._segment_index += 1
 
@@ -53,15 +53,23 @@ class UserStream:
         if not self._wav:
             self._start_segment(timestamp)
         else:
-            # Start a new segment on packet gap or max duration
-            expected = self._last_timestamp + len(pcm) / BYTES_PER_SECOND
+            gap = timestamp - self._next_expected_ts
             if (
-                timestamp - expected > SILENCE_DURATION
+                gap > SILENCE_DURATION
                 or timestamp - self._segment_start >= MAX_SEGMENT_DURATION
             ):
                 self._start_segment(timestamp)
+            elif gap > 0:
+                # Pad sub-second inter-packet gaps so WAV duration tracks wall-clock.
+                # Otherwise small VAD gaps accumulate and appear as a silence jump
+                # at the next segment boundary.
+                frame_size = CHANNELS * SAMPLE_WIDTH
+                silence_bytes = int(gap * BYTES_PER_SECOND)
+                silence_bytes -= silence_bytes % frame_size
+                if silence_bytes > 0:
+                    self._wav.writeframes(b"\x00" * silence_bytes)
 
-        self._last_timestamp = timestamp
+        self._next_expected_ts = timestamp + len(pcm) / BYTES_PER_SECOND
         assert self._wav is not None
         self._wav.writeframes(pcm)
 
