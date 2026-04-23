@@ -41,7 +41,7 @@ async def _broadcast_to_partner(
         return None
 
     sent = await channel.send(
-        f"Flagged {member.mention} — report: {report_msg.jump_url}",
+        f"Flagged {member.mention} - report: {report_msg.jump_url}",
         allowed_mentions=AllowedMentions.none(),
     )
     return PartnerBroadcast(
