@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from discord import Interaction, Member, Message
+from discord import Forbidden, Guild, Interaction, Member, Message, NotFound, User
 from discord.utils import MISSING, format_dt
 from pymongo import ReturnDocument
 
@@ -18,6 +18,7 @@ from rocketwatch.plugins.scam_detection.common import (
 )
 from rocketwatch.plugins.scam_detection.partner_sync import broadcast_user_report
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
+from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
 
 if TYPE_CHECKING:
@@ -150,3 +151,43 @@ async def manual_user_report(
         await run_user_automod(ctx, user, reason)
 
     await interaction.followup.send(content="Thanks for reporting!")
+
+
+async def report_user_from_partner_ban(
+    ctx: ReportContext, partner_guild: Guild, banned_user: User
+) -> None:
+    """Create a user report in the RP guild when a partner server bans a user
+    who is also a member of RP. No auto-action; surfaces to mods for review."""
+    if banned_user.bot:
+        return
+
+    rp_guild_id = cfg.rocketpool.support.server_id
+    try:
+        member = await ctx.bot.get_or_fetch_member(rp_guild_id, banned_user.id)
+    except (NotFound, Forbidden):
+        return
+    except Exception as e:
+        log.warning(
+            f"Failed to look up banned user {banned_user.id} in RP guild: {e!r}"
+        )
+        return
+
+    if is_reputable(member):
+        return
+
+    if not await _claim_user_report(ctx, rp_guild_id, banned_user.id):
+        return
+
+    try:
+        reason = f"Banned in partner server `{partner_guild.name}`"
+        report = _generate_report_embed(member, reason)
+
+        report_channel = await get_report_channel(ctx)
+        report_msg = await report_channel.send(
+            embed=report,
+            view=_build_review_view(ctx) or MISSING,
+        )
+        await _finalize_report(ctx, member, reason, report_msg)
+    except Exception:
+        await _release_claim(ctx, rp_guild_id, banned_user.id)
+        raise
