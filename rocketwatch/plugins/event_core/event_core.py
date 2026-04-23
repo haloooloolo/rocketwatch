@@ -388,6 +388,11 @@ class EventCore(commands.Cog):
                 log.warning("Could not fetch status, removing DB entry")
                 await self.bot.db.state_messages.delete_one(prev_status)
                 prev_status = None
+            except discord.errors.DiscordServerError as err:
+                log.warning(
+                    f"Discord server error editing status, skipping cycle: {err}"
+                )
+                return
 
         if prev_status:
             log.debug(f"Deleting status message for channel {target_channel}")
