@@ -1,5 +1,6 @@
 import io
 import logging
+import re
 from pathlib import Path
 
 from openai import AsyncOpenAI
@@ -22,6 +23,9 @@ who missed the call. Produce a structured summary with the following sections:
 - **Open Questions**: Unresolved topics or debates that need follow-up
 
 Attribute key statements to speakers by name when relevant. \
+When referring to a participant listed in the roster, write their handle token \
+(e.g. `@1`, `@2`) exactly as shown in the roster instead of their display name. \
+Only use handles that appear in the roster; do not invent new ones. \
 Omit any section that has no content. Use bullet points. \
 Give equal attention to all parts of the transcript, regardless of when they occurred.
 
@@ -41,6 +45,7 @@ You will be given a structured summary that is too long for its destination. \
 Rewrite it to be shorter while preserving the same section structure and the most \
 important facts, decisions, and action items. Drop minor details, merge related \
 bullets, and tighten wording. Keep bullet points and section headers. \
+Preserve any handle tokens of the form `@1`, `@2`, etc. exactly as they appear. \
 Return only the shortened summary, nothing else."""
 
 
@@ -116,14 +121,27 @@ class TranscriptionPipeline:
 
         return "\n".join(lines)
 
-    async def summarize(self, transcript: str) -> str | None:
+    async def summarize(self, transcript: str, usernames: dict[int, str]) -> str | None:
         """Summarize a transcript using the configured LLM.
 
         Returns None if the LLM determines there is no substantive content.
         """
+        # Assign a small positional handle to each participant so the model
+        # can reference them with short tokens (@1, @2, ...) rather than
+        # copying long Discord IDs verbatim.
+        handle_to_id = {i + 1: uid for i, uid in enumerate(usernames)}
+        roster = "\n".join(
+            f"- @{i} refers to {usernames[uid]}" for i, uid in handle_to_id.items()
+        )
+        user_message = (
+            "Participant roster — when referring to any of these people in the "
+            "summary, write the handle token instead of their name:\n"
+            f"{roster}\n\n"
+            f"Summarize this community call transcript:\n\n{transcript}"
+        )
         result = await self._llm.complete_structured(
             SUMMARIZE_SYSTEM_PROMPT,
-            f"Summarize this community call transcript:\n\n{transcript}",
+            user_message,
             SummaryResult,
             max_tokens=2048,
         )
@@ -143,7 +161,23 @@ class TranscriptionPipeline:
                 f"(currently {len(summary)}):\n\n{summary}",
                 max_tokens=2048,
             )
-        return summary
+
+        return self._expand_handles(summary, handle_to_id, usernames)
+
+    @staticmethod
+    def _expand_handles(
+        text: str, handle_to_id: dict[int, int], usernames: dict[int, str]
+    ) -> str:
+        """Replace @N handles with real Discord mentions; unknown handles get the name or are dropped."""
+
+        def repl(match: re.Match[str]) -> str:
+            handle = int(match.group(1))
+            uid = handle_to_id.get(handle)
+            if uid is not None:
+                return f"<@{uid}>"
+            return "someone"
+
+        return re.sub(r"@(\d+)", repl, text)
 
     async def process_users(
         self,
@@ -163,5 +197,5 @@ class TranscriptionPipeline:
             segments[user_id] = user_segs
 
         transcript = self.format_transcript(segments, usernames)
-        summary = await self.summarize(transcript)
+        summary = await self.summarize(transcript, usernames)
         return transcript, summary
