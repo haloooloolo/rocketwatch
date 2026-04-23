@@ -3,7 +3,17 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from discord import Forbidden, Guild, Interaction, Member, Message, NotFound, User
+from discord import (
+    Forbidden,
+    Guild,
+    Interaction,
+    Member,
+    Message,
+    NotFound,
+    TextStyle,
+    User,
+    ui,
+)
 from discord.utils import MISSING, format_dt
 from pymongo import ReturnDocument
 
@@ -109,21 +119,69 @@ async def run_user_automod(
     return actions
 
 
-async def manual_user_report(
-    ctx: ReportContext, interaction: Interaction[RocketWatch], user: Member
-) -> None:
-    await interaction.response.defer(ephemeral=True)
+def _compose_manual_reason(interaction: Interaction[RocketWatch], note: str) -> str:
+    return f"{note} (reported by {interaction.user.mention})"
 
+
+class UserReportReasonModal(ui.Modal, title="Report User"):
+    def __init__(self, ctx: ReportContext, user: Member) -> None:
+        super().__init__()
+        self._ctx = ctx
+        self._user = user
+        self.reason_field: ui.TextInput[UserReportReasonModal] = ui.TextInput(
+            label="Reason",
+            placeholder="Why are you reporting this user?",
+            style=TextStyle.paragraph,
+            required=True,
+            max_length=250,
+        )
+        self.add_item(self.reason_field)
+
+    async def on_submit(self, interaction: Interaction[RocketWatch]) -> None:  # type: ignore[override]
+        await _execute_user_report(
+            self._ctx, interaction, self._user, self.reason_field.value.strip()
+        )
+
+
+async def manual_user_report(
+    ctx: ReportContext,
+    interaction: Interaction[RocketWatch],
+    user: Member,
+    reason: str = "",
+) -> None:
     if user.bot:
-        return await interaction.followup.send(content="Bots can't be reported.")
+        await interaction.response.send_message(
+            content="Bots can't be reported.", ephemeral=True
+        )
+        return
 
     if user == interaction.user:
-        return await interaction.followup.send(content="Did you just report yourself?")
+        await interaction.response.send_message(
+            content="Did you just report yourself?", ephemeral=True
+        )
+        return
 
     if not isinstance(user, Member):
-        return await interaction.followup.send(
-            content="Failed to report user. They may have already been reported or banned."
+        await interaction.response.send_message(
+            content="Failed to report user. They may have already been reported or banned.",
+            ephemeral=True,
         )
+        return
+
+    if not reason:
+        await interaction.response.send_modal(UserReportReasonModal(ctx, user))
+        return
+
+    await _execute_user_report(ctx, interaction, user, reason)
+
+
+async def _execute_user_report(
+    ctx: ReportContext,
+    interaction: Interaction[RocketWatch],
+    user: Member,
+    note: str,
+) -> None:
+    await interaction.response.defer(ephemeral=True)
 
     if not await _claim_user_report(ctx, user.guild.id, user.id):
         return await interaction.followup.send(
@@ -131,7 +189,7 @@ async def manual_user_report(
         )
 
     try:
-        reason = f"Manual report by {interaction.user.mention}"
+        reason = _compose_manual_reason(interaction, note)
         report = _generate_report_embed(user, reason)
 
         report_channel = await get_report_channel(ctx)

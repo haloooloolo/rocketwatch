@@ -223,10 +223,13 @@ class ScamDetection(Cog):
     @command()
     @guilds(cfg.rocketpool.support.server_id)
     async def report_user(
-        self, interaction: Interaction[RocketWatch], user: Member
+        self,
+        interaction: Interaction[RocketWatch],
+        user: Member,
+        reason: str = "",
     ) -> None:
         """Generate a suspicious user report and send it to the report channel"""
-        await manual_user_report(self._ctx, interaction, user)
+        await manual_user_report(self._ctx, interaction, user, reason=reason)
 
     async def _manual_message_report(
         self, interaction: Interaction[RocketWatch], message: Message
