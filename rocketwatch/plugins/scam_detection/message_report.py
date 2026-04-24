@@ -400,7 +400,7 @@ async def manual_message_report(
                     {"$set": {"warning_id": warning_msg.id}},
                 )
 
-    await interaction.followup.send(content="Thanks for reporting!")
+    await interaction.followup.send(content="Thanks for reporting!", ephemeral=True)
 
 
 async def on_message_delete(ctx: ReportContext, message_id: int) -> None:

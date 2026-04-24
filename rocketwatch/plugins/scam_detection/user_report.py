@@ -208,7 +208,7 @@ async def _execute_user_report(
     if reporter and is_reputable(reporter):
         await run_user_automod(ctx, user, reason)
 
-    await interaction.followup.send(content="Thanks for reporting!")
+    await interaction.followup.send(content="Thanks for reporting!", ephemeral=True)
 
 
 async def report_user_from_partner_ban(

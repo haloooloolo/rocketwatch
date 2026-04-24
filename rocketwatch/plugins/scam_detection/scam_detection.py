@@ -229,7 +229,7 @@ class ScamDetection(Cog):
         reason: str = "",
     ) -> None:
         """Generate a suspicious user report and send it to the report channel"""
-        await manual_user_report(self._ctx, interaction, user, reason=reason)
+        await manual_user_report(self._ctx, interaction, user, reason)
 
     async def _manual_message_report(
         self, interaction: Interaction[RocketWatch], message: Message
