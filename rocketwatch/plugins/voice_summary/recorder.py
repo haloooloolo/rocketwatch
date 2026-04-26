@@ -272,18 +272,13 @@ class CallRecorder:
     def stop(self) -> None:
         """Stop accepting packets and flush every stream's open wav to disk.
 
-        Suppresses the on_segment_closed callback on the final segments so they
-        aren't double-transcribed — finalize picks them up explicitly.
+        Final segments close through the same on_segment_closed path as mid-call
+        rotations, so there's no separate finalize-time transcription code path.
         """
         self._recording = False
         for stream in self._streams.values():
-            stream._on_segment_closed = None
             with contextlib.suppress(Exception):
                 stream.close()
-        log.info(
-            f"Recorder stopped: pre-stream drops empty={self._drops_empty} "
-            f"opus_decode={self._drops_decode}"
-        )
 
     @property
     def speaker_count(self) -> int:

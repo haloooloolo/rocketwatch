@@ -160,52 +160,18 @@ class CallSession:
             log.exception(f"Streaming transcription failed for {wav_path.name}")
 
     async def await_pending_transcriptions(self) -> None:
-        """Wait for all in-flight streaming transcriptions to finish."""
+        """Wait for all in-flight streaming transcriptions to finish.
+
+        Yields once before and after gather so any transcription tasks
+        scheduled via call_soon_threadsafe (e.g. from final-segment closes
+        during recorder.stop) are picked up before we return.
+        """
+        await asyncio.sleep(0)
         while self._pending_tasks:
             tasks = list(self._pending_tasks)
             log.info(f"Waiting for {len(tasks)} pending transcriptions")
             await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def transcribe_remaining(self) -> None:
-        """Transcribe manifest entries that have no text yet."""
-        async with self._manifest_lock:
-            remaining = [
-                (user_id, entry["file"])
-                for user_id, entries in self._manifest.items()
-                for entry in entries
-                if "text" not in entry
-            ]
-
-        if not remaining:
-            return
-
-        log.info(f"Transcribing {len(remaining)} remaining segments")
-        segments_dir = self._segments_dir()
-        for user_id, wav_name in remaining:
-            wav_path = segments_dir / wav_name
-            try:
-                text = await self._pipeline.transcribe_wav(wav_path)
-            except Exception:
-                log.exception(f"Final transcription failed for {wav_name}")
-                continue
-            await self._set_manifest_text(user_id, wav_name, text)
-
-    async def register_final_segments(
-        self, user_segments: dict[int, list[tuple[float, Path]]]
-    ) -> None:
-        """Register segments closed during finalization that aren't in the manifest."""
-        async with self._manifest_lock:
-            known = {e["file"] for entries in self._manifest.values() for e in entries}
-            dirty = False
-            for user_id, wav_segments in user_segments.items():
-                for offset, path in wav_segments:
-                    if path.name not in known:
-                        self._manifest.setdefault(user_id, []).append(
-                            {"file": path.name, "offset": offset}
-                        )
-                        dirty = True
-            if dirty:
-                self._flush_manifest_locked()
+            await asyncio.sleep(0)
 
     def collect_segments(self) -> dict[int, list[tuple[float, str]]]:
         """Return all transcribed segments by user ID."""
@@ -306,8 +272,6 @@ class CallSession:
         if not wav_segments:
             return None
 
-        await self.register_final_segments(wav_segments)
-        await self.transcribe_remaining()
         return wav_segments, self.collect_segments()
 
     async def _build_artifacts(
