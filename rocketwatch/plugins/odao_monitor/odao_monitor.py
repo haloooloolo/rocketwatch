@@ -24,7 +24,7 @@ GRACE_PERIOD = timedelta(hours=1)
 MEMBER_INACTIVITY = timedelta(days=7)
 LAST_SEEN_LOOKBACK = timedelta(days=365)
 BLOCK_TIME = timedelta(seconds=12)
-RUN_AT = time(hour=12, minute=0, tzinfo=UTC)
+RUN_AT = time(hour=18, minute=0, tzinfo=UTC)
 
 META_ID = "_meta"
 
@@ -280,8 +280,8 @@ class ODAOMonitor(commands.Cog):
 
         await self._ingest_submissions(latest_block)
 
-        # only assess inactive members on Monday
-        if now.weekday() != 0:
+        # only assess inactive members on Wednesday
+        if now.weekday() != 2:
             return
 
         missed_balances, missed_prices = await self._get_inactive_members(latest_block)
