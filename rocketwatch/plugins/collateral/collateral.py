@@ -17,7 +17,8 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
-from rocketwatch.utils.embeds import Embed, ens, resolve_ens
+from rocketwatch.utils.cached_ens import ens
+from rocketwatch.utils.embeds import Embed, resolve_ens
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
 from rocketwatch.utils.visibility import is_hidden

@@ -16,8 +16,9 @@ from web3.types import TxData
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
+from rocketwatch.utils.cached_ens import ens
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import Embed, el_explorer_url, ens
+from rocketwatch.utils.embeds import Embed, el_explorer_url
 from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.readable import prettify_json_string, pretty_time, s_hex
 from rocketwatch.utils.rocketpool import rp

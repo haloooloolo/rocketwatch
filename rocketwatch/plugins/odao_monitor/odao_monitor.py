@@ -99,7 +99,9 @@ async def _add_pending_submissions_fields(
     # cover the gap from last consensus to head, plus a small buffer
     lookback_blocks = (latest_block - last_consensus_block) + 1000
     from_block = max(0, latest_block - lookback_blocks)
-    logs = await get_logs(event, BlockNumber(from_block), BlockNumber(latest_block))
+    logs = await get_logs(
+        event, BlockNumber(from_block), BlockNumber(latest_block), address_agnostic=True
+    )
     pending = [log for log in logs if log["args"]["block"] > last_consensus_block]
 
     latest_per_member: dict[str, Any] = {}
@@ -172,11 +174,13 @@ class ODAOMonitor(commands.Cog):
             balances.events.BalancesSubmitted,
             BlockNumber(from_block),
             BlockNumber(latest_block),
+            address_agnostic=True,
         )
         price_logs = await get_logs(
             prices.events.PricesSubmitted,
             BlockNumber(from_block),
             BlockNumber(latest_block),
+            address_agnostic=True,
         )
 
         ops: list[UpdateOne] = []
@@ -237,7 +241,7 @@ class ODAOMonitor(commands.Cog):
 
     @tasks.loop(time=RUN_AT)
     async def task(self) -> None:
-        channel_id = cfg.discord.channels.get("odao")
+        channel_id = cfg.discord.channels.get("monitor")
         if not channel_id:
             return
 
