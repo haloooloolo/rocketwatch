@@ -267,7 +267,7 @@ class ODAOMonitor(commands.Cog):
             )
             embed = Embed(title="🚨 Lost Oracle Consensus", color=CustomColors.RED)
             embed.description = (
-                f"The Oracle DAO has not performed the **{duty.name}** on time.\n\n"
+                f"The Oracle DAO has not performed the **{duty.name}** on time!\n\n"
                 f"Last update: {discord_utils.format_dt(last_update, 'R')} "
                 f"({discord_utils.format_dt(last_update, 'f')})\n"
                 f"Expected every **{humanize.precisedelta(period)}**, "

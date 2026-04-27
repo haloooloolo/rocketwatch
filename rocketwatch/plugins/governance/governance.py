@@ -60,7 +60,7 @@ class Governance(StatusPlugin):
         if not (proposal_contract := dao._proposal_contract):
             return HASH_ZERO
 
-        for receipt in proposal_contract.events.ProposalAdded().get_logs(
+        for receipt in await proposal_contract.events.ProposalAdded().get_logs(
             from_block=from_block, to_block=to_block
         ):
             log.info(f"Found receipt {receipt}")
