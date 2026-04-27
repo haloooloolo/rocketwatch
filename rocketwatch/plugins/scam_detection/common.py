@@ -4,12 +4,12 @@ from datetime import timedelta
 from enum import Enum
 from typing import Any, TypedDict
 
-from discord import Color, Interaction, Member, Message
+from discord import Interaction, Member, Message
 from discord.abc import Messageable
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.sentinel import SentinelClient
 
 log = logging.getLogger("rocketwatch.scam_detection")
@@ -33,9 +33,9 @@ class ReportContext:
 
 
 class ReportColor:
-    ALERT = Color.from_rgb(255, 0, 0)
-    WARN = Color.from_rgb(255, 165, 0)
-    OK = Color.from_rgb(0, 255, 0)
+    ALERT = CustomColors.RED
+    WARN = CustomColors.YELLOW
+    OK = CustomColors.GREEN
 
 
 class PartnerBroadcast(TypedDict):

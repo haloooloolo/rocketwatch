@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any
 
@@ -18,18 +17,16 @@ async def get_logs(
     log.debug(f"Fetching event logs in [{from_block}, {to_block}]")
 
     chunk_size = 50_000
-    tasks = []
+    results: list[EventData] = []
     chunk_start = from_block
     while chunk_start <= to_block:
         chunk_end = min(chunk_start + chunk_size, to_block)
-        tasks.append(
-            event.get_logs(
-                from_block=chunk_start,
-                to_block=chunk_end,
-                argument_filters=arg_filters,
-            )
+        chunk = await event.get_logs(
+            from_block=chunk_start,
+            to_block=chunk_end,
+            argument_filters=arg_filters,
         )
+        results.extend(chunk)
         chunk_start = BlockNumber(chunk_end + 1)
 
-    results = await asyncio.gather(*tasks)
-    return [log_entry for chunk in results for log_entry in chunk]
+    return results

@@ -9,7 +9,6 @@ from typing import Any
 import discord
 import pymongo
 from cronitor import Monitor
-from discord import Color
 from discord.abc import Messageable
 from discord.ext import commands, tasks
 from eth_typing import BlockNumber
@@ -17,7 +16,7 @@ from eth_typing import BlockNumber
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch.utils.config import StatusMessageConfig, cfg
-from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.event import EventPlugin
 from rocketwatch.utils.shared_w3 import w3
 from rocketwatch.utils.status import StatusPlugin
@@ -325,7 +324,7 @@ class EventCore(commands.Cog):
         bar = "\u2588" * filled + "\u2591" * (bar_length - filled)
 
         embed = Embed()
-        embed.colour = discord.Color.from_rgb(235, 178, 86)
+        embed.colour = CustomColors.YELLOW
         embed.title = "\u23f3 Catching Up"
         embed.description = (
             "Rocket Watch fell behind and is busy catching up to the head of the chain."
@@ -343,7 +342,7 @@ class EventCore(commands.Cog):
     async def show_service_interrupt(self) -> None:
         time = int(datetime.now().timestamp())
         embed = Embed(
-            color=Color.from_rgb(235, 86, 86),
+            color=CustomColors.RED,
             title=":warning: Failure in Event Processing",
             description=(
                 "The developer has automatically been notified of this error.\n"

@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, TypedDict, cast
 
-from discord import Color, Interaction
+from discord import Interaction
 from discord.app_commands import command
 from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.contract import AsyncContract
@@ -12,6 +12,7 @@ from web3.types import EventData
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.embeds import (
+    CustomColors,
     Embed,
     build_event_embed,
     build_small_event_embed,
@@ -26,8 +27,8 @@ from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.dex_trades")
 
-_BUY_COLOR = Color.from_rgb(76, 175, 80)
-_SELL_COLOR = Color.from_rgb(235, 86, 86)
+_BUY_COLOR = CustomColors.GREEN
+_SELL_COLOR = CustomColors.RED
 
 _RPL_USD_THRESHOLD_LARGE = 50_000
 _RETH_USD_THRESHOLD_LARGE = 250_000

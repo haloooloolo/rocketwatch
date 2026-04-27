@@ -5,14 +5,13 @@ from typing import Any, TypedDict, cast
 
 import aiohttp
 import eth_utils
-from discord import Color
 from eth_typing import BlockNumber
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import ts_to_block
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import Embed, el_explorer_url, format_value
+from rocketwatch.utils.embeds import CustomColors, Embed, el_explorer_url, format_value
 from rocketwatch.utils.event import Event, EventPlugin
 from rocketwatch.utils.readable import cl_explorer_url
 from rocketwatch.utils.retry import retry
@@ -47,7 +46,7 @@ def _build_finality_embed(
 ) -> Embed:
     if event_name == "finality_delay_event":
         embed = Embed(
-            color=Color.from_rgb(235, 86, 86),
+            color=CustomColors.RED,
             title=":warning: Finality Delay On Beacon Chain",
             description=(
                 f"Finality has been delayed for **{finality_delay} Epochs** "
@@ -59,7 +58,7 @@ def _build_finality_embed(
         embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
     else:
         embed = Embed(
-            color=Color.from_rgb(86, 235, 86),
+            color=CustomColors.GREEN,
             title=":tada: Finality Recovered",
             description="Finality has been recovered on the Beacon Chain!",
         )

@@ -25,7 +25,7 @@ from rocketwatch.plugins.voice_summary.session import (
     CallSession,
 )
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import ACCENT_COLOR
+from rocketwatch.utils.embeds import CustomColors
 from rocketwatch.utils.file import TextFile
 from rocketwatch.utils.llm import create_provider
 
@@ -266,7 +266,7 @@ class VoiceSummary(Cog):
                 ui.Separator(),
                 ui.TextDisplay(footer),
                 *file_components,
-                accent_color=ACCENT_COLOR,
+                accent_color=CustomColors.ORANGE,
             )
         )
 

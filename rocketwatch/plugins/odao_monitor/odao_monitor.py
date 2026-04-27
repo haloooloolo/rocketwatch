@@ -1,8 +1,8 @@
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
+from typing import Any
 
 import humanize
 from discord import utils as discord_utils
@@ -13,7 +13,7 @@ from pymongo import UpdateOne
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.embeds import Embed, el_explorer_url
+from rocketwatch.utils.embeds import CustomColors, Embed, el_explorer_url
 from rocketwatch.utils.event_logs import get_logs
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
@@ -33,39 +33,118 @@ META_ID = "_meta"
 class Duty:
     id: str
     name: str
-    fetch: Callable[[], Awaitable[tuple[datetime, timedelta]]]
-
-
-async def _balances_duty() -> tuple[datetime, timedelta]:
-    network_balances = await rp.get_contract_by_name("rocketNetworkBalances")
-    settings = await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
-    last_block, period = await rp.multicall(
-        [
-            network_balances.functions.getBalancesBlock(),
-            settings.functions.getSubmitBalancesFrequency(),
-        ]
-    )
-    last_ts = (await w3.eth.get_block(last_block))["timestamp"]
-    return datetime.fromtimestamp(last_ts, tz=UTC), timedelta(seconds=period)
-
-
-async def _prices_duty() -> tuple[datetime, timedelta]:
-    network_prices = await rp.get_contract_by_name("rocketNetworkPrices")
-    settings = await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
-    last_block, period = await rp.multicall(
-        [
-            network_prices.functions.getPricesBlock(),
-            settings.functions.getSubmitPricesFrequency(),
-        ]
-    )
-    last_ts = (await w3.eth.get_block(last_block))["timestamp"]
-    return datetime.fromtimestamp(last_ts, tz=UTC), timedelta(seconds=period)
+    contract_name: str
+    event_name: str
+    block_getter: str
+    frequency_getter: str
+    value_fields: tuple[str, ...]
 
 
 DUTIES: list[Duty] = [
-    Duty(id="balances", name="rETH Balance Update", fetch=_balances_duty),
-    Duty(id="prices", name="RPL Price Update", fetch=_prices_duty),
+    Duty(
+        id="balances",
+        name="rETH Balance Update",
+        contract_name="rocketNetworkBalances",
+        event_name="BalancesSubmitted",
+        block_getter="getBalancesBlock",
+        frequency_getter="getSubmitBalancesFrequency",
+        value_fields=(
+            "block",
+            "slotTimestamp",
+            "totalEth",
+            "stakingEth",
+            "rethSupply",
+        ),
+    ),
+    Duty(
+        id="prices",
+        name="RPL Price Update",
+        contract_name="rocketNetworkPrices",
+        event_name="PricesSubmitted",
+        block_getter="getPricesBlock",
+        frequency_getter="getSubmitPricesFrequency",
+        value_fields=("block", "slotTimestamp", "rplPrice"),
+    ),
 ]
+
+
+async def _fetch_duty_state(duty: Duty) -> tuple[int, datetime, timedelta]:
+    """Returns (last_consensus_block, last_consensus_dt, period)."""
+    contract = await rp.get_contract_by_name(duty.contract_name)
+    settings = await rp.get_contract_by_name("rocketDAOProtocolSettingsNetwork")
+    last_block, period = await rp.multicall(
+        [
+            contract.functions[duty.block_getter](),
+            settings.functions[duty.frequency_getter](),
+        ]
+    )
+    last_ts = (await w3.eth.get_block(last_block))["timestamp"]
+    return (
+        last_block,
+        datetime.fromtimestamp(last_ts, tz=UTC),
+        timedelta(seconds=period),
+    )
+
+
+async def _add_pending_submissions_fields(
+    embed: Embed,
+    duty: Duty,
+    last_consensus_block: int,
+    latest_block: int,
+    members: list[str],
+) -> None:
+    """Append a field per vote group (and one for non-submitters) to the embed."""
+    contract = await rp.get_contract_by_name(duty.contract_name)
+    event = contract.events[duty.event_name]
+    # cover the gap from last consensus to head, plus a small buffer
+    lookback_blocks = (latest_block - last_consensus_block) + 1000
+    from_block = max(0, latest_block - lookback_blocks)
+    logs = await get_logs(event, BlockNumber(from_block), BlockNumber(latest_block))
+    pending = [log for log in logs if log["args"]["block"] > last_consensus_block]
+
+    latest_per_member: dict[str, Any] = {}
+    for entry in pending:
+        addr = entry["args"]["from"]
+        prev = latest_per_member.get(addr)
+        if prev is None or entry["blockNumber"] > prev["blockNumber"]:
+            latest_per_member[addr] = entry
+
+    groups: dict[tuple[Any, ...], list[str]] = {}
+    for addr, entry in latest_per_member.items():
+        values = tuple(entry["args"][k] for k in duty.value_fields)
+        groups.setdefault(values, []).append(addr)
+
+    sorted_groups = sorted(groups.items(), key=lambda x: -len(x[1]))
+    if len(sorted_groups) > 1:
+        differing_fields = [
+            i
+            for i in range(len(duty.value_fields))
+            if len({values[i] for values, _ in sorted_groups}) > 1
+        ]
+    else:
+        differing_fields = list(range(len(duty.value_fields)))
+
+    for idx, (values, addrs) in enumerate(sorted_groups, start=1):
+        value_str = "\n".join(
+            f"`{duty.value_fields[i]}` = `{values[i]}`" for i in differing_fields
+        )
+        addr_links = [await el_explorer_url(a) for a in addrs]
+        member_lines = "\n".join(f"- {link}" for link in addr_links)
+        embed.add_field(
+            name=f"Submission Group {idx} ({len(addrs)} vote{'s' if len(addrs) != 1 else ''})",
+            value=f"{value_str}\n{member_lines}",
+            inline=False,
+        )
+
+    not_submitted = [m for m in members if m not in latest_per_member]
+    if not_submitted:
+        addr_links = [await el_explorer_url(a) for a in not_submitted]
+        member_lines = "\n".join(f"- {link}" for link in addr_links)
+        embed.add_field(
+            name=f"No Submission ({len(not_submitted)})",
+            value=member_lines,
+            inline=False,
+        )
 
 
 class ODAOMonitor(commands.Cog):
@@ -124,18 +203,20 @@ class ODAOMonitor(commands.Cog):
             upsert=True,
         )
 
-    async def _get_inactive_members(
-        self, latest_block: int
-    ) -> tuple[list[tuple[str, BlockNumber]], list[tuple[str, BlockNumber]]]:
-        """Returns (missed balances, missed prices) — list of (address, last_block)."""
-        threshold_block = latest_block - int(MEMBER_INACTIVITY / BLOCK_TIME)
-
+    async def _get_member_addresses(self) -> list[str]:
         dao = await rp.get_contract_by_name("rocketDAONodeTrusted")
         member_count = await dao.functions.getMemberCount().call()
         addresses = await rp.multicall(
             [dao.functions.getMemberAt(i) for i in range(member_count)]
         )
-        addresses = [w3.to_checksum_address(addr) for addr in addresses]
+        return [w3.to_checksum_address(addr) for addr in addresses]
+
+    async def _get_inactive_members(
+        self, latest_block: int
+    ) -> tuple[list[tuple[str, BlockNumber]], list[tuple[str, BlockNumber]]]:
+        """Returns (missed balances, missed prices) — list of (address, last_block)."""
+        threshold_block = latest_block - int(MEMBER_INACTIVITY / BLOCK_TIME)
+        addresses = await self._get_member_addresses()
 
         docs = await self.collection.find({"_id": {"$in": addresses}}).to_list(None)
         state = {d["_id"]: d for d in docs}
@@ -164,8 +245,11 @@ class ODAOMonitor(commands.Cog):
         assert isinstance(channel, Messageable)
 
         now = datetime.now(tz=UTC)
+        latest_block = await w3.eth.get_block_number()
+        members = await self._get_member_addresses()
+
         for duty in DUTIES:
-            last_update, period = await duty.fetch()
+            last_block, last_update, period = await _fetch_duty_state(duty)
             deadline = last_update + period
             if now < deadline + GRACE_PERIOD:
                 continue
@@ -177,17 +261,19 @@ class ODAOMonitor(commands.Cog):
                 deadline.isoformat(),
                 now.isoformat(),
             )
-            embed = Embed(title=":warning: Missed oDAO Duty")
+            embed = Embed(title="🔮 Lost Oracle Consensus", color=CustomColors.RED)
             embed.description = (
                 f"The Oracle DAO has not performed the **{duty.name}** on time.\n\n"
                 f"Last update: {discord_utils.format_dt(last_update, 'R')} "
                 f"({discord_utils.format_dt(last_update, 'f')})\n"
-                f"Expected every **{humanize.naturaldelta(period)}**, "
+                f"Expected every **{humanize.precisedelta(period)}**, "
                 f"due {discord_utils.format_dt(deadline, 'R')}."
+            )
+            await _add_pending_submissions_fields(
+                embed, duty, last_block, latest_block, members
             )
             await channel.send(embed=embed)
 
-        latest_block = await w3.eth.get_block_number()
         await self._ingest_submissions(latest_block)
 
         # only assess inactive members on Monday
@@ -207,7 +293,7 @@ class ODAOMonitor(commands.Cog):
             )
             block_ts = {b["number"]: b["timestamp"] for b in block_data}
 
-            embed = Embed(title=":warning: Inactive oDAO Members")
+            embed = Embed(title="🔮 Inactive oDAO Members", color=CustomColors.YELLOW)
             for field_name, items in (
                 ("Missed rETH Balance Update", missed_balances),
                 ("Missed RPL Price Update", missed_prices),

@@ -20,7 +20,6 @@ from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
 from rocketwatch.utils.block_time import block_to_ts
-from rocketwatch.utils.cached_ens import ens as ens
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.readable import advanced_txn_url, s_hex
 from rocketwatch.utils.retry import retry
@@ -30,7 +29,13 @@ from rocketwatch.utils.shared_w3 import w3
 
 log = logging.getLogger("rocketwatch.embeds")
 
-ACCENT_COLOR = Color.from_rgb(226, 116, 57)
+
+class CustomColors:
+    RED = Color.from_rgb(235, 86, 86)
+    ORANGE = Color.from_rgb(226, 116, 57)
+    YELLOW = Color.from_rgb(255, 165, 0)
+    GREEN = Color.from_rgb(76, 175, 80)
+
 
 _ADDRESS_NAMES: dict[str, str] = json.loads(
     (
@@ -51,7 +56,7 @@ class Embed(discord.Embed):
         timestamp: datetime | None = None,
     ) -> None:
         if color is None:
-            color = ACCENT_COLOR
+            color = CustomColors.ORANGE
         super().__init__(
             color=color,
             title=title,
@@ -194,6 +199,8 @@ def format_value(value: int | float) -> str:
 async def resolve_ens(
     interaction: Interaction, node_address: str
 ) -> tuple[str | None, ChecksumAddress | None]:
+    from rocketwatch.utils.cached_ens import ens
+
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
         try:
@@ -247,6 +254,8 @@ async def el_explorer_url(
     name_fmt: Callable[[str], str] | None = None,
     block: BlockIdentifier = "latest",
 ) -> str:
+    from rocketwatch.utils.cached_ens import ens
+
     _prefix = ""
 
     if w3.is_address(target):
