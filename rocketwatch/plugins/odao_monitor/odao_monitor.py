@@ -265,7 +265,7 @@ class ODAOMonitor(commands.Cog):
                 deadline.isoformat(),
                 now.isoformat(),
             )
-            embed = Embed(title="🔮 Lost Oracle Consensus", color=CustomColors.RED)
+            embed = Embed(title="🚨 Lost Oracle Consensus", color=CustomColors.RED)
             embed.description = (
                 f"The Oracle DAO has not performed the **{duty.name}** on time.\n\n"
                 f"Last update: {discord_utils.format_dt(last_update, 'R')} "
@@ -297,7 +297,7 @@ class ODAOMonitor(commands.Cog):
             )
             block_ts = {b["number"]: b["timestamp"] for b in block_data}
 
-            embed = Embed(title="🔮 Inactive oDAO Members", color=CustomColors.YELLOW)
+            embed = Embed(title="⚠️ Inactive oDAO Members", color=CustomColors.YELLOW)
             for field_name, items in (
                 ("Missed rETH Balance Update", missed_balances),
                 ("Missed RPL Price Update", missed_prices),
