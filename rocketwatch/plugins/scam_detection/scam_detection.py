@@ -218,6 +218,20 @@ class ScamDetection(Cog):
                 ]
             )
 
+        partner_ids = {p.guild_id for p in cfg.scam_detection.partners}
+        if guild.id in partner_ids:
+            await self._notify_owner_partner_ban(guild, user)
+
+    async def _notify_owner_partner_ban(self, guild: Guild, user: User) -> None:
+        try:
+            owner = await self.bot.get_or_fetch_user(cfg.discord.owner.user_id)
+            await owner.send(
+                f"`{user}` (`{user.id}`) was banned in partner guild "
+                f"`{guild.name}` (`{guild.id}`)."
+            )
+        except Exception as e:
+            await self.bot.report_error(e)
+
     # --- Commands ---
 
     @command()
