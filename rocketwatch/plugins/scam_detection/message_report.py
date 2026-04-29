@@ -122,6 +122,7 @@ class WarningConfirmView(ui.View):
             return
 
         await run_message_automod(cog._ctx, message, report["reason"], report_msg)
+        await broadcast_user_report(cog._ctx, message.author.id, report_msg)
 
 
 def serialize_message(message: Message) -> str:
@@ -297,8 +298,6 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
         await _release_claim(ctx, message.id)
         raise
 
-    await broadcast_user_report(ctx, message.author.id, report_msg)
-
     actions = await run_message_automod(ctx, message, reason, report_msg)
 
     if AutomodAction.MESSAGE_DELETED not in actions:
@@ -315,6 +314,8 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
                 {"type": "message", "message_id": message.id},
                 {"$set": {"warning_id": warning_msg.id}},
             )
+
+    await broadcast_user_report(ctx, message.author.id, report_msg)
 
 
 async def manual_message_report(
@@ -381,10 +382,9 @@ async def manual_message_report(
         await _release_claim(ctx, message.id)
         raise
 
-    await broadcast_user_report(ctx, message.author.id, report_msg)
-
     if reporter_is_reputable:
         actions = await run_message_automod(ctx, message, reason, report_msg)
+        await broadcast_user_report(ctx, message.author.id, report_msg)
         if AutomodAction.MESSAGE_DELETED not in actions:
             try:
                 warning_msg = await message.reply(

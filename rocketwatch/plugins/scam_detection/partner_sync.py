@@ -1,7 +1,8 @@
 import asyncio
 import logging
+from collections.abc import Callable
 
-from discord import AllowedMentions, Forbidden, Message, NotFound
+from discord import AllowedMentions, Forbidden, Guild, Member, Message, NotFound
 from discord.abc import Messageable
 
 from rocketwatch.plugins.scam_detection.common import PartnerBroadcast, ReportContext
@@ -11,7 +12,10 @@ log = logging.getLogger("rocketwatch.scam_detection")
 
 
 async def _broadcast_to_partner(
-    ctx: ReportContext, partner: PartnerGuild, user_id: int, report_msg: Message
+    ctx: ReportContext,
+    partner: PartnerGuild,
+    user_id: int,
+    build_message: Callable[[Member], str],
 ) -> PartnerBroadcast | None:
     try:
         member = await ctx.bot.get_or_fetch_member(partner.guild_id, user_id)
@@ -41,7 +45,7 @@ async def _broadcast_to_partner(
         return None
 
     sent = await channel.send(
-        f"Flagged {member.mention} - report: {report_msg.jump_url}",
+        build_message(member),
         allowed_mentions=AllowedMentions.none(),
     )
     return PartnerBroadcast(
@@ -51,15 +55,14 @@ async def _broadcast_to_partner(
     )
 
 
-async def broadcast_user_report(
-    ctx: ReportContext, user_id: int, report_msg: Message
-) -> None:
-    partners = cfg.scam_detection.partners
-    if not partners:
-        return
-
+async def _broadcast(
+    ctx: ReportContext,
+    partners: list[PartnerGuild],
+    user_id: int,
+    build_message: Callable[[Member], str],
+) -> list[PartnerBroadcast]:
     results = await asyncio.gather(
-        *[_broadcast_to_partner(ctx, p, user_id, report_msg) for p in partners],
+        *[_broadcast_to_partner(ctx, p, user_id, build_message) for p in partners],
         return_exceptions=True,
     )
 
@@ -75,6 +78,20 @@ async def broadcast_user_report(
         elif result is not None:
             broadcasts.append(result)
 
+    return broadcasts
+
+
+async def broadcast_user_report(
+    ctx: ReportContext, user_id: int, report_msg: Message
+) -> None:
+    partners = cfg.scam_detection.partners
+    if not partners:
+        return
+
+    def build_message(member: Member) -> str:
+        return f"Flagged {member.mention} - report: {report_msg.jump_url}"
+
+    broadcasts = await _broadcast(ctx, partners, user_id, build_message)
     if not broadcasts:
         return
 
@@ -82,3 +99,16 @@ async def broadcast_user_report(
         {"report_id": report_msg.id},
         {"$set": {"partner_messages": broadcasts}},
     )
+
+
+async def broadcast_partner_ban(
+    ctx: ReportContext, source_guild: Guild, user_id: int
+) -> None:
+    partners = [p for p in cfg.scam_detection.partners if p.guild_id != source_guild.id]
+    if not partners:
+        return
+
+    def build_message(member: Member) -> str:
+        return f"{member.mention} was banned in `{source_guild.name}`"
+
+    await _broadcast(ctx, partners, user_id, build_message)

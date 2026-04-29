@@ -35,11 +35,15 @@ from rocketwatch.plugins.scam_detection.message_report import (
     on_message_delete,
     report_message,
 )
+from rocketwatch.plugins.scam_detection.partner_sync import broadcast_partner_ban
 from rocketwatch.plugins.scam_detection.thread_report import (
     check_thread_starter_deleted,
     on_thread_removed,
 )
-from rocketwatch.plugins.scam_detection.user_report import manual_user_report
+from rocketwatch.plugins.scam_detection.user_report import (
+    manual_user_report,
+    report_user_from_partner_ban,
+)
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.sentinel import SentinelClient
@@ -220,17 +224,8 @@ class ScamDetection(Cog):
 
         partner_ids = {p.guild_id for p in cfg.scam_detection.partners}
         if guild.id in partner_ids:
-            await self._notify_owner_partner_ban(guild, user)
-
-    async def _notify_owner_partner_ban(self, guild: Guild, user: User) -> None:
-        try:
-            owner = await self.bot.get_or_fetch_user(cfg.discord.owner.user_id)
-            await owner.send(
-                f"`{user}` (`{user.id}`) was banned in partner guild "
-                f"`{guild.name}` (`{guild.id}`)."
-            )
-        except Exception as e:
-            await self.bot.report_error(e)
+            await broadcast_partner_ban(self._ctx, guild, user.id)
+            await report_user_from_partner_ban(self._ctx, guild, user)
 
     # --- Commands ---
 

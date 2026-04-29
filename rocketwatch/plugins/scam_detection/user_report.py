@@ -202,11 +202,10 @@ async def _execute_user_report(
         await _release_claim(ctx, user.guild.id, user.id)
         raise
 
-    await broadcast_user_report(ctx, user.id, report_msg)
-
     reporter = await member_from_interaction(interaction)
     if reporter and is_reputable(reporter):
         await run_user_automod(ctx, user, reason)
+        await broadcast_user_report(ctx, user.id, report_msg)
 
     await interaction.followup.send(content="Thanks for reporting!", ephemeral=True)
 
@@ -215,7 +214,7 @@ async def report_user_from_partner_ban(
     ctx: ReportContext, partner_guild: Guild, banned_user: User
 ) -> None:
     """Create a user report in the RP guild when a partner server bans a user
-    who is also a member of RP. No auto-action; surfaces to mods for review."""
+    who is also a member of RP, and run automod on them."""
     if banned_user.bot:
         return
 
@@ -237,7 +236,7 @@ async def report_user_from_partner_ban(
         return
 
     try:
-        reason = f"Banned in partner server `{partner_guild.name}`"
+        reason = f"Banned in `{partner_guild.name}`"
         report = _generate_report_embed(member, reason)
 
         report_channel = await get_report_channel(ctx)
@@ -249,3 +248,5 @@ async def report_user_from_partner_ban(
     except Exception:
         await _release_claim(ctx, rp_guild_id, banned_user.id)
         raise
+
+    await run_user_automod(ctx, member, reason)
