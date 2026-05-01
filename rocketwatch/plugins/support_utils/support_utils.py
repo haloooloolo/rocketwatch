@@ -195,7 +195,7 @@ def has_perms(interaction: Interaction) -> bool:
     if cfg.discord.owner.user_id == user.id:
         return True
     if isinstance(user, Member):
-        if any(r.id in cfg.rocketpool.support.role_ids for r in user.roles):
+        if any(r.id in cfg.rocketpool.support.moderator_roles for r in user.roles):
             return True
         if (
             user.guild_permissions.moderate_members

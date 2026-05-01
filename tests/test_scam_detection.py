@@ -44,7 +44,12 @@ def _get_test_cfg():
             manual_addresses={"rocketStorage": "0x1234"},
             dao_multisigs=["0xabcd"],
             support=RocketPoolSupport(
-                user_ids=[1], role_ids=[2], server_id=3, channel_id=4, moderator_id=5
+                user_ids=[1],
+                moderator_roles=[2],
+                admin_roles=[6],
+                server_id=3,
+                channel_id=4,
+                moderator_id=5,
             ),
             dm_warning=DmWarningConfig(channels=[100]),
         ),

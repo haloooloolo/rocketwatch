@@ -36,11 +36,12 @@ class MongoDBConfig(BaseModel):
 
 
 class RocketPoolSupport(BaseModel):
-    user_ids: list[int]
-    role_ids: list[int]
     server_id: int
     channel_id: int
     moderator_id: int
+    user_ids: list[int]
+    admin_roles: list[int]
+    moderator_roles: list[int]
 
 
 class DmWarningConfig(BaseModel):

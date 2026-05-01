@@ -66,14 +66,17 @@ def is_reputable(member: Member) -> bool:
         (
             member.id == cfg.discord.owner.user_id,
             member.id in cfg.rocketpool.support.user_ids,
-            {role.id for role in member.roles} & set(cfg.rocketpool.support.role_ids),
+            {role.id for role in member.roles}
+            & set(cfg.rocketpool.support.moderator_roles),
             member.guild_permissions.moderate_members,
         )
     )
 
 
 def is_admin(member: Member) -> bool:
-    return member.guild_permissions.ban_members
+    return bool(
+        {role.id for role in member.roles} & set(cfg.rocketpool.support.admin_roles)
+    )
 
 
 async def get_report_channel(ctx: ReportContext) -> Messageable:

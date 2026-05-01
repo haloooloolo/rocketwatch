@@ -36,11 +36,12 @@ dao_multisigs = [
 ]
 
 [rocketpool.support]
-user_ids = []
-role_ids = []
 server_id = -1
 channel_id = -1
 moderator_id = -1
+user_ids = []
+admin_roles = []
+moderator_roles = []
 
 [rocketpool.dm_warning]
 channels = []
