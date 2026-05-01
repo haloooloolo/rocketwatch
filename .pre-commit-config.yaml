@@ -13,6 +13,7 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+        stages: [pre-push]
       - id: mypy
         name: mypy (rocketwatch)
         entry: uv run --group test mypy rocketwatch/
