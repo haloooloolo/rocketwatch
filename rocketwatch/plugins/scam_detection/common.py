@@ -19,6 +19,9 @@ DEFAULT_USER_TIMEOUT = timedelta(hours=24)
 MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=5)
 THREAD_ALERT_DELETE_AFTER = timedelta(minutes=60)
 
+MODERATOR_ROLES = set(cfg.rocketpool.support.moderator_roles)
+ADMIN_ROLES = set(cfg.rocketpool.support.admin_roles)
+
 
 class AutomodAction(Enum):
     MESSAGE_DELETED = "message_deleted"
@@ -63,20 +66,17 @@ class ScamReport(TypedDict):
 
 def is_reputable(member: Member) -> bool:
     return (
-        member.guild_permissions.moderate_members
+        is_admin(member)
+        or member.guild_permissions.moderate_members
         or member.id == cfg.discord.owner.user_id
         or member.id in cfg.rocketpool.support.user_ids
-        or bool(
-            {role.id for role in member.roles}
-            & set(cfg.rocketpool.support.moderator_roles)
-        )
-        or is_admin(member)
+        or bool({role.id for role in member.roles} & MODERATOR_ROLES)
     )
 
 
 def is_admin(member: Member) -> bool:
     return member.guild_permissions.ban_members or bool(
-        {role.id for role in member.roles} & set(cfg.rocketpool.support.admin_roles)
+        {role.id for role in member.roles} & ADMIN_ROLES
     )
 
 
