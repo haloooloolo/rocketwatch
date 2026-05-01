@@ -62,19 +62,20 @@ class ScamReport(TypedDict):
 
 
 def is_reputable(member: Member) -> bool:
-    return any(
-        (
-            member.id == cfg.discord.owner.user_id,
-            member.id in cfg.rocketpool.support.user_ids,
+    return (
+        member.guild_permissions.moderate_members
+        or member.id == cfg.discord.owner.user_id
+        or member.id in cfg.rocketpool.support.user_ids
+        or bool(
             {role.id for role in member.roles}
-            & set(cfg.rocketpool.support.moderator_roles),
-            member.guild_permissions.moderate_members,
+            & set(cfg.rocketpool.support.moderator_roles)
         )
+        or is_admin(member)
     )
 
 
 def is_admin(member: Member) -> bool:
-    return bool(
+    return member.guild_permissions.ban_members or bool(
         {role.id for role in member.roles} & set(cfg.rocketpool.support.admin_roles)
     )
 
