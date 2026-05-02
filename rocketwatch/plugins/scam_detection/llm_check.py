@@ -14,7 +14,7 @@ log = logging.getLogger("rocketwatch.scam_detection.llm")
 
 MAX_OUTPUT_TOKENS = 200
 MAX_IMAGES = 5
-MAX_IMAGE_BYTES = 5 * 4096 * 4096
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 SYSTEM_PROMPT = """\
 You are a scam detection system for a cryptocurrency Discord server.
