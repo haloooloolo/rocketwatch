@@ -1,18 +1,20 @@
 import json
 import logging
-from typing import Any
 
 import humanize
 from discord import Member, Message
 from discord.utils import utcnow
 from pydantic import BaseModel, Field
 
+from rocketwatch.plugins.scam_detection.common import message_to_dict
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.llm import LLMProvider, create_provider
+from rocketwatch.utils.llm import ImageInput, LLMProvider, create_provider
 
 log = logging.getLogger("rocketwatch.scam_detection.llm")
 
 MAX_OUTPUT_TOKENS = 200
+MAX_IMAGES = 5
+MAX_IMAGE_BYTES = 5 * 4096 * 4096
 
 SYSTEM_PROMPT = """\
 You are a scam detection system for a cryptocurrency Discord server.
@@ -23,6 +25,10 @@ Focus on the author's INTENT. Flag messages that are trying to:
 - Build false trust by impersonating authority (staff, support, admins)
 - Create artificial urgency or fear to pressure users into action
 - Deceive users through any other social engineering technique
+
+If image attachments are included, evaluate them as part of the message. Images may contain \
+QR codes linking to phishing sites, fake support screenshots, fake wallet/exchange interfaces, \
+impersonations of project branding, or instructions overlaid on otherwise innocuous pictures.
 
 You will be given context about the user: how long they have been in the server and the number of previous \
 messages they have sent in the server. Brand-new users with few or no messages who jump straight \
@@ -75,6 +81,28 @@ USER_PROMPT_TEMPLATE = (
 )
 
 
+async def _fetch_image_attachments(message: Message) -> list[ImageInput]:
+    images: list[ImageInput] = []
+    for attachment in message.attachments:
+        if len(images) >= MAX_IMAGES:
+            break
+        media_type = attachment.content_type or ""
+        if not media_type.startswith("image/"):
+            continue
+        if attachment.size > MAX_IMAGE_BYTES:
+            log.debug(f"Skipping oversized image attachment ({attachment.size} bytes)")
+            continue
+        try:
+            data = await attachment.read()
+        except Exception as e:
+            log.warning(f"Failed to fetch image attachment {attachment.url}: {e}")
+            continue
+        images.append(
+            ImageInput(data=data, media_type=media_type.split(";")[0].strip())
+        )
+    return images
+
+
 class LLMScamChecker:
     def __init__(self) -> None:
         self._provider: LLMProvider | None = create_provider(cfg.scam_detection.llm)
@@ -88,11 +116,12 @@ class LLMScamChecker:
         if not self._provider:
             return None
 
-        data: dict[str, Any] = {"content": message.content}
-        if message.embeds:
-            data["embeds"] = [
-                {"title": e.title, "description": e.description} for e in message.embeds
-            ]
+        data = message_to_dict(message)
+
+        images = await _fetch_image_attachments(message)
+        if images:
+            data["image_attachments_sent_to_model"] = len(images)
+
         content = json.dumps(data, indent=2)
 
         membership_duration = "unknown"
@@ -109,7 +138,11 @@ class LLMScamChecker:
             message_count=prev_user_msg_count,
         )
         result = await self._provider.complete_structured(
-            SYSTEM_PROMPT, user_message, ScamCheckResult, max_tokens=MAX_OUTPUT_TOKENS
+            SYSTEM_PROMPT,
+            user_message,
+            ScamCheckResult,
+            max_tokens=MAX_OUTPUT_TOKENS,
+            images=images or None,
         )
         log.debug(
             f"AI scam check ({cfg.scam_detection.llm.provider}/{cfg.scam_detection.llm.model}): {result}"

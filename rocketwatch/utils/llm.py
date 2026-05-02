@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, TypeVar
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -15,6 +17,12 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound=BaseModel)
 
 
+@dataclass(frozen=True)
+class ImageInput:
+    data: bytes
+    media_type: str
+
+
 class LLMProvider(ABC):
     def __init__(self, api_key: str, model: str) -> None:
         self._api_key = api_key
@@ -22,12 +30,23 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def complete(
-        self, system: str, user_message: str, *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> str: ...
 
     @abstractmethod
     async def complete_structured(
-        self, system: str, user_message: str, schema: type[T], *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        schema: type[T],
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> T: ...
 
 
@@ -39,23 +58,63 @@ class AnthropicProvider(LLMProvider):
             self._client = AsyncAnthropic(api_key=self._api_key)
         return self._client
 
+    @staticmethod
+    def _build_user_content(user_message: str, images: list[ImageInput] | None) -> Any:
+        if not images:
+            return user_message
+        blocks: list[dict[str, Any]] = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": base64.b64encode(img.data).decode("ascii"),
+                },
+            }
+            for img in images
+        ]
+        blocks.append({"type": "text", "text": user_message})
+        return blocks
+
     async def complete(
-        self, system: str, user_message: str, *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> str:
         from anthropic.types import TextBlock
 
         response = await self._get_client().messages.create(
             model=self._model,
             max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user_message}],
+            system=[
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": self._build_user_content(user_message, images),
+                }
+            ],
         )
         block = response.content[0]
         assert isinstance(block, TextBlock)
         return block.text
 
     async def complete_structured(
-        self, system: str, user_message: str, schema: type[T], *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        schema: type[T],
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> T:
         from anthropic.types import ToolUseBlock
 
@@ -63,13 +122,25 @@ class AnthropicProvider(LLMProvider):
         response = await self._get_client().messages.create(
             model=self._model,
             max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user_message}],
+            system=[
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": self._build_user_content(user_message, images),
+                }
+            ],
             tools=[
                 {
                     "name": tool_name,
                     "description": f"Return the result as a {tool_name} object.",
                     "input_schema": schema.model_json_schema(),
+                    "cache_control": {"type": "ephemeral"},
                 }
             ],
             tool_choice={"type": "tool", "name": tool_name},
@@ -86,15 +157,42 @@ class OpenAIProvider(LLMProvider):
             self._client = AsyncOpenAI(api_key=self._api_key)
         return self._client
 
+    @staticmethod
+    def _build_user_content(user_message: str, images: list[ImageInput] | None) -> Any:
+        if not images:
+            return user_message
+        parts: list[dict[str, Any]] = [
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": (
+                        f"data:{img.media_type};base64,"
+                        + base64.b64encode(img.data).decode("ascii")
+                    )
+                },
+            }
+            for img in images
+        ]
+        parts.append({"type": "text", "text": user_message})
+        return parts
+
     async def complete(
-        self, system: str, user_message: str, *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> str:
         response = await self._get_client().chat.completions.create(
             model=self._model,
             max_completion_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user_message},
+                {
+                    "role": "user",
+                    "content": self._build_user_content(user_message, images),
+                },
             ],
         )
         content = response.choices[0].message.content
@@ -102,14 +200,23 @@ class OpenAIProvider(LLMProvider):
         return content
 
     async def complete_structured(
-        self, system: str, user_message: str, schema: type[T], *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        schema: type[T],
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> T:
         response = await self._get_client().beta.chat.completions.parse(
             model=self._model,
             max_completion_tokens=max_tokens,
             messages=[
                 {"role": "system", "content": system},
-                {"role": "user", "content": user_message},
+                {
+                    "role": "user",
+                    "content": self._build_user_content(user_message, images),
+                },
             ],
             response_format=schema,
         )
@@ -126,14 +233,32 @@ class GoogleProvider(LLMProvider):
             self._client = genai.Client(api_key=self._api_key)
         return self._client
 
+    @staticmethod
+    def _build_contents(
+        user_message: str, images: list[ImageInput] | None
+    ) -> list[Any]:
+        from google.genai import types
+
+        parts: list[Any] = [
+            types.Part.from_bytes(data=img.data, mime_type=img.media_type)
+            for img in (images or [])
+        ]
+        parts.append(types.Part.from_text(text=user_message))
+        return parts
+
     async def complete(
-        self, system: str, user_message: str, *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> str:
         from google import genai
 
         response = await self._get_client().aio.models.generate_content(
             model=self._model,
-            contents=user_message,
+            contents=self._build_contents(user_message, images),
             config=genai.types.GenerateContentConfig(
                 system_instruction=system,
                 max_output_tokens=max_tokens,
@@ -144,13 +269,19 @@ class GoogleProvider(LLMProvider):
         return text
 
     async def complete_structured(
-        self, system: str, user_message: str, schema: type[T], *, max_tokens: int = 1024
+        self,
+        system: str,
+        user_message: str,
+        schema: type[T],
+        *,
+        max_tokens: int = 1024,
+        images: list[ImageInput] | None = None,
     ) -> T:
         from google import genai
 
         response = await self._get_client().aio.models.generate_content(
             model=self._model,
-            contents=user_message,
+            contents=self._build_contents(user_message, images),
             config=genai.types.GenerateContentConfig(
                 system_instruction=system,
                 max_output_tokens=max_tokens,

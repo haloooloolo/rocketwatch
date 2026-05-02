@@ -20,6 +20,7 @@ from pymongo import ReturnDocument
 
 from rocketwatch.plugins.scam_detection.common import (
     DEFAULT_USER_TIMEOUT,
+    MAX_BULK_REPORT_UPDATES,
     AutomodAction,
     ReportColor,
     ReportContext,
@@ -236,13 +237,19 @@ async def report_user_from_partner_ban(
 
     reason = f"Banned in `{partner_guild.name}`"
 
-    existing = await ctx.bot.db.scam_reports.find(
-        {"guild_id": rp_guild_id, "user_id": banned_user.id}
-    ).to_list()
+    existing = (
+        await ctx.bot.db.scam_reports.find(
+            {"guild_id": rp_guild_id, "user_id": banned_user.id}
+        )
+        .sort("report_id", -1)
+        .limit(MAX_BULK_REPORT_UPDATES)
+        .to_list()
+    )
     if existing:
+        note = f"User was banned in `{partner_guild.name}`."
         await asyncio.gather(
             *[
-                update_report(ctx, report["report_id"], f"{reason}.")
+                update_report(ctx, report["report_id"], note)
                 for report in existing
                 if report.get("report_id")
             ]

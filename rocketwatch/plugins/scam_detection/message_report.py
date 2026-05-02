@@ -33,6 +33,7 @@ from rocketwatch.plugins.scam_detection.common import (
     is_reputable,
     member_from_interaction,
     member_from_message,
+    message_to_dict,
     resolve_report,
     update_report,
 )
@@ -126,12 +127,7 @@ class WarningConfirmView(ui.View):
 
 
 def serialize_message(message: Message) -> str:
-    data: dict[str, Any] = {"content": message.content}
-    if message.embeds:
-        data["embeds"] = [
-            {"title": e.title, "description": e.description} for e in message.embeds
-        ]
-    return json.dumps(data, indent=2)
+    return json.dumps(message_to_dict(message), indent=2)
 
 
 async def _claim_message_report(ctx: ReportContext, message_id: int) -> bool:
@@ -185,6 +181,7 @@ async def _finalize_report(
     report_msg: Message,
 ) -> None:
     """Replace the claimed placeholder with the full report document."""
+    message_data = message_to_dict(message)
     await ctx.bot.db.scam_reports.replace_one(
         {"type": "message", "message_id": message.id},
         {
@@ -194,8 +191,10 @@ async def _finalize_report(
             "message_id": message.id,
             "user_id": message.author.id,
             "reason": reason,
-            "content": message.content,
+            "content": message_data["content"],
             "embeds": [embed.to_dict() for embed in message.embeds],
+            "attachments": message_data.get("attachments", []),
+            "forwarded_from": message_data.get("forwarded_from", []),
             "warning_id": warning_msg.id if warning_msg else None,
             "report_id": report_msg.id,
             "message_deleted": False,

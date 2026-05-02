@@ -21,8 +21,10 @@ from pymongo import ReturnDocument
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.scam_detection.checks import ScamChecks
 from rocketwatch.plugins.scam_detection.common import (
+    MAX_BULK_REPORT_UPDATES,
     REPUTABLE_MESSAGE_THRESHOLD,
     ReportContext,
+    flatten_forwarded_message,
     is_reputable,
     member_from_message,
     resolve_report,
@@ -103,6 +105,8 @@ class ScamDetection(Cog):
             log.warning("Ignoring message sent by bot")
             return
 
+        flatten_forwarded_message(message)
+
         user_msg_count = await self._increment_message_count(message.author)
 
         if (message.type == MessageType.thread_created) and message.reference:
@@ -111,7 +115,7 @@ class ScamDetection(Cog):
             self._thread_creation_messages[message.id] = thread_id
             return
 
-        if (not message.content) and (not message.embeds):
+        if not any([message.content, message.embeds, message.attachments]):
             log.debug("Ignoring message with empty content")
             return
 
@@ -192,7 +196,12 @@ class ScamDetection(Cog):
             return
 
         db_filter = {"guild_id": after.guild.id, "user_id": after.id}
-        reports = await self.bot.db.scam_reports.find(db_filter).to_list()
+        reports = (
+            await self.bot.db.scam_reports.find(db_filter)
+            .sort("report_id", -1)
+            .limit(MAX_BULK_REPORT_UPDATES)
+            .to_list()
+        )
         if not reports:
             return
 
@@ -213,7 +222,13 @@ class ScamDetection(Cog):
     @Cog.listener()
     async def on_member_ban(self, guild: Guild, user: User) -> None:
         db_filter = {"guild_id": guild.id, "user_id": user.id}
-        if reports := await self.bot.db.scam_reports.find(db_filter).to_list():
+        reports = (
+            await self.bot.db.scam_reports.find(db_filter)
+            .sort("report_id", -1)
+            .limit(MAX_BULK_REPORT_UPDATES)
+            .to_list()
+        )
+        if reports:
             msg = "User has been banned."
             await asyncio.gather(
                 *[
