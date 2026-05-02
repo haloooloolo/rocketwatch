@@ -18,6 +18,7 @@ REPUTABLE_MESSAGE_THRESHOLD = 50
 DEFAULT_USER_TIMEOUT = timedelta(hours=24)
 MESSAGE_ALERT_DELETE_AFTER = timedelta(minutes=5)
 THREAD_ALERT_DELETE_AFTER = timedelta(minutes=60)
+MAX_BULK_REPORT_UPDATES = 5
 
 MODERATOR_ROLES = set(cfg.rocketpool.support.moderator_roles)
 ADMIN_ROLES = set(cfg.rocketpool.support.admin_roles)
@@ -59,6 +60,8 @@ class ScamReport(TypedDict):
     channel_id: int
     message_id: int
     embeds: list[dict[str, Any]]
+    attachments: list[dict[str, Any]]
+    forwarded_from: list[dict[str, Any]]
     message_deleted: bool
     thread_removed: bool
     partner_messages: list[PartnerBroadcast]
@@ -84,6 +87,58 @@ async def get_report_channel(ctx: ReportContext) -> Messageable:
     channel = await ctx.bot.get_or_fetch_channel(cfg.discord.channels["report_scams"])
     assert isinstance(channel, Messageable)
     return channel
+
+
+def _attachment_summary(attachment: Any) -> dict[str, Any]:
+    return {
+        "filename": attachment.filename,
+        "url": attachment.url,
+        "content_type": attachment.content_type,
+        "size": attachment.size,
+    }
+
+
+def message_to_dict(message: Message) -> dict[str, Any]:
+    """Serialize a Discord message into a dict that captures content, embeds,
+    attachments, and any forwarded snapshots — for storage and LLM inspection.
+    """
+    data: dict[str, Any] = {"content": message.content}
+    if message.embeds:
+        data["embeds"] = [
+            {"title": e.title, "description": e.description} for e in message.embeds
+        ]
+    if message.attachments:
+        data["attachments"] = [_attachment_summary(a) for a in message.attachments]
+    snapshots = getattr(message, "message_snapshots", []) or []
+    if snapshots:
+        data["forwarded_from"] = [
+            {
+                "content": s.content,
+                "embeds": [
+                    {"title": e.title, "description": e.description} for e in s.embeds
+                ],
+                "attachments": [_attachment_summary(a) for a in s.attachments],
+            }
+            for s in snapshots
+        ]
+    return data
+
+
+def flatten_forwarded_message(message: Message) -> None:
+    """Merge forwarded message snapshots into the message's own fields in place,
+    so downstream checks see the forwarded content as if it were sent directly.
+    """
+    snapshots = getattr(message, "message_snapshots", [])
+    if not snapshots:
+        return
+    parts = [message.content] if message.content else []
+    parts.extend(s.content for s in snapshots if s.content)
+    message.content = "\n\n".join(parts)
+    message.embeds = [*message.embeds, *(e for s in snapshots for e in s.embeds)]
+    message.attachments = [
+        *message.attachments,
+        *(a for s in snapshots for a in s.attachments),
+    ]
 
 
 async def member_from_message(bot: RocketWatch, message: Message) -> Member | None:
