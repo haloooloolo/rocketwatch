@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,7 @@ from rocketwatch.plugins.scam_detection.common import (
     get_report_channel,
     is_reputable,
     member_from_interaction,
+    update_report,
 )
 from rocketwatch.plugins.scam_detection.partner_sync import broadcast_user_report
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
@@ -214,7 +216,7 @@ async def report_user_from_partner_ban(
     ctx: ReportContext, partner_guild: Guild, banned_user: User
 ) -> None:
     """Create a user report in the RP guild when a partner server bans a user
-    who is also a member of RP, and run automod on them."""
+    who is also a member of RP, or annotate the existing one if any."""
     if banned_user.bot:
         return
 
@@ -232,11 +234,25 @@ async def report_user_from_partner_ban(
     if is_reputable(member):
         return
 
+    reason = f"Banned in `{partner_guild.name}`"
+
+    existing = await ctx.bot.db.scam_reports.find(
+        {"guild_id": rp_guild_id, "user_id": banned_user.id}
+    ).to_list()
+    if existing:
+        await asyncio.gather(
+            *[
+                update_report(ctx, report["report_id"], f"{reason}.")
+                for report in existing
+                if report.get("report_id")
+            ]
+        )
+        return
+
     if not await _claim_user_report(ctx, rp_guild_id, banned_user.id):
         return
 
     try:
-        reason = f"Banned in `{partner_guild.name}`"
         report = _generate_report_embed(member, reason)
 
         report_channel = await get_report_channel(ctx)
