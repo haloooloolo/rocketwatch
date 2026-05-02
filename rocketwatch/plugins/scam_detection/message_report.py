@@ -191,7 +191,7 @@ async def _finalize_report(
             "message_id": message.id,
             "user_id": message.author.id,
             "reason": reason,
-            "content": message_data["content"],
+            "content": message_data.get("content"),
             "embeds": [embed.to_dict() for embed in message.embeds],
             "attachments": message_data.get("attachments", []),
             "forwarded_from": message_data.get("forwarded_from", []),

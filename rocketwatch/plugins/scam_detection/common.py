@@ -4,7 +4,7 @@ from datetime import timedelta
 from enum import Enum
 from typing import Any, TypedDict
 
-from discord import Interaction, Member, Message
+from discord import Interaction, Member, Message, MessageSnapshot
 from discord.abc import Messageable
 
 from rocketwatch.bot import RocketWatch
@@ -102,25 +102,25 @@ def message_to_dict(message: Message) -> dict[str, Any]:
     """Serialize a Discord message into a dict that captures content, embeds,
     attachments, and any forwarded snapshots — for storage and LLM inspection.
     """
-    data: dict[str, Any] = {"content": message.content}
-    if message.embeds:
-        data["embeds"] = [
-            {"title": e.title, "description": e.description} for e in message.embeds
+
+    def msg_data_to_dict(payload: Message | MessageSnapshot) -> dict[str, Any]:
+        _data: dict[str, Any] = {}
+        if payload.content:
+            _data["content"] = payload.content
+        if payload.embeds:
+            _data["embeds"] = [
+                {"title": e.title, "description": e.description} for e in payload.embeds
+            ]
+        if payload.attachments:
+            _data["attachments"] = [_attachment_summary(a) for a in payload.attachments]
+        return _data
+
+    data: dict[str, Any] = msg_data_to_dict(message)
+    if message.message_snapshots:
+        data["forwarded"] = [
+            msg_data_to_dict(snapshot) for snapshot in message.message_snapshots
         ]
-    if message.attachments:
-        data["attachments"] = [_attachment_summary(a) for a in message.attachments]
-    snapshots = getattr(message, "message_snapshots", []) or []
-    if snapshots:
-        data["forwarded_from"] = [
-            {
-                "content": s.content,
-                "embeds": [
-                    {"title": e.title, "description": e.description} for e in s.embeds
-                ],
-                "attachments": [_attachment_summary(a) for a in s.attachments],
-            }
-            for s in snapshots
-        ]
+
     return data
 
 
