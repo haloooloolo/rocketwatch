@@ -21,7 +21,7 @@ from rocketwatch.utils.shared_w3 import w3
 log = logging.getLogger("rocketwatch.odao_monitor")
 
 GRACE_PERIOD = timedelta(hours=1)
-MEMBER_INACTIVITY = timedelta(days=7)
+MEMBER_INACTIVITY = timedelta(days=3)
 LAST_SEEN_LOOKBACK = timedelta(days=365)
 BLOCK_TIME = timedelta(seconds=12)
 RUN_AT = time(hour=18, minute=0, tzinfo=UTC)

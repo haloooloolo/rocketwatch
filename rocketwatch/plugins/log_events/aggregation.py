@@ -120,6 +120,7 @@ async def aggregate_events(
 
     # Track which events survive and any extra attributes to attach
     extra_attrs: defaultdict[int, dict[str, Any]] = defaultdict(dict)
+    all_to_remove: set[int] = set()
 
     for tx_events in events_by_tx.values():
         # Build name lookup for this transaction
@@ -138,17 +139,15 @@ async def aggregate_events(
             losers = by_name.get(rule.loser, [])
             if not winners or not losers:
                 continue
-            for loser in losers[:]:
+            for loser in losers:
                 if id(loser) in to_remove:
                     continue
                 if rule.match is None:
                     to_remove.add(id(loser))
-                    losers.remove(loser)
                 else:
                     for winner in winners:
                         if rule.match(winner, loser):
                             to_remove.add(id(loser))
-                            losers.remove(loser)
                             break
 
         # Pass 2: Deduplication (keep best)
@@ -202,10 +201,11 @@ async def aggregate_events(
                 for dupe in group_events[1:]:
                     to_remove.add(id(dupe))
 
-        # Apply removals
-        for event in tx_events:
-            if id(event) in to_remove:
-                events.remove(event)
+        all_to_remove.update(to_remove)
 
     # Build result: plain dicts with aggregation attributes merged in
-    return [{**event, **extra_attrs.get(id(event), {})} for event in events]
+    return [
+        {**event, **extra_attrs.get(id(event), {})}
+        for event in events
+        if id(event) not in all_to_remove
+    ]
