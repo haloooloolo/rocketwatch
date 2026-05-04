@@ -109,6 +109,6 @@ async def broadcast_partner_ban(
         return
 
     def build_message(member: Member) -> str:
-        return f"{member.mention} was banned in `{source_guild.name}`"
+        return f"Flagged {member.mention} - banned by `{source_guild.name}`"
 
     await _broadcast(ctx, partners, user_id, build_message)

@@ -235,7 +235,7 @@ async def report_user_from_partner_ban(
     if is_reputable(member):
         return
 
-    reason = f"Banned in `{partner_guild.name}`"
+    reason = f"Banned by `{partner_guild.name}`"
 
     existing = (
         await ctx.bot.db.scam_reports.find(
@@ -246,7 +246,7 @@ async def report_user_from_partner_ban(
         .to_list()
     )
     if existing:
-        note = f"User was banned in `{partner_guild.name}`."
+        note = f"User was banned by `{partner_guild.name}`."
         await asyncio.gather(
             *[
                 update_report(ctx, report["report_id"], note)
