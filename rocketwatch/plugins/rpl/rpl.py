@@ -58,7 +58,7 @@ class RPL(commands.Cog):
             return f"{v:.0f}"
 
         sizes = [legacy_staked_rpl, megapool_staked_rpl, unstaking_rpl, unstaked_rpl]
-        labels = ["Legacy", "Megapools", "Unstaking", "Unstaked"]
+        labels = ["Minipools", "Megapools", "Unstaking", "Unstaked"]
         colors = ["#CC4400", "#FF6B00", "#D2B48C", "#808080"]
 
         total = sum(sizes)
