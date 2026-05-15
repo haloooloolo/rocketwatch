@@ -34,12 +34,18 @@ You will be given context about the user: how long they have been in the server 
 messages they have sent in the server. Brand-new users with few or no messages who jump straight \
 into offering help or directing others are highly suspicious.
 
+Messages that @-mention another Discord user deserve extra scrutiny: scammers commonly single out a \
+specific user by name to appear personal and trustworthy. The mention itself is not proof of a scam, \
+but combine it with the intent signals above before deciding.
+
 Do NOT flag messages that:
 - Mention DMs, profiles, or wallets in normal conversation without manipulative intent
 - Offer genuine (even if clumsy) technical help
 - Discuss problems, errors, or frustrations — even emotional ones
 - Contain links shared in good faith
 - Inquire about partnering, collaborating or integrating with the protocol
+- Request testnet tokens from a faucet (e.g. "can I get some RPL on Hoodi", posting their own \
+address to receive test funds) - testnet faucet requests are a normal developer workflow, not a scam
 
 Examples:
 
@@ -63,6 +69,9 @@ Examples:
 
 "Is rocket pool open for a partnership with an ICO Platform? I'm from Legion"
 -> is_scam=false, reason="Partnership proposal"
+
+"Hello I am testing a Rocket Pool on Hoodi and would like some RPL please. 0xafDEDDB54b72858718048d4A497ad97D10f514f6"
+-> is_scam=false, reason="Testnet faucet request"
 """
 
 
