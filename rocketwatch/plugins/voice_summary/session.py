@@ -9,12 +9,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, NotRequired, TypedDict
 
 import davey
+import lameenc
+import numpy as np
+import soundfile as sf
 from discord import Member, VoiceClient
 from discord.ext.voice_recv import BasicSink, VoiceRecvClient
-from pydub import AudioSegment
 
 from rocketwatch.plugins.voice_summary.pipeline import TranscriptionPipeline
-from rocketwatch.plugins.voice_summary.recorder import CallRecorder
+from rocketwatch.plugins.voice_summary.recorder import SAMPLE_RATE, CallRecorder
 
 if TYPE_CHECKING:
     from discord import User
@@ -24,8 +26,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("rocketwatch.voice_summary.session")
 
-# Resolved against the repo root so the location doesn't depend on cwd.
-# session.py lives at <repo>/rocketwatch/plugins/voice_summary/session.py
+# resolved against the repo root so the location doesn't depend on cwd.
 TRANSCRIPTIONS_DIR = Path(__file__).resolve().parents[3] / "voice_calls"
 
 
@@ -189,23 +190,33 @@ class CallSession:
         log.info(f"Transcript saved to {out.parent}")
 
     def mix_audio(self, user_segments: dict[int, list[tuple[float, Path]]]) -> Path:
-        """Mix per-user WAV files into a single MP3."""
-        tracks: list[tuple[int, AudioSegment]] = []
-        total_ms = 0
+        """Mix per-user WAV files into a single mono MP3."""
+        tracks: list[tuple[int, np.ndarray]] = []
+        total_samples = 0
         for segments in user_segments.values():
             for offset, wav_path in segments:
-                track = AudioSegment.from_wav(str(wav_path))
-                start_ms = int(offset * 1000)
-                tracks.append((start_ms, track))
-                total_ms = max(total_ms, start_ms + len(track))
+                data, _ = sf.read(str(wav_path), dtype="int16", always_2d=False)
+                if data.ndim > 1:
+                    # downmix to mono via mean
+                    data = data.mean(axis=1).astype(np.int16)
+                start_sample = int(offset * SAMPLE_RATE)
+                tracks.append((start_sample, data))
+                total_samples = max(total_samples, start_sample + len(data))
 
-        mixed = AudioSegment.silent(duration=total_ms)
-        for start_ms, track in tracks:
-            mixed = mixed.overlay(track, position=start_ms)
+        # sum in int32 to give summed samples headroom, then saturate to int16.
+        mixed_i32 = np.zeros(total_samples, dtype=np.int32)
+        for start_sample, data in tracks:
+            mixed_i32[start_sample : start_sample + len(data)] += data
+        mixed = np.clip(
+            mixed_i32, np.iinfo(np.int16).min, np.iinfo(np.int16).max
+        ).astype(np.int16)
 
-        mixed = mixed.set_channels(1)
         out = self._ensure_artifact_dir() / "recording.mp3"
-        mixed.export(out, format="mp3", bitrate="64k")
+        encoder = lameenc.Encoder()
+        encoder.set_bit_rate(64)
+        encoder.set_in_sample_rate(SAMPLE_RATE)
+        encoder.set_channels(1)
+        out.write_bytes(encoder.encode(mixed.tobytes()) + encoder.flush())
         log.info(f"Audio saved to {out.parent}")
         return out
 
@@ -283,8 +294,10 @@ class CallSession:
         transcript = TranscriptionPipeline.format_transcript(text_segments, usernames)
         self.save_transcript(transcript)
 
-        summary = await self._pipeline.summarize(transcript, usernames)
-        audio = await asyncio.to_thread(self.mix_audio, wav_segments)
+        summary, audio = await asyncio.gather(
+            self._pipeline.summarize(transcript, usernames),
+            asyncio.to_thread(self.mix_audio, wav_segments),
+        )
 
         if not summary:
             log.info("No substantive content, discarding")
