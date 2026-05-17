@@ -4,7 +4,7 @@ import pytest
 from eth_typing import ChecksumAddress
 
 from rocketwatch.utils.rocketpool import rp
-from tests.support.scripted_rocketpool import ScriptedRocketPool, addr
+from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
 
 
 class TestScriptedResponses:

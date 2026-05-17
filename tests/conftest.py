@@ -22,7 +22,7 @@ from rocketwatch.utils.config import (
     RocketPoolSupport,
     cfg,
 )
-from tests.support.scripted_rocketpool import ScriptedRocketPool
+from tests.lib.scripted_rocketpool import ScriptedRocketPool
 
 # Default the w3/bacon proxies to MagicMocks so existing tests that touch
 # `w3.eth.<x>` without setting up a config keep working.

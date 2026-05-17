@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pytest
 
+import rocketwatch
+
 # Plugins live at rocketwatch/plugins/<name>/<name>.py — discover them dynamically
 # so newly-added plugins are smoke-tested automatically.
-_PLUGINS_DIR = Path(__file__).resolve().parent.parent / "rocketwatch" / "plugins"
+_PLUGINS_DIR = Path(rocketwatch.__file__).resolve().parent / "plugins"
 
 
 def _discover_plugins() -> list[str]:

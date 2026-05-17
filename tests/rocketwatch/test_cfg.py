@@ -129,11 +129,9 @@ class TestSecretsConfig:
 
 class TestSampleConfig:
     def test_sample_config_validates(self):
-        sample_path = (
-            Path(__file__).resolve().parent.parent
-            / "rocketwatch"
-            / "config.toml.sample"
-        )
+        import rocketwatch
+
+        sample_path = Path(rocketwatch.__file__).resolve().parent / "config.toml.sample"
         with open(sample_path, "rb") as f:
             data = tomllib.load(f)
         cfg = Config(**data)

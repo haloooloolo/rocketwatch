@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from tests.support.discord_harness import (
+from tests.lib.discord_harness import (
     captured_embed,
     make_bot,
     make_interaction,
