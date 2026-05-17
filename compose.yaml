@@ -38,3 +38,4 @@ services:
     restart: unless-stopped
     command: --interval 30
       --label-enable
+      --cleanup
