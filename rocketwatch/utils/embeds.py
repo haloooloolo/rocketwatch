@@ -1,10 +1,8 @@
 import contextlib
-import json
 import logging
 import math
 from collections.abc import Callable
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -18,9 +16,9 @@ from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
+from rocketwatch.utils.address_labels import get_address_name
 from rocketwatch.utils.block_time import block_to_ts
 from rocketwatch.utils.config import cfg
-from rocketwatch.utils.etherscan_labels import get_address as get_etherscan_address
 from rocketwatch.utils.readable import advanced_txn_url, s_hex
 from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
@@ -35,13 +33,6 @@ class CustomColors:
     ORANGE = Color.from_rgb(226, 116, 57)
     YELLOW = Color.from_rgb(255, 165, 0)
     GREEN = Color.from_rgb(76, 175, 80)
-
-
-_ADDRESS_NAMES: dict[str, str] = json.loads(
-    (
-        Path(__file__).resolve().parent.parent / "strings" / "addresses.en.json"
-    ).read_text()
-)
 
 
 class Embed(discord.Embed):
@@ -266,9 +257,6 @@ async def el_explorer_url(
         chain = cfg.rocketpool.chain
         dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
 
-        if not name and (n := _ADDRESS_NAMES.get(target)):
-            name = n
-
         if await rp.is_node(target):
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", target
@@ -306,62 +294,14 @@ async def el_explorer_url(
             name = s_hex(target)
 
         if not name:
-            a = get_etherscan_address(target)
-            # skip labels with id "take-action" (don't show up on the explorer) and
-            # any name containing "alert".
-            if (
-                a.name
-                and "alert" not in a.name.lower()
-                and (
-                    not a.labels
-                    or len(a.labels) != 1
-                    or a.labels[0].id != "take-action"
-                )
-            ):
-                name = a.name
+            name = await get_address_name(target) or ""
         if not name:
-            name = await ens.get_name(target)
+            name = await ens.get_name(target) or ""
 
-        if (await w3.eth.get_code(target)) and (not name):
-            with contextlib.suppress(Exception):
-                c = w3.eth.contract(
-                    address=target,
-                    abi=[
-                        {
-                            "inputs": [],
-                            "name": "name",
-                            "outputs": [
-                                {
-                                    "internalType": "string",
-                                    "name": "",
-                                    "type": "string",
-                                }
-                            ],
-                            "stateMutability": "view",
-                            "type": "function",
-                        }
-                    ],
-                )
-                n = await c.functions.name().call()
-                # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
-                # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
-                # in an attempt to get people to click on his contract
-
-                # first, if the name has a link in it, we ignore it
-                if any(
-                    keyword in n.lower()
-                    for keyword in [
-                        "http",
-                        "discord",
-                        "airdrop",
-                        "telegram",
-                        "twitter",
-                        "youtube",
-                    ]
-                ):
-                    log.warning(f"Contract {target} has a suspicious name: {n}")
-                else:
-                    name = f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
+        if await w3.eth.get_code(target):
+            _prefix += "📄"
+            if not name:
+                name = await __get_name_from_contract(target) or ""
     else:
         # transaction hash
         url = f"{cfg.execution_layer.explorer}/tx/{target}"
@@ -374,3 +314,44 @@ async def el_explorer_url(
 
     prefix = "" if (prefix is None) else prefix + _prefix
     return f"{prefix}[{name}]({url})"
+
+
+async def __get_name_from_contract(target: ChecksumAddress) -> str | None:
+    with contextlib.suppress(Exception):
+        c = w3.eth.contract(
+            address=target,
+            abi=[
+                {
+                    "inputs": [],
+                    "name": "name",
+                    "outputs": [
+                        {
+                            "internalType": "string",
+                            "name": "",
+                            "type": "string",
+                        }
+                    ],
+                    "stateMutability": "view",
+                    "type": "function",
+                }
+            ],
+        )
+        n = await c.functions.name().call()
+        # make sure nobody is trying to inject a custom link, as there was a guy that made the name of his contract
+        # 'RocketSwapRouter](https://etherscan.io/search?q=0x16d5a408e807db8ef7c578279beeee6b228f1c1c)[',
+        if any(
+            keyword in n.lower()
+            for keyword in [
+                "http",
+                "discord",
+                "airdrop",
+                "telegram",
+                "twitter",
+                "youtube",
+            ]
+        ):
+            log.warning(f"Contract {target} has a suspicious name: {n}")
+        else:
+            return f"{discord.utils.remove_markdown(n, ignore_links=False)}*"
+
+    return None

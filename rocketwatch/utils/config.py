@@ -118,6 +118,7 @@ class EventsConfig(BaseModel):
 
 class SecretsConfig(BaseModel):
     cronitor: str = ""
+    openlabels: str = ""
 
 
 class Config(BaseModel):

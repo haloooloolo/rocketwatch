@@ -109,3 +109,4 @@ fields = [{name = "Example", value = "https://example.com"}]
 
 [secrets]
 cronitor = ""
+openlabels = ""
