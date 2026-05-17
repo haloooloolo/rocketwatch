@@ -1,6 +1,7 @@
 import logging
 import sys
 import traceback
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
@@ -22,9 +23,10 @@ log = logging.getLogger("rocketwatch.bot")
 class RocketWatch(Bot):
     def __init__(self, intents: Intents) -> None:
         super().__init__(command_prefix=(), tree_cls=RWCommandTree, intents=intents)
-        self.db: AsyncDatabase[dict[str, Any]] = AsyncMongoClient(
-            cfg.mongodb.uri
-        ).rocketwatch
+
+    @cached_property
+    def db(self) -> AsyncDatabase[dict[str, Any]]:
+        return AsyncMongoClient(cfg.mongodb.uri).rocketwatch
 
     @staticmethod
     def should_load_plugin(plugin: str, include: set[str], exclude: set[str]) -> bool:

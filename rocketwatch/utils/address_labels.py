@@ -4,6 +4,7 @@ import json
 import logging
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -23,10 +24,15 @@ _NEGATIVE_TTL = timedelta(days=7)
 _REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 _MANUAL_PATH = Path(__file__).parent.parent / "resources" / "addresses.json"
-_MANUAL_NAMES: dict[ChecksumAddress, str] = {
-    w3.to_checksum_address(addr): name
-    for addr, name in json.loads(_MANUAL_PATH.read_text()).items()
-}
+
+
+@cache
+def _manual_names() -> dict[ChecksumAddress, str]:
+    return {
+        w3.to_checksum_address(addr): name
+        for addr, name in json.loads(_MANUAL_PATH.read_text()).items()
+    }
+
 
 # Common proxy class names — skip when picking from contract_name candidates.
 _PROXY_CLASSES = frozenset(
@@ -127,7 +133,7 @@ async def get_address_name(address: ChecksumAddress) -> str | None:
     MongoDB cache → OLI. Returns None when no label exists or transport
     failures prevent a result.
     """
-    if manual := _MANUAL_NAMES.get(address):
+    if manual := _manual_names().get(address):
         return manual
 
     collection = _get_collection()

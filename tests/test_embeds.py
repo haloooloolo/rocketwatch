@@ -61,15 +61,11 @@ def _make_cfg(chain: str = "mainnet") -> Config:
 @pytest.fixture
 def mainnet_cfg(monkeypatch):
     monkeypatch.setattr(cfg, "_instance", _make_cfg("mainnet"))
-    yield
-    monkeypatch.setattr(cfg, "_instance", None)
 
 
 @pytest.fixture
 def testnet_cfg(monkeypatch):
     monkeypatch.setattr(cfg, "_instance", _make_cfg("holesky"))
-    yield
-    monkeypatch.setattr(cfg, "_instance", None)
 
 
 class TestFormatValue:

@@ -80,10 +80,59 @@ def _get_web3(endpoint: list[str]) -> AsyncWeb3[Any]:
     return AsyncWeb3(AsyncFallbackProvider(providers))
 
 
-w3 = _get_web3(cfg.execution_layer.endpoint.current)
-w3_mainnet = w3
+class _W3Proxy:
+    _instance: AsyncWeb3[Any] | None = None
 
-if cfg.execution_layer.endpoint.mainnet:
-    w3_mainnet = _get_web3(cfg.execution_layer.endpoint.mainnet)
+    def _build(self) -> AsyncWeb3[Any]:
+        return _get_web3(cfg.execution_layer.endpoint.current)
 
-bacon = Bacon(cfg.consensus_layer.endpoint, request_timeout=60)
+    def __getattr__(self, name: str) -> Any:
+        if self._instance is None:
+            object.__setattr__(self, "_instance", self._build())
+        return getattr(self._instance, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_instance":
+            object.__setattr__(self, name, value)
+            return
+        if self._instance is None:
+            object.__setattr__(self, "_instance", self._build())
+        setattr(self._instance, name, value)
+
+
+class _W3MainnetProxy(_W3Proxy):
+    def _build(self) -> AsyncWeb3[Any]:
+        endpoint = (
+            cfg.execution_layer.endpoint.mainnet or cfg.execution_layer.endpoint.current
+        )
+        return _get_web3(endpoint)
+
+
+class _BaconProxy:
+    _instance: Bacon | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._instance is None:
+            object.__setattr__(
+                self,
+                "_instance",
+                Bacon(cfg.consensus_layer.endpoint, request_timeout=60),
+            )
+        return getattr(self._instance, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "_instance":
+            object.__setattr__(self, name, value)
+            return
+        if self._instance is None:
+            object.__setattr__(
+                self,
+                "_instance",
+                Bacon(cfg.consensus_layer.endpoint, request_timeout=60),
+            )
+        setattr(self._instance, name, value)
+
+
+w3 = _W3Proxy()
+w3_mainnet = _W3MainnetProxy()
+bacon = _BaconProxy()

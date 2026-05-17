@@ -42,7 +42,12 @@ dependencies = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=rocketwatch --cov=sentinel --cov-fail-under=30"
+addopts = "--cov=rocketwatch --cov=sentinel --cov-fail-under=30 -m 'not integration_db and not integration_chain and not integration_beacon'"
+markers = [
+    "integration_db: requires a Mongo instance (testcontainers)",
+    "integration_chain: requires a forked anvil node",
+    "integration_beacon: requires recorded beacon API responses",
+]
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
 ]
@@ -76,6 +81,7 @@ module = [
     "uptime", "uptime.*",
     "lameenc", "lameenc.*",
     "soundfile", "soundfile.*",
+    "testcontainers", "testcontainers.*",
 ]
 ignore_missing_imports = true
 
@@ -94,6 +100,7 @@ test = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
+    "testcontainers[mongodb]>=4.0.0",
 ]
 dev = [
     "mypy>=1.19.1",

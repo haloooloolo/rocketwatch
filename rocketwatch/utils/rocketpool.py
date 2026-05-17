@@ -377,4 +377,23 @@ class RocketPool:
         return float(await pool.get_normalized_price())
 
 
-rp = RocketPool()
+class _RPProxy:
+    _instance: RocketPool | None = None
+
+    def __getattr__(self, name: str) -> Any:
+        if self._instance is None:
+            object.__setattr__(self, "_instance", RocketPool())
+        return getattr(self._instance, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Route per-attribute writes (e.g. `monkeypatch.setattr(rp, "is_node", ...)`)
+        # to the underlying instance so they don't outlive an `_instance` swap.
+        if name == "_instance":
+            object.__setattr__(self, name, value)
+            return
+        if self._instance is None:
+            object.__setattr__(self, "_instance", RocketPool())
+        setattr(self._instance, name, value)
+
+
+rp = _RPProxy()

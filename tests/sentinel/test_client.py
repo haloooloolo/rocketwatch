@@ -40,7 +40,7 @@ def _make_discord_member(guild_id=TEST_GUILD_ID, user_id=1000):
 
 
 @pytest.fixture
-async def sentinel_client():
+async def sentinel_client(monkeypatch):
     """Start a real sentinel test server and return a SentinelClient pointed at it."""
     guild = MagicMock()
     guild.id = TEST_GUILD_ID
@@ -64,7 +64,7 @@ async def sentinel_client():
     rw_mock = MagicMock()
     rw_mock.sentinel.api_url = base_url
     rw_mock.sentinel.api_key = TEST_KEY_SECRET
-    rw_cfg._instance = rw_mock
+    monkeypatch.setattr(rw_cfg, "_instance", rw_mock)
 
     client = SentinelClient()
     client.mock_guild = guild
@@ -72,7 +72,6 @@ async def sentinel_client():
 
     await client.close()
     await test_client.close()
-    rw_cfg._instance = None
 
 
 class TestDeleteMessage:
@@ -208,7 +207,7 @@ class TestNonJsonErrorResponse:
     """Sentinel may return non-JSON errors (e.g. plain text 500 from a proxy)."""
 
     @pytest.fixture
-    async def plaintext_500_client(self):
+    async def plaintext_500_client(self, monkeypatch):
         async def handle(request):
             return web.Response(text="Internal Server Error", status=500)
 
@@ -230,14 +229,13 @@ class TestNonJsonErrorResponse:
         rw_mock = MagicMock()
         rw_mock.sentinel.api_url = str(server.make_url(""))
         rw_mock.sentinel.api_key = TEST_KEY_SECRET
-        rw_cfg._instance = rw_mock
+        monkeypatch.setattr(rw_cfg, "_instance", rw_mock)
 
         client = SentinelClient()
         yield client
 
         await client.close()
         await test_client.close()
-        rw_cfg._instance = None
 
     async def test_delete_message(self, plaintext_500_client):
         msg = _make_discord_message()

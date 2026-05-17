@@ -50,8 +50,8 @@ class DmWarningConfig(BaseModel):
 
 class RocketPoolConfig(BaseModel):
     chain: str = "mainnet"
-    manual_addresses: dict[str, str]
-    dao_multisigs: list[str]
+    manual_addresses: dict[str, str] = {}
+    dao_multisigs: list[str] = []
     support: RocketPoolSupport
     dm_warning: DmWarningConfig
 
