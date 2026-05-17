@@ -32,7 +32,6 @@ dependencies = [
     "pytz==2026.2",
     "regex==2026.5.9",
     "retry-async==0.1.4",
-    "seaborn==0.13.2",
     "soundfile>=0.13.1",
     "tabulate==0.10.0",
     "termplotlib==0.3.9",
@@ -94,6 +93,5 @@ dev = [
     "types-psutil>=7.2.2.20260402",
     "types-pytz>=2026.1.1.20260304",
     "types-regex>=2026.3.32.20260329",
-    "types-seaborn>=0.13.2.20260402",
     "types-tabulate>=0.10.0.20260308",
 ]
