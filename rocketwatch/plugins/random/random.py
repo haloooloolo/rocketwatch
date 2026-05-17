@@ -3,7 +3,6 @@ import random
 from datetime import datetime
 
 import aiohttp
-import dice
 import humanize
 import pytz
 from discord import Interaction
@@ -41,20 +40,6 @@ class Random(commands.Cog):
     async def on_ready(self) -> None:
         if not self.contract_names:
             self.contract_names = list(rp.addresses)
-
-    @command()
-    async def dice(self, interaction: Interaction, dice_string: str = "1d6") -> None:
-        await interaction.response.defer(ephemeral=is_hidden(interaction))
-        result = dice.roll(dice_string)
-        e = Embed()
-        e.title = f"🎲 {dice_string}"
-        if len(str(result)) >= 2000:
-            e.description = "Result too long to display, attaching as file."
-            file = TextFile(str(result), "dice_result.txt")
-            await interaction.followup.send(embed=e, file=file)
-        else:
-            e.description = f"Result: `{result}`"
-            await interaction.followup.send(embed=e)
 
     @command()
     async def burn_reason(self, interaction: Interaction) -> None:
