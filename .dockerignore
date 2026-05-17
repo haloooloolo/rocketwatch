@@ -1,15 +1,17 @@
-# Python bytecode
+# Git
+.git/
+.github/
+.gitignore
+.gitattributes
+.gitmodules
+
+# Python caches
 __pycache__/
 *.py[cod]
-
-# Virtual environment / secrets
 .venv/
-.env
-
-# Tooling caches
 .mypy_cache/
 .ruff_cache/
-.pytest_cache//
+.pytest_cache/
 
 # Coverage
 .coverage
@@ -27,9 +29,14 @@ mongodb/
 voice_calls/
 memray-output/
 
-# Local config overrides
+# Local config & secrets — must not enter image
 */config.toml
+.env
 compose.override.yaml
 
-# Local scripts & lockfile
+# Not needed at runtime
+tests/
+sentinel/
+*.md
+LICENSE
 *.sh
