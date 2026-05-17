@@ -42,8 +42,21 @@ dependencies = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "--cov=rocketwatch --cov=sentinel --cov-fail-under=30"
 filterwarnings = [
     "ignore:websockets.legacy is deprecated:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["rocketwatch", "sentinel"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    'if __name__ == "__main__":',
 ]
 
 [tool.mypy]
