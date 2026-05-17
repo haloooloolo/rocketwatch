@@ -9,25 +9,15 @@ from rocketwatch.utils.shared_w3 import w3
 price_cache: dict[str, float] = {"block": 0.0, "rpl_price": 0.0, "reth_price": 0.0}
 
 sea_creatures = {
-    # 32 * 100: spouting whale emoji
-    32 * 100: "🐳",
-    # 32 * 50: whale emoji
-    32 * 50: "🐋",
-    # 32 * 30: shark emoji
-    32 * 30: "🦈",
-    # 32 * 20: dolphin emoji
-    32 * 20: "🐬",
-    # 32 * 10: octopus emoji
-    32 * 10: "🐙",
-    # 32 * 5: fish emoji
-    32 * 5: "🐟",
-    # 32 * 2: crab emoji
-    32 * 2: "🦀",
-    # 32 * 1: fried shrimp emoji
-    32 * 1: "🍤",
-    # 5: snail emoji
+    3200: "🐳",
+    1600: "🐋",
+    960: "🦈",
+    640: "🐬",
+    320: "🐙",
+    160: "🐟",
+    64: "🦀",
+    32: "🍤",
     5: "🐌",
-    # 1: microbe emoji
     1: "🦠",
 }
 
@@ -42,7 +32,7 @@ def get_sea_creature_for_holdings(holdings: float) -> str:
     # return the highest sea creature with a multiplier next to it
     highest_possible_holdings = max(sea_creatures.keys())
     if holdings >= 2 * highest_possible_holdings:
-        creature_count = max(int(holdings / highest_possible_holdings), 10)
+        creature_count = min(int(holdings / highest_possible_holdings), 10)
         return sea_creatures[highest_possible_holdings] * creature_count
     return next(
         (
@@ -94,4 +84,5 @@ async def get_holding_for_address(address: ChecksumAddress) -> float:
 
 
 async def get_sea_creature_for_address(address: ChecksumAddress) -> str:
-    return get_sea_creature_for_holdings(await get_holding_for_address(address))
+    holdings_eth: float = await get_holding_for_address(address)
+    return get_sea_creature_for_holdings(holdings_eth)
