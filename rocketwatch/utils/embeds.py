@@ -190,7 +190,7 @@ def format_value(value: int | float) -> str:
 async def resolve_ens(
     interaction: Interaction, node_address: str
 ) -> tuple[str | None, ChecksumAddress | None]:
-    from rocketwatch.utils.cached_ens import ens
+    from rocketwatch.utils import ens
 
     # if it looks like an ens, attempt to resolve it
     if "." in node_address:
@@ -245,7 +245,7 @@ async def el_explorer_url(
     name_fmt: Callable[[str], str] | None = None,
     block: BlockIdentifier = "latest",
 ) -> str:
-    from rocketwatch.utils.cached_ens import ens
+    from rocketwatch.utils import ens
 
     _prefix = ""
 

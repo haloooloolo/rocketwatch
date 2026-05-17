@@ -14,9 +14,8 @@ from web3.contract import AsyncContract
 from web3.types import TxData
 
 from rocketwatch.bot import RocketWatch
-from rocketwatch.utils import solidity
+from rocketwatch.utils import ens, solidity
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
-from rocketwatch.utils.cached_ens import ens
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed, el_explorer_url
 from rocketwatch.utils.file import TextFile
