@@ -39,9 +39,9 @@ class RocketPoolSupport(BaseModel):
     server_id: int
     channel_id: int
     moderator_id: int
-    user_ids: list[int]
-    admin_roles: list[int]
-    moderator_roles: list[int]
+    user_ids: list[int] = []
+    admin_roles: list[int] = []
+    moderator_roles: list[int] = []
 
 
 class DmWarningConfig(BaseModel):
