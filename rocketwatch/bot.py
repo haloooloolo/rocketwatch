@@ -26,6 +26,21 @@ class RocketWatch(Bot):
             cfg.mongodb.uri
         ).rocketwatch
 
+    @staticmethod
+    def should_load_plugin(plugin: str, include: set[str], exclude: set[str]) -> bool:
+        # inclusion takes precedence in case of collision
+        if plugin in include:
+            log.debug(f"Plugin {plugin} explicitly included")
+            return True
+        if plugin in exclude:
+            log.debug(f"Plugin {plugin} explicitly excluded")
+            return False
+        if include:
+            log.debug(f"Plugin {plugin} implicitly excluded")
+            return False
+        log.debug(f"Plugin {plugin} implicitly included")
+        return True
+
     async def _load_plugins(self) -> None:
         chain = cfg.rocketpool.chain
         storage = cfg.rocketpool.manual_addresses["rocketStorage"]
@@ -35,26 +50,13 @@ class RocketWatch(Bot):
         included_modules = set(cfg.modules.include or [])
         excluded_modules = set(cfg.modules.exclude or [])
 
-        def should_load_plugin(_plugin: str) -> bool:
-            # inclusion takes precedence in case of collision
-            if _plugin in included_modules:
-                log.debug(f"Plugin {_plugin} explicitly included")
-                return True
-            elif _plugin in excluded_modules:
-                log.debug(f"Plugin {_plugin} explicitly excluded")
-                return False
-            elif len(included_modules) > 0:
-                log.debug(f"Plugin {_plugin} implicitly excluded")
-                return False
-            else:
-                log.debug(f"Plugin {_plugin} implicitly included")
-                return True
-
         for path in Path("plugins").iterdir():
             if not path.is_dir() or not (path / f"{path.name}.py").exists():
                 continue
             plugin_name = path.name
-            if not should_load_plugin(plugin_name):
+            if not self.should_load_plugin(
+                plugin_name, included_modules, excluded_modules
+            ):
                 log.warning(f"Skipping plugin {plugin_name}")
                 continue
 

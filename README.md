@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/haloooloolo/rocketwatch/actions/workflows/test.yml/badge.svg)](https://github.com/haloooloolo/rocketwatch/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/haloooloolo/rocketwatch/graph/badge.svg)](https://codecov.io/gh/haloooloolo/rocketwatch)
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)
+![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
 
 A Discord bot that monitors and reports on [Rocket Pool](https://rocketpool.net) protocol activity across the Ethereum execution and consensus layers.
 
@@ -47,7 +47,7 @@ rocketwatch/
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.13+
 - MongoDB 8.x
 - Ethereum execution and consensus layer RPC endpoints
 - Discord bot token
