@@ -1,7 +1,7 @@
 [project]
 name = "rocketwatch"
 version = "0.1.0"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "aiohttp==3.13.5",
     "anthropic>=0.52.0,<1.0.0",
@@ -47,7 +47,7 @@ filterwarnings = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 explicit_package_bases = true
 strict = true
 disallow_untyped_calls = false
@@ -67,7 +67,7 @@ module = [
 ignore_missing_imports = true
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint]
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP", "W"]

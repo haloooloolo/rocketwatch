@@ -19,7 +19,7 @@ log = logging.getLogger("rocketwatch.minipool_distribution")
 
 def get_percentiles(
     percentiles: list[int], counts: list[int]
-) -> Generator[tuple[int, Any], None, None]:
+) -> Generator[tuple[int, Any]]:
     for p in percentiles:
         yield p, np.percentile(counts, p, method="nearest")
 
