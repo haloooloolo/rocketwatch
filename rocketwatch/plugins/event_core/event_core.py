@@ -102,10 +102,6 @@ class EventCore(commands.Cog):
             self.at_head = False
             self.head_block = cfg.events.genesis
         else:
-            # behind chain head, let's see how far
-            if self._catchup_start_block is None:
-                self._catchup_start_block = self.head_block
-
             last_event_entry = (
                 await self.bot.db.event_queue.find()
                 .sort("block_number", pymongo.DESCENDING)
@@ -122,6 +118,9 @@ class EventCore(commands.Cog):
             )
             if last_checked_entry:
                 self.head_block = max(self.head_block, last_checked_entry["block"])
+
+            if self._catchup_start_block is None:
+                self._catchup_start_block = self.head_block
 
             if (latest_block - self.head_block) < self.block_batch_size:
                 # close enough to catch up in a single request
