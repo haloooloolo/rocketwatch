@@ -15,12 +15,12 @@ from discord import Color, Interaction
 from discord.types.embed import EmbedType
 from ens import InvalidName
 from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
-from etherscan_labels import Addresses
 from web3.constants import ADDRESS_ZERO
 from web3.types import TxReceipt
 
 from rocketwatch.utils.block_time import block_to_ts
 from rocketwatch.utils.config import cfg
+from rocketwatch.utils.etherscan_labels import get_address as get_etherscan_address
 from rocketwatch.utils.readable import advanced_txn_url, s_hex
 from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
@@ -306,16 +306,16 @@ async def el_explorer_url(
             name = s_hex(target)
 
         if not name:
-            a = Addresses.get(target)
-            # don't apply name if it has  label is one with the id "take-action", as these don't show up on the explorer
-            if all(
-                (
-                    (
-                        not a.labels
-                        or len(a.labels) != 1
-                        or a.labels[0].id != "take-action"
-                    ),
-                    a.name and ("alert" not in a.name.lower()),
+            a = get_etherscan_address(target)
+            # skip labels with id "take-action" (don't show up on the explorer) and
+            # any name containing "alert".
+            if (
+                a.name
+                and "alert" not in a.name.lower()
+                and (
+                    not a.labels
+                    or len(a.labels) != 1
+                    or a.labels[0].id != "take-action"
                 )
             ):
                 name = a.name

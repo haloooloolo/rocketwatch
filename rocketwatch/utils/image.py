@@ -2,6 +2,7 @@ import math
 from enum import StrEnum
 from functools import cache
 from io import BytesIO
+from pathlib import Path
 
 from discord import File
 from PIL import Image as PillowImage
@@ -86,7 +87,8 @@ class ImageCanvas(ImageDraw):
     def _get_font(
         name: str, variant: FontVariant, size: float
     ) -> ImageFont.FreeTypeFont:
-        return ImageFont.truetype(f"fonts/{name}-{variant}.ttf", size)
+        font_path = Path(__file__).parent.parent / "resources" / f"{name}-{variant}.ttf"
+        return ImageFont.truetype(str(font_path), size)
 
     def dynamic_text(
         self,
