@@ -38,7 +38,7 @@ _RETH_USD_THRESHOLD_SMALL = 25_000
 
 
 def _addr(s: str) -> ChecksumAddress:
-    return w3.to_checksum_address(s)
+    return cast(ChecksumAddress, w3.to_checksum_address(s))
 
 
 _COW_SETTLEMENT = _addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41")

@@ -3,7 +3,7 @@ import logging
 import math
 from collections.abc import Callable
 from datetime import datetime
-from typing import Any
+from typing import Any, cast
 
 import aiohttp
 import discord
@@ -294,14 +294,16 @@ async def el_explorer_url(
             name = s_hex(target)
 
         if not name:
-            name = await get_address_name(target) or ""
+            name = await get_address_name(cast(ChecksumAddress, target)) or ""
         if not name:
             name = await ens.get_name(target) or ""
 
         if await w3.eth.get_code(target):
             _prefix += "📄"
             if not name:
-                name = await __get_name_from_contract(target) or ""
+                name = (
+                    await __get_name_from_contract(cast(ChecksumAddress, target)) or ""
+                )
     else:
         # transaction hash
         url = f"{cfg.execution_layer.explorer}/tx/{target}"

@@ -135,20 +135,21 @@ class Random(commands.Cog):
         await interaction.response.defer(ephemeral=is_hidden(interaction))
         e = Embed()
         if address is not None:
-            address = address.strip()
+            stripped = address.strip()
             try:
-                if address.endswith(".eth"):
-                    address = await ens.resolve_name(address)
-                if address is None:
+                resolved: str | None = stripped
+                if stripped.endswith(".eth"):
+                    resolved = await ens.resolve_name(stripped)
+                if resolved is None:
                     raise ValueError("unresolved ENS")
-                address = w3.to_checksum_address(address)
+                checksum = w3.to_checksum_address(resolved)
             except (ValueError, TypeError):
                 e.description = "Invalid address"
                 await interaction.followup.send(embed=e)
                 return
-            creature = await get_sea_creature_for_address(address)
+            creature = await get_sea_creature_for_address(checksum)
             if not creature:
-                e.description = f"No sea creature for {address}"
+                e.description = f"No sea creature for {checksum}"
             else:
                 # get the required holding from the dictionary
                 required_holding = next(
@@ -156,7 +157,7 @@ class Random(commands.Cog):
                 )
                 e.add_field(
                     name="Visualization",
-                    value=await el_explorer_url(address, prefix=creature),
+                    value=await el_explorer_url(checksum, prefix=creature),
                     inline=False,
                 )
                 e.add_field(
@@ -164,7 +165,7 @@ class Random(commands.Cog):
                     value=f"{required_holding * len(creature)} ETH",
                     inline=False,
                 )
-                holding = await get_holding_for_address(address)
+                holding = await get_holding_for_address(checksum)
                 e.add_field(
                     name="Actual Holding", value=f"{holding:.0f} ETH", inline=False
                 )
