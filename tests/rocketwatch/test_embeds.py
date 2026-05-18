@@ -5,20 +5,6 @@ from discord import Color
 from ens import InvalidName
 
 from rocketwatch.utils import embeds
-from rocketwatch.utils.config import (
-    Config,
-    ConsensusLayerConfig,
-    DiscordConfig,
-    DiscordOwner,
-    DmWarningConfig,
-    EventsConfig,
-    ExecutionLayerConfig,
-    ExecutionLayerEndpoint,
-    MongoDBConfig,
-    RocketPoolConfig,
-    RocketPoolSupport,
-    cfg,
-)
 from rocketwatch.utils.embeds import (
     CustomColors,
     Embed,
@@ -29,43 +15,6 @@ from rocketwatch.utils.embeds import (
     format_value,
     resolve_ens,
 )
-
-
-def _make_cfg(chain: str = "mainnet") -> Config:
-    return Config(
-        discord=DiscordConfig(
-            secret="test",
-            owner=DiscordOwner(user_id=1, server_id=2),
-            channels={"default": 1},
-        ),
-        execution_layer=ExecutionLayerConfig(
-            explorer="https://etherscan.io",
-            endpoint=ExecutionLayerEndpoint(current=["http://localhost"]),
-        ),
-        consensus_layer=ConsensusLayerConfig(
-            explorer="https://beaconcha.in",
-            endpoint=["http://localhost"],
-        ),
-        mongodb=MongoDBConfig(uri="mongodb://localhost"),
-        rocketpool=RocketPoolConfig(
-            chain=chain,
-            manual_addresses={"rocketStorage": "0x0"},
-            dao_multisigs=[],
-            support=RocketPoolSupport(server_id=1, channel_id=1, moderator_id=1),
-            dm_warning=DmWarningConfig(channels=[]),
-        ),
-        events=EventsConfig(lookback_distance=10, genesis=0, block_batch_size=10),
-    )
-
-
-@pytest.fixture
-def mainnet_cfg(monkeypatch):
-    monkeypatch.setattr(cfg, "_instance", _make_cfg("mainnet"))
-
-
-@pytest.fixture
-def testnet_cfg(monkeypatch):
-    monkeypatch.setattr(cfg, "_instance", _make_cfg("holesky"))
 
 
 class TestFormatValue:

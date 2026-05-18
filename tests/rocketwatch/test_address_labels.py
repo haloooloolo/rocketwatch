@@ -1,8 +1,18 @@
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from eth_typing import ChecksumAddress
+from pymongo.asynchronous.database import AsyncDatabase
+
+from rocketwatch.utils import address_labels as al_module
 from rocketwatch.utils.address_labels import (
     _PROXY_CLASSES,
     _format_project,
     _most_attested,
     _pick_display_name,
+    get_address_name,
 )
 
 
@@ -114,3 +124,173 @@ class TestProxyClasses:
         assert "TransparentUpgradeableProxy" in _PROXY_CLASSES
         assert "ERC1967Proxy" in _PROXY_CLASSES
         assert "Proxy" in _PROXY_CLASSES
+
+
+# ---- get_address_name: full resolution chain ------------------------------------
+
+pytestmark = pytest.mark.integration_db
+
+ADDR_MANUAL = "0x" + "AA" * 20
+ADDR_CACHED = "0x" + "BB" * 20
+ADDR_FRESH = "0x" + "CC" * 20
+
+
+@pytest.fixture
+def patch_collection(
+    monkeypatch: pytest.MonkeyPatch,
+    mongo_db: AsyncDatabase[dict[str, Any]],
+) -> None:
+    # Route the module-level cached `_collection` to our per-test mongo.
+    monkeypatch.setattr(al_module, "_get_collection", lambda: mongo_db.address_labels)
+
+
+@pytest.fixture
+def manual_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # `_manual_names()` reads addresses.json and runs every entry through
+    # `w3.to_checksum_address`. Skip the I/O — just install one known entry.
+    monkeypatch.setattr(
+        al_module,
+        "_manual_names",
+        lambda: {ChecksumAddress(ADDR_MANUAL): "Manual Override"},
+    )
+
+
+class TestGetAddressName:
+    async def test_manual_override_short_circuits(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # If a Mongo lookup runs at all, this test should fail because we
+        # never inserted a row for ADDR_MANUAL. Pin the contract: manual
+        # entries win without ever touching mongo/OLI.
+        explosive = AsyncMock(side_effect=AssertionError("OLI should not be called"))
+        monkeypatch.setattr(al_module, "_fetch_from_oli", explosive)
+
+        assert await get_address_name(ChecksumAddress(ADDR_MANUAL)) == "Manual Override"
+        explosive.assert_not_awaited()
+
+    async def test_mongo_cached_positive_hit(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Pre-seed mongo with a cached name. Get hit, OLI never called.
+        await mongo_db.address_labels.insert_one(
+            {"_id": ADDR_CACHED, "name": "Cached Label"}
+        )
+        explosive = AsyncMock(side_effect=AssertionError("OLI should not be called"))
+        monkeypatch.setattr(al_module, "_fetch_from_oli", explosive)
+
+        assert await get_address_name(ChecksumAddress(ADDR_CACHED)) == "Cached Label"
+
+    async def test_mongo_cached_negative_within_ttl_returns_none(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # A cache entry with `name=None` plus a recent `fetched_at` means
+        # "we asked OLI lately and it had nothing" — should return None
+        # without re-fetching.
+        await mongo_db.address_labels.insert_one(
+            {
+                "_id": ADDR_CACHED,
+                "name": None,
+                "fetched_at": datetime.now(UTC) - timedelta(days=1),
+            }
+        )
+        explosive = AsyncMock(side_effect=AssertionError("OLI should not be called"))
+        monkeypatch.setattr(al_module, "_fetch_from_oli", explosive)
+
+        assert await get_address_name(ChecksumAddress(ADDR_CACHED)) is None
+
+    async def test_mongo_negative_outside_ttl_refetches_from_oli(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # Stale negative cache (fetched > 7 days ago) — must refetch from OLI
+        # and upsert the fresh result.
+        await mongo_db.address_labels.insert_one(
+            {
+                "_id": ADDR_CACHED,
+                "name": None,
+                "fetched_at": datetime.now(UTC) - timedelta(days=30),
+            }
+        )
+        monkeypatch.setattr(
+            al_module, "_fetch_from_oli", AsyncMock(return_value="Fresh Name")
+        )
+
+        result = await get_address_name(ChecksumAddress(ADDR_CACHED))
+        assert result == "Fresh Name"
+        # And the cache should be upserted.
+        cached = await mongo_db.address_labels.find_one({"_id": ADDR_CACHED})
+        assert cached is not None
+        assert cached["name"] == "Fresh Name"
+
+    async def test_missing_entry_fetches_and_caches(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # No manual entry, no mongo cache → OLI fetch + upsert.
+        monkeypatch.setattr(
+            al_module, "_fetch_from_oli", AsyncMock(return_value="Looked Up")
+        )
+        result = await get_address_name(ChecksumAddress(ADDR_FRESH))
+        assert result == "Looked Up"
+        cached = await mongo_db.address_labels.find_one({"_id": ADDR_FRESH})
+        assert cached is not None
+        assert cached["name"] == "Looked Up"
+        # fetched_at should also be present and recent.
+        assert (datetime.now(UTC) - cached["fetched_at"]) < timedelta(seconds=60)
+
+    async def test_oli_failure_returns_none_without_caching(
+        self,
+        manual_override: None,
+        patch_collection: None,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # An OLI transport failure must NOT poison the cache — the next call
+        # should be free to try again.
+        monkeypatch.setattr(
+            al_module,
+            "_fetch_from_oli",
+            AsyncMock(side_effect=RuntimeError("HTTP 500")),
+        )
+        assert await get_address_name(ChecksumAddress(ADDR_FRESH)) is None
+        assert await mongo_db.address_labels.find_one({"_id": ADDR_FRESH}) is None
+
+    async def test_mongo_lookup_failure_falls_through_to_oli(
+        self,
+        manual_override: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        # If the mongo lookup itself raises (network/connection issue), the
+        # function should still try OLI and return whatever it returns.
+        bad_collection = MagicMock()
+        bad_collection.find_one = AsyncMock(
+            side_effect=RuntimeError("mongo unreachable")
+        )
+        # We DO want the subsequent upsert to also fail gracefully.
+        bad_collection.update_one = AsyncMock(
+            side_effect=RuntimeError("mongo unreachable")
+        )
+        monkeypatch.setattr(al_module, "_get_collection", lambda: bad_collection)
+        monkeypatch.setattr(
+            al_module, "_fetch_from_oli", AsyncMock(return_value="Resilient")
+        )
+
+        assert await get_address_name(ChecksumAddress(ADDR_FRESH)) == "Resilient"

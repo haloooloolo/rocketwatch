@@ -8,20 +8,9 @@ from pymongo import AsyncMongoClient
 from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch.utils import rocketpool, shared_w3
-from rocketwatch.utils.config import (
-    Config,
-    ConsensusLayerConfig,
-    DiscordConfig,
-    DiscordOwner,
-    DmWarningConfig,
-    EventsConfig,
-    ExecutionLayerConfig,
-    ExecutionLayerEndpoint,
-    MongoDBConfig,
-    RocketPoolConfig,
-    RocketPoolSupport,
-    cfg,
-)
+from rocketwatch.utils.config import cfg
+from tests.lib.cfg import make_cfg
+from tests.lib.event_log_script import EventLogScript
 from tests.lib.scripted_rocketpool import ScriptedRocketPool
 
 # Default the w3/bacon proxies to MagicMocks so existing tests that touch
@@ -33,27 +22,17 @@ shared_w3.bacon._instance = MagicMock()
 # Install a baseline Config so cfg-reading-at-class-body code (like
 # support_utils.SupportUtils.subgroup) imports cleanly. Tests that need
 # different values overwrite via `monkeypatch.setattr(cfg, "_instance", ...)`.
-cfg._instance = Config(
-    discord=DiscordConfig(
-        secret="test",
-        owner=DiscordOwner(user_id=1, server_id=2),
-        channels={"default": 1, "errors": 1},
-    ),
-    execution_layer=ExecutionLayerConfig(
-        explorer="https://etherscan.io",
-        endpoint=ExecutionLayerEndpoint(current=["http://localhost"]),
-    ),
-    consensus_layer=ConsensusLayerConfig(
-        explorer="https://beaconcha.in",
-        endpoint=["http://localhost"],
-    ),
-    mongodb=MongoDBConfig(uri="mongodb://localhost"),
-    rocketpool=RocketPoolConfig(
-        support=RocketPoolSupport(server_id=1, channel_id=1, moderator_id=1),
-        dm_warning=DmWarningConfig(channels=[]),
-    ),
-    events=EventsConfig(lookback_distance=10, genesis=0, block_batch_size=10),
-)
+cfg._instance = make_cfg()
+
+
+@pytest.fixture
+def mainnet_cfg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "_instance", make_cfg("mainnet"))
+
+
+@pytest.fixture
+def testnet_cfg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cfg, "_instance", make_cfg("holesky"))
 
 
 @pytest.fixture(scope="session")
@@ -68,7 +47,11 @@ def mongo_url() -> Iterator[str]:
 
 @pytest.fixture
 async def mongo_db(mongo_url: str) -> AsyncIterator[AsyncDatabase[dict[str, Any]]]:
-    client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(mongo_url)
+    # tz_aware=True matches production code that compares stored timestamps
+    # against `datetime.now(UTC)`; without it the round-trip silently drops tz.
+    client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(
+        mongo_url, tz_aware=True
+    )
     db_name = f"rw_test_{uuid.uuid4().hex[:8]}"
     try:
         yield client[db_name]
@@ -82,3 +65,25 @@ def scripted_rp(monkeypatch: pytest.MonkeyPatch) -> ScriptedRocketPool:
     scripted = ScriptedRocketPool()
     monkeypatch.setattr(rocketpool.rp, "_instance", scripted)
     return scripted
+
+
+@pytest.fixture
+def event_log_script(monkeypatch: pytest.MonkeyPatch) -> EventLogScript:
+    # Replace the proxy's `_instance` with a fresh mock that delegates
+    # `eth.get_logs` and `eth.get_block_number` to the script.
+    script = EventLogScript()
+
+    eth_stub = MagicMock()
+    eth_stub.get_logs = script.get_logs
+    # Default to a high block number so tests using `toBlock="latest"` work.
+    eth_stub.get_block_number = MagicMock(return_value=2**31, side_effect=None)
+
+    async def _async_block_number() -> int:
+        return 2**31
+
+    eth_stub.get_block_number = _async_block_number
+
+    w3_stub = MagicMock()
+    w3_stub.eth = eth_stub
+    monkeypatch.setattr(shared_w3.w3, "_instance", w3_stub)
+    return script

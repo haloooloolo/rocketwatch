@@ -54,6 +54,9 @@ def make_bot(*, db: Any = None) -> MagicMock:
     """A minimal RocketWatch stand-in. Pass `db=` for cogs that read `bot.db`."""
     bot = MagicMock()
     bot.db = db if db is not None else MagicMock()
+    # Cogs that catch their own errors call `await bot.report_error(...)`.
+    # Provide it as an AsyncMock so tests can assert it was awaited.
+    bot.report_error = AsyncMock()
     return bot
 
 

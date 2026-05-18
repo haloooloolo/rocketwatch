@@ -11,6 +11,46 @@ from web3.constants import ADDRESS_ZERO
 ScriptedResponse = Any | Callable[..., Any]
 
 
+class _ScriptedCall:
+    """A `contract.functions.foo(...)` stand-in. Resolves via the parent
+    ScriptedRocketPool's `_calls` map on `.call(...)`."""
+
+    def __init__(
+        self,
+        rp: ScriptedRocketPool,
+        path: str,
+        args: tuple[Any, ...],
+    ) -> None:
+        self._rp = rp
+        self._path = path
+        self._args = args
+
+    async def call(self, block_identifier: Any = "latest") -> Any:
+        return await self._rp.call(self._path, *self._args)
+
+
+class _ScriptedFunctions:
+    """The `contract.functions` namespace; `__getattr__` makes any method
+    name yield a callable that builds a `_ScriptedCall`."""
+
+    def __init__(self, rp: ScriptedRocketPool, contract_name: str) -> None:
+        self._rp = rp
+        self._contract = contract_name
+
+    def __getattr__(self, method: str) -> Callable[..., _ScriptedCall]:
+        def factory(*args: Any) -> _ScriptedCall:
+            return _ScriptedCall(self._rp, f"{self._contract}.{method}", args)
+
+        return factory
+
+
+class _ScriptedContract:
+    """A `contract` stand-in. `functions.<method>(...)` returns a `_ScriptedCall`."""
+
+    def __init__(self, rp: ScriptedRocketPool, contract_name: str) -> None:
+        self.functions = _ScriptedFunctions(rp, contract_name)
+
+
 class ScriptedRocketPool:
     """Drop-in for `rp` that returns scripted values. Substitute via
     `rp._instance = ScriptedRocketPool()` (or the `scripted_rp` fixture)."""
@@ -69,11 +109,11 @@ class ScriptedRocketPool:
         require_success: bool = True,
         block: Any = "latest",
     ) -> list[Any]:
-        # Best-effort: tests that exercise multicall directly should script the
-        # functions ahead of time; this implementation just `.call()`s each one.
+        # Each call may be a plain ContractFunction (real or scripted) or an
+        # (fn, require_success) tuple; both shapes have `.call()`.
         results: list[Any] = []
-        for call in calls:
-            fn = call[0] if isinstance(call, tuple) else call
+        for entry in calls:
+            fn = entry[0] if isinstance(entry, tuple) else entry
             results.append(await fn.call(block_identifier=block))
         return results
 
@@ -82,8 +122,27 @@ class ScriptedRocketPool:
             raise KeyError(f"No scripted address for contract {name!r}")
         return self._addresses[name]
 
+    async def uncached_get_address_by_name(
+        self, name: str, block: Any = "latest"
+    ) -> ChecksumAddress:
+        # Cache distinction doesn't matter for scripted tests.
+        return await self.get_address_by_name(name)
+
     def get_name_by_address(self, address: ChecksumAddress) -> str | None:
         return self._names.get(address)
+
+    async def get_contract_by_name(
+        self, name: str, mainnet: bool = False
+    ) -> _ScriptedContract:
+        return _ScriptedContract(self, name)
+
+    async def assemble_contract(
+        self,
+        name: str,
+        address: ChecksumAddress | None = None,
+        mainnet: bool = False,
+    ) -> _ScriptedContract:
+        return _ScriptedContract(self, name)
 
     async def is_node(self, address: ChecksumAddress) -> bool:
         return address in self._nodes

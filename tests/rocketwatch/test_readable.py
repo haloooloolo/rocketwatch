@@ -1,7 +1,11 @@
 import base64
 import zlib
+from unittest.mock import AsyncMock
 
+from rocketwatch.utils import readable
 from rocketwatch.utils.readable import (
+    advanced_txn_url,
+    cl_explorer_url,
     decode_abi,
     prettify_json_string,
     pretty_time,
@@ -170,3 +174,69 @@ class TestRenderTree:
         assert "\u00a0" in out
         # No regular ASCII spaces should remain in the rendered output.
         assert " " not in out
+
+
+class TestAdvancedTxnUrl:
+    def test_returns_empty_string(self):
+        # Placeholder \u2014 pin the current behaviour so the build wires it up
+        # intentionally next time someone touches it.
+        assert advanced_txn_url("0xdeadbeef") == ""
+
+
+class TestClExplorerUrl:
+    async def test_integer_target_round_trips_to_url(self, monkeypatch):
+        from rocketwatch.utils.config import cfg
+
+        snapshot = cfg._instance.model_copy(deep=True)
+        snapshot.consensus_layer.explorer = "https://beaconcha.example"
+        monkeypatch.setattr(cfg, "_instance", snapshot)
+
+        out = await cl_explorer_url(42)
+        assert out == "[42](https://beaconcha.example/validator/42)"
+
+    async def test_short_string_target_uses_s_hex_label(self, monkeypatch):
+        # Anything shorter than the 98-char pubkey shape skips the beacon
+        # lookup and falls back to the s_hex prefix as the label.
+        from rocketwatch.utils.config import cfg
+
+        snapshot = cfg._instance.model_copy(deep=True)
+        snapshot.consensus_layer.explorer = "https://beaconcha.example"
+        monkeypatch.setattr(cfg, "_instance", snapshot)
+
+        out = await cl_explorer_url("0xabcdef1234567890")
+        assert "[0xabcdef12]" in out
+        assert out.endswith("/validator/0xabcdef1234567890)")
+
+    async def test_explicit_name_overrides_lookup(self, monkeypatch):
+        # When a name is provided the bacon lookup must NOT fire \u2014 assert
+        # by giving bacon.get_validator an explosive stub that would fail
+        # if called.
+        explosive = AsyncMock(side_effect=AssertionError("should not be called"))
+        monkeypatch.setattr(readable, "bacon", AsyncMock(get_validator=explosive))
+
+        out = await cl_explorer_url(42, name="my-validator")
+        assert "[my-validator]" in out
+        explosive.assert_not_awaited()
+
+    async def test_pubkey_length_target_resolves_validator_index(self, monkeypatch):
+        # A 98-char "0x..." pubkey triggers a beacon lookup; the returned
+        # index becomes the displayed label.
+        fake_bacon = AsyncMock()
+        fake_bacon.get_validator = AsyncMock(return_value={"data": {"index": 12345}})
+        monkeypatch.setattr(readable, "bacon", fake_bacon)
+
+        pubkey = "0x" + "a" * 96
+        out = await cl_explorer_url(pubkey)
+        assert "[#12345]" in out
+        fake_bacon.get_validator.assert_awaited_once_with(pubkey)
+
+    async def test_pubkey_lookup_failure_falls_back_to_s_hex(self, monkeypatch):
+        # Transport / parse errors are swallowed; the fallback path uses the
+        # s_hex prefix so the message still renders.
+        fake_bacon = AsyncMock()
+        fake_bacon.get_validator = AsyncMock(side_effect=RuntimeError("boom"))
+        monkeypatch.setattr(readable, "bacon", fake_bacon)
+
+        pubkey = "0x" + "a" * 96
+        out = await cl_explorer_url(pubkey)
+        assert "[0xaaaaaaaa]" in out
