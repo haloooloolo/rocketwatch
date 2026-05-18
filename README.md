@@ -1,6 +1,6 @@
 # Rocket Watch
 
-[![Test](https://github.com/haloooloolo/rocketwatch/actions/workflows/test.yml/badge.svg)](https://github.com/haloooloolo/rocketwatch/actions/workflows/test.yml)
+[![CI](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/haloooloolo/rocketwatch/graph/badge.svg)](https://codecov.io/gh/haloooloolo/rocketwatch)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
 
@@ -182,11 +182,14 @@ See the [Sentinel README](sentinel/README.md) for setup and API documentation.
 
 ## CI/CD
 
-| Workflow | Trigger | Purpose |
+All checks live in a single [CI workflow](.github/workflows/ci.yml):
+
+| Job | Trigger | Purpose |
 |---|---|---|
-| [Lint](.github/workflows/lint.yml) | Push & PR to main | Ruff linting & mypy type checking |
-| [Test](.github/workflows/test.yml) | Push & PR to main | pytest suite |
-| [Build](.github/workflows/build.yml) | Push to main | Build & push image to DockerHub |
+| `lint` | Push & PR to main | Ruff linting & format check |
+| `typecheck` | Push & PR to main | mypy type checking |
+| `test` | Push & PR to main | pytest suite & coverage upload |
+| `docker` | Push to main (after the above pass) | Build & push image to DockerHub |
 
 ## License
 
