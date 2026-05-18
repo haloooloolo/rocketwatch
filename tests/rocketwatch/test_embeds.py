@@ -598,13 +598,23 @@ class TestElExplorerUrlPlainAddress:
         out = await el_explorer_url("0xabc")
         assert "[vitalik.eth]" in out
 
-    async def test_address_label_preferred_over_ens(self, mainnet_cfg, explorer_mocks):
-        # Spec: hand-curated / OLI labels win over ENS reverse records.
+    async def test_ens_preferred_over_address_label(self, mainnet_cfg, explorer_mocks):
+        # Spec (after `change label priority` commit): ENS reverse records win
+        # over hand-curated / OLI labels.
         explorer_mocks.get_address_name.return_value = "Curated Label"
         explorer_mocks.ens.get_name.return_value = "ens-name.eth"
         out = await el_explorer_url("0xabc")
+        assert "[ens-name.eth]" in out
+        assert "Curated Label" not in out
+
+    async def test_address_label_used_when_ens_absent(
+        self, mainnet_cfg, explorer_mocks
+    ):
+        # If ENS has no reverse record the OLI/curated label is the fallback.
+        explorer_mocks.ens.get_name.return_value = None
+        explorer_mocks.get_address_name.return_value = "Curated Label"
+        out = await el_explorer_url("0xabc")
         assert "[Curated Label]" in out
-        assert "ens-name.eth" not in out
 
     async def test_no_name_anywhere_falls_back_to_short_hex(
         self, mainnet_cfg, explorer_mocks
@@ -612,16 +622,13 @@ class TestElExplorerUrlPlainAddress:
         out = await el_explorer_url("0xdeadbeef123456")
         assert "[0xdeadbeef]" in out
 
-    async def test_non_mainnet_defaults_to_short_hex_before_lookups(
-        self, testnet_cfg, explorer_mocks
-    ):
-        # Spec: on non-mainnet chains the function short-circuits naming with
-        # s_hex rather than hitting label/ENS lookups.
-        explorer_mocks.get_address_name.return_value = "Should Not Win"
-        explorer_mocks.ens.get_name.return_value = "should-not-win.eth"
+    async def test_non_mainnet_still_runs_lookups(self, testnet_cfg, explorer_mocks):
+        # The "non-mainnet short-circuits before name lookups" branch was
+        # removed by the `change label priority` commit; ENS reverse records
+        # now win on every chain.
+        explorer_mocks.ens.get_name.return_value = "should-win.eth"
         out = await el_explorer_url("0xdeadbeef123456")
-        assert "[0xdeadbeef]" in out
-        assert "Should Not Win" not in out
+        assert "[should-win.eth]" in out
 
 
 class TestElExplorerUrlContractCode:

@@ -290,13 +290,10 @@ async def el_explorer_url(
             if chain == "mainnet":
                 url = f"https://rocketexplorer.net/validator/{target}"
 
-        if not name and cfg.rocketpool.chain != "mainnet":
-            name = s_hex(target)
-
-        if not name:
-            name = await get_address_name(cast(ChecksumAddress, target)) or ""
         if not name:
             name = await ens.get_name(target) or ""
+        if not name:
+            name = await get_address_name(cast(ChecksumAddress, target)) or ""
 
         if await w3.eth.get_code(target):
             _prefix += "📄"
