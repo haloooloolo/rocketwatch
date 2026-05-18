@@ -38,6 +38,12 @@ def get_percentiles(
     return [(p, np.percentile(counts, p, method="nearest")) for p in percentiles]
 
 
+def _log_ticks(upper: float) -> list[float]:
+    """Monotonic colorbar tick list for a log-scale axis."""
+    upper = max(upper, 1)
+    return [t for t in (1, 10, 100, 1000) if t < upper] + [upper]
+
+
 async def collateral_distribution_raw(
     interaction: Interaction, distribution: list[tuple[float, int]]
 ) -> None:
@@ -218,12 +224,12 @@ class Collateral(commands.Cog):
         formatToInt = "{x:.0f}"
         cb = fig.colorbar(mappable=paths, ax=ax, format=formatToInt)
         cb.set_label("Validator Count")
-        cb.set_ticks([1, 10, 100, max_validators])
+        cb.set_ticks(_log_ticks(max_validators))
 
         # Add a legend for the color-coding on the hex distribution
         cb = fig.colorbar(mappable=polys, ax=ax2, format=formatToInt)
         cb.set_label("Nodes")
-        cb.set_ticks([1, 10, 100, max_nodes - 1])
+        cb.set_ticks(_log_ticks(max_nodes - 1))
 
         # Add labels and units
         ylabel = f"Collateral (percent {'bonded' if bonded else 'borrowed'})"
@@ -315,7 +321,7 @@ class Collateral(commands.Cog):
         )
         ax.bar_label(rects)
 
-        ax.set_xticklabels(x_keys, rotation="vertical")
+        ax.tick_params(axis="x", rotation=90)
         ax.set_xlabel(f"Collateral Percent of {'Bonded' if bonded else 'Borrowed'} Eth")
 
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
@@ -498,7 +504,7 @@ class Collateral(commands.Cog):
         )
         ax.bar_label(rects)
 
-        ax.set_xticklabels(x_keys, rotation="vertical")
+        ax.tick_params(axis="x", rotation=90)
         ax.set_xlabel("RPL per borrowed ETH")
 
         ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))

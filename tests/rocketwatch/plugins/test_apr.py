@@ -87,3 +87,102 @@ class TestRethAprEarlyReturn:
         embed = await run_command(cog, "node_apr", interaction)
         assert embed.title == "Current NO APR"
         assert embed.description == "No data available yet."
+
+
+def _seed_apr_datapoints(value_step: float = 0.0001) -> list[dict[str, Any]]:
+    # The chart path needs `set_xlim(left=x_arr[38])` to be in range, which
+    # means at least 39 entries. Generate 50 to comfortably cover both
+    # branches of the i>8 7-day-average computation.
+    base_time = 1_700_000_000
+    return [
+        {
+            "block": 1000 + i,
+            "time": base_time + i * 86400,
+            "value": 1.0 + i * value_step,
+            "effectiveness": 0.95,
+        }
+        for i in range(50)
+    ]
+
+
+async def _seed_minipools(mongo_db: AsyncDatabase[dict[str, Any]], n: int = 3) -> None:
+    await mongo_db.minipools.insert_many(
+        [
+            {
+                "beacon": {"status": "active_ongoing"},
+                "node_fee": 0.14,
+                "node_deposit_balance": 8.0,
+            }
+            for _ in range(n)
+        ]
+    )
+
+
+class TestRethAprHappyPath:
+    async def test_renders_chart_and_fields(
+        self,
+        cog: APR,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+    ) -> None:
+        await mongo_db.reth_apr.insert_many(_seed_apr_datapoints())
+        await _seed_minipools(mongo_db)
+
+        interaction = make_interaction()
+        await cog.reth_apr.callback(cog, interaction)
+
+        interaction.followup.send.assert_awaited_once()
+        kwargs = interaction.followup.send.call_args.kwargs
+        embed = kwargs["embed"]
+        assert embed.title == "Current rETH APR"
+        # Headline fields show the 7-day claim.
+        field_names = [f.name for f in embed.fields]
+        assert any("Day Average rETH APR" in n for n in field_names)
+        # Image attached.
+        assert kwargs["file"].filename == "reth_apr.png"
+
+    async def test_empty_minipools_falls_back_to_default_node_fee(
+        self,
+        cog: APR,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+    ) -> None:
+        # No minipools ⇒ aggregation returns nothing, cog uses default 20.
+        await mongo_db.reth_apr.insert_many(_seed_apr_datapoints())
+        interaction = make_interaction()
+        await cog.reth_apr.callback(cog, interaction)
+
+        interaction.followup.send.assert_awaited_once()
+        embed = interaction.followup.send.call_args.kwargs["embed"]
+        # The "Current Average Effective Commission" field renders the default.
+        commission_field = next(
+            f for f in embed.fields if "Effective Commission" in f.name
+        )
+        assert "2000.00%" in commission_field.value
+
+
+class TestNodeAprHappyPath:
+    async def test_renders_chart_and_fields(
+        self,
+        cog: APR,
+        scripted_rp: ScriptedRocketPool,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+    ) -> None:
+        # node_apr fetches the LEB4 commission via the network-settings contract.
+        # solidity.to_float treats 14 * 10**16 as 0.14.
+        scripted_rp.set_call(
+            "rocketDAOProtocolSettingsNetwork.getNodeShare", 14 * 10**16
+        )
+        await mongo_db.reth_apr.insert_many(_seed_apr_datapoints())
+        await _seed_minipools(mongo_db)
+
+        interaction = make_interaction()
+        await cog.node_apr.callback(cog, interaction)
+
+        interaction.followup.send.assert_awaited_once()
+        kwargs = interaction.followup.send.call_args.kwargs
+        embed = kwargs["embed"]
+        assert embed.title == "Current NO APR"
+        # The leb-4 / leb-8 split lands in the description embed field.
+        field_text = " ".join(f.value for f in embed.fields)
+        assert "leb4" in field_text
+        assert "leb8" in field_text
+        assert kwargs["file"].filename == "no_apr.png"
