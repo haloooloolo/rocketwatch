@@ -56,7 +56,7 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v4
         with:
-          username: haloooloolo
+          username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -64,7 +64,7 @@ jobs:
           context: .
           file: rocketwatch/Dockerfile
           push: true
-          tags: haloooloolo/rocketwatch:latest
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/rocketwatch:latest
           no-cache: true
           platforms: linux/amd64
 
