@@ -167,10 +167,7 @@ class Metrics(commands.Cog):
             [x["total"] for x in command_usage],
         )
         ax1.set_title("Command Usage")
-        ax1.set_xticklabels(
-            [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in command_usage],
-            rotation=45,
-        )
+        ax1.tick_params(axis="x", rotation=45)
 
         # plot the event usage
         ax2.bar(
@@ -178,10 +175,7 @@ class Metrics(commands.Cog):
             [x["total"] for x in event_emission],
         )
         ax2.set_title("Event Emission")
-        ax2.set_xticklabels(
-            [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in event_emission],
-            rotation=45,
-        )
+        ax2.tick_params(axis="x", rotation=45)
 
         # use minimal whitespace
         fig.tight_layout()

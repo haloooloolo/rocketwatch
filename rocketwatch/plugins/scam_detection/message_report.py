@@ -222,21 +222,23 @@ async def run_message_automod(
     try:
         delete_request = ctx.sentinel.delete_message(message, reason)
 
-        timeout_request = asyncio.sleep(0, result=False)
         if member := await member_from_message(ctx.bot, message):
             timeout_request = ctx.sentinel.timeout_member(
                 member, int(timeout_duration.total_seconds()), reason
             )
+        else:
+            timeout_request = asyncio.sleep(0, result=False)
 
         # message needs to be deleted before thread is locked
         deleted, timed_out = await asyncio.gather(delete_request, timeout_request)
 
-        lock_request = asyncio.sleep(0, result=False)
         if (
             isinstance(message.channel, Thread)
             and message.channel.owner_id == message.author.id
         ):
             lock_request = ctx.sentinel.lock_thread(message.channel, reason)
+        else:
+            lock_request = asyncio.sleep(0, result=False)
 
         locked = await lock_request
 
