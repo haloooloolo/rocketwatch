@@ -8,8 +8,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends binutils && \
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY pyproject.toml pyproject.toml
-RUN uv venv /opt/venv && \
-    VIRTUAL_ENV=/opt/venv uv pip install --no-cache -r pyproject.toml
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv venv /opt/venv && \
+    VIRTUAL_ENV=/opt/venv uv pip install -r pyproject.toml
 
 # Strip symbols from compiled extensions and drop bundled tests/__pycache__.
 RUN find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) \
