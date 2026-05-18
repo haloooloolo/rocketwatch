@@ -9,6 +9,7 @@ from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch.utils import rocketpool, shared_w3
 from rocketwatch.utils.config import cfg
+from tests.lib.beacon_script import ScriptedBeacon
 from tests.lib.cfg import make_cfg
 from tests.lib.event_log_script import EventLogScript
 from tests.lib.scripted_rocketpool import ScriptedRocketPool
@@ -64,6 +65,13 @@ async def mongo_db(mongo_url: str) -> AsyncIterator[AsyncDatabase[dict[str, Any]
 def scripted_rp(monkeypatch: pytest.MonkeyPatch) -> ScriptedRocketPool:
     scripted = ScriptedRocketPool()
     monkeypatch.setattr(rocketpool.rp, "_instance", scripted)
+    return scripted
+
+
+@pytest.fixture
+def scripted_bacon(monkeypatch: pytest.MonkeyPatch) -> ScriptedBeacon:
+    scripted = ScriptedBeacon()
+    monkeypatch.setattr(shared_w3.bacon, "_instance", scripted)
     return scripted
 
 
