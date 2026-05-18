@@ -5,7 +5,6 @@ services:
       context: .
       dockerfile: rocketwatch/Dockerfile
     volumes:
-      - ./rocketwatch/contracts/rocketpool:/app/rocketwatch/contracts/rocketpool
       - ./rocketwatch/config.toml:/app/rocketwatch/config.toml
       - ./voice_calls:/app/voice_calls
     restart: unless-stopped
