@@ -1,6 +1,6 @@
 services:
   rocketwatch:
-    image: haloooloolo/rocketwatch
+    image: ghcr.io/haloooloolo/rocketwatch:latest
     build:
       context: .
       dockerfile: rocketwatch/Dockerfile
