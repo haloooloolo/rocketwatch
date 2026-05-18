@@ -186,7 +186,7 @@ All checks live in a single [CI workflow](.github/workflows/ci.yml):
 
 | Job | Trigger | Purpose |
 |---|---|---|
-| `lint` | Push & PR to main | Ruff linting & format check |
+| `lint` | Push & PR to main | Ruff lint/format check & `uv.lock` freshness |
 | `typecheck` | Push & PR to main | mypy type checking |
 | `test` | Push & PR to main | pytest suite & coverage upload |
 | `docker` | Push to main (after the above pass) | Build & push image to GHCR |

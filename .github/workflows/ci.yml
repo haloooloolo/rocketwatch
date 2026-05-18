@@ -19,6 +19,9 @@ jobs:
         with:
           args: "format --check"
           src: "rocketwatch sentinel"
+      - uses: astral-sh/setup-uv@v8.1.0
+      - run: uv lock --check
+      - run: uv lock --check --project sentinel
 
   typecheck:
     runs-on: ubuntu-latest

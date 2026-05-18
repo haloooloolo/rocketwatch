@@ -7,6 +7,18 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
+      - id: uv-lock-check
+        name: uv lock (rocketwatch)
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$
+      - id: uv-lock-check-sentinel
+        name: uv lock (sentinel)
+        entry: uv lock --check --project sentinel
+        language: system
+        pass_filenames: false
+        files: ^sentinel/(pyproject\.toml|uv\.lock)$
       - id: pytest
         name: pytest
         entry: uv run --group test pytest -x -q
