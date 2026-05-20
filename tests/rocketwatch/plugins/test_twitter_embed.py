@@ -208,11 +208,44 @@ class TestOnMessage:
         assert kwargs["embeds"] == []
         assert kwargs["content"] == "<https://xcancel.com/jack/status/20>"
 
-    async def test_keeps_embed_for_image_tweet_despite_preview(
+    async def test_omits_embed_for_single_image_with_preview(
         self, cog: TwitterEmbed
     ) -> None:
-        # An image is worth showing even when the message already has a preview.
+        # A native X preview already shows a single image, so ours adds nothing.
         media = {"photos": [{"url": "http://img/1.jpg"}]}
+        cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
+        message = _make_message(
+            "https://x.com/jack/status/20", embeds=[discord.Embed()]
+        )
+        await cog.on_message(message)
+
+        message.reply.assert_awaited_once()
+        _args, kwargs = message.reply.call_args
+        assert kwargs["embeds"] == []
+
+    async def test_keeps_embed_for_multi_image_tweet_despite_preview(
+        self, cog: TwitterEmbed
+    ) -> None:
+        # A native preview shows at most one image; ours surfaces the rest.
+        media = {
+            "photos": [{"url": "http://img/1.jpg"}, {"url": "http://img/2.jpg"}],
+            "mosaic": {"formats": {"jpeg": "http://img/mosaic.jpg"}},
+        }
+        cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
+        message = _make_message(
+            "https://x.com/jack/status/20", embeds=[discord.Embed()]
+        )
+        await cog.on_message(message)
+
+        message.reply.assert_awaited_once()
+        _args, kwargs = message.reply.call_args
+        assert len(kwargs["embeds"]) == 1
+
+    async def test_keeps_embed_for_video_tweet_despite_preview(
+        self, cog: TwitterEmbed
+    ) -> None:
+        # A native preview can't play video, so ours (thumbnail + link) is kept.
+        media = {"videos": [{"url": "http://vid/clip.mp4"}]}
         cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
         message = _make_message(
             "https://x.com/jack/status/20", embeds=[discord.Embed()]

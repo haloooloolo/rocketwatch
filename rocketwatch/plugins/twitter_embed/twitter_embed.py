@@ -111,11 +111,14 @@ def _select_video_url(media: Any) -> str | None:
     return None
 
 
-def _has_image(tweet: dict[str, Any]) -> bool:
-    """Whether our embed would display a still image (photo, mosaic, or video
-    thumbnail) — i.e. whether it adds anything a text-only preview wouldn't.
+def _exceeds_native_preview(tweet: dict[str, Any]) -> bool:
+    """Whether our embed shows media a native X preview can't: more than one image
+    (X previews render at most one) or a video (which it can't play inline).
     """
-    return _select_image(tweet.get("media")) is not None
+    media = tweet.get("media")
+    photos = media.get("photos") if isinstance(media, dict) else None
+    photo_count = len(photos) if isinstance(photos, list) else 0
+    return photo_count > 1 or _select_video_url(media) is not None
 
 
 def _author_label(author: dict[str, Any]) -> str:
@@ -224,7 +227,8 @@ class TwitterEmbed(commands.Cog):
                 continue
             if tweet is not None:
                 embed = build_tweet_embed(tweet)
-                built.append((embed, xcancel_status_url(tweet), _has_image(tweet)))
+                url = xcancel_status_url(tweet)
+                built.append((embed, url, _exceeds_native_preview(tweet)))
 
         if not built:
             return
@@ -237,17 +241,18 @@ class TwitterEmbed(commands.Cog):
             return
 
         # Our embed only adds value when the message has no preview of its own,
-        # or when the tweet has an image to show; otherwise just post the link.
+        # or when the tweet has media that preview can't fully show; otherwise
+        # just post the link.
         original_has_preview = bool(message.embeds)
         embeds = [
             embed
-            for embed, _url, has_image in built
-            if has_image or not original_has_preview
+            for embed, _url, extra_media in built
+            if extra_media or not original_has_preview
         ]
 
         # Angle brackets keep each link clickable while suppressing Discord's own
         # (poor) xcancel preview.
-        content = "\n".join(f"<{url}>" for _embed, url, _has_image in built)
+        content = "\n".join(f"<{url}>" for _embed, url, _extra in built)
 
         try:
             await message.reply(content=content, embeds=embeds, mention_author=False)
