@@ -11,6 +11,7 @@ from discord import Message
 from discord.ext import commands
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.config import cfg
 
 log = logging.getLogger("rocketwatch.twitter_embed")
 
@@ -212,6 +213,12 @@ class TwitterEmbed(commands.Cog):
     @commands.Cog.listener()
     async def on_message(self, message: Message) -> None:
         if message.author.bot:
+            return
+
+        if (
+            message.guild is None
+            or message.guild.id != cfg.rocketpool.support.server_id
+        ):
             return
 
         links = extract_tweet_links(message.content)

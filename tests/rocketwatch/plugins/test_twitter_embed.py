@@ -11,6 +11,7 @@ from rocketwatch.plugins.twitter_embed.twitter_embed import (
     build_tweet_embed,
     extract_tweet_links,
 )
+from rocketwatch.utils.config import cfg
 from tests.lib.discord_harness import make_bot
 
 
@@ -139,11 +140,16 @@ def _make_message(
     *,
     is_bot: bool = False,
     embeds: list[Any] | None = None,
+    guild_id: int | None = None,
 ) -> MagicMock:
     message = MagicMock()
     message.id = 123
     message.content = content
     message.author.bot = is_bot
+    # Default to the Rocket Pool server, the only guild we act in.
+    message.guild.id = (
+        cfg.rocketpool.support.server_id if guild_id is None else guild_id
+    )
     # `embeds` is the message's own (Discord-generated) preview state, read after
     # the re-fetch to decide whether our embed is needed.
     message.embeds = embeds or []
@@ -173,6 +179,24 @@ class TestOnMessage:
     async def test_no_links_does_nothing(self, cog: TwitterEmbed) -> None:
         cog._fetch_tweet = AsyncMock()  # type: ignore[method-assign]
         message = _make_message("just a normal message")
+        await cog.on_message(message)
+
+        cog._fetch_tweet.assert_not_awaited()
+        message.reply.assert_not_awaited()
+
+    async def test_ignores_other_guilds(self, cog: TwitterEmbed) -> None:
+        cog._fetch_tweet = AsyncMock()  # type: ignore[method-assign]
+        other = cfg.rocketpool.support.server_id + 1
+        message = _make_message("https://x.com/jack/status/20", guild_id=other)
+        await cog.on_message(message)
+
+        cog._fetch_tweet.assert_not_awaited()
+        message.reply.assert_not_awaited()
+
+    async def test_ignores_dms(self, cog: TwitterEmbed) -> None:
+        cog._fetch_tweet = AsyncMock()  # type: ignore[method-assign]
+        message = _make_message("https://x.com/jack/status/20")
+        message.guild = None
         await cog.on_message(message)
 
         cog._fetch_tweet.assert_not_awaited()
