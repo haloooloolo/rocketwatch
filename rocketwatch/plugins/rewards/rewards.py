@@ -213,6 +213,12 @@ class Rewards(commands.Cog):
             new_system_weight = rewards.system_weight + weight - base_weight
             return 0.7 * period_inflation * weight / (new_system_weight * 10**18)
 
+        if (actual_borrowed_eth <= 0) and (borrowed_eth <= 0):
+            await interaction.followup.send(
+                "Empty node. Choose another one or specify the minipool count."
+            )
+            return
+
         fig, ax = plt.subplots(figsize=(5, 2.5))
         ax.grid()
 
@@ -254,13 +260,8 @@ class Rewards(commands.Cog):
             draw_reward_curve(sim_color, sim_label, sim_ls, borrowed_eth)
         elif actual_borrowed_eth > 0:
             draw_reward_curve(cur_color, None, cur_ls, actual_borrowed_eth)
-        elif borrowed_eth > 0:
-            draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
         else:
-            await interaction.followup.send(
-                "Empty node. Choose another one or specify the minipool count."
-            )
-            return
+            draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
 
         def formatter(_x: float, _pos: float) -> str:
             if _x < 1000:
