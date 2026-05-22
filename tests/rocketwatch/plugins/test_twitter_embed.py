@@ -11,6 +11,7 @@ from rocketwatch.plugins.twitter_embed.twitter_embed import (
     REPLY_DELAY_SECONDS,
     TwitterEmbed,
     build_tweet_components,
+    extract_fxtwitter_links,
     extract_tweet_links,
 )
 from rocketwatch.utils.config import cfg
@@ -85,6 +86,30 @@ class TestExtractTweetLinks:
 
     def test_returns_empty_for_no_links(self) -> None:
         assert extract_tweet_links("nothing to see here") == []
+
+
+class TestExtractFxtwitterLinks:
+    def test_matches_fx_family(self) -> None:
+        content = (
+            "https://fxtwitter.com/jack/status/20 "
+            "https://fixupx.com/nasa/status/99 "
+            "https://vxtwitter.com/foo/status/7"
+        )
+        assert extract_fxtwitter_links(content) == [
+            ("jack", "20"),
+            ("nasa", "99"),
+            ("foo", "7"),
+        ]
+
+    def test_ignores_plain_x_and_twitter(self) -> None:
+        content = "https://x.com/jack/status/20 https://twitter.com/nasa/status/99"
+        assert extract_fxtwitter_links(content) == []
+
+    def test_deduplicates_by_id(self) -> None:
+        content = (
+            "https://fxtwitter.com/jack/status/20 https://vxtwitter.com/jack/status/20"
+        )
+        assert extract_fxtwitter_links(content) == [("jack", "20")]
 
 
 class TestBuildComponents:
@@ -222,6 +247,16 @@ def _reply_blob(message: MagicMock) -> str:
     return _blob(kwargs["view"])
 
 
+def _reply_top_level_types(message: MagicMock) -> list[int]:
+    _args, kwargs = message.reply.call_args
+    view: discord.ui.LayoutView = kwargs["view"]
+    return [component["type"] for component in view.to_components()]
+
+
+_CONTAINER = discord.ComponentType.container.value
+_ACTION_ROW = discord.ComponentType.action_row.value
+
+
 class TestOnMessage:
     @pytest.fixture(autouse=True)
     def fast_sleep(self, monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
@@ -297,6 +332,44 @@ class TestOnMessage:
         blob = _reply_blob(message)
         assert "http://img/1.jpg" in blob
         assert "http://img/2.jpg" in blob
+
+    async def test_fxtwitter_link_replies_with_only_a_button(
+        self, cog: TwitterEmbed
+    ) -> None:
+        # fxtwitter already embeds well, so we add just the xcancel button and
+        # never call the API.
+        cog._fetch_tweet = AsyncMock()  # type: ignore[method-assign]
+        message = _make_message("https://fxtwitter.com/jack/status/20")
+        await cog.on_message(message)
+
+        cog._fetch_tweet.assert_not_awaited()
+        message.reply.assert_awaited_once()
+        assert "https://xcancel.com/jack/status/20" in _reply_blob(message)
+        assert _reply_top_level_types(message) == [_ACTION_ROW]
+
+    async def test_x_and_fx_links_both_handled(self, cog: TwitterEmbed) -> None:
+        cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
+        message = _make_message(
+            "https://x.com/jack/status/20 https://fxtwitter.com/nasa/status/99"
+        )
+        await cog.on_message(message)
+
+        blob = _reply_blob(message)
+        assert "https://xcancel.com/jack/status/20" in blob  # card for the x link
+        assert "https://xcancel.com/nasa/status/99" in blob  # button for the fx link
+
+    async def test_fx_link_skipped_when_same_tweet_is_carded(
+        self, cog: TwitterEmbed
+    ) -> None:
+        # Same tweet posted as both x and fx links: render the card, not a
+        # duplicate button.
+        cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
+        message = _make_message(
+            "https://x.com/jack/status/20 https://fxtwitter.com/jack/status/20"
+        )
+        await cog.on_message(message)
+
+        assert _reply_top_level_types(message) == [_CONTAINER, _ACTION_ROW]
 
     async def test_waits_before_replying(
         self, cog: TwitterEmbed, fast_sleep: AsyncMock

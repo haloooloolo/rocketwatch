@@ -30,6 +30,14 @@ TWEET_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# The fxtwitter family — these already render rich embeds, so we only add the
+# xcancel button rather than rebuilding a card.
+FX_TWEET_URL_RE = re.compile(
+    r"https?://(?:www\.)?(?:fxtwitter|fixupx|vxtwitter)\.com"
+    r"/(?P<user>\w+)/status/(?P<id>\d+)",
+    re.IGNORECASE,
+)
+
 MAX_TWEETS_PER_MESSAGE = 4
 MAX_DESCRIPTION = 4000
 MAX_GALLERY_IMAGES = 4  # Discord shows at most four images in one media gallery
@@ -45,19 +53,29 @@ class _Card(NamedTuple):
     tweet_id: str
 
 
-def extract_tweet_links(content: str) -> list[tuple[str, str]]:
-    """Return ``(user, tweet_id)`` for each twitter/x status link, de-duplicated
-    by id and in order of first appearance.
-    """
+def _extract_status_links(
+    content: str, pattern: re.Pattern[str]
+) -> list[tuple[str, str]]:
+    """``(user, tweet_id)`` for each match, de-duplicated by id, in order."""
     seen: set[str] = set()
     out: list[tuple[str, str]] = []
-    for match in TWEET_URL_RE.finditer(content):
+    for match in pattern.finditer(content):
         tweet_id = match.group("id")
         if tweet_id in seen:
             continue
         seen.add(tweet_id)
         out.append((match.group("user"), tweet_id))
     return out
+
+
+def extract_tweet_links(content: str) -> list[tuple[str, str]]:
+    """x.com / twitter.com status links."""
+    return _extract_status_links(content, TWEET_URL_RE)
+
+
+def extract_fxtwitter_links(content: str) -> list[tuple[str, str]]:
+    """fxtwitter / fixupx / vxtwitter status links (already embed well)."""
+    return _extract_status_links(content, FX_TWEET_URL_RE)
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -141,10 +159,13 @@ def _screen_name_and_id(tweet: dict[str, Any]) -> tuple[str, str]:
     return author.get("screen_name") or "", str(tweet.get("id") or "")
 
 
+def _xcancel_url(screen_name: str, tweet_id: str) -> str:
+    return f"{XCANCEL_BASE}/{screen_name}/status/{tweet_id}"
+
+
 def xcancel_status_url(tweet: dict[str, Any]) -> str:
     """The freely-viewable xcancel (Nitter) URL for a tweet, from its real handle."""
-    screen_name, tweet_id = _screen_name_and_id(tweet)
-    return f"{XCANCEL_BASE}/{screen_name}/status/{tweet_id}"
+    return _xcancel_url(*_screen_name_and_id(tweet))
 
 
 def _body_text(tweet: dict[str, Any]) -> str:
@@ -209,20 +230,13 @@ def build_tweet_components(
     has_content = False
 
     if not native_present:
-        # Author line and tweet text share one Section so the avatar thumbnail
-        # sits beside the whole block (V2 thumbnails are right-aligned).
-        header: list[str] = [f"**[{_author_label(author)}]({status_url})**"]
+        # No avatar: a V2 Section thumbnail can't be resized and makes the header
+        # too tall. Author is plain bold text, not a masked link — masked links
+        # render literally when the name contains emoji (e.g. flags); the xcancel
+        # button below is the link.
+        container.add_item(discord.ui.TextDisplay(f"**{_author_label(author)}**"))
         if body := _body_text(tweet):
-            header.append(body)
-        if avatar := author.get("avatar_url"):
-            container.add_item(
-                discord.ui.Section(
-                    *header, accessory=discord.ui.Thumbnail(media=str(avatar))
-                )
-            )
-        else:
-            for line in header:
-                container.add_item(discord.ui.TextDisplay(line))
+            container.add_item(discord.ui.TextDisplay(body))
         if (gallery := _media_gallery(media)) is not None:
             container.add_item(gallery)
         container.add_item(discord.ui.TextDisplay(f"-# {_format_footer(tweet)}"))
@@ -274,12 +288,13 @@ class TwitterEmbed(commands.Cog):
         ):
             return
 
-        links = extract_tweet_links(message.content)
-        if not links:
+        tweet_links = extract_tweet_links(message.content)
+        fx_links = extract_fxtwitter_links(message.content)
+        if not tweet_links and not fx_links:
             return
 
         cards: list[_Card] = []
-        for user, tweet_id in links[:MAX_TWEETS_PER_MESSAGE]:
+        for user, tweet_id in tweet_links[:MAX_TWEETS_PER_MESSAGE]:
             try:
                 tweet = await self._fetch_tweet(user, tweet_id)
             except Exception:
@@ -288,7 +303,16 @@ class TwitterEmbed(commands.Cog):
             if tweet is not None:
                 cards.append(_Card(tweet=tweet, tweet_id=tweet_id))
 
-        if not cards:
+        # fxtwitter-family links already render rich embeds, so we only offer the
+        # xcancel button (no API fetch) — skipping any tweet we're already carding.
+        card_ids = {card.tweet_id for card in cards}
+        fx_buttons = [
+            (user, tweet_id)
+            for user, tweet_id in fx_links[:MAX_TWEETS_PER_MESSAGE]
+            if tweet_id not in card_ids
+        ]
+
+        if not cards and not fx_buttons:
             return
 
         await asyncio.sleep(REPLY_DELAY_SECONDS)
@@ -307,6 +331,8 @@ class TwitterEmbed(commands.Cog):
                 native_plays_video=_native_plays_video(native, card.tweet_id),
             ):
                 view.add_item(component)
+        for user, tweet_id in fx_buttons:
+            view.add_item(_xcancel_button(_xcancel_url(user, tweet_id)))
 
         try:
             await message.reply(view=view, mention_author=False)
