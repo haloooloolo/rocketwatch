@@ -43,12 +43,41 @@ class _ScriptedFunctions:
 
         return factory
 
+    def __getitem__(self, method: str) -> Callable[..., _ScriptedCall]:
+        # Some call sites use `contract.functions[name]()` instead of attribute
+        # access; route both through the same factory.
+        return self.__getattr__(method)
+
+
+class _ScriptedEvent:
+    """A `contract.events.<Name>` stand-in. Carries enough identity for code
+    that passes it to `get_logs(...)`; the scripted log path is driven by
+    `EventLogScript` (or a monkeypatched `get_logs`), so this just needs to
+    exist and expose a `.topic`."""
+
+    def __init__(self, contract_name: str, event_name: str) -> None:
+        self.contract_name = contract_name
+        self.event_name = event_name
+        self.topic = f"0x{contract_name}.{event_name}"
+
+
+class _ScriptedEvents:
+    def __init__(self, contract_name: str) -> None:
+        self._contract = contract_name
+
+    def __getattr__(self, name: str) -> _ScriptedEvent:
+        return _ScriptedEvent(self._contract, name)
+
+    def __getitem__(self, name: str) -> _ScriptedEvent:
+        return self.__getattr__(name)
+
 
 class _ScriptedContract:
     """A `contract` stand-in. `functions.<method>(...)` returns a `_ScriptedCall`."""
 
     def __init__(self, rp: ScriptedRocketPool, contract_name: str) -> None:
         self.functions = _ScriptedFunctions(rp, contract_name)
+        self.events = _ScriptedEvents(contract_name)
 
 
 class ScriptedRocketPool:
@@ -64,6 +93,12 @@ class ScriptedRocketPool:
         self._minipools: set[ChecksumAddress] = set()
         self._strings: dict[str, str] = {}
         self._uints: dict[str, int] = {}
+
+    @property
+    def addresses(self) -> dict[str, ChecksumAddress]:
+        # Real RocketPool exposes a name→address bidict; tests that iterate
+        # `rp.addresses` (e.g. to enumerate contract names) only need the keys.
+        return self._addresses
 
     def set_call(self, method: str, value: ScriptedResponse) -> None:
         self._calls[method] = value
