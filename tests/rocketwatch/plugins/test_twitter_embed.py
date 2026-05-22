@@ -1,4 +1,6 @@
 import asyncio
+import json
+from collections.abc import Sequence
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -8,7 +10,7 @@ import pytest
 from rocketwatch.plugins.twitter_embed.twitter_embed import (
     REPLY_DELAY_SECONDS,
     TwitterEmbed,
-    build_tweet_embed,
+    build_tweet_components,
     extract_tweet_links,
 )
 from rocketwatch.utils.config import cfg
@@ -36,6 +38,20 @@ def _tweet(**overrides: Any) -> dict[str, Any]:
     }
     tweet.update(overrides)
     return tweet
+
+
+def _blob(view: discord.ui.LayoutView) -> str:
+    """The serialized component payload as a searchable string."""
+    return json.dumps(view.to_components(), ensure_ascii=False)
+
+
+def _components_blob(
+    components: Sequence[discord.ui.Item[discord.ui.LayoutView]],
+) -> str:
+    view = discord.ui.LayoutView(timeout=None)
+    for component in components:
+        view.add_item(component)
+    return _blob(view)
 
 
 class TestExtractTweetLinks:
@@ -71,68 +87,109 @@ class TestExtractTweetLinks:
         assert extract_tweet_links("nothing to see here") == []
 
 
-class TestBuildTweetEmbed:
-    def test_every_link_points_at_xcancel(self) -> None:
-        # The whole point of the module: the clickable card resolves to xcancel
-        # (no login gate), using the real handle/id from the fetched data.
-        embed = build_tweet_embed(_tweet())
-        assert embed.author.url == "https://xcancel.com/jack/status/20"
+class TestBuildComponents:
+    def test_links_to_xcancel(self) -> None:
+        # The whole point: the card's link resolves to xcancel (no login gate),
+        # using the real handle/id from the fetched data.
+        blob = _components_blob(build_tweet_components(_tweet()))
+        assert "https://xcancel.com/jack/status/20" in blob
 
-    def test_description_carries_the_tweet_text(self) -> None:
-        embed = build_tweet_embed(_tweet(text="hello world"))
-        assert embed.description == "hello world"
+    def test_full_card_is_a_container_then_a_separate_button_row(self) -> None:
+        comps = build_tweet_components(_tweet())
+        assert len(comps) == 2
+        assert isinstance(comps[0], discord.ui.Container)
+        assert isinstance(comps[1], discord.ui.ActionRow)
+        # The button lives beneath the card, not inside it.
+        assert "View on xcancel" not in _components_blob([comps[0]])
 
-    def test_author_label_shows_name_and_handle(self) -> None:
-        embed = build_tweet_embed(_tweet())
-        assert embed.author.name == "jack (@jack)"
+    def test_carries_text_and_author(self) -> None:
+        blob = _components_blob(build_tweet_components(_tweet(text="hello world")))
+        assert "hello world" in blob
+        assert "jack (@jack)" in blob
 
-    def test_single_photo_becomes_the_image(self) -> None:
+    def test_single_photo_in_gallery(self) -> None:
         media = {"photos": [{"url": "http://img/1.jpg"}]}
-        embed = build_tweet_embed(_tweet(media=media))
-        assert embed.image.url == "http://img/1.jpg"
+        blob = _components_blob(build_tweet_components(_tweet(media=media)))
+        assert "http://img/1.jpg" in blob
 
-    def test_multi_photo_prefers_the_mosaic(self) -> None:
+    def test_multiple_photos_all_rendered(self) -> None:
         media = {
-            "photos": [{"url": "http://img/1.jpg"}, {"url": "http://img/2.jpg"}],
-            "mosaic": {"formats": {"jpeg": "http://img/mosaic.jpg"}},
-        }
-        embed = build_tweet_embed(_tweet(media=media))
-        assert embed.image.url == "http://img/mosaic.jpg"
-
-    def test_video_uses_thumbnail_and_links_to_the_clip(self) -> None:
-        media = {
-            "videos": [
-                {"url": "http://vid/clip.mp4", "thumbnail_url": "http://vid/t.jpg"}
+            "photos": [
+                {"url": "http://img/1.jpg"},
+                {"url": "http://img/2.jpg"},
+                {"url": "http://img/3.jpg"},
             ]
         }
-        embed = build_tweet_embed(_tweet(media=media))
-        assert embed.image.url == "http://vid/t.jpg"
-        assert any(
-            field.value and "http://vid/clip.mp4" in field.value
-            for field in embed.fields
-        )
+        blob = _components_blob(build_tweet_components(_tweet(media=media)))
+        assert all(f"http://img/{n}.jpg" in blob for n in (1, 2, 3))
 
-    def test_quoted_tweet_is_included(self) -> None:
-        quote = {
-            "text": "original take",
-            "author": {"name": "Sat", "screen_name": "satoshi"},
-        }
-        embed = build_tweet_embed(_tweet(text="my reply", quote=quote))
-        assert embed.description is not None
-        assert "my reply" in embed.description
-        assert "original take" in embed.description
-        assert "@satoshi" in embed.description
+    def test_gallery_caps_at_four_images(self) -> None:
+        media = {"photos": [{"url": f"http://img/{i}.jpg"} for i in range(6)]}
+        blob = _components_blob(build_tweet_components(_tweet(media=media)))
+        assert "http://img/3.jpg" in blob
+        assert "http://img/4.jpg" not in blob
+
+    def test_video_in_gallery(self) -> None:
+        media = {"videos": [{"url": "http://vid/clip.mp4"}]}
+        blob = _components_blob(build_tweet_components(_tweet(media=media)))
+        assert "http://vid/clip.mp4" in blob
+
+    def test_quoted_tweet_included(self) -> None:
+        quote = {"text": "original take", "author": {"screen_name": "satoshi"}}
+        blob = _components_blob(
+            build_tweet_components(_tweet(text="reply", quote=quote))
+        )
+        assert "reply" in blob
+        assert "original take" in blob
+        assert "@satoshi" in blob
 
     def test_footer_shows_stats_and_attribution(self) -> None:
-        embed = build_tweet_embed(_tweet(likes=5, retweets=2, replies=1))
-        assert embed.footer.text is not None
-        assert "via fxtwitter" in embed.footer.text
-        assert "5" in embed.footer.text
+        blob = _components_blob(build_tweet_components(_tweet(likes=5)))
+        assert "via fxtwitter" in blob
+        assert "5" in blob
 
-    def test_overlong_text_is_truncated(self) -> None:
-        embed = build_tweet_embed(_tweet(text="x" * 5000))
-        assert embed.description is not None
-        assert len(embed.description) <= 4000
+    def test_overlong_text_truncated(self) -> None:
+        blob = _components_blob(build_tweet_components(_tweet(text="x" * 5000)))
+        assert ("x" * 4001) not in blob
+        assert "…" in blob
+
+    def test_native_present_posts_only_a_bare_button(self) -> None:
+        # Native preview covers a plain tweet, so we add only the xcancel button
+        # (no card box).
+        comps = build_tweet_components(_tweet(text="covered"), native_present=True)
+        assert len(comps) == 1
+        assert isinstance(comps[0], discord.ui.ActionRow)
+        blob = _components_blob(comps)
+        assert "https://xcancel.com/jack/status/20" in blob
+        assert "covered" not in blob
+
+    def test_native_present_note_supplies_full_text(self) -> None:
+        tweet = _tweet(text="the full long body", is_note_tweet=True)
+        blob = _components_blob(build_tweet_components(tweet, native_present=True))
+        assert "the full long body" in blob
+
+    def test_native_present_quote_supplies_quote(self) -> None:
+        quote = {"text": "original take", "author": {"screen_name": "satoshi"}}
+        blob = _components_blob(
+            build_tweet_components(_tweet(quote=quote), native_present=True)
+        )
+        assert "original take" in blob
+
+    def test_native_present_video_supplies_player(self) -> None:
+        media = {"videos": [{"url": "http://vid/clip.mp4"}]}
+        blob = _components_blob(
+            build_tweet_components(_tweet(media=media), native_present=True)
+        )
+        assert "http://vid/clip.mp4" in blob
+
+    def test_native_playing_video_omits_player(self) -> None:
+        media = {"videos": [{"url": "http://vid/clip.mp4"}]}
+        blob = _components_blob(
+            build_tweet_components(
+                _tweet(media=media), native_present=True, native_plays_video=True
+            )
+        )
+        assert "http://vid/clip.mp4" not in blob
 
 
 def _make_message(
@@ -151,13 +208,18 @@ def _make_message(
         cfg.rocketpool.support.server_id if guild_id is None else guild_id
     )
     # `embeds` is the message's own (Discord-generated) preview state, read after
-    # the re-fetch to decide whether our embed is needed.
+    # the re-fetch to decide what to contribute.
     message.embeds = embeds or []
     message.reply = AsyncMock()
     # The cog re-fetches the message after the delay; return the same mock so
-    # reply/embeds assertions stay on one object.
+    # reply assertions stay on one object.
     message.channel.fetch_message = AsyncMock(return_value=message)
     return message
+
+
+def _reply_blob(message: MagicMock) -> str:
+    _args, kwargs = message.reply.call_args
+    return _blob(kwargs["view"])
 
 
 class TestOnMessage:
@@ -202,7 +264,7 @@ class TestOnMessage:
         cog._fetch_tweet.assert_not_awaited()
         message.reply.assert_not_awaited()
 
-    async def test_replies_with_embed_without_pinging(self, cog: TwitterEmbed) -> None:
+    async def test_replies_with_a_view_without_pinging(self, cog: TwitterEmbed) -> None:
         cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
         message = _make_message("look https://x.com/jack/status/20")
         await cog.on_message(message)
@@ -210,80 +272,35 @@ class TestOnMessage:
         message.reply.assert_awaited_once()
         _args, kwargs = message.reply.call_args
         assert kwargs["mention_author"] is False
-        assert len(kwargs["embeds"]) == 1
-        assert kwargs["embeds"][0].author.url == "https://xcancel.com/jack/status/20"
-        # The xcancel link is also message text, bracketed so Discord won't add
-        # its own preview alongside our embed.
-        assert kwargs["content"] == "<https://xcancel.com/jack/status/20>"
+        assert isinstance(kwargs["view"], discord.ui.LayoutView)
+        assert "https://xcancel.com/jack/status/20" in _reply_blob(message)
 
-    async def test_omits_embed_when_message_already_has_preview(
+    async def test_native_preview_contributes_only_the_link(
         self, cog: TwitterEmbed
     ) -> None:
-        # The original already shows a preview and the (text-only) tweet has no
-        # image, so our embed would be redundant — post just the link.
-        cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
+        cog._fetch_tweet = AsyncMock(return_value=_tweet(text="covered"))  # type: ignore[method-assign]
         message = _make_message(
             "https://x.com/jack/status/20", embeds=[discord.Embed()]
         )
         await cog.on_message(message)
 
-        message.reply.assert_awaited_once()
-        _args, kwargs = message.reply.call_args
-        assert kwargs["embeds"] == []
-        assert kwargs["content"] == "<https://xcancel.com/jack/status/20>"
+        blob = _reply_blob(message)
+        assert "https://xcancel.com/jack/status/20" in blob
+        assert "covered" not in blob
 
-    async def test_omits_embed_for_single_image_with_preview(
-        self, cog: TwitterEmbed
-    ) -> None:
-        # A native X preview already shows a single image, so ours adds nothing.
-        media = {"photos": [{"url": "http://img/1.jpg"}]}
+    async def test_multi_image_tweet_renders_gallery(self, cog: TwitterEmbed) -> None:
+        media = {"photos": [{"url": "http://img/1.jpg"}, {"url": "http://img/2.jpg"}]}
         cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
-        message = _make_message(
-            "https://x.com/jack/status/20", embeds=[discord.Embed()]
-        )
+        message = _make_message("https://x.com/jack/status/20")
         await cog.on_message(message)
 
-        message.reply.assert_awaited_once()
-        _args, kwargs = message.reply.call_args
-        assert kwargs["embeds"] == []
-
-    async def test_keeps_embed_for_multi_image_tweet_despite_preview(
-        self, cog: TwitterEmbed
-    ) -> None:
-        # A native preview shows at most one image; ours surfaces the rest.
-        media = {
-            "photos": [{"url": "http://img/1.jpg"}, {"url": "http://img/2.jpg"}],
-            "mosaic": {"formats": {"jpeg": "http://img/mosaic.jpg"}},
-        }
-        cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
-        message = _make_message(
-            "https://x.com/jack/status/20", embeds=[discord.Embed()]
-        )
-        await cog.on_message(message)
-
-        message.reply.assert_awaited_once()
-        _args, kwargs = message.reply.call_args
-        assert len(kwargs["embeds"]) == 1
-
-    async def test_keeps_embed_for_video_tweet_despite_preview(
-        self, cog: TwitterEmbed
-    ) -> None:
-        # A native preview can't play video, so ours (thumbnail + link) is kept.
-        media = {"videos": [{"url": "http://vid/clip.mp4"}]}
-        cog._fetch_tweet = AsyncMock(return_value=_tweet(media=media))  # type: ignore[method-assign]
-        message = _make_message(
-            "https://x.com/jack/status/20", embeds=[discord.Embed()]
-        )
-        await cog.on_message(message)
-
-        message.reply.assert_awaited_once()
-        _args, kwargs = message.reply.call_args
-        assert len(kwargs["embeds"]) == 1
+        blob = _reply_blob(message)
+        assert "http://img/1.jpg" in blob
+        assert "http://img/2.jpg" in blob
 
     async def test_waits_before_replying(
         self, cog: TwitterEmbed, fast_sleep: AsyncMock
     ) -> None:
-        # Give spam removal a window to take the message (and our reply) down.
         cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
         message = _make_message("https://x.com/jack/status/20")
         await cog.on_message(message)
@@ -300,7 +317,6 @@ class TestOnMessage:
         fast_sleep.assert_not_awaited()
 
     async def test_unresolvable_tweet_yields_no_reply(self, cog: TwitterEmbed) -> None:
-        # Deleted/private tweets resolve to None and must not produce an empty reply.
         cog._fetch_tweet = AsyncMock(return_value=None)  # type: ignore[method-assign]
         message = _make_message("https://x.com/jack/status/20")
         await cog.on_message(message)
@@ -317,7 +333,6 @@ class TestOnMessage:
     async def test_message_removed_during_delay_skips_reply(
         self, cog: TwitterEmbed
     ) -> None:
-        # If the message is gone when we re-fetch (e.g. removed as spam), we bail.
         cog._fetch_tweet = AsyncMock(return_value=_tweet())  # type: ignore[method-assign]
         message = _make_message("https://x.com/jack/status/20")
         message.channel.fetch_message = AsyncMock(

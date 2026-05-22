@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import re
-from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 import aiohttp
 import discord
@@ -33,11 +32,17 @@ TWEET_URL_RE = re.compile(
 
 MAX_TWEETS_PER_MESSAGE = 4
 MAX_DESCRIPTION = 4000
+MAX_GALLERY_IMAGES = 4  # Discord shows at most four images in one media gallery
 
 # Wait before replying so that (a) a message removed for spam shortly after
 # posting is gone before we react, and (b) Discord has had time to attach its
-# own link preview, which we check to decide whether our embed is even needed.
+# own link preview, which we check to decide what (if anything) to contribute.
 REPLY_DELAY_SECONDS = 5
+
+
+class _Card(NamedTuple):
+    tweet: dict[str, Any]
+    tweet_id: str
 
 
 def extract_tweet_links(content: str) -> list[tuple[str, str]]:
@@ -61,44 +66,24 @@ def _truncate(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def _select_image(media: Any) -> str | None:
-    """Pick the best single still image: a combined mosaic for multi-photo tweets,
-    otherwise the first photo, otherwise a video's thumbnail.
-    """
+def _image_urls(media: Any) -> list[str]:
+    """The tweet's photo URLs (up to four), shown as real images in a gallery."""
     if not isinstance(media, dict):
-        return None
-
-    mosaic = media.get("mosaic")
-    if isinstance(mosaic, dict):
-        formats = mosaic.get("formats")
-        if isinstance(formats, dict) and formats.get("jpeg"):
-            return str(formats["jpeg"])
-        if mosaic.get("url"):
-            return str(mosaic["url"])
-
+        return []
     photos = media.get("photos")
-    if (
-        isinstance(photos, list)
-        and photos
-        and isinstance(photos[0], dict)
-        and (url := photos[0].get("url"))
-    ):
-        return str(url)
-
-    videos = media.get("videos")
-    if (
-        isinstance(videos, list)
-        and videos
-        and isinstance(videos[0], dict)
-        and (thumbnail := videos[0].get("thumbnail_url"))
-    ):
-        return str(thumbnail)
-
-    return None
+    if not isinstance(photos, list):
+        return []
+    urls: list[str] = []
+    for photo in photos:
+        if isinstance(photo, dict) and (url := photo.get("url")):
+            urls.append(str(url))
+        if len(urls) == MAX_GALLERY_IMAGES:
+            break
+    return urls
 
 
-def _select_video_url(media: Any) -> str | None:
-    """A bot-built embed can't autoplay video, so we surface a direct link."""
+def _video_url(media: Any) -> str | None:
+    """The tweet's direct video URL (raw mp4), for a media gallery item."""
     if not isinstance(media, dict):
         return None
     videos = media.get("videos")
@@ -112,14 +97,18 @@ def _select_video_url(media: Any) -> str | None:
     return None
 
 
-def _exceeds_native_preview(tweet: dict[str, Any]) -> bool:
-    """Whether our embed shows media a native X preview can't: more than one image
-    (X previews render at most one) or a video (which it can't play inline).
+def _native_misses_content(tweet: dict[str, Any]) -> bool:
+    """Content a native X preview drops: the body of a long 'note' tweet (it gets
+    truncated) and any quoted tweet (previews never include the quote).
     """
-    media = tweet.get("media")
-    photos = media.get("photos") if isinstance(media, dict) else None
-    photo_count = len(photos) if isinstance(photos, list) else 0
-    return photo_count > 1 or _select_video_url(media) is not None
+    return bool(tweet.get("is_note_tweet")) or isinstance(tweet.get("quote"), dict)
+
+
+def _native_plays_video(embeds: list[discord.Embed], tweet_id: str) -> bool:
+    """Whether a native preview for this tweet already carries a playable video
+    (as opposed to just a still image)."""
+    needle = f"/status/{tweet_id}"
+    return any(e.url and needle in e.url and e.video and e.video.url for e in embeds)
 
 
 def _author_label(author: dict[str, Any]) -> str:
@@ -146,49 +135,113 @@ def _format_footer(tweet: dict[str, Any]) -> str:
     return " · ".join(parts)
 
 
-def xcancel_status_url(tweet: dict[str, Any]) -> str:
-    """The freely-viewable xcancel (Nitter) URL for a tweet, from its real handle."""
+def _screen_name_and_id(tweet: dict[str, Any]) -> tuple[str, str]:
     author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
     assert isinstance(author, dict)
-    screen_name = author.get("screen_name") or ""
-    tweet_id = str(tweet.get("id") or "")
+    return author.get("screen_name") or "", str(tweet.get("id") or "")
+
+
+def xcancel_status_url(tweet: dict[str, Any]) -> str:
+    """The freely-viewable xcancel (Nitter) URL for a tweet, from its real handle."""
+    screen_name, tweet_id = _screen_name_and_id(tweet)
     return f"{XCANCEL_BASE}/{screen_name}/status/{tweet_id}"
 
 
-def build_tweet_embed(tweet: dict[str, Any]) -> discord.Embed:
-    """Build a tweet card from fxtwitter data whose every link points at xcancel."""
-    author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
-    assert isinstance(author, dict)
-
-    status_url = xcancel_status_url(tweet)
-
-    description = tweet.get("text") or ""
+def _body_text(tweet: dict[str, Any]) -> str:
+    text = tweet.get("text") or ""
     quote = tweet.get("quote")
     if isinstance(quote, dict):
-        description += _format_quote(quote)
+        text += _format_quote(quote)
+    return _truncate(text, MAX_DESCRIPTION)
 
-    embed = discord.Embed(
-        description=_truncate(description, MAX_DESCRIPTION),
-        color=TWITTER_COLOR,
+
+def _media_gallery(media: Any) -> discord.ui.MediaGallery[discord.ui.LayoutView] | None:
+    """A media gallery of the tweet's photos, or its video (X disallows mixing)."""
+    urls = _image_urls(media)
+    if not urls and (video := _video_url(media)):
+        urls = [video]
+    if not urls:
+        return None
+    gallery: discord.ui.MediaGallery[discord.ui.LayoutView] = discord.ui.MediaGallery()
+    for url in urls:
+        gallery.add_item(media=url)
+    return gallery
+
+
+def _xcancel_button(status_url: str) -> discord.ui.ActionRow[discord.ui.LayoutView]:
+    row: discord.ui.ActionRow[discord.ui.LayoutView] = discord.ui.ActionRow()
+    row.add_item(
+        discord.ui.Button(
+            style=discord.ButtonStyle.link, url=status_url, label="View on xcancel"
+        )
     )
-    embed.set_author(
-        name=_truncate(_author_label(author), 256),
-        url=status_url,
-        icon_url=author.get("avatar_url") or None,
+    return row
+
+
+_TopLevel = (
+    discord.ui.Container[discord.ui.LayoutView]
+    | discord.ui.ActionRow[discord.ui.LayoutView]
+)
+
+
+def build_tweet_components(
+    tweet: dict[str, Any],
+    *,
+    native_present: bool = False,
+    native_plays_video: bool = False,
+) -> list[_TopLevel]:
+    """Build the Components-V2 reply pieces for one tweet.
+
+    With no native preview the card is full (author, text, media, stats). With a
+    native preview we add a card only for what it drops — long "note" text,
+    quoted tweets, and a video it renders as a still image. The xcancel link
+    button is always a separate row *beneath* the card (and the only piece when
+    there is no card to add).
+    """
+    author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
+    assert isinstance(author, dict)
+    status_url = xcancel_status_url(tweet)
+    media = tweet.get("media")
+
+    container: discord.ui.Container[discord.ui.LayoutView] = discord.ui.Container(
+        accent_colour=TWITTER_COLOR
     )
+    has_content = False
 
-    timestamp = tweet.get("created_timestamp")
-    if isinstance(timestamp, int | float):
-        embed.timestamp = datetime.fromtimestamp(timestamp, tz=UTC)
+    if not native_present:
+        # Author line and tweet text share one Section so the avatar thumbnail
+        # sits beside the whole block (V2 thumbnails are right-aligned).
+        header: list[str] = [f"**[{_author_label(author)}]({status_url})**"]
+        if body := _body_text(tweet):
+            header.append(body)
+        if avatar := author.get("avatar_url"):
+            container.add_item(
+                discord.ui.Section(
+                    *header, accessory=discord.ui.Thumbnail(media=str(avatar))
+                )
+            )
+        else:
+            for line in header:
+                container.add_item(discord.ui.TextDisplay(line))
+        if (gallery := _media_gallery(media)) is not None:
+            container.add_item(gallery)
+        container.add_item(discord.ui.TextDisplay(f"-# {_format_footer(tweet)}"))
+        has_content = True
+    else:
+        if _native_misses_content(tweet) and (body := _body_text(tweet)):
+            container.add_item(discord.ui.TextDisplay(body))
+            has_content = True
+        if (
+            _video_url(media)
+            and not native_plays_video
+            and (gallery := _media_gallery(media)) is not None
+        ):
+            container.add_item(gallery)
+            has_content = True
 
-    if image_url := _select_image(tweet.get("media")):
-        embed.set_image(url=image_url)
-
-    if video_url := _select_video_url(tweet.get("media")):
-        embed.add_field(name="​", value=f"[▶ Video]({video_url})", inline=False)
-
-    embed.set_footer(text=_format_footer(tweet))
-    return embed
+    components: list[_TopLevel] = [container] if has_content else []
+    components.append(_xcancel_button(status_url))
+    return components
 
 
 class TwitterEmbed(commands.Cog):
@@ -225,7 +278,7 @@ class TwitterEmbed(commands.Cog):
         if not links:
             return
 
-        built: list[tuple[discord.Embed, str, bool]] = []
+        cards: list[_Card] = []
         for user, tweet_id in links[:MAX_TWEETS_PER_MESSAGE]:
             try:
                 tweet = await self._fetch_tweet(user, tweet_id)
@@ -233,11 +286,9 @@ class TwitterEmbed(commands.Cog):
                 log.warning("Failed to fetch tweet %s", tweet_id, exc_info=True)
                 continue
             if tweet is not None:
-                embed = build_tweet_embed(tweet)
-                url = xcancel_status_url(tweet)
-                built.append((embed, url, _exceeds_native_preview(tweet)))
+                cards.append(_Card(tweet=tweet, tweet_id=tweet_id))
 
-        if not built:
+        if not cards:
             return
 
         await asyncio.sleep(REPLY_DELAY_SECONDS)
@@ -247,22 +298,18 @@ class TwitterEmbed(commands.Cog):
             # Original is gone (e.g. removed as spam) during the delay.
             return
 
-        # Our embed only adds value when the message has no preview of its own,
-        # or when the tweet has media that preview can't fully show; otherwise
-        # just post the link.
-        original_has_preview = bool(message.embeds)
-        embeds = [
-            embed
-            for embed, _url, extra_media in built
-            if extra_media or not original_has_preview
-        ]
-
-        # Angle brackets keep each link clickable while suppressing Discord's own
-        # (poor) xcancel preview.
-        content = "\n".join(f"<{url}>" for _embed, url, _extra in built)
+        native = message.embeds
+        view = discord.ui.LayoutView(timeout=None)
+        for card in cards:
+            for component in build_tweet_components(
+                card.tweet,
+                native_present=bool(native),
+                native_plays_video=_native_plays_video(native, card.tweet_id),
+            ):
+                view.add_item(component)
 
         try:
-            await message.reply(content=content, embeds=embeds, mention_author=False)
+            await message.reply(view=view, mention_author=False)
         except discord.HTTPException:
             log.info("Skipped xcancel reply; original message is gone", exc_info=True)
 
