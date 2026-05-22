@@ -408,7 +408,7 @@ class SupportUtils(GroupCog, name="support"):
         embed = Embed(title="Templates")
         embed.description = (
             "".join(
-                f"\n`{template['_id']}` - {format_dt(template.get('last_edited_date', datetime.now()), 'R')}"
+                f"\n`{template['_id']}` - {format_dt(template.get('last_edited_date', datetime.now(UTC)), 'R')}"
                 for template in templates
             )
             + ""

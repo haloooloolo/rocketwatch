@@ -94,12 +94,12 @@ class ScamWarning(commands.Cog):
             log.info(f"{message.author} is reputable, skipping warning.")
             return
 
-        msg_time = message.created_at.replace(tzinfo=None)
+        msg_time = message.created_at
         db_entry = (
             await self.bot.db.scam_warning.find_one({"_id": message.author.id})
         ) or {}
 
-        cooldown_end = datetime.fromtimestamp(0)
+        cooldown_end = datetime.fromtimestamp(0, UTC)
         if last_failure_time := db_entry.get("last_failure"):
             cooldown_end = last_failure_time + self.failure_cooldown
         elif last_msg_time := db_entry.get("last_message"):

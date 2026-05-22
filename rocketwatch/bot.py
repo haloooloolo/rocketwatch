@@ -26,7 +26,7 @@ class RocketWatch(Bot):
 
     @cached_property
     def db(self) -> AsyncDatabase[dict[str, Any]]:
-        return AsyncMongoClient(cfg.mongodb.uri).rocketwatch
+        return AsyncMongoClient(cfg.mongodb.uri, tz_aware=True).rocketwatch
 
     @staticmethod
     def should_load_plugin(plugin: str, include: set[str], exclude: set[str]) -> bool:

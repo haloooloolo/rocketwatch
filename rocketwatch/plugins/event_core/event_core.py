@@ -2,7 +2,7 @@ import asyncio
 import logging
 import pickle
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
@@ -176,7 +176,7 @@ class EventCore(commands.Cog):
                         "event_name": event.event_name,
                         "block_number": event.block_number,
                         "score": event.get_score(),
-                        "time_seen": datetime.now(),
+                        "time_seen": datetime.now(UTC),
                         "image": pickle.dumps(event.image) if event.image else None,
                         "thumbnail": pickle.dumps(event.thumbnail)
                         if event.thumbnail
@@ -282,7 +282,7 @@ class EventCore(commands.Cog):
         is_far_behind = self.head_block < (self.latest_block - self.block_batch_size)
 
         if state_message and not is_far_behind:
-            age = datetime.now() - state_message["sent_at"]
+            age = datetime.now(UTC) - state_message["sent_at"]
             cooldown = timedelta(seconds=config.cooldown)
             if (age < cooldown) and (state_message["state"] == str(self.State.OK)):
                 log.debug(
@@ -379,7 +379,7 @@ class EventCore(commands.Cog):
                 await msg.edit(embed=embed)
                 await self.bot.db.state_messages.update_one(
                     prev_status,
-                    {"$set": {"sent_at": datetime.now(), "state": str(self.state)}},
+                    {"$set": {"sent_at": datetime.now(UTC), "state": str(self.state)}},
                 )
                 return
             except discord.errors.NotFound:
@@ -410,7 +410,7 @@ class EventCore(commands.Cog):
                     "_id": target_channel,
                     "channel_id": target_channel_id,
                     "message_id": msg.id,
-                    "sent_at": datetime.now(),
+                    "sent_at": datetime.now(UTC),
                     "state": str(self.state),
                 }
             )

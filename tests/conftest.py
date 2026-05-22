@@ -48,8 +48,8 @@ def mongo_url() -> Iterator[str]:
 
 @pytest.fixture
 async def mongo_db(mongo_url: str) -> AsyncIterator[AsyncDatabase[dict[str, Any]]]:
-    # tz_aware=True matches production code that compares stored timestamps
-    # against `datetime.now(UTC)`; without it the round-trip silently drops tz.
+    # tz_aware=True mirrors the production client (bot.py); datetimes round-trip
+    # as UTC-aware so naive/aware comparison bugs surface in tests too.
     client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(
         mongo_url, tz_aware=True
     )

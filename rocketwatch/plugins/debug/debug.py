@@ -289,7 +289,7 @@ class Debug(Cog):
                     "event_name": event.event_name,
                     "block_number": event.block_number,
                     "score": event.get_score(),
-                    "time_seen": datetime.now(),
+                    "time_seen": datetime.now(UTC),
                     "image": pickle.dumps(event.image) if event.image else None,
                     "thumbnail": pickle.dumps(event.thumbnail)
                     if event.thumbnail
