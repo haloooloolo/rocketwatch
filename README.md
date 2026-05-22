@@ -1,6 +1,6 @@
 # Rocket Watch
 
-[![CI](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yml)
+[![CI](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yaml/badge.svg)](https://github.com/haloooloolo/rocketwatch/actions/workflows/ci.yaml)
 [![codecov](https://codecov.io/gh/haloooloolo/rocketwatch/graph/badge.svg)](https://codecov.io/gh/haloooloolo/rocketwatch)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13%2B-blue)
 
@@ -182,7 +182,7 @@ See the [Sentinel README](sentinel/README.md) for setup and API documentation.
 
 ## CI/CD
 
-All checks live in a single [CI workflow](.github/workflows/ci.yml):
+All checks live in a single [CI workflow](.github/workflows/ci.yaml):
 
 | Job | Trigger | Purpose |
 |---|---|---|
