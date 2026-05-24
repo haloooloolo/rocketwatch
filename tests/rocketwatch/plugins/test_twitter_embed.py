@@ -8,6 +8,7 @@ import discord
 import pytest
 
 from rocketwatch.plugins.twitter_embed.twitter_embed import (
+    MAX_MESSAGE_TEXT,
     REPLY_DELAY_SECONDS,
     TwitterEmbed,
     build_tweet_components,
@@ -53,6 +54,25 @@ def _components_blob(
     for component in components:
         view.add_item(component)
     return _blob(view)
+
+
+def _total_text_chars(
+    components: Sequence[discord.ui.Item[discord.ui.LayoutView]],
+) -> int:
+    view = discord.ui.LayoutView(timeout=None)
+    for component in components:
+        view.add_item(component)
+    total = 0
+    stack: list[Any] = list(view.to_components())
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if node.get("type") == discord.ComponentType.text_display.value:
+                total += len(node.get("content") or "")
+            stack.extend(node.values())
+        elif isinstance(node, list):
+            stack.extend(node)
+    return total
 
 
 class TestExtractTweetLinks:
@@ -177,6 +197,12 @@ class TestBuildComponents:
         blob = _components_blob(build_tweet_components(_tweet(text="x" * 5000)))
         assert ("x" * 4001) not in blob
         assert "…" in blob
+
+    def test_total_text_stays_within_v2_limit(self) -> None:
+        # A long note tweet (9997 chars) must not push author + body + footer
+        # over Discord's per-message text cap (the cause of a 400).
+        comps = build_tweet_components(_tweet(text="x" * 9997))
+        assert _total_text_chars(comps) <= MAX_MESSAGE_TEXT
 
     def test_native_present_posts_only_a_bare_button(self) -> None:
         # Native preview covers a plain tweet, so we add only the xcancel button

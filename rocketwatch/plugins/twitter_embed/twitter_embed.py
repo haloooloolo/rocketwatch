@@ -39,7 +39,7 @@ FX_TWEET_URL_RE = re.compile(
 )
 
 MAX_TWEETS_PER_MESSAGE = 4
-MAX_DESCRIPTION = 4000
+MAX_MESSAGE_TEXT = 4000
 MAX_GALLERY_IMAGES = 4  # Discord shows at most four images in one media gallery
 
 # Wait before replying so that (a) a message removed for spam shortly after
@@ -168,12 +168,12 @@ def xcancel_status_url(tweet: dict[str, Any]) -> str:
     return _xcancel_url(*_screen_name_and_id(tweet))
 
 
-def _body_text(tweet: dict[str, Any]) -> str:
+def _body_text(tweet: dict[str, Any], limit: int = MAX_MESSAGE_TEXT) -> str:
     text = tweet.get("text") or ""
     quote = tweet.get("quote")
     if isinstance(quote, dict):
         text += _format_quote(quote)
-    return _truncate(text, MAX_DESCRIPTION)
+    return _truncate(text, limit)
 
 
 def _media_gallery(media: Any) -> discord.ui.MediaGallery[discord.ui.LayoutView] | None:
@@ -234,12 +234,16 @@ def build_tweet_components(
         # too tall. Author is plain bold text, not a masked link — masked links
         # render literally when the name contains emoji (e.g. flags); the xcancel
         # button below is the link.
-        container.add_item(discord.ui.TextDisplay(f"**{_author_label(author)}**"))
-        if body := _body_text(tweet):
+        author_line = f"**{_author_label(author)}**"
+        footer_line = f"-# {_format_footer(tweet)}"
+        container.add_item(discord.ui.TextDisplay(author_line))
+        # Total text per V2 message is capped; budget the body around the rest.
+        body_limit = MAX_MESSAGE_TEXT - len(author_line) - len(footer_line)
+        if body := _body_text(tweet, body_limit):
             container.add_item(discord.ui.TextDisplay(body))
         if (gallery := _media_gallery(media)) is not None:
             container.add_item(gallery)
-        container.add_item(discord.ui.TextDisplay(f"-# {_format_footer(tweet)}"))
+        container.add_item(discord.ui.TextDisplay(footer_line))
         has_content = True
     else:
         if _native_misses_content(tweet) and (body := _body_text(tweet)):
@@ -336,8 +340,12 @@ class TwitterEmbed(commands.Cog):
 
         try:
             await message.reply(view=view, mention_author=False)
-        except discord.HTTPException:
-            log.info("Skipped xcancel reply; original message is gone", exc_info=True)
+        except discord.NotFound:
+            # Original was deleted between the re-fetch and our reply — expected.
+            log.info("Skipped xcancel reply; original message is gone")
+        except discord.HTTPException as e:
+            # Anything else (e.g. a malformed payload) is a real bug; surface it.
+            await self.bot.report_error(e)
 
 
 async def setup(bot: RocketWatch) -> None:
