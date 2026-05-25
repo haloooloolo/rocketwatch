@@ -42,7 +42,7 @@ dependencies = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=rocketwatch --cov=sentinel --cov-fail-under=70"
+addopts = "--cov=rocketwatch --cov=sentinel --cov-fail-under=75"
 markers = [
     "integration_db: requires a Mongo instance (testcontainers)",
     "integration_chain: requires a forked anvil node",

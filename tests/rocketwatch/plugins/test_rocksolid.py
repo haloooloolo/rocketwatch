@@ -1,16 +1,60 @@
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from rocketwatch.plugins.rocksolid import rocksolid as rocksolid_module
 from rocketwatch.plugins.rocksolid.rocksolid import RockSolid
+from rocketwatch.utils import shared_w3 as sw
 from tests.lib.discord_harness import make_bot, make_interaction
 from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
 
 ETH = 10**18
 DEPLOY_BLOCK = 23_237_366
+
+
+async def _run(cmd: Any, cog: Any, interaction: Any) -> None:
+    await cmd.callback(cog, interaction)
+
+
+def _aiter(items: list[Any]) -> AsyncIterator[Any]:
+    async def gen() -> AsyncIterator[Any]:
+        for item in items:
+            yield item
+
+    return gen()
+
+
+class _Txn:
+    async def __aenter__(self) -> "_Txn":
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+
+class _Session:
+    async def start_transaction(self) -> _Txn:
+        return _Txn()
+
+
+class _SessionCM:
+    async def __aenter__(self) -> _Session:
+        return _Session()
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+
+def _fake_db(*, last_checked: dict[str, Any] | None, stored: list[Any]) -> MagicMock:
+    db = MagicMock()
+    db.last_checked_block.find_one = AsyncMock(return_value=last_checked)
+    db.last_checked_block.replace_one = AsyncMock()
+    db.rocksolid.find = MagicMock(return_value=_aiter(stored))
+    db.rocksolid.bulk_write = AsyncMock()
+    db.client.start_session = lambda: _SessionCM()
+    return db
 
 
 @pytest.fixture
@@ -22,7 +66,7 @@ def _stub_externals(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         return 1_700_000_000
 
     monkeypatch.setattr(
-        rocksolid_module.w3,
+        sw.w3,
         "eth",
         AsyncMock(get_block_number=block_number),
         raising=False,
@@ -79,7 +123,7 @@ class TestRockSolidCommand:
         )
 
         interaction = make_interaction()
-        await cog.rocksolid.callback(cog, interaction)
+        await _run(cog.rocksolid, cog, interaction)
 
         kwargs = interaction.followup.send.call_args.kwargs
         embed = kwargs["embed"]
@@ -112,8 +156,60 @@ class TestRockSolidCommand:
         )
 
         interaction = make_interaction()
-        await cog.rocksolid.callback(cog, interaction)
+        await _run(cog.rocksolid, cog, interaction)
 
         embed = interaction.followup.send.call_args.kwargs["embed"]
         apy_fields = {f.name: f.value for f in embed.fields if "APY" in f.name}
         assert all(v == "-" for v in apy_fields.values())
+
+
+class TestFetchAssetUpdates:
+    async def test_ingests_new_logs_and_persists(
+        self,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+        _stub_externals: None,
+    ) -> None:
+        monkeypatch.setattr(
+            rocksolid_module,
+            "get_logs",
+            AsyncMock(
+                return_value=[{"blockNumber": 100, "args": {"totalAssets": 200 * ETH}}]
+            ),
+        )
+        db = _fake_db(last_checked=None, stored=[{"time": 1, "assets": 50.0}])
+        cog = RockSolid(make_bot(db=db))
+
+        updates = await cog._fetch_asset_updates()
+
+        # both the stored doc and the freshly-decoded log are returned
+        assert (1, 50.0) in updates
+        assert (1_700_000_000, 200.0) in updates
+        # new logs are written and the checkpoint advanced
+        db.rocksolid.bulk_write.assert_awaited_once()
+        db.last_checked_block.replace_one.assert_awaited_once()
+
+    async def test_no_new_logs_skips_bulk_write(
+        self,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+        _stub_externals: None,
+    ) -> None:
+        monkeypatch.setattr(rocksolid_module, "get_logs", AsyncMock(return_value=[]))
+        db = _fake_db(last_checked={"block": DEPLOY_BLOCK + 5}, stored=[])
+        cog = RockSolid(make_bot(db=db))
+
+        updates = await cog._fetch_asset_updates()
+
+        assert updates == []
+        db.rocksolid.bulk_write.assert_not_awaited()
+        # the checkpoint is still advanced even with nothing new
+        db.last_checked_block.replace_one.assert_awaited_once()
+
+
+class TestSetup:
+    async def test_registers_cog(self) -> None:
+        bot = make_bot()
+        bot.add_cog = AsyncMock()
+        await rocksolid_module.setup(bot)
+        bot.add_cog.assert_awaited_once()

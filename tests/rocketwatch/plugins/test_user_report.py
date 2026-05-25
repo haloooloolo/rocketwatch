@@ -254,6 +254,23 @@ class TestExecuteUserReport:
 
         automod.assert_not_awaited()
 
+    async def test_failure_releases_claim_and_raises(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx = make_ctx(bot=make_bot(db=mongo_db))
+        monkeypatch.setattr(
+            ur, "get_report_channel", AsyncMock(side_effect=RuntimeError("boom"))
+        )
+        interaction = self._interaction()
+
+        with pytest.raises(RuntimeError):
+            await ur._execute_user_report(ctx, interaction, _make_member(), "bad")
+
+        # the claimed placeholder is rolled back
+        assert (
+            await mongo_db.scam_reports.find_one({"type": "user", "user_id": 1}) is None
+        )
+
 
 class TestReportUserFromPartnerBan:
     def _partner_guild(self) -> MagicMock:

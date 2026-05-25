@@ -233,6 +233,20 @@ class TestReportThread:
         # report still finalized; warning_id stays None since the warning failed
         assert doc is not None and doc["warning_id"] is None
 
+    async def test_failure_releases_claim_and_raises(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx = self._ctx(mongo_db)
+        monkeypatch.setattr(
+            tr, "get_report_channel", AsyncMock(side_effect=RuntimeError("boom"))
+        )
+
+        with pytest.raises(RuntimeError):
+            await tr.report_thread(ctx, _make_thread(), "scam")
+
+        # the claimed placeholder is rolled back
+        assert await mongo_db.scam_reports.find_one({"channel_id": 300}) is None
+
 
 class TestCheckThreadStarterDeleted:
     async def test_reports_when_owner_not_banned(

@@ -253,6 +253,19 @@ class TestWarningConfirmView:
         interaction.response.send_message.assert_awaited_once()
         resolve.assert_not_awaited()
 
+    async def test_dismiss_without_cog_returns(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: True)
+        interaction = self._interaction(has_cog=False)
+
+        await mr.WarningConfirmView().dismiss.callback(interaction)
+
+        interaction.message.delete.assert_not_awaited()
+
     async def test_dismiss_deletes_warning_and_resolves(
         self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -432,6 +445,37 @@ class TestReportMessage:
         await mr.report_message(ctx, message, "scam")
 
         channel.send.assert_not_awaited()
+
+    async def test_failure_releases_claim_and_raises(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx, message = self._ctx_message(mongo_db)
+        monkeypatch.setattr(
+            mr, "get_report_channel", AsyncMock(side_effect=RuntimeError("boom"))
+        )
+
+        with pytest.raises(RuntimeError):
+            await mr.report_message(ctx, message, "scam")
+
+        # the claimed placeholder is rolled back so a retry can re-claim
+        assert await mongo_db.scam_reports.find_one({"message_id": 100}) is None
+
+    async def test_warning_reply_failure_is_tolerated(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discord import errors
+
+        ctx, message = self._ctx_message(mongo_db)
+        message.reply = AsyncMock(side_effect=errors.Forbidden(MagicMock(), "x"))
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(mr, "run_message_automod", AsyncMock(return_value=set()))
+        monkeypatch.setattr(mr, "broadcast_user_report", AsyncMock())
+
+        await mr.report_message(ctx, message, "scam")
+
+        # report is finalized even though the reply warning failed to send
+        doc = await mongo_db.scam_reports.find_one({"message_id": 100})
+        assert doc is not None and doc["warning_id"] is None
 
 
 class TestManualMessageReport:

@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from rocketwatch.plugins.deposit_pool import deposit_pool as dp_module
 from rocketwatch.plugins.deposit_pool.deposit_pool import DepositPool
 from tests.lib.discord_harness import make_bot, make_interaction, run_command
 from tests.lib.scripted_rocketpool import ScriptedRocketPool
@@ -54,7 +55,7 @@ class TestDepositPoolStats:
         assert fields["Current Size"] == "100.00 ETH"
         assert fields["Maximum Size"] == "320 ETH"
         # 320 - 100 = 220 ETH free; the cog rounds via :,.2f.
-        assert "220.00 ETH" in fields["Status"]
+        assert "220.00 ETH" in (fields["Status"] or "")
 
     async def test_status_says_capacity_reached_when_full(
         self, cog: DepositPool, scripted_rp: ScriptedRocketPool
@@ -74,9 +75,10 @@ class TestDepositPoolStats:
 
         fields = {f.name: f.value for f in embed.fields}
         assert "Enough For" in fields
-        assert "2" in fields["Enough For"]
-        assert "4 ETH validators" in fields["Enough For"]
-        assert "credit validators" in fields["Enough For"]
+        enough_for = fields["Enough For"] or ""
+        assert "2" in enough_for
+        assert "4 ETH validators" in enough_for
+        assert "credit validators" in enough_for
 
     async def test_queue_summary_replaces_enough_for_block(
         self,
@@ -156,3 +158,57 @@ class TestRethExtraCollateral:
         assert embed.description is not None
         assert "No liquidity" in embed.description
         assert "100 ETH (10% of supply)" in embed.description
+
+
+class TestGetStatus:
+    def _seed(self, scripted_rp: ScriptedRocketPool) -> None:
+        _set_pool_calls(scripted_rp, balance_eth=100, cap_eth=320, free_eth=220)
+        scripted_rp.set_call("rocketTokenRETH.getExchangeRate", ETH)
+        scripted_rp.set_call("rocketTokenRETH.totalSupply", 1000 * ETH)
+        scripted_rp.set_call("rocketTokenRETH.getCollateralRate", 5 * 10**16)
+        scripted_rp.set_call(
+            "rocketDAOProtocolSettingsNetwork.getTargetRethCollateralRate",
+            10 * 10**16,
+        )
+
+    async def test_non_mainnet_omits_secondary_market(
+        self, cog: DepositPool, scripted_rp: ScriptedRocketPool, testnet_cfg: None
+    ) -> None:
+        self._seed(scripted_rp)
+        embed = await cog.get_status()
+        names = {f.name for f in embed.fields}
+        assert "Pool Balance" in names
+        assert "Withdrawals" in names
+        assert "Secondary Market" not in names
+
+    @pytest.mark.parametrize(
+        "price,expected",
+        [(1.05, "premium"), (0.95, "discount"), (1.0001, "within")],
+    )
+    async def test_secondary_market_rate_status(
+        self,
+        cog: DepositPool,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+        price: float,
+        expected: str,
+    ) -> None:
+        # Baseline cfg chain is mainnet, so the secondary-market line is added.
+        self._seed(scripted_rp)
+        monkeypatch.setattr(
+            scripted_rp,
+            "get_reth_eth_price",
+            AsyncMock(return_value=price),
+            raising=False,
+        )
+        embed = await cog.get_status()
+        secondary = next(f.value for f in embed.fields if f.name == "Secondary Market")
+        assert secondary is not None and expected in secondary
+
+
+class TestSetup:
+    async def test_registers_cog(self) -> None:
+        bot = make_bot()
+        bot.add_cog = AsyncMock()
+        await dp_module.setup(bot)
+        bot.add_cog.assert_awaited_once()

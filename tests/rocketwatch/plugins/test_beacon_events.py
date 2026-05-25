@@ -1,17 +1,29 @@
 from collections.abc import Iterator
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import ClientResponseError, RequestInfo
+from eth_typing import BlockNumber
 from pymongo.asynchronous.database import AsyncDatabase
 from yarl import URL
 
+from rocketwatch.plugins.beacon_events import beacon_events as be
 from rocketwatch.plugins.beacon_events.beacon_events import (
     BeaconEvents,
     _build_finality_embed,
 )
+from rocketwatch.utils import shared_w3 as sw
+from rocketwatch.utils.config import cfg
+from rocketwatch.utils.solidity import beacon_block_to_date
 from tests.lib.beacon_script import ScriptedBeacon
+from tests.lib.cfg import make_cfg
 from tests.lib.discord_harness import make_bot
+from tests.lib.scripted_rocketpool import ScriptedRocketPool
+
+Db = AsyncDatabase[dict[str, Any]]
+SMOOTH = "0x" + "a" * 40
+OTHER = "0x" + "b" * 40
 
 
 def _not_found_error() -> ClientResponseError:
@@ -106,7 +118,7 @@ class TestBuildFinalityEmbed:
         assert embed.title is not None
         assert "Finality Delay" in embed.title
         fields = {f.name: f.value for f in embed.fields}
-        assert "100" in fields["Epoch"]
+        assert "100" in (fields["Epoch"] or "")
 
     def test_recover_event_uses_recover_title(self) -> None:
         embed = _build_finality_embed(
@@ -138,11 +150,11 @@ class TestSlashings:
         )
 
         cog = _make_cog(make_bot(db=mongo_db))
-        events = await cog._get_slashings(block)
+        events = await cog._get_slashings(block)  # type: ignore[arg-type]
         assert len(events) == 1
         assert events[0].event_name == "validator_slash_event"
         embed_fields = {f.name: f.value for f in events[0].embed.fields}
-        assert "`Attestation Violation`" in embed_fields["Reason"]
+        assert "`Attestation Violation`" in (embed_fields["Reason"] or "")
 
     async def test_proposer_slashing_emits_event(
         self, mongo_db: AsyncDatabase[dict[str, Any]]
@@ -162,10 +174,10 @@ class TestSlashings:
         )
 
         cog = _make_cog(make_bot(db=mongo_db))
-        events = await cog._get_slashings(block)
+        events = await cog._get_slashings(block)  # type: ignore[arg-type]
         assert len(events) == 1
         embed_fields = {f.name: f.value for f in events[0].embed.fields}
-        assert "`Proposal Violation`" in embed_fields["Reason"]
+        assert "`Proposal Violation`" in (embed_fields["Reason"] or "")
 
     async def test_unknown_validator_is_ignored(
         self, mongo_db: AsyncDatabase[dict[str, Any]]
@@ -184,7 +196,7 @@ class TestSlashings:
             ],
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        events = await cog._get_slashings(block)
+        events = await cog._get_slashings(block)  # type: ignore[arg-type]
         assert events == []
 
 
@@ -246,7 +258,7 @@ class TestCheckFinality:
         )
 
         cog = _make_cog(make_bot(db=mongo_db))
-        event = await cog._check_finality(block)
+        event = await cog._check_finality(block)  # type: ignore[arg-type]
         assert event is not None
         assert event.event_name == "finality_delay_event"
         # Persists the delay so the next check can compare against it.
@@ -272,7 +284,7 @@ class TestCheckFinality:
         )
 
         cog = _make_cog(make_bot(db=mongo_db))
-        event = await cog._check_finality(block)
+        event = await cog._check_finality(block)  # type: ignore[arg-type]
         assert event is not None
         assert event.event_name == "finality_delay_recover_event"
 
@@ -289,7 +301,7 @@ class TestCheckFinality:
             timestamp=1_700_000_000,
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        assert await cog._check_finality(block) is None
+        assert await cog._check_finality(block) is None  # type: ignore[arg-type]
 
     async def test_checkpoint_error_returns_none(
         self,
@@ -304,7 +316,7 @@ class TestCheckFinality:
             timestamp=1_700_000_000,
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        assert await cog._check_finality(block) is None
+        assert await cog._check_finality(block) is None  # type: ignore[arg-type]
 
 
 class TestGetEventsForSlot:
@@ -390,3 +402,267 @@ class TestGetProposal:
         )
         cog = _make_cog(make_bot(db=mongo_db))
         assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+
+
+# --- _get_proposal with an API key configured (exercises the beaconcha fetch) ---
+
+
+class _FakeResp:
+    def __init__(self, status: int, payload: dict[str, Any]) -> None:
+        self.status = status
+        self._payload = payload
+
+    async def __aenter__(self) -> "_FakeResp":
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def json(self) -> dict[str, Any]:
+        return self._payload
+
+
+class _FakeSession:
+    def __init__(self, resp: _FakeResp) -> None:
+        self._resp = resp
+
+    async def __aenter__(self) -> "_FakeSession":
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    def get(self, url: str, headers: dict[str, str] | None = None) -> _FakeResp:
+        return self._resp
+
+
+def _patch_session(monkeypatch: pytest.MonkeyPatch, resp: _FakeResp) -> None:
+    monkeypatch.setattr("aiohttp.ClientSession", lambda: _FakeSession(resp))
+
+
+def _proposal_payload(
+    producer_reward: int,
+    *,
+    relay_recipient: str | None = None,
+    fee_recipient: str = OTHER,
+) -> dict[str, Any]:
+    relay = {"producerFeeRecipient": relay_recipient} if relay_recipient else None
+    return {
+        "data": [
+            {
+                "producerReward": str(producer_reward),
+                "relay": relay,
+                "feeRecipient": fee_recipient,
+            }
+        ]
+    }
+
+
+@pytest.fixture
+def beaconcha_cfg(monkeypatch: pytest.MonkeyPatch) -> None:
+    c = make_cfg()
+    c.consensus_layer.beaconcha_secret = "KEY"
+    monkeypatch.setattr(cfg, "_instance", c)
+
+
+class TestGetProposalBody:
+    async def test_no_execution_payload_returns_none(
+        self, mongo_db: Db, beaconcha_cfg: None
+    ) -> None:
+        block = {"slot": "100", "proposer_index": "7", "body": {}}
+        cog = _make_cog(make_bot(db=mongo_db))
+        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+
+    async def test_non_rp_validator_with_key_returns_none(
+        self, mongo_db: Db, beaconcha_cfg: None
+    ) -> None:
+        block = _make_block(
+            slot=100, proposer_index=999, block_number=20_000_000, timestamp=1_700_000
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+
+    async def test_low_reward_returns_none(
+        self,
+        mongo_db: Db,
+        beaconcha_cfg: None,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
+        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
+        _patch_session(monkeypatch, _FakeResp(200, _proposal_payload(5 * 10**17)))
+        block = _make_block(
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+
+    async def test_rate_limit_returns_none(
+        self,
+        mongo_db: Db,
+        beaconcha_cfg: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
+        _patch_session(monkeypatch, _FakeResp(429, {}))
+        block = _make_block(
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+
+    async def test_large_proposal_emits_event(
+        self,
+        mongo_db: Db,
+        beaconcha_cfg: None,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
+        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
+        _patch_session(
+            monkeypatch,
+            _FakeResp(200, _proposal_payload(3 * 10**18, fee_recipient=OTHER)),
+        )
+        block = _make_block(
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        event = await cog._get_proposal(block)  # type: ignore[arg-type]
+        assert event is not None
+        assert event.event_name == "mev_proposal_event"
+
+    async def test_smoothing_pool_proposal_includes_balance(
+        self,
+        mongo_db: Db,
+        beaconcha_cfg: None,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
+        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
+        _patch_session(
+            monkeypatch,
+            _FakeResp(200, _proposal_payload(3 * 10**18, relay_recipient=SMOOTH)),
+        )
+        monkeypatch.setattr(
+            sw.w3.eth, "get_balance", AsyncMock(return_value=5 * 10**18)
+        )
+        block = _make_block(
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        event = await cog._get_proposal(block)  # type: ignore[arg-type]
+        assert event is not None
+        assert event.event_name == "mev_proposal_smoothie_event"
+        assert "Smoothing Pool Balance" in {f.name for f in event.embed.fields}
+
+
+class TestGetPastEvents:
+    async def test_processes_slot_range(
+        self,
+        mongo_db: Db,
+        scripted_bacon: ScriptedBeacon,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ts_from = beacon_block_to_date(9)  # → from_slot 10
+        ts_to = beacon_block_to_date(12)  # → to_slot 12
+        monkeypatch.setattr(
+            sw.w3.eth,
+            "get_block",
+            AsyncMock(side_effect=[{"timestamp": ts_from}, {"timestamp": ts_to}]),
+        )
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": "0x" + "7" * 40}
+        )
+        scripted_bacon.set_block(
+            "10",
+            _make_block(
+                slot=10,
+                proposer_index=1,
+                block_number=20_000_010,
+                timestamp=ts_from,
+                attester_slashings=[
+                    {
+                        "attestation_1": {"attesting_indices": ["7"]},
+                        "attestation_2": {"attesting_indices": ["7"]},
+                    }
+                ],
+            ),
+        )
+        scripted_bacon.set_block(
+            "12",
+            _make_block(
+                slot=12, proposer_index=1, block_number=20_000_012, timestamp=ts_to
+            ),
+        )
+        scripted_bacon.set_finality_checkpoint("12", {"finalized": {"epoch": "0"}})
+
+        cog = _make_cog(make_bot(db=mongo_db))
+        events = await cog.get_past_events(BlockNumber(100), BlockNumber(200))
+
+        assert any(e.event_name == "validator_slash_event" for e in events)
+
+    async def test_get_new_events_delegates_to_past_events(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = _make_cog(make_bot(db=mongo_db))
+        cog.last_served_block = BlockNumber(100)
+        cog.lookback_distance = 10
+        cog._pending_block = BlockNumber(200)
+        captured = AsyncMock(return_value=["E"])
+        monkeypatch.setattr(cog, "get_past_events", captured)
+
+        result = await cog._get_new_events()
+
+        assert result == captured.return_value
+        captured.assert_awaited_once_with(BlockNumber(91), BlockNumber(200))
+
+    async def test_slot_collects_proposal_and_finality(
+        self,
+        mongo_db: Db,
+        beaconcha_cfg: None,
+        scripted_rp: ScriptedRocketPool,
+        scripted_bacon: ScriptedBeacon,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
+        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
+        _patch_session(monkeypatch, _FakeResp(200, _proposal_payload(3 * 10**18)))
+        scripted_bacon.set_block(
+            "320",
+            _make_block(
+                slot=320, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+            ),
+        )
+        # epoch 10, finalized 6 → delay 4 ≥ threshold 3
+        scripted_bacon.set_finality_checkpoint("320", {"finalized": {"epoch": "6"}})
+
+        cog = _make_cog(make_bot(db=mongo_db))
+        events = await cog._get_events_for_slot(320, check_finality=True)
+
+        names = {e.event_name for e in events}
+        assert "mev_proposal_event" in names
+        assert "finality_delay_event" in names
+
+
+class TestSetup:
+    async def test_registers_cog(self) -> None:
+        bot = make_bot()
+        bot.add_cog = AsyncMock()
+        await be.setup(bot)
+        bot.add_cog.assert_awaited_once()

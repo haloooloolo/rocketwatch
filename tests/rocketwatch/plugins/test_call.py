@@ -1,12 +1,16 @@
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from rocketwatch.plugins.call.call import Call, CallModal
 from tests.lib.discord_harness import make_bot, make_interaction
-from tests.lib.scripted_rocketpool import ScriptedRocketPool
+from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
+
+
+async def _run(callback: Any, *args: Any, **kwargs: Any) -> Any:
+    return await callback(*args, **kwargs)
 
 
 @pytest.fixture
@@ -81,7 +85,8 @@ class TestCallCommandBlockParsing:
         interaction = make_interaction()
         # No ABI inputs for this contract in the scripted setup → bypasses
         # modal and runs _execute_call directly.
-        await cog.call.callback(
+        await _run(
+            cog.call.callback,
             cog,
             interaction,
             function="rocketDAONodeTrusted.getMemberCount()",
@@ -110,7 +115,8 @@ class TestCallCommandBlockParsing:
 
         cog = Call(make_bot())
         interaction = make_interaction()
-        await cog.call.callback(
+        await _run(
+            cog.call.callback,
             cog,
             interaction,
             function="rocketDAONodeTrusted.getMemberCount()",
@@ -122,7 +128,8 @@ class TestCallCommandBlockParsing:
     async def test_invalid_block_rejected_inline(self) -> None:
         cog = Call(make_bot())
         interaction = make_interaction()
-        await cog.call.callback(
+        await _run(
+            cog.call.callback,
             cog,
             interaction,
             function="x.y()",
@@ -137,7 +144,8 @@ class TestCallCommandBlockParsing:
     ) -> None:
         cog = Call(make_bot())
         interaction = make_interaction()
-        await cog.call.callback(
+        await _run(
+            cog.call.callback,
             cog,
             interaction,
             function="x.y()",
@@ -336,12 +344,144 @@ class TestMatchFunctionName:
             "rocketTokenRPL.balanceOf(address)",
             "rocketTokenRETH.balanceOf(address)",
         ]
-        out = await cog.match_function_name(make_interaction(), "rpl")
+        out = await _run(cog.match_function_name, make_interaction(), "rpl")
         assert len(out) == 1
         assert "RPL" in out[0].name
 
     async def test_caps_results_at_25(self) -> None:
         cog = Call(make_bot())
         cog.function_names = [f"contract.fn{i}()" for i in range(40)]
-        out = await cog.match_function_name(make_interaction(), "fn")
+        out = await _run(cog.match_function_name, make_interaction(), "fn")
         assert len(out) == 25
+
+
+class TestCallModal:
+    def test_builds_one_text_input_per_abi_input(self) -> None:
+        modal = CallModal(
+            Call(make_bot()),
+            "rocketX.foo(uint256,address)",
+            "latest",
+            None,
+            False,
+            [{"name": "amount", "type": "uint256"}, {"name": "to", "type": "address"}],
+        )
+        assert len(modal.param_inputs) == 2
+
+    async def test_on_submit_valid_args_execute_call(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = Call(make_bot())
+        execute = AsyncMock()
+        monkeypatch.setattr(cog, "_execute_call", execute)
+        modal = CallModal(
+            cog,
+            "rocketX.foo",
+            "latest",
+            None,
+            False,
+            [{"name": "n", "type": "uint256"}],
+        )
+        modal.param_inputs[0]._value = "42"
+        interaction = make_interaction()
+
+        await modal.on_submit(interaction)
+
+        execute.assert_awaited_once()
+        assert execute.await_args is not None
+        assert execute.await_args.args[2] == [42]
+
+    async def test_on_submit_invalid_args_report_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = Call(make_bot())
+        execute = AsyncMock()
+        monkeypatch.setattr(cog, "_execute_call", execute)
+        modal = CallModal(
+            cog,
+            "rocketX.foo",
+            "latest",
+            None,
+            False,
+            [{"name": "n", "type": "uint256"}],
+        )
+        modal.param_inputs[0]._value = "not-a-number"
+        interaction = make_interaction()
+
+        await modal.on_submit(interaction)
+
+        execute.assert_not_awaited()
+        content = interaction.followup.send.call_args.kwargs["content"]
+        assert "Validation failed" in content
+
+
+class TestOnReady:
+    async def test_collects_view_functions(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        scripted_rp.set_address("rocketDepositPool", addr("0x" + "1" * 40))
+        contract = MagicMock()
+        contract.abi = [
+            {
+                "type": "function",
+                "name": "getBalance",
+                "stateMutability": "view",
+                "inputs": [],
+            },
+            {
+                "type": "function",
+                "name": "deposit",
+                "stateMutability": "payable",  # not view/pure → skipped
+                "inputs": [],
+            },
+        ]
+        monkeypatch.setattr(
+            scripted_rp, "get_contract_by_name", AsyncMock(return_value=contract)
+        )
+        cog = Call(make_bot())
+
+        await cog.on_ready()
+
+        assert "rocketDepositPool.getBalance()" in cog.function_names
+        assert not any("deposit" in name for name in cog.function_names)
+
+    async def test_already_populated_is_noop(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = Call(make_bot())
+        cog.function_names = ["already.there()"]
+        getter = AsyncMock()
+        monkeypatch.setattr(
+            "rocketwatch.plugins.call.call.rp.get_contract_by_name", getter
+        )
+        await cog.on_ready()
+        getter.assert_not_awaited()
+
+
+class TestCallCommandModalPath:
+    async def test_function_with_inputs_opens_modal(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        contract = MagicMock()
+        contract.abi = [
+            {
+                "type": "function",
+                "name": "balanceOf",
+                "inputs": [{"name": "owner", "type": "address"}],
+            }
+        ]
+        monkeypatch.setattr(
+            scripted_rp, "get_contract_by_name", AsyncMock(return_value=contract)
+        )
+        cog = Call(make_bot())
+        interaction = make_interaction()
+        interaction.response.send_modal = AsyncMock()
+
+        await _run(
+            cog.call.callback,
+            cog,
+            interaction,
+            function="rocketTokenRETH.balanceOf(address)",
+        )
+
+        interaction.response.send_modal.assert_awaited_once()
+        assert isinstance(interaction.response.send_modal.call_args.args[0], CallModal)
