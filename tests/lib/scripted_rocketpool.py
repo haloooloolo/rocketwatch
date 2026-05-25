@@ -179,6 +179,18 @@ class ScriptedRocketPool:
     ) -> _ScriptedContract:
         return _ScriptedContract(self, name)
 
+    async def get_abi_by_name(self, name: str) -> str:
+        # The scripted contract ignores the ABI, so callers that build a
+        # contract via `w3.eth.contract(address=..., abi=...)` only need this
+        # to return something truthy-or-empty; the calls resolve by address.
+        return ""
+
+    def contract_at(self, address: ChecksumAddress) -> _ScriptedContract:
+        """Scripted contract keyed by address, for code that builds contracts
+        via `w3.eth.contract(address=..., abi=...)` rather than by name. Its
+        calls resolve through `set_call(f"{address}.{method}", ...)`."""
+        return _ScriptedContract(self, address)
+
     async def is_node(self, address: ChecksumAddress) -> bool:
         return address in self._nodes
 

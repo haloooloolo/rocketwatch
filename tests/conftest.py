@@ -76,6 +76,21 @@ def scripted_bacon(monkeypatch: pytest.MonkeyPatch) -> ScriptedBeacon:
 
 
 @pytest.fixture
+def scripted_w3(
+    monkeypatch: pytest.MonkeyPatch, scripted_rp: ScriptedRocketPool
+) -> MagicMock:
+    # A w3 stub for code that builds contracts via `w3.eth.contract(...)` and
+    # normalises addresses via `w3.to_checksum_address(...)`. Contracts resolve
+    # through `scripted_rp` (keyed by address); checksumming is identity so
+    # tests can use unchecksummed placeholder addresses.
+    w3_stub = MagicMock()
+    w3_stub.to_checksum_address = lambda a: a
+    w3_stub.eth.contract = lambda address, abi: scripted_rp.contract_at(address)
+    monkeypatch.setattr(shared_w3.w3, "_instance", w3_stub)
+    return w3_stub
+
+
+@pytest.fixture
 def event_log_script(monkeypatch: pytest.MonkeyPatch) -> EventLogScript:
     # Replace the proxy's `_instance` with a fresh mock that delegates
     # `eth.get_logs` and `eth.get_block_number` to the script.
