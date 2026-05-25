@@ -660,7 +660,7 @@ class DigiFinex(CEX):
         return {price: size for price, size in api_response["bids"]}
 
     def _get_asks(self, api_response: dict[str, Any]) -> dict[float, float]:
-        return {price: size for price, size in api_response["bids"]}
+        return {price: size for price, size in api_response["asks"]}
 
 
 class ERC20Token:
