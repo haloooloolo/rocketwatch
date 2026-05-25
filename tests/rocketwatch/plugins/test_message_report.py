@@ -3,6 +3,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from discord import DeletedReferencedMessage, Thread
 from discord.abc import Messageable
 from pymongo.asynchronous.database import AsyncDatabase
 
@@ -11,6 +12,8 @@ from rocketwatch.plugins.scam_detection.common import AutomodAction
 from rocketwatch.plugins.scam_detection.views import ReportReviewView
 from tests.lib.discord_harness import make_bot
 from tests.lib.scam_detection_harness import ScriptedSentinel, make_ctx
+
+Db = AsyncDatabase[dict[str, Any]]
 
 
 def _make_message(**over: Any) -> MagicMock:
@@ -178,3 +181,370 @@ class TestRunMessageAutomod:
         )
         assert actions == set()
         bot.report_error.assert_awaited()
+
+    async def test_thread_owner_post_locks_thread(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx = make_ctx()
+        member = MagicMock()
+        member.mention = "<@5>"
+        monkeypatch.setattr(mr, "member_from_message", AsyncMock(return_value=member))
+
+        thread = MagicMock(spec=Thread)
+        thread.jump_url = "http://thread"
+        parent = MagicMock(spec=Messageable)
+        parent.send = AsyncMock()
+        thread.parent = parent
+        message = _make_message()
+        thread.owner_id = message.author.id
+        message.channel = thread
+
+        actions = await mr.run_message_automod(
+            ctx, message, "scam", MagicMock(jump_url="http://r")
+        )
+
+        assert AutomodAction.THREAD_LOCKED in actions
+        assert AutomodAction.MESSAGE_DELETED in actions
+        # the alert lands in the thread's parent channel, not the thread
+        parent.send.assert_awaited()
+
+    async def test_no_actions_skips_alert(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sentinel = ScriptedSentinel()
+        sentinel.delete_message = AsyncMock(return_value=False)
+        ctx = make_ctx(sentinel=sentinel)
+        monkeypatch.setattr(mr, "member_from_message", AsyncMock(return_value=None))
+        channel = MagicMock(spec=Messageable)
+        channel.send = AsyncMock()
+        message = _make_message()
+        message.channel = channel
+
+        actions = await mr.run_message_automod(
+            ctx, message, "scam", MagicMock(jump_url="http://r")
+        )
+        assert actions == set()
+        channel.send.assert_not_awaited()
+
+
+class TestWarningConfirmView:
+    def _interaction(self, *, db: Any = None, has_cog: bool = True) -> MagicMock:
+        i = MagicMock()
+        i.message.id = 55
+        i.message.delete = AsyncMock()
+        i.user.mention = "<@9>"
+        i.response.send_message = AsyncMock()
+        i.response.edit_message = AsyncMock()
+        i.client.db = db if db is not None else MagicMock()
+        cog = MagicMock(_ctx=make_ctx()) if has_cog else None
+        i.client.get_cog = MagicMock(return_value=cog)
+        return i
+
+    async def test_dismiss_non_moderator_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mr, "member_from_interaction", AsyncMock(return_value=None))
+        resolve = AsyncMock()
+        monkeypatch.setattr(mr, "resolve_report", resolve)
+        interaction = self._interaction()
+
+        await mr.WarningConfirmView().dismiss.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        resolve.assert_not_awaited()
+
+    async def test_dismiss_deletes_warning_and_resolves(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: True)
+        resolve = AsyncMock()
+        monkeypatch.setattr(mr, "resolve_report", resolve)
+        await mongo_db.scam_reports.insert_one({"warning_id": 55, "report_id": 200})
+        interaction = self._interaction(db=mongo_db)
+
+        await mr.WarningConfirmView().dismiss.callback(interaction)
+
+        interaction.message.delete.assert_awaited_once()
+        resolve.assert_awaited_once()
+        assert resolve.await_args is not None
+        assert "Marked safe" in resolve.await_args.args[2]
+
+    async def test_confirm_non_moderator_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mr, "member_from_interaction", AsyncMock(return_value=None))
+        automod = AsyncMock()
+        monkeypatch.setattr(mr, "run_message_automod", automod)
+        interaction = self._interaction()
+
+        await mr.WarningConfirmView().confirm.callback(interaction)
+
+        interaction.response.send_message.assert_awaited_once()
+        automod.assert_not_awaited()
+
+    async def test_confirm_runs_automod_on_reported_message(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: True)
+        automod = AsyncMock(return_value=set())
+        monkeypatch.setattr(mr, "run_message_automod", automod)
+        broadcast = AsyncMock()
+        monkeypatch.setattr(mr, "broadcast_user_report", broadcast)
+        report_channel = MagicMock(spec=Messageable)
+        report_channel.fetch_message = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr(
+            mr, "get_report_channel", AsyncMock(return_value=report_channel)
+        )
+        await mongo_db.scam_reports.insert_one(
+            {
+                "warning_id": 55,
+                "channel_id": 7,
+                "message_id": 100,
+                "report_id": 200,
+                "reason": "scam",
+            }
+        )
+        reported = MagicMock()
+        reported.author.id = 1
+        channel = MagicMock(spec=Messageable)
+        channel.fetch_message = AsyncMock(return_value=reported)
+        interaction = self._interaction(db=mongo_db)
+        interaction.client.get_or_fetch_channel = AsyncMock(return_value=channel)
+
+        await mr.WarningConfirmView().confirm.callback(interaction)
+
+        interaction.response.edit_message.assert_awaited_once_with(view=None)
+        automod.assert_awaited_once()
+        broadcast.assert_awaited_once()
+
+    async def test_confirm_aborts_when_message_gone(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discord import errors
+
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: True)
+        automod = AsyncMock()
+        monkeypatch.setattr(mr, "run_message_automod", automod)
+        await mongo_db.scam_reports.insert_one(
+            {"warning_id": 55, "channel_id": 7, "message_id": 100, "report_id": 200}
+        )
+        channel = MagicMock(spec=Messageable)
+        channel.fetch_message = AsyncMock(side_effect=errors.NotFound(MagicMock(), "x"))
+        interaction = self._interaction(db=mongo_db)
+        interaction.client.get_or_fetch_channel = AsyncMock(return_value=channel)
+
+        await mr.WarningConfirmView().confirm.callback(interaction)
+
+        automod.assert_not_awaited()
+
+
+def _report_channel(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
+    channel = MagicMock(spec=Messageable)
+    channel.send = AsyncMock(return_value=MagicMock(id=200, jump_url="http://r"))
+    monkeypatch.setattr(mr, "get_report_channel", AsyncMock(return_value=channel))
+    return channel
+
+
+class TestReportMessage:
+    def _ctx_message(self, mongo_db: Db) -> tuple[Any, MagicMock]:
+        ctx = make_ctx(bot=make_bot(db=mongo_db))
+        message = _make_message()
+        message.channel.fetch_message = AsyncMock(return_value=message)
+        message.reply = AsyncMock(return_value=MagicMock(id=500))
+        return ctx, message
+
+    async def test_not_deleted_sends_warning_reply(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx, message = self._ctx_message(mongo_db)
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(mr, "run_message_automod", AsyncMock(return_value=set()))
+        monkeypatch.setattr(mr, "broadcast_user_report", AsyncMock())
+
+        await mr.report_message(ctx, message, "scam")
+
+        message.reply.assert_awaited_once()
+        doc = await mongo_db.scam_reports.find_one({"message_id": 100})
+        assert doc is not None
+        assert doc["warning_id"] == 500
+        assert doc["reason"] == "scam"
+
+    async def test_deleted_by_automod_skips_warning(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx, message = self._ctx_message(mongo_db)
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(
+            mr,
+            "run_message_automod",
+            AsyncMock(return_value={AutomodAction.MESSAGE_DELETED}),
+        )
+        monkeypatch.setattr(mr, "broadcast_user_report", AsyncMock())
+
+        await mr.report_message(ctx, message, "scam")
+
+        message.reply.assert_not_awaited()
+
+    async def test_duplicate_report_returns_early(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx, message = self._ctx_message(mongo_db)
+        await mongo_db.scam_reports.insert_one({"type": "message", "message_id": 100})
+        channel = _report_channel(monkeypatch)
+
+        await mr.report_message(ctx, message, "scam")
+
+        channel.send.assert_not_awaited()
+
+    async def test_deleted_referenced_message_returns(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        ctx, message = self._ctx_message(mongo_db)
+        message.channel.fetch_message = AsyncMock(
+            return_value=MagicMock(spec=DeletedReferencedMessage)
+        )
+        channel = _report_channel(monkeypatch)
+
+        await mr.report_message(ctx, message, "scam")
+
+        channel.send.assert_not_awaited()
+
+    async def test_fetch_not_found_returns(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discord import errors
+
+        ctx, message = self._ctx_message(mongo_db)
+        message.channel.fetch_message = AsyncMock(
+            side_effect=errors.NotFound(MagicMock(), "x")
+        )
+        channel = _report_channel(monkeypatch)
+
+        await mr.report_message(ctx, message, "scam")
+
+        channel.send.assert_not_awaited()
+
+
+class TestManualMessageReport:
+    def _interaction(self) -> MagicMock:
+        interaction = MagicMock()
+        interaction.user.mention = "<@42>"
+        interaction.response.defer = AsyncMock()
+        interaction.response.send_modal = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        return interaction
+
+    async def test_bot_author_rejected(self) -> None:
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = True
+
+        await mr.manual_message_report(make_ctx(), interaction, message)
+
+        interaction.followup.send.assert_awaited_once()
+
+    async def test_self_report_rejected(self) -> None:
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = False
+        interaction.user = message.author
+
+        await mr.manual_message_report(make_ctx(), interaction, message)
+
+        assert "yourself" in interaction.followup.send.call_args.kwargs["content"]
+
+    async def test_deleted_reference_rejected(self, mongo_db: Db) -> None:
+        ctx = make_ctx(bot=make_bot(db=mongo_db))
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = False
+        message.channel.fetch_message = AsyncMock(
+            return_value=MagicMock(spec=DeletedReferencedMessage)
+        )
+
+        await mr.manual_message_report(ctx, interaction, message)
+
+        assert (
+            "Failed to report" in interaction.followup.send.call_args.kwargs["content"]
+        )
+
+    async def test_duplicate_claim_rejected(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        await mongo_db.scam_reports.insert_one({"type": "message", "message_id": 100})
+        ctx = make_ctx(bot=make_bot(db=mongo_db))
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = False
+        message.channel.fetch_message = AsyncMock(return_value=message)
+
+        await mr.manual_message_report(ctx, interaction, message)
+
+        assert (
+            "Failed to report" in interaction.followup.send.call_args.kwargs["content"]
+        )
+
+    async def test_non_reputable_reporter_uses_confirm_view(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bot = make_bot(db=mongo_db)
+        bot.get_or_fetch_user = AsyncMock(return_value=MagicMock(mention="<@mod>"))
+        ctx = make_ctx(bot=bot)
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: False)
+        automod = AsyncMock(return_value=set())
+        monkeypatch.setattr(mr, "run_message_automod", automod)
+        monkeypatch.setattr(mr, "broadcast_user_report", AsyncMock())
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = False
+        message.channel.fetch_message = AsyncMock(return_value=message)
+        message.reply = AsyncMock(return_value=MagicMock(id=500))
+
+        await mr.manual_message_report(ctx, interaction, message)
+
+        message.reply.assert_awaited_once()
+        # non-reputable reporter does not trigger automod immediately
+        automod.assert_not_awaited()
+        doc = await mongo_db.scam_reports.find_one({"message_id": 100})
+        assert doc is not None and doc["warning_id"] == 500
+        assert "Thanks" in interaction.followup.send.call_args.kwargs["content"]
+
+    async def test_reputable_reporter_runs_automod(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bot = make_bot(db=mongo_db)
+        bot.get_or_fetch_user = AsyncMock(return_value=MagicMock(mention="<@mod>"))
+        ctx = make_ctx(bot=bot)
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(
+            mr, "member_from_interaction", AsyncMock(return_value=MagicMock())
+        )
+        monkeypatch.setattr(mr, "is_reputable", lambda _m: True)
+        automod = AsyncMock(return_value=set())
+        monkeypatch.setattr(mr, "run_message_automod", automod)
+        broadcast = AsyncMock()
+        monkeypatch.setattr(mr, "broadcast_user_report", broadcast)
+        interaction = self._interaction()
+        message = _make_message()
+        message.author.bot = False
+        message.channel.fetch_message = AsyncMock(return_value=message)
+        message.reply = AsyncMock(return_value=MagicMock(id=500))
+
+        await mr.manual_message_report(ctx, interaction, message)
+
+        automod.assert_awaited_once()
+        broadcast.assert_awaited_once()
+        message.reply.assert_awaited_once()
