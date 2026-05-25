@@ -16,12 +16,12 @@ from tests.lib.discord_harness import (
 )
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, data: Any, *, raise_on_json: bool = False) -> None:
         self._data = data
         self._raise = raise_on_json
 
-    async def __aenter__(self) -> "_FakeResp":
+    async def __aenter__(self) -> "_ScriptedResponse":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -33,19 +33,19 @@ class _FakeResp:
         return self._data
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, data: Any, *, raise_on_json: bool = False) -> None:
         self._data = data
         self._raise = raise_on_json
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    def get(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._data, raise_on_json=self._raise)
+    def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._data, raise_on_json=self._raise)
 
 
 def _field(embed: Embed, name: str) -> str:
@@ -73,7 +73,7 @@ class TestAboutCommand:
         monkeypatch.setattr(
             aiohttp,
             "ClientSession",
-            lambda *a, **k: _FakeSession(
+            lambda *a, **k: _ScriptedSession(
                 [
                     {
                         "login": "alice",
@@ -110,7 +110,7 @@ class TestAboutCommand:
         monkeypatch.setattr(
             aiohttp,
             "ClientSession",
-            lambda *a, **k: _FakeSession(None, raise_on_json=True),
+            lambda *a, **k: _ScriptedSession(None, raise_on_json=True),
         )
 
         bot = make_bot()

@@ -12,11 +12,11 @@ from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
 ETH = 10**18
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, json_data: Any) -> None:
         self._json = json_data
 
-    async def __aenter__(self) -> "_FakeResp":
+    async def __aenter__(self) -> "_ScriptedResponse":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -26,25 +26,25 @@ class _FakeResp:
         return self._json
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, json_data: Any) -> None:
         self._json = json_data
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    def get(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._json)
+    def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._json)
 
 
 def _patch_http(monkeypatch: pytest.MonkeyPatch, json_data: Any) -> None:
     monkeypatch.setattr(
         random_module.aiohttp,
         "ClientSession",
-        lambda *a, **k: _FakeSession(json_data),
+        lambda *a, **k: _ScriptedSession(json_data),
     )
 
 
@@ -170,10 +170,10 @@ class TestGetAbiAndAddress:
     async def test_get_address_from_manual_config(
         self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def fake_el(target: str, *_: Any, **__: Any) -> str:
+        async def scripted_el(target: str, *_: Any, **__: Any) -> str:
             return f"[{target}](el)"
 
-        monkeypatch.setattr(random_module, "el_explorer_url", fake_el)
+        monkeypatch.setattr(random_module, "el_explorer_url", scripted_el)
         cog = Random(make_bot())
         interaction = make_interaction()
         # rocketStorage is in the baseline cfg's manual_addresses.
@@ -258,10 +258,10 @@ class TestSmoothie:
         mongo_db: Any,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        async def fake_el(target: str, *_: Any, **__: Any) -> str:
+        async def scripted_el(target: str, *_: Any, **__: Any) -> str:
             return f"[{target}](el)"
 
-        monkeypatch.setattr(random_module, "el_explorer_url", fake_el)
+        monkeypatch.setattr(random_module, "el_explorer_url", scripted_el)
         monkeypatch.setattr(
             random_module.w3,
             "eth",
@@ -327,10 +327,10 @@ class TestSeaCreatures:
             random_module.w3, "to_checksum_address", lambda a: a, raising=False
         )
 
-        async def fake_el(target: str, *_: Any, **kw: Any) -> str:
+        async def scripted_el(target: str, *_: Any, **kw: Any) -> str:
             return f"[{kw.get('prefix', '')}{target}](el)"
 
-        monkeypatch.setattr(random_module, "el_explorer_url", fake_el)
+        monkeypatch.setattr(random_module, "el_explorer_url", scripted_el)
         yield
 
     async def test_known_creature_for_whale(

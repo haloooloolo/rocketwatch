@@ -8,7 +8,7 @@ from rocketwatch.plugins.forum.forum import Forum
 from tests.lib.discord_harness import make_bot, make_interaction
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, json_data: Any) -> None:
         self._json = json_data
 
@@ -16,23 +16,25 @@ class _FakeResp:
         return self._json
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, json_data: Any) -> None:
         self._json = json_data
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    async def get(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._json)
+    async def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._json)
 
 
 def _patch_http(monkeypatch: pytest.MonkeyPatch, json_data: Any) -> None:
     monkeypatch.setattr(
-        forum_module.aiohttp, "ClientSession", lambda *a, **k: _FakeSession(json_data)
+        forum_module.aiohttp,
+        "ClientSession",
+        lambda *a, **k: _ScriptedSession(json_data),
     )
 
 

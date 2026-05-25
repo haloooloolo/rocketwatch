@@ -103,7 +103,7 @@ class TestGetFormatter:
 # --- Label aggregation for stackplot ---------------------------------------
 
 
-class _FakeExchange:
+class _ScriptedExchange:
     """Minimal Exchange stand-in with str() + color for label aggregation."""
 
     def __init__(self, name: str, color: str):
@@ -124,8 +124,8 @@ class TestLabelExchangeData:
 
     def test_below_max_unique_no_other_bucket(self) -> None:
         data = {
-            _FakeExchange("A", "#111"): self._depth(10),
-            _FakeExchange("B", "#222"): self._depth(5),
+            _ScriptedExchange("A", "#111"): self._depth(10),
+            _ScriptedExchange("B", "#222"): self._depth(5),
         }
         # Dict insertion order is preserved in Python 3.7+, so OrderedDict just
         # reflects iteration order here.
@@ -143,10 +143,10 @@ class TestLabelExchangeData:
 
         data = OrderedDict(
             {
-                _FakeExchange("A", "#111"): self._depth(10),
-                _FakeExchange("B", "#222"): self._depth(5),
-                _FakeExchange("C", "#333"): self._depth(2),
-                _FakeExchange("D", "#444"): self._depth(1),
+                _ScriptedExchange("A", "#111"): self._depth(10),
+                _ScriptedExchange("B", "#222"): self._depth(5),
+                _ScriptedExchange("C", "#333"): self._depth(2),
+                _ScriptedExchange("D", "#444"): self._depth(1),
             }
         )
         result = Wall._label_exchange_data(data, max_unique=2, color_other="#999")  # type: ignore[type-var]
@@ -165,10 +165,10 @@ class TestLabelExchangeData:
         assert result == []
 
 
-# --- Fakes for depth / fetch / plot tests ----------------------------------
+# --- Doubles for depth / fetch / plot tests --------------------------------
 
 
-class _FakeLiquidity:
+class _ScriptedLiquidity:
     """Minimal Liquidity: only `.price` and `.depth_at(x)` are used."""
 
     def __init__(self, price: float, depth: float = 5.0) -> None:
@@ -179,14 +179,14 @@ class _FakeLiquidity:
         return self._depth
 
 
-class _FakeExchangeWithMarkets:
+class _ScriptedExchangeWithMarkets:
     """Stands in for both CEX (`get_liquidity(session)`) and DEX
     (`get_liquidity()`); `*args` absorbs the optional session."""
 
     def __init__(
         self,
         name: str,
-        markets: dict[Any, _FakeLiquidity] | BaseException,
+        markets: dict[Any, _ScriptedLiquidity] | BaseException,
         color: str = "#111",
     ) -> None:
         self._name = name
@@ -196,14 +196,14 @@ class _FakeExchangeWithMarkets:
     def __str__(self) -> str:
         return self._name
 
-    async def get_liquidity(self, *_args: Any) -> dict[Any, _FakeLiquidity]:
+    async def get_liquidity(self, *_args: Any) -> dict[Any, _ScriptedLiquidity]:
         if isinstance(self._markets, BaseException):
             raise self._markets
         return self._markets
 
 
-class _FakeSession:
-    async def __aenter__(self) -> "_FakeSession":
+class _ScriptedSession:
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -237,7 +237,7 @@ def _config() -> MarketConfig:
 class TestMarketDepthAndLiquidity:
     def test_different_units_back_converts_via_spot(self) -> None:
         x = np.array([8.0, 10.0, 12.0])
-        markets: dict[str, Any] = {"m": _FakeLiquidity(price=10.0, depth=5.0)}
+        markets: dict[str, Any] = {"m": _ScriptedLiquidity(price=10.0, depth=5.0)}
         depth, liquidity = Wall._get_market_depth_and_liquidity(markets, x, 10.0)
         # conv = price/ref = 1 → depth is the raw depth_at everywhere; the
         # endpoint liquidity is depth_at(x[0]) + depth_at(x[-1]).
@@ -246,7 +246,7 @@ class TestMarketDepthAndLiquidity:
 
     def test_same_units_aligns_pool_to_chart_center(self) -> None:
         x = np.array([8.0, 10.0, 12.0])
-        markets: dict[str, Any] = {"m": _FakeLiquidity(price=10.0, depth=5.0)}
+        markets: dict[str, Any] = {"m": _ScriptedLiquidity(price=10.0, depth=5.0)}
         # ref (12) differs from pool spot (10): points on the far side of the
         # spot get raw+offset, the near side gets |raw-offset| (= 0 here).
         depth, liquidity = Wall._get_market_depth_and_liquidity(
@@ -263,13 +263,17 @@ class TestGetCexData:
     async def test_sorts_by_liquidity_and_reports_failures(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: _FakeSession())
-        x = np.array([10.0, 10.0])
-        big = _FakeExchangeWithMarkets("Big", {"m": _FakeLiquidity(10.0, depth=9.0)})
-        small = _FakeExchangeWithMarkets(
-            "Small", {"m": _FakeLiquidity(10.0, depth=1.0)}
+        monkeypatch.setattr(
+            aiohttp, "ClientSession", lambda *a, **k: _ScriptedSession()
         )
-        boom = _FakeExchangeWithMarkets("Boom", RuntimeError("down"))
+        x = np.array([10.0, 10.0])
+        big = _ScriptedExchangeWithMarkets(
+            "Big", {"m": _ScriptedLiquidity(10.0, depth=9.0)}
+        )
+        small = _ScriptedExchangeWithMarkets(
+            "Small", {"m": _ScriptedLiquidity(10.0, depth=1.0)}
+        )
+        boom = _ScriptedExchangeWithMarkets("Boom", RuntimeError("down"))
 
         bot = make_bot()
         cog = _make_cog(bot)
@@ -282,8 +286,10 @@ class TestGetCexData:
 class TestGetDexData:
     async def test_skips_pools_without_liquidity(self) -> None:
         x = np.array([10.0, 10.0])
-        has = _FakeExchangeWithMarkets("Has", {"m": _FakeLiquidity(10.0, depth=4.0)})
-        empty = _FakeExchangeWithMarkets("Empty", {})
+        has = _ScriptedExchangeWithMarkets(
+            "Has", {"m": _ScriptedLiquidity(10.0, depth=4.0)}
+        )
+        empty = _ScriptedExchangeWithMarkets("Empty", {})
 
         cog = _make_cog(make_bot())
         result = await cog._get_dex_data({has, empty}, x, 10.0)  # type: ignore[arg-type]
@@ -295,7 +301,7 @@ class TestGetDexData:
 
 
 def _exchange_series(name: str, color: str, n: int = 5) -> tuple[Any, np.ndarray]:
-    return _FakeExchangeWithMarkets(name, {}, color), np.full(n, 3.0)
+    return _ScriptedExchangeWithMarkets(name, {}, color), np.full(n, 3.0)
 
 
 class TestPlotData:
@@ -334,7 +340,7 @@ def _const_fetch(val: float) -> Any:
         _set: Any, x: np.ndarray, _ref: float, *, same_units: bool = False
     ) -> OrderedDict[Any, np.ndarray]:
         return OrderedDict(
-            {_FakeExchangeWithMarkets(f"E{val}", {}): np.full(len(x), val)}
+            {_ScriptedExchangeWithMarkets(f"E{val}", {}): np.full(len(x), val)}
         )
 
     return fetch

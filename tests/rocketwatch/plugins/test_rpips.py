@@ -9,11 +9,11 @@ from rocketwatch.plugins.rpips.rpips import RPIPs
 from tests.lib.discord_harness import make_bot, make_interaction
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, text: str) -> None:
         self._text = text
 
-    async def __aenter__(self) -> "_FakeResp":
+    async def __aenter__(self) -> "_ScriptedResponse":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -23,23 +23,23 @@ class _FakeResp:
         return self._text
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, text: str) -> None:
         self._text = text
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    def get(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._text)
+    def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._text)
 
 
 def _patch_http(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     monkeypatch.setattr(
-        rpips_module.aiohttp, "ClientSession", lambda *a, **k: _FakeSession(text)
+        rpips_module.aiohttp, "ClientSession", lambda *a, **k: _ScriptedSession(text)
     )
 
 

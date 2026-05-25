@@ -56,19 +56,19 @@ def _log(
     return log
 
 
-class _FakeProc:
+class _ScriptedProc:
     @staticmethod
     def process_log(event: dict[str, Any]) -> dict[str, Any]:
         return {"args": event["_args"]}
 
 
-class _FakeEvents:
+class _ScriptedEvents:
     def __getitem__(self, _name: str) -> Any:
-        return lambda: _FakeProc()
+        return lambda: _ScriptedProc()
 
 
-class _FakeContract:
-    events = _FakeEvents()
+class _ScriptedContract:
+    events = _ScriptedEvents()
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def _scripted(scripted_rp: ScriptedRocketPool) -> Iterator[ScriptedRocketPool]:
     scripted_rp.set_address("unstETH", UNSTETH)
     # Decode path: contract.events[name]().process_log(event).
     scripted_rp.get_contract_by_address = AsyncMock(  # type: ignore[method-assign]
-        return_value=_FakeContract()
+        return_value=_ScriptedContract()
     )
     yield scripted_rp
 

@@ -54,7 +54,7 @@ def _pdao_proposal(
     )
 
 
-def _fake_dao(
+def _make_dao(
     *,
     display_name: str,
     state_to_proposals: dict[int, list[DefaultDAO.Proposal | ProtocolDAO.Proposal]],
@@ -91,7 +91,7 @@ def _fake_dao(
 
 class TestGetDaoVotesEmbed:
     async def test_no_proposals_renders_empty_message(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="oDAO",
             state_to_proposals={
                 DefaultDAO.ProposalState.Pending: [],
@@ -105,7 +105,7 @@ class TestGetDaoVotesEmbed:
         assert embed.description == "No active proposals."
 
     async def test_pending_proposal_renders_voting_start_window(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="oDAO",
             state_to_proposals={
                 DefaultDAO.ProposalState.Pending: [_odao_proposal(proposal_id=1)],
@@ -122,7 +122,7 @@ class TestGetDaoVotesEmbed:
         assert "Voting starts" in desc
 
     async def test_active_proposal_includes_votes_in_body(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="oDAO",
             state_to_proposals={
                 DefaultDAO.ProposalState.Pending: [],
@@ -144,7 +144,7 @@ class TestGetDaoVotesEmbed:
     async def test_succeeded_proposal_uses_full_flag_for_votes(self) -> None:
         # For Succeeded proposals, include_votes mirrors the `full` flag —
         # not a hardcoded True.
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="oDAO",
             state_to_proposals={
                 DefaultDAO.ProposalState.Pending: [],
@@ -159,7 +159,7 @@ class TestGetDaoVotesEmbed:
         assert call.kwargs["include_votes"] is False
 
     async def test_succeeded_with_full_includes_votes(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="oDAO",
             state_to_proposals={
                 DefaultDAO.ProposalState.Pending: [],
@@ -178,7 +178,7 @@ class TestGetDaoVotesEmbed:
 
 class TestGetPdaoVotesEmbed:
     async def test_no_proposals_renders_empty_message(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="pDAO",
             state_to_proposals={
                 ProtocolDAO.ProposalState.Pending: [],
@@ -193,7 +193,7 @@ class TestGetPdaoVotesEmbed:
         assert embed.description == "No active proposals."
 
     async def test_phase1_and_phase2_each_render(self) -> None:
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="pDAO",
             state_to_proposals={
                 ProtocolDAO.ProposalState.Pending: [],
@@ -218,7 +218,7 @@ class TestGetPdaoVotesEmbed:
         # The "voting starts ... ends" pair for Pending proposals uses
         # end_phase_2 as the end timestamp.
         proposal = _pdao_proposal(proposal_id=7)
-        dao = _fake_dao(
+        dao = _make_dao(
             display_name="pDAO",
             state_to_proposals={
                 ProtocolDAO.ProposalState.Pending: [proposal],
@@ -243,7 +243,7 @@ class TestDaoVotesCommand:
     ) -> None:
         captured_args: dict[str, object] = {}
 
-        async def fake_pdao_embed(dao: object, full: bool) -> object:
+        async def scripted_pdao_embed(dao: object, full: bool) -> object:
             captured_args["dao"] = dao
             captured_args["full"] = full
             from rocketwatch.utils.embeds import Embed as E
@@ -253,7 +253,7 @@ class TestDaoVotesCommand:
             return e
 
         monkeypatch.setattr(
-            OnchainDAO, "get_pdao_votes_embed", staticmethod(fake_pdao_embed)
+            OnchainDAO, "get_pdao_votes_embed", staticmethod(scripted_pdao_embed)
         )
         # ProtocolDAO() factory must not touch the chain; stub it.
         monkeypatch.setattr(
@@ -271,7 +271,7 @@ class TestDaoVotesCommand:
     ) -> None:
         captured_args: dict[str, object] = {}
 
-        async def fake_dao_embed(dao: object, full: bool) -> object:
+        async def scripted_dao_embed(dao: object, full: bool) -> object:
             captured_args["dao"] = dao
             captured_args["full"] = full
             from rocketwatch.utils.embeds import Embed as E
@@ -281,7 +281,7 @@ class TestDaoVotesCommand:
             return e
 
         monkeypatch.setattr(
-            OnchainDAO, "get_dao_votes_embed", staticmethod(fake_dao_embed)
+            OnchainDAO, "get_dao_votes_embed", staticmethod(scripted_dao_embed)
         )
         monkeypatch.setattr(
             "rocketwatch.plugins.dao.dao.OracleDAO", lambda: "odao-instance"
@@ -297,7 +297,7 @@ class TestDaoVotesCommand:
     ) -> None:
         captured_args: dict[str, object] = {}
 
-        async def fake_dao_embed(dao: object, full: bool) -> object:
+        async def scripted_dao_embed(dao: object, full: bool) -> object:
             captured_args["dao"] = dao
             from rocketwatch.utils.embeds import Embed as E
 
@@ -306,7 +306,7 @@ class TestDaoVotesCommand:
             return e
 
         monkeypatch.setattr(
-            OnchainDAO, "get_dao_votes_embed", staticmethod(fake_dao_embed)
+            OnchainDAO, "get_dao_votes_embed", staticmethod(scripted_dao_embed)
         )
         monkeypatch.setattr(
             "rocketwatch.plugins.dao.dao.SecurityCouncil",
@@ -352,9 +352,11 @@ class TestVoterListInvalidProposal:
     ) -> None:
         # Stub ProtocolDAO() so the factory call doesn't touch the chain;
         # make .fetch_proposal return None to trigger the early-return branch.
-        fake_dao = MagicMock()
-        fake_dao.fetch_proposal = AsyncMock(return_value=None)
-        monkeypatch.setattr("rocketwatch.plugins.dao.dao.ProtocolDAO", lambda: fake_dao)
+        scripted_dao = MagicMock()
+        scripted_dao.fetch_proposal = AsyncMock(return_value=None)
+        monkeypatch.setattr(
+            "rocketwatch.plugins.dao.dao.ProtocolDAO", lambda: scripted_dao
+        )
 
         cog = OnchainDAO(make_bot())
         interaction = make_interaction()

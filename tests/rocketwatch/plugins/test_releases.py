@@ -8,7 +8,7 @@ from rocketwatch.plugins.releases.releases import Releases
 from tests.lib.discord_harness import make_bot, make_interaction, run_command
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, data: Any) -> None:
         self._data = data
 
@@ -16,18 +16,18 @@ class _FakeResp:
         return self._data
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    async def get(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._data)
+    async def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._data)
 
 
 def _field(embed: Embed, name: str) -> str:
@@ -41,7 +41,7 @@ class TestLatestRelease:
         monkeypatch.setattr(
             aiohttp,
             "ClientSession",
-            lambda *a, **k: _FakeSession(
+            lambda *a, **k: _ScriptedSession(
                 [
                     {"tag_name": "v2.0.0-rc1", "prerelease": True},
                     {"tag_name": "v1.5.0", "prerelease": False},
@@ -62,7 +62,7 @@ class TestLatestRelease:
         monkeypatch.setattr(
             aiohttp,
             "ClientSession",
-            lambda *a, **k: _FakeSession(
+            lambda *a, **k: _ScriptedSession(
                 [{"tag_name": "v3.0.0-beta", "prerelease": True}]
             ),
         )

@@ -7,11 +7,11 @@ from rocketwatch.plugins.ask_doofus.ask_doofus import AskDoofus
 from tests.lib.discord_harness import make_bot, make_interaction, run_command
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    async def __aenter__(self) -> "_FakeResp":
+    async def __aenter__(self) -> "_ScriptedResponse":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -24,18 +24,18 @@ class _FakeResp:
         return self._data
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    def post(self, *_a: Any, **_k: Any) -> _FakeResp:
-        return _FakeResp(self._data)
+    def post(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
+        return _ScriptedResponse(self._data)
 
 
 class TestAskDoofus:
@@ -45,7 +45,7 @@ class TestAskDoofus:
         monkeypatch.setattr(
             aiohttp,
             "ClientSession",
-            lambda *a, **k: _FakeSession(
+            lambda *a, **k: _ScriptedSession(
                 {
                     "finalAnswer": "Stake your RPL.",
                     "citations": [
@@ -72,7 +72,9 @@ class TestAskDoofus:
     async def test_missing_answer_falls_back(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: _FakeSession({}))
+        monkeypatch.setattr(
+            aiohttp, "ClientSession", lambda *a, **k: _ScriptedSession({})
+        )
         cog = AskDoofus(make_bot())
         embed = await run_command(cog, "ask_doofus", make_interaction(), "anything?")
         assert embed.description is not None

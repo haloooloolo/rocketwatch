@@ -20,11 +20,11 @@ from tests.lib.scripted_rocketpool import ScriptedRocketPool
 _FUTURE = int(time.time()) + 1_000_000
 
 
-class _FakeResp:
+class _ScriptedResponse:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    async def __aenter__(self) -> "_FakeResp":
+    async def __aenter__(self) -> "_ScriptedResponse":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
@@ -34,20 +34,20 @@ class _FakeResp:
         return self._data
 
 
-class _FakeSession:
+class _ScriptedSession:
     def __init__(self, data: Any) -> None:
         self._data = data
 
-    async def __aenter__(self) -> "_FakeSession":
+    async def __aenter__(self) -> "_ScriptedSession":
         return self
 
     async def __aexit__(self, *_: Any) -> bool:
         return False
 
-    def get(self, *_a: Any, **_k: Any) -> _FakeResp:
+    def get(self, *_a: Any, **_k: Any) -> _ScriptedResponse:
         # snapshot uses `async with session.get(...) as resp`, so get() must
         # return an async context manager rather than a coroutine.
-        return _FakeResp(self._data)
+        return _ScriptedResponse(self._data)
 
 
 def _proposal(
@@ -235,7 +235,7 @@ class TestQueryApi:
 
         payload = {"data": {"proposal": {"id": "0xabc"}}}
         monkeypatch.setattr(
-            aiohttp, "ClientSession", lambda *a, **k: _FakeSession(payload)
+            aiohttp, "ClientSession", lambda *a, **k: _ScriptedSession(payload)
         )
         result = await Snapshot._query_api(Query(name="proposal", fields=["id"]))
         assert result == {"id": "0xabc"}
