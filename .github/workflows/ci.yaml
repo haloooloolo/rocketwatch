@@ -20,6 +20,8 @@ jobs:
           args: "format --check"
           src: "rocketwatch sentinel"
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          cache-suffix: lint
       - run: uv lock --check
       - run: uv lock --check --project sentinel
 
@@ -28,6 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          cache-suffix: typecheck
       - run: uv run --group dev mypy rocketwatch/
       - run: uv run --project sentinel --group dev mypy sentinel/
 
@@ -36,6 +40,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          cache-suffix: test
       - run: uv run --group test pytest --cov-report=xml
       - uses: codecov/codecov-action@v6
         with:
