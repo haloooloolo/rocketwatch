@@ -1,14 +1,24 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from rocketwatch.plugins.dao import dao as dao_module
 from rocketwatch.plugins.dao.dao import OnchainDAO
 from rocketwatch.utils.dao import DefaultDAO, ProtocolDAO
+from rocketwatch.utils.embeds import Embed
 from tests.lib.discord_harness import (
     make_bot,
     make_interaction,
     run_command,
 )
+from tests.lib.scripted_rocketpool import ScriptedRocketPool
+
+ETH = 10**18
+
+
+async def _run(callback: Any, *args: Any, **kwargs: Any) -> Any:
+    return await callback(*args, **kwargs)
 
 
 def _odao_proposal(
@@ -360,7 +370,166 @@ class TestVoterListInvalidProposal:
 
         cog = OnchainDAO(make_bot())
         interaction = make_interaction()
-        await cog.voter_list.callback(cog, interaction, 999)
+        await _run(cog.voter_list.callback, cog, interaction, 999)
 
         # Plain string send (no embed) for this edge case.
         interaction.followup.send.assert_awaited_once_with("Invalid proposal ID.")
+
+
+class TestPdaoSucceeded:
+    async def test_succeeded_proposal_renders(self) -> None:
+        dao = _make_dao(
+            display_name="pDAO",
+            state_to_proposals={
+                ProtocolDAO.ProposalState.Pending: [],
+                ProtocolDAO.ProposalState.ActivePhase1: [],
+                ProtocolDAO.ProposalState.ActivePhase2: [],
+                ProtocolDAO.ProposalState.Succeeded: [_pdao_proposal(proposal_id=33)],
+            },
+            proposal_states=ProtocolDAO.ProposalState,
+        )
+        embed = await OnchainDAO.get_pdao_votes_embed(dao, full=False)
+        desc = embed.description or ""
+        assert "Proposal #33" in desc
+        assert "Succeeded" in desc
+
+
+class TestDaoVotesInvalidName:
+    async def test_unknown_dao_name_raises(self) -> None:
+        cog = OnchainDAO(make_bot())
+        with pytest.raises(ValueError, match="Invalid DAO name"):
+            await _run(
+                cog.dao_votes.callback, cog, make_interaction(), "Nonsense", False
+            )
+
+
+class TestVoterPageViewContent:
+    async def test_load_content_renders_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            dao_module,
+            "el_explorer_url",
+            AsyncMock(side_effect=lambda a, **k: f"[{a}](u)"),
+        )
+        view = OnchainDAO.VoterPageView(_pdao_proposal(proposal_id=5))
+        view._voter_list = [
+            OnchainDAO.Vote("0xAAA", 2, 100.0, 1),  # type: ignore[arg-type]
+            OnchainDAO.Vote("0xBBB", 3, 50.0, 2),  # type: ignore[arg-type]
+        ]
+
+        total, content = await view._load_content(0, 10)
+
+        assert total == 2
+        assert "0xAAA" in content
+        assert "For" in content
+        assert "Against" in content
+
+    async def test_load_content_empty_returns_blank(self) -> None:
+        view = OnchainDAO.VoterPageView(_pdao_proposal())
+        view._voter_list = []
+        assert await view._load_content(0, 10) == (0, "")
+
+    async def test_get_voter_list_applies_overrides(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        proposal = _pdao_proposal(proposal_id=5)
+        contract = MagicMock()
+        pdao = MagicMock()
+        pdao._get_proposal_contract = AsyncMock(return_value=contract)
+        monkeypatch.setattr(dao_module, "ProtocolDAO", lambda: pdao)
+        monkeypatch.setattr(dao_module, "ts_to_block", AsyncMock(return_value=100))
+
+        vote_logs = [
+            {
+                "args": {
+                    "voter": "0xA",
+                    "direction": 2,
+                    "votingPower": 100 * ETH,
+                    "time": 1,
+                }
+            }
+        ]
+        override_logs = [{"args": {"delegate": "0xA", "votingPower": 30 * ETH}}]
+
+        async def fake_get_logs(event: Any, *_a: Any, **_k: Any) -> list[Any]:
+            if event is contract.events.ProposalVoted:
+                return vote_logs
+            return override_logs
+
+        monkeypatch.setattr(dao_module, "get_logs", fake_get_logs)
+
+        view = OnchainDAO.VoterPageView(proposal)
+        result = await view._get_voter_list(proposal)
+
+        assert [v.voter for v in result] == ["0xA"]
+        # 100 voting power minus the 30 override → 70
+        assert result[0].voting_power == 70.0
+
+
+class TestGetRecentProposals:
+    def _cog_with_proposals(
+        self, monkeypatch: pytest.MonkeyPatch, *, total: int
+    ) -> OnchainDAO:
+        contract = MagicMock()
+        contract.functions.getTotal.return_value.call = AsyncMock(return_value=total)
+        pdao = MagicMock()
+        pdao._get_proposal_contract = AsyncMock(return_value=contract)
+        monkeypatch.setattr(dao_module, "ProtocolDAO", lambda: pdao)
+        return OnchainDAO(make_bot())
+
+    async def test_empty_current_lists_recent(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = self._cog_with_proposals(monkeypatch, total=3)
+        monkeypatch.setattr(
+            scripted_rp,
+            "multicall",
+            AsyncMock(return_value=["A", "B", "C"]),
+        )
+        out = await cog._get_recent_proposals(make_interaction(), "")
+        assert len(out) == 3
+        assert out[0].name.startswith("#")
+
+    async def test_valid_current_filters_to_single(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = self._cog_with_proposals(monkeypatch, total=5)
+        monkeypatch.setattr(scripted_rp, "multicall", AsyncMock(return_value=["Title"]))
+        out = await cog._get_recent_proposals(make_interaction(), "3")
+        assert [c.value for c in out] == [3]
+
+    async def test_out_of_range_current_returns_empty(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cog = self._cog_with_proposals(monkeypatch, total=5)
+        out = await cog._get_recent_proposals(make_interaction(), "99")
+        assert out == []
+
+
+class TestVoterListValid:
+    async def test_builds_and_sends_view(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        pdao = MagicMock()
+        pdao.fetch_proposal = AsyncMock(return_value=_pdao_proposal(proposal_id=5))
+        monkeypatch.setattr(dao_module, "ProtocolDAO", lambda: pdao)
+        monkeypatch.setattr(
+            OnchainDAO.VoterPageView,
+            "load",
+            AsyncMock(return_value=Embed(title="Voters")),
+        )
+
+        cog = OnchainDAO(make_bot())
+        interaction = make_interaction()
+        await _run(cog.voter_list.callback, cog, interaction, 5)
+
+        kwargs = interaction.followup.send.call_args.kwargs
+        assert kwargs["embed"].title == "Voters"
+        assert "view" in kwargs
+
+
+class TestSetup:
+    async def test_registers_cog(self) -> None:
+        bot = make_bot()
+        bot.add_cog = AsyncMock()
+        await dao_module.setup(bot)
+        bot.add_cog.assert_awaited_once()

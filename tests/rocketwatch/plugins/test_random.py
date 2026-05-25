@@ -1,15 +1,20 @@
 from collections.abc import Iterator
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from rocketwatch.plugins.random import random as random_module
 from rocketwatch.plugins.random.random import Random
+from rocketwatch.utils import shared_w3
 from tests.lib.discord_harness import make_bot, make_interaction
 from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
 
 ETH = 10**18
+
+
+async def _run(callback: Any, *args: Any, **kwargs: Any) -> Any:
+    return await callback(*args, **kwargs)
 
 
 class _ScriptedResponse:
@@ -42,8 +47,7 @@ class _ScriptedSession:
 
 def _patch_http(monkeypatch: pytest.MonkeyPatch, json_data: Any) -> None:
     monkeypatch.setattr(
-        random_module.aiohttp,
-        "ClientSession",
+        "aiohttp.ClientSession",
         lambda *a, **k: _ScriptedSession(json_data),
     )
 
@@ -52,14 +56,14 @@ class TestRestaurantNames:
     async def test_mexican_name_is_sent(self) -> None:
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.mexican_restaurant_name.callback(cog, interaction)
+        await _run(cog.mexican_restaurant_name.callback, cog, interaction)
         interaction.response.send_message.assert_awaited_once()
         assert isinstance(interaction.response.send_message.call_args.args[0], str)
 
     async def test_austrian_name_is_sent(self) -> None:
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.austrian_restaurant_name.callback(cog, interaction)
+        await _run(cog.austrian_restaurant_name.callback, cog, interaction)
         interaction.response.send_message.assert_awaited_once()
         assert interaction.response.send_message.call_args.args[0]
 
@@ -83,13 +87,13 @@ class TestMatchContractNames:
     async def test_case_insensitive_substring_filter(self) -> None:
         cog = Random(make_bot())
         cog.contract_names = ["rocketTokenRPL", "rocketTokenRETH", "rocketDepositPool"]
-        out = await cog.match_contract_names(make_interaction(), "token")
+        out = await _run(cog.match_contract_names, make_interaction(), "token")
         assert {c.value for c in out} == {"rocketTokenRPL", "rocketTokenRETH"}
 
     async def test_caps_at_25(self) -> None:
         cog = Random(make_bot())
         cog.contract_names = [f"rocketThing{i}" for i in range(40)]
-        out = await cog.match_contract_names(make_interaction(), "thing")
+        out = await _run(cog.match_contract_names, make_interaction(), "thing")
         assert len(out) == 25
 
 
@@ -98,7 +102,7 @@ class TestDevTime:
         scripted_bacon.set_block_header("head", {"slot": "1000"})
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.dev_time.callback(cog, interaction)
+        await _run(cog.dev_time.callback, cog, interaction)
         interaction.response.send_message.assert_awaited_once()
         embed = interaction.response.send_message.call_args.kwargs["embed"]
         field_names = [f.name for f in embed.fields]
@@ -113,8 +117,11 @@ class TestGetBlockByTimestamp:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.get_block_by_timestamp.callback(
-            cog, interaction, timestamp=1_700_000_000
+        await _run(
+            cog.get_block_by_timestamp.callback,
+            cog,
+            interaction,
+            timestamp=1_700_000_000,
         )
         content = interaction.followup.send.call_args.kwargs["content"]
         assert "perfect match" in content
@@ -127,8 +134,11 @@ class TestGetBlockByTimestamp:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.get_block_by_timestamp.callback(
-            cog, interaction, timestamp=1_700_000_000
+        await _run(
+            cog.get_block_by_timestamp.callback,
+            cog,
+            interaction,
+            timestamp=1_700_000_000,
         )
         content = interaction.followup.send.call_args.kwargs["content"]
         assert "close match" in content
@@ -146,8 +156,11 @@ class TestGetAbiAndAddress:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.get_abi_of_contract.callback(
-            cog, interaction, contract="rocketDepositPool"
+        await _run(
+            cog.get_abi_of_contract.callback,
+            cog,
+            interaction,
+            contract="rocketDepositPool",
         )
         # Sent as a file attachment.
         assert "file" in interaction.followup.send.call_args.kwargs
@@ -163,7 +176,7 @@ class TestGetAbiAndAddress:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.get_abi_of_contract.callback(cog, interaction, contract="bogus")
+        await _run(cog.get_abi_of_contract.callback, cog, interaction, contract="bogus")
         content = interaction.followup.send.call_args.kwargs["content"]
         assert "Exception" in content
 
@@ -177,8 +190,11 @@ class TestGetAbiAndAddress:
         cog = Random(make_bot())
         interaction = make_interaction()
         # rocketStorage is in the baseline cfg's manual_addresses.
-        await cog.get_address_of_contract.callback(
-            cog, interaction, contract="rocketStorage"
+        await _run(
+            cog.get_address_of_contract.callback,
+            cog,
+            interaction,
+            contract="rocketStorage",
         )
         interaction.followup.send.assert_awaited()
 
@@ -213,7 +229,7 @@ class TestBurnReason:
         _patch_http(monkeypatch, data)
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.burn_reason.callback(cog, interaction)
+        await _run(cog.burn_reason.callback, cog, interaction)
 
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert embed.description is not None
@@ -226,7 +242,7 @@ class TestAsianRestaurantName:
         _patch_http(monkeypatch, {"name": "Golden Dragon"})
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.asian_restaurant_name.callback(cog, interaction)
+        await _run(cog.asian_restaurant_name.callback, cog, interaction)
         assert interaction.followup.send.call_args.args[0] == "Golden Dragon"
 
 
@@ -239,7 +255,7 @@ class TestSmoothie:
     ) -> None:
         scripted_rp.set_address("rocketSmoothingPool", addr("0x" + "33" * 20))
         monkeypatch.setattr(
-            random_module.w3,
+            shared_w3.w3,
             "eth",
             AsyncMock(get_balance=AsyncMock(return_value=10 * ETH)),
             raising=False,
@@ -248,7 +264,7 @@ class TestSmoothie:
 
         cog = Random(make_bot(db=mongo_db))
         interaction = make_interaction()
-        await cog.smoothie.callback(cog, interaction)
+        await _run(cog.smoothie.callback, cog, interaction)
         # Empty DB → "No validators found." message.
         assert interaction.followup.send.call_args.args[0] == "No validators found."
 
@@ -263,7 +279,7 @@ class TestSmoothie:
 
         monkeypatch.setattr(random_module, "el_explorer_url", scripted_el)
         monkeypatch.setattr(
-            random_module.w3,
+            shared_w3.w3,
             "eth",
             AsyncMock(get_balance=AsyncMock(return_value=42 * ETH)),
             raising=False,
@@ -288,7 +304,7 @@ class TestSmoothie:
 
         cog = Random(make_bot(db=mongo_db))
         interaction = make_interaction()
-        await cog.smoothie.callback(cog, interaction)
+        await _run(cog.smoothie.callback, cog, interaction)
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert embed.title == "Smoothing Pool"
         assert embed.description is not None
@@ -300,7 +316,7 @@ class TestSeaCreatures:
     async def test_lists_all_when_no_address(self) -> None:
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.sea_creatures.callback(cog, interaction)
+        await _run(cog.sea_creatures.callback, cog, interaction)
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert embed.title == "Possible Sea Creatures"
         assert embed.description
@@ -313,18 +329,18 @@ class TestSeaCreatures:
             raise ValueError("bad address")
 
         monkeypatch.setattr(
-            random_module.w3, "to_checksum_address", bad_checksum, raising=False
+            shared_w3.w3, "to_checksum_address", bad_checksum, raising=False
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.sea_creatures.callback(cog, interaction, address="garbage")
+        await _run(cog.sea_creatures.callback, cog, interaction, address="garbage")
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert embed.description == "Invalid address"
 
     @pytest.fixture
     def _stub_holdings(self, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         monkeypatch.setattr(
-            random_module.w3, "to_checksum_address", lambda a: a, raising=False
+            shared_w3.w3, "to_checksum_address", lambda a: a, raising=False
         )
 
         async def scripted_el(target: str, *_: Any, **kw: Any) -> str:
@@ -346,7 +362,9 @@ class TestSeaCreatures:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.sea_creatures.callback(cog, interaction, address="0x" + "ab" * 20)
+        await _run(
+            cog.sea_creatures.callback, cog, interaction, address="0x" + "ab" * 20
+        )
         embed = interaction.followup.send.call_args.kwargs["embed"]
         field_names = [f.name for f in embed.fields]
         assert "Actual Holding" in field_names
@@ -361,7 +379,88 @@ class TestSeaCreatures:
         )
         cog = Random(make_bot())
         interaction = make_interaction()
-        await cog.sea_creatures.callback(cog, interaction, address="0x" + "cd" * 20)
+        await _run(
+            cog.sea_creatures.callback, cog, interaction, address="0x" + "cd" * 20
+        )
         embed = interaction.followup.send.call_args.kwargs["embed"]
         assert embed.description is not None
         assert "No sea creature" in embed.description
+
+
+class TestDecodeTxn:
+    async def test_decodes_by_to_address(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        txn = {"to": "0xC0", "input": "0xdeadbeef"}
+        monkeypatch.setattr(
+            shared_w3.w3._instance,
+            "eth",
+            AsyncMock(get_transaction=AsyncMock(return_value=txn)),
+        )
+        contract = MagicMock()
+        contract.decode_function_input = MagicMock(return_value=("transfer", {"x": 1}))
+        monkeypatch.setattr(
+            scripted_rp,
+            "get_contract_by_address",
+            AsyncMock(return_value=contract),
+            raising=False,
+        )
+        cog = Random(make_bot())
+        interaction = make_interaction()
+
+        await _run(cog.decode_txn.callback, cog, interaction, txn_hash="0x" + "ab" * 32)
+
+        content = interaction.followup.send.call_args.kwargs["content"]
+        assert "Input:" in content
+
+    async def test_decodes_with_explicit_contract_name(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        txn = {"input": "0xdeadbeef"}
+        monkeypatch.setattr(
+            shared_w3.w3._instance,
+            "eth",
+            AsyncMock(get_transaction=AsyncMock(return_value=txn)),
+        )
+        contract = MagicMock()
+        contract.decode_function_input = MagicMock(return_value=("foo", {}))
+        monkeypatch.setattr(
+            scripted_rp, "get_contract_by_name", AsyncMock(return_value=contract)
+        )
+        cog = Random(make_bot())
+        interaction = make_interaction()
+
+        await _run(
+            cog.decode_txn.callback,
+            cog,
+            interaction,
+            txn_hash="0x" + "ab" * 32,
+            contract_name="rocketX",
+        )
+
+        assert "Input:" in interaction.followup.send.call_args.kwargs["content"]
+
+
+class TestGetAddressNotFound:
+    async def test_missing_address_shows_tip(
+        self, scripted_rp: ScriptedRocketPool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            scripted_rp,
+            "uncached_get_address_by_name",
+            AsyncMock(side_effect=ValueError("No address found for bogus")),
+            raising=False,
+        )
+        cog = Random(make_bot())
+        interaction = make_interaction()
+
+        await _run(
+            cog.get_address_of_contract.callback, cog, interaction, contract="bogus"
+        )
+
+        contents = [
+            call.kwargs.get("content", "")
+            for call in interaction.followup.send.call_args_list
+        ]
+        assert any("Exception" in c for c in contents)
+        assert any("messed up the name" in c for c in contents)

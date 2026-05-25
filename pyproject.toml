@@ -53,6 +53,7 @@ filterwarnings = [
     "ignore:The wait_for_logs function with string or callable predicates is deprecated:DeprecationWarning",
     "ignore:'count' is passed as positional argument:DeprecationWarning",
     "ignore:'return' in a 'finally' block:SyntaxWarning",
+    "ignore:'_UnionGenericAlias' is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]
