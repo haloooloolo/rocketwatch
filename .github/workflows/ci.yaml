@@ -19,7 +19,7 @@ jobs:
         with:
           args: "format --check"
           src: "rocketwatch sentinel"
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           cache-suffix: lint
       - run: uv lock --check
@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           cache-suffix: typecheck
       - run: uv run --group dev mypy rocketwatch/
@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8.3.2
+      - uses: astral-sh/setup-uv@v9.0.0
         with:
           cache-suffix: test
       - run: uv run --group test pytest --cov-report=xml
