@@ -10,7 +10,7 @@ dependencies = [
     "aiocache==0.12.3",
     "anyascii==0.3.3",
     "beautifulsoup4==4.15.0",
-    "bidict==0.23.1",
+    "bidict==0.24.1",
     "cachetools==7.1.8",
     "colorama==0.4.6",
     "cronitor==4.9.0",
