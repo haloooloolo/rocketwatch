@@ -6,7 +6,7 @@ dependencies = [
     "aiohttp==3.14.3",
     "anthropic>=0.52.0,<1.0.0",
     "google-genai>=2.10.0,<2.11.0",
-    "openai>=1.0.0,<3.0.0",
+    "openai>=3.7.0,<3.8.0",
     "aiocache==0.12.3",
     "anyascii==0.3.3",
     "beautifulsoup4==4.15.0",
