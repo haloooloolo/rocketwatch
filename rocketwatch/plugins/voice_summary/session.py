@@ -58,6 +58,7 @@ class CallSession:
         self._manifest: Manifest = {}
         self._manifest_lock = asyncio.Lock()
         self._pending_tasks: set[asyncio.Task[None]] = set()
+        self._dave_failures = 0
 
     def _ensure_artifact_dir(self) -> Path:
         if self._artifact_dir is None:
@@ -126,11 +127,14 @@ class CallSession:
                         user.id, davey.MediaType.audio, opus_data
                     )
                 except Exception:
+                    self._dave_failures += 1
                     return
 
             self.recorder.on_opus(user.id, opus_data, data.packet.timestamp)
 
-        vc.listen(BasicSink(sink_callback, decode=False))
+        # a client reconnected by discord.py keeps its reader
+        if not vc.is_listening():
+            vc.listen(BasicSink(sink_callback, decode=False))
 
     async def stop(self) -> tuple[CallRecorder | None, VoiceClient | None]:
         """Stop recording and disconnect. Returns the recorder if active."""
@@ -141,9 +145,14 @@ class CallSession:
 
         if recorder:
             recorder.stop()
+        if self._dave_failures:
+            log.warning(f"{self._dave_failures} packets failed DAVE decryption")
 
         if vc and vc.is_connected():
             await vc.disconnect()
+        elif vc and vc.guild.voice_client is vc:
+            # mid-reconnect: force, or discord.py rejoins after we've finalized
+            await vc.disconnect(force=True)
 
         return recorder, vc
 

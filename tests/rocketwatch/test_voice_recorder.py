@@ -17,6 +17,7 @@ from rocketwatch.plugins.voice_summary.recorder import (
     OPUS_FRAME_SAMPLES,
     SAMPLE_RATE,
     SAMPLE_WIDTH,
+    SILENCE_DURATION,
     CallRecorder,
 )
 
@@ -190,15 +191,16 @@ class TestLongGapZeroPadding:
 
 
 class TestSegmentSplitOnLongSilence:
-    def test_silence_above_one_second_starts_new_segment(self, tmp_path: Path) -> None:
+    def test_silence_above_threshold_starts_new_segment(self, tmp_path: Path) -> None:
         rec = CallRecorder(
             tmp_path, start_time=0.0, decoder_factory=ScriptedOpusDecoder
         )
         rec.on_opus(1, _packet(0x11), 0)
         rec.on_opus(1, _packet(0x22), OPUS_FRAME_SAMPLES)
-        # 2 second silence — past SILENCE_DURATION (1 s) so a new segment
-        # opens instead of zero-padding a 2 s hole.
-        rec.on_opus(1, _packet(0x33), OPUS_FRAME_SAMPLES + 2 * SAMPLE_RATE)
+        # Past SILENCE_DURATION, so a new segment opens instead of
+        # zero-padding the hole.
+        gap = int((SILENCE_DURATION + 1) * SAMPLE_RATE)
+        rec.on_opus(1, _packet(0x33), 2 * OPUS_FRAME_SAMPLES + gap)
         rec.stop()
 
         segments = rec.get_user_segments()[1]
@@ -208,6 +210,73 @@ class TestSegmentSplitOnLongSilence:
         second = _read_wav(segments[1][1])
         assert len(first) == 2 * FRAME_BYTES
         assert len(second) == 1 * FRAME_BYTES
+
+    def test_mid_sentence_pause_stays_in_one_segment(self, tmp_path: Path) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=0.0, decoder_factory=ScriptedOpusDecoder
+        )
+        rec.on_opus(1, _packet(0x11), 0)
+        rec.on_opus(1, _packet(0x22), OPUS_FRAME_SAMPLES + int(1.5 * SAMPLE_RATE))
+        rec.stop()
+
+        assert len(rec.get_user_segments()[1]) == 1
+
+
+def _speak(rec: CallRecorder, user_id: int, rtp_start: int, seconds: float) -> int:
+    """Feed contiguous 20 ms packets; returns the RTP position after the last one."""
+    n = int(seconds * SAMPLE_RATE) // OPUS_FRAME_SAMPLES
+    for i in range(n):
+        rec.on_opus(user_id, _packet(0x11), rtp_start + i * OPUS_FRAME_SAMPLES)
+    return rtp_start + n * OPUS_FRAME_SAMPLES
+
+
+class TestStreamRestart:
+    def test_rejoin_with_lower_rtp_base_keeps_audio(self, tmp_path: Path) -> None:
+        # A user who rejoins gets a new SSRC with a fresh random RTP base,
+        # which may be far below where their previous stream ended.
+        rec = CallRecorder(
+            tmp_path, start_time=0.0, decoder_factory=ScriptedOpusDecoder
+        )
+        end = _speak(rec, 1, 3_000_000_000, 2)
+        _speak(rec, 1, end + 10 * SAMPLE_RATE, 2)  # closes the first segment
+        _speak(rec, 1, 1_000, 10)  # rejoined
+        rec.stop()
+
+        segments = rec.get_user_segments()[1]
+        assert len(segments) == 3
+        assert len(_read_wav(segments[2][1])) == 10 * SAMPLE_RATE * FRAME_SIZE
+
+    def test_rtp_wraparound_keeps_audio(self, tmp_path: Path) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=0.0, decoder_factory=ScriptedOpusDecoder
+        )
+        end = _speak(rec, 1, 2**32 - 5 * SAMPLE_RATE, 4)
+        _speak(rec, 1, end + 10 * SAMPLE_RATE - 2**32, 3)
+        rec.stop()
+
+        segments = rec.get_user_segments()[1]
+        assert len(segments) == 2
+        assert len(_read_wav(segments[1][1])) == 3 * SAMPLE_RATE * FRAME_SIZE
+
+
+class TestTranscriptionCallback:
+    def test_short_segments_are_recorded_but_not_transcribed(
+        self, tmp_path: Path
+    ) -> None:
+        closed: list[Path] = []
+        rec = CallRecorder(
+            tmp_path,
+            start_time=0.0,
+            on_segment_closed=lambda _uid, _offset, path: closed.append(path),
+            decoder_factory=ScriptedOpusDecoder,
+        )
+        end = _speak(rec, 1, 0, 0.5)
+        _speak(rec, 1, end + 5 * SAMPLE_RATE, 3)
+        rec.stop()
+
+        segments = [path for _, path in rec.get_user_segments()[1]]
+        assert len(segments) == 2
+        assert closed == [segments[1]]
 
 
 class TestOverlappingPackets:

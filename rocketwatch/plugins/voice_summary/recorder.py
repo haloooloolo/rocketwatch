@@ -34,8 +34,11 @@ FRAME_SIZE = CHANNELS * SAMPLE_WIDTH  # bytes per PCM frame
 BYTES_PER_SECOND = SAMPLE_RATE * CHANNELS * SAMPLE_WIDTH
 OPUS_FRAME_SAMPLES = OpusDecoder.SAMPLES_PER_FRAME  # 960 = 20ms at 48 kHz
 
-SILENCE_DURATION = 1.0  # seconds of packet gap before splitting
+SILENCE_DURATION = 2.0  # seconds of packet gap before splitting
 MAX_SEGMENT_DURATION = 60.0  # seconds before forcing a split
+# Shorter segments stay in the mixed audio but aren't transcribed: STT turns
+# them into hallucinated words or other languages far more often than speech.
+MIN_TRANSCRIBE_DURATION = 1.0
 # Up to this many missing 20ms frames are concealed (PLC + FEC) instead of
 # zero-padded. Past ~100 ms, Opus PLC starts sounding robotic, so silence is
 # the lesser evil.
@@ -150,6 +153,25 @@ class UserStream:
 
             rtp_end = rtp_timestamp + samples
 
+            # SSRC reset (user rejoined) / RTP wraparound: if the packet's RTP
+            # is implausibly far from where this stream was, start over with a
+            # new anchor. Must run before the late-arrival check, since a new
+            # stream can start below the old one's position.
+            ref: tuple[int, int] | None = None
+            if self._open is not None:
+                ref = (self._open.rtp_start, self._open.max_rtp_end)
+            elif self._last_finalized_rtp_end is not None:
+                ref = (self._last_finalized_rtp_end, self._last_finalized_rtp_end)
+            if ref is not None and (
+                rtp_timestamp - ref[1] > 2 * MAX_SEGMENT_DURATION_SAMPLES
+                or ref[0] - rtp_timestamp > 2 * MAX_SEGMENT_DURATION_SAMPLES
+            ):
+                if self._open is not None:
+                    self._finalize(self._open)
+                    self._open = None
+                self._last_finalized_rtp_end = None
+                self._anchor_rtp(rtp_timestamp)
+
             # Late arrival for an already-finalized segment: the WAV is on
             # disk and we can't rewrite it.
             if (
@@ -161,18 +183,6 @@ class UserStream:
                 return
 
             if self._rtp_anchor is None:
-                self._anchor_rtp(rtp_timestamp)
-
-            # SSRC reset / RTP wraparound: if the packet's RTP is implausibly
-            # far from our current open segment, start over with a new anchor.
-            if self._open is not None and (
-                rtp_timestamp - self._open.max_rtp_end
-                > 2 * MAX_SEGMENT_DURATION_SAMPLES
-                or self._open.rtp_start - rtp_timestamp
-                > 2 * MAX_SEGMENT_DURATION_SAMPLES
-            ):
-                self._finalize(self._open)
-                self._open = None
                 self._anchor_rtp(rtp_timestamp)
 
             call_time = self._rtp_to_call_time(rtp_timestamp)
@@ -314,7 +324,8 @@ class UserStream:
             self._last_finalized_rtp_end or 0, seg.max_rtp_end
         )
         self._log_segment_stats(path, seg, stats)
-        if self._on_segment_closed:
+        duration = (seg.max_rtp_end - seg.rtp_start) / SAMPLE_RATE
+        if self._on_segment_closed and duration >= MIN_TRANSCRIBE_DURATION:
             self._on_segment_closed(self.user_id, seg.call_time, path)
 
     def _log_segment_stats(

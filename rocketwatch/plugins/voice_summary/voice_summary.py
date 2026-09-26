@@ -81,22 +81,25 @@ class VoiceSummary(Cog):
     ) -> None:
         recorded_channel = self._get_recorded_channel()
 
-        # left recorded channel
-        if before.channel and (before.channel == recorded_channel):
-            count = self._count_voice_users(before.channel)
-            if count == 0:
-                await self._disconnect_voice()
-            else:
-                self._start_grace()
-
-        # joined new channel
-        if after.channel is not None:
-            count = self._count_voice_users(after.channel)
-            if count >= self._config.min_users:
-                if after.channel == recorded_channel:
+        if recorded_channel:
+            # mute/deafen toggles also fire this event; only membership changes count
+            moved = before.channel != after.channel
+            if moved and recorded_channel in (before.channel, after.channel):
+                count = self._count_voice_users(recorded_channel)
+                if count == 0:
+                    await self._disconnect_voice()
+                elif count < self._config.min_users:
+                    self._start_grace()
+                else:
                     self._cancel_grace()
-                elif not self._session:
-                    await self._connect_voice(after.channel)
+            return
+
+        if (
+            (after.channel is not None)
+            and (not self._session)
+            and self._count_voice_users(after.channel) >= self._config.min_users
+        ):
+            await self._connect_voice(after.channel)
 
     @Cog.listener()
     async def on_voice_state_update(
@@ -164,10 +167,14 @@ class VoiceSummary(Cog):
         """Disconnect from voice. Session cleanup happens via voice state event."""
         self._stopping = True
         self._cancel_scheduled_tasks()
-        if self._session and self._session.voice_client:
-            await self._session.voice_client.disconnect()
-        elif self._session:
-            # No active voice client (e.g. mid-resume) — finalize directly
+        if not self._session:
+            return
+        vc = self._session.voice_client
+        if vc and vc.is_connected():
+            await vc.disconnect()
+        else:
+            # mid-reconnect: disconnect() won't emit a voice state event, so
+            # finalize directly (session.stop() cancels the pending reconnect)
             await self._stop_recording()
 
     async def _resume_session(self, channel: VocalGuildChannel) -> None:
@@ -177,7 +184,10 @@ class VoiceSummary(Cog):
             if self._stopping or not self._session:
                 return
             try:
-                vc = await channel.connect(cls=VoiceRecvClient)
+                vc = channel.guild.voice_client
+                if not isinstance(vc, VoiceRecvClient):
+                    vc = await channel.connect(cls=VoiceRecvClient)
+                # otherwise discord.py is already reconnecting this client
                 await self._session.resume(vc)
                 log.info("Voice session resumed")
                 return
