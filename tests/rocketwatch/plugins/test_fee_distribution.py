@@ -92,9 +92,23 @@ class TestPieMode:
         cog: FeeDistribution,
         mongo_db: AsyncDatabase[dict[str, Any]],
     ) -> None:
-        # Nothing to plot. Matplotlib should still produce an embed without
-        # crashing (the cog has no guard, so this test pins current behaviour).
         interaction = make_interaction()
         await run_command(cog, "fee_distribution", interaction, mode="pie")
         embed = captured_embed(interaction)
         assert embed.title == "Minipool Fee Distribution"
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs["file"].filename == "fee_distribution.png"
+
+    async def test_pie_handles_one_empty_bond(
+        self,
+        cog: FeeDistribution,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+    ) -> None:
+        await mongo_db.minipools.insert_many(
+            [_make_minipool(bond=8, fee=0.14), _make_minipool(bond=8, fee=0.10)]
+        )
+
+        interaction = make_interaction()
+        await run_command(cog, "fee_distribution", interaction, mode="pie")
+        call_kwargs = interaction.followup.send.call_args.kwargs
+        assert call_kwargs["file"].filename == "fee_distribution.png"

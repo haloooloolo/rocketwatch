@@ -61,14 +61,20 @@ class FeeDistribution(commands.Cog):
                 labels.append(f"{fee_percentage:.0f}%")
                 sizes.append(entry["count"])
 
+            ax = axs[i]
+            ax.set_title(f"{bond} ETH")
+
             total = sum(sizes)
+            if total == 0:
+                ax.text(0.5, 0.5, "No data", ha="center", va="center")
+                ax.axis("off")
+                continue
+
             # avoid overlapping labels for small slices
             for j in range(len(sizes)):
                 if sizes[j] < 0.05 * total:
                     labels[j] = ""
 
-            ax = axs[i]
-            ax.set_title(f"{bond} ETH")
             ax.pie(
                 sizes,
                 labels=labels,
