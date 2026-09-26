@@ -81,7 +81,23 @@ leave_grace_seconds = 120
 [transcription.stt]
 provider = "openai"
 api_key = ""
-model = "gpt-4o-transcribe"
+model = "gpt-transcribe"
+keywords = [
+    # Rocket Pool
+    "Rocket Pool", "rETH", "RPL", "minipool", "megapool", "Smartnode", "node operator",
+    "oDAO", "pDAO", "Protocol DAO", "Security Council", "RPIP", "Smoothing Pool",
+    "Saturn", "Houston", "Atlas", "Redstone",
+    # Ethereum staking
+    "Ethereum", "ETH", "validator", "beacon chain", "consensus layer", "execution layer",
+    "attestation", "slashing", "withdrawal credentials", "0x01", "0x02", "MEV-Boost",
+    "relay", "ePBS", "blobs", "EIP", "Lido", "stETH", "EigenLayer", "restaking",
+    # upgrades and testnets
+    "Glamsterdam", "Fusaka", "Pectra", "Dencun", "Hegota", "Hoodi", "Sepolia", "Holesky",
+    "Ephemery", "devnet",
+    # clients
+    "Geth", "Nethermind", "Besu", "Reth", "Erigon",
+    "Lighthouse", "Prysm", "Teku", "Nimbus", "Lodestar",
+]
 
 [transcription.llm]
 provider = ""  # "anthropic", "openai", or "google"

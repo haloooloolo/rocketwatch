@@ -3,7 +3,7 @@ import logging
 import re
 from pathlib import Path
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, omit
 from pydantic import BaseModel, Field
 
 from rocketwatch.utils.config import STTConfig
@@ -91,6 +91,7 @@ class TranscriptionPipeline:
             language="en",
             file=buf,
             response_format="json",
+            keywords=self._stt.keywords or omit,
         )
         return response.text.strip()
 
