@@ -137,7 +137,7 @@ class TestBuildComponents:
         # The whole point: the card's link resolves to xcancel (no login gate),
         # using the real handle/id from the fetched data.
         blob = _components_blob(build_tweet_components(_tweet()))
-        assert "https://xcancel.com/jack/status/20" in blob
+        assert "https://xxcancel.com/jack/status/20" in blob
 
     def test_full_card_is_a_container_then_a_separate_button_row(self) -> None:
         comps = build_tweet_components(_tweet())
@@ -145,7 +145,7 @@ class TestBuildComponents:
         assert isinstance(comps[0], discord.ui.Container)
         assert isinstance(comps[1], discord.ui.ActionRow)
         # The button lives beneath the card, not inside it.
-        assert "View on xcancel" not in _components_blob([comps[0]])
+        assert "View on xxcancel" not in _components_blob([comps[0]])
 
     def test_carries_text_and_author(self) -> None:
         blob = _components_blob(build_tweet_components(_tweet(text="hello world")))
@@ -211,7 +211,7 @@ class TestBuildComponents:
         assert len(comps) == 1
         assert isinstance(comps[0], discord.ui.ActionRow)
         blob = _components_blob(comps)
-        assert "https://xcancel.com/jack/status/20" in blob
+        assert "https://xxcancel.com/jack/status/20" in blob
         assert "covered" not in blob
 
     def test_native_present_note_supplies_full_text(self) -> None:
@@ -334,7 +334,7 @@ class TestOnMessage:
         _args, kwargs = message.reply.call_args
         assert kwargs["mention_author"] is False
         assert isinstance(kwargs["view"], discord.ui.LayoutView)
-        assert "https://xcancel.com/jack/status/20" in _reply_blob(message)
+        assert "https://xxcancel.com/jack/status/20" in _reply_blob(message)
 
     async def test_native_preview_contributes_only_the_link(
         self, cog: TwitterEmbed
@@ -346,7 +346,7 @@ class TestOnMessage:
         await cog.on_message(message)
 
         blob = _reply_blob(message)
-        assert "https://xcancel.com/jack/status/20" in blob
+        assert "https://xxcancel.com/jack/status/20" in blob
         assert "covered" not in blob
 
     async def test_multi_image_tweet_renders_gallery(self, cog: TwitterEmbed) -> None:
@@ -370,7 +370,7 @@ class TestOnMessage:
 
         cog._fetch_tweet.assert_not_awaited()
         message.reply.assert_awaited_once()
-        assert "https://xcancel.com/jack/status/20" in _reply_blob(message)
+        assert "https://xxcancel.com/jack/status/20" in _reply_blob(message)
         assert _reply_top_level_types(message) == [_ACTION_ROW]
 
     async def test_x_and_fx_links_both_handled(self, cog: TwitterEmbed) -> None:
@@ -381,8 +381,8 @@ class TestOnMessage:
         await cog.on_message(message)
 
         blob = _reply_blob(message)
-        assert "https://xcancel.com/jack/status/20" in blob  # card for the x link
-        assert "https://xcancel.com/nasa/status/99" in blob  # button for the fx link
+        assert "https://xxcancel.com/jack/status/20" in blob  # card for the x link
+        assert "https://xxcancel.com/nasa/status/99" in blob  # button for the fx link
 
     async def test_fx_link_skipped_when_same_tweet_is_carded(
         self, cog: TwitterEmbed

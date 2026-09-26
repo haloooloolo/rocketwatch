@@ -18,7 +18,7 @@ log = logging.getLogger("rocketwatch.twitter_embed")
 #: login-gated x.com; xcancel (a Nitter instance) is freely viewable but embeds
 #: poorly. We borrow fxtwitter's content and point every link at xcancel.
 API_BASE = "https://api.fxtwitter.com"
-XCANCEL_BASE = "https://xcancel.com"
+XCANCEL_BASE = "https://xxcancel.com"
 
 TWITTER_COLOR = discord.Color(0x1DA1F2)
 API_TIMEOUT = aiohttp.ClientTimeout(total=10)
@@ -193,7 +193,7 @@ def _xcancel_button(status_url: str) -> discord.ui.ActionRow[discord.ui.LayoutVi
     row: discord.ui.ActionRow[discord.ui.LayoutView] = discord.ui.ActionRow()
     row.add_item(
         discord.ui.Button(
-            style=discord.ButtonStyle.link, url=status_url, label="View on xcancel"
+            style=discord.ButtonStyle.link, url=status_url, label="View on xxcancel"
         )
     )
     return row
