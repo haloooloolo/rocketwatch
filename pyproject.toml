@@ -35,7 +35,7 @@ dependencies = [
     "tabulate==0.10.0",
     "termplotlib==0.3.9",
     "uptime==3.0.1",
-    "web3>=7.0.0,<8.0.0",
+    "web3>=8.0.0,<8.1.0",
 ]
 
 
