@@ -9,6 +9,8 @@ from bidict import bidict
 from cachetools import LRUCache
 from eth_abi import abi
 from eth_typing import BlockIdentifier, ChecksumAddress
+from eth_utils.abi import function_signature_to_4byte_selector
+from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO
 from web3.contract import AsyncContract
 from web3.contract.async_contract import AsyncContractFunction
@@ -21,6 +23,12 @@ from rocketwatch.utils.readable import decode_abi
 from rocketwatch.utils.shared_w3 import w3, w3_mainnet
 
 log = logging.getLogger("rocketwatch.rocketpool")
+
+_AGGREGATE3_SELECTOR = function_signature_to_4byte_selector(
+    "aggregate3((address,bool,bytes)[])"
+)
+_AGGREGATE3_INPUT = ["(address,bool,bytes)[]"]
+_AGGREGATE3_OUTPUT = ["(bool,bytes)[]"]
 
 
 class ValidatorInfo(NamedTuple):
@@ -170,13 +178,18 @@ class RocketPool:
 
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [
-            (fn.address, af, fn._encode_transaction_data())
+            (fn.address, af, HexBytes(fn._encode_transaction_data()))
             for fn, af in zip(fns, flags, strict=False)
         ]
         assert self._multicall is not None
-        results = await self._multicall.functions.aggregate3(encoded).call(
-            block_identifier=block
+        # encode aggregate3 with eth_abi directly; web3's argument normalization
+        # walks the whole call list in Python and dominated upkeep CPU time
+        data = _AGGREGATE3_SELECTOR + abi.encode(_AGGREGATE3_INPUT, [encoded])
+        raw = await w3.eth.call(
+            {"to": self._multicall.address, "data": HexBytes(data)},
+            block_identifier=block,
         )
+        (results,) = abi.decode(_AGGREGATE3_OUTPUT, raw)
         return [
             RocketPool._decode_fn_output(fns[i], data) if success else None
             for i, (success, data) in enumerate(results)

@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -6,6 +7,7 @@ from eth_abi import abi
 from web3 import AsyncWeb3
 
 from rocketwatch.utils import rocketpool as rp_module
+from rocketwatch.utils import shared_w3
 from rocketwatch.utils.rocketpool import RocketPool, at_address
 
 _INFO_ABI = [
@@ -19,6 +21,7 @@ _INFO_ABI = [
 ]
 _ADDR_A = AsyncWeb3.to_checksum_address("0x" + "aa" * 20)
 _ADDR_B = AsyncWeb3.to_checksum_address("0x" + "bb" * 20)
+_MULTICALL = AsyncWeb3.to_checksum_address("0x" + "cc" * 20)
 
 
 class TestAtAddress:
@@ -173,6 +176,44 @@ class TestMulticallShortCircuits:
         # short-circuit to not touch `_multicall`.
         rp_instance = RocketPool()
         assert await rp_instance.multicall([]) == []
+
+
+class TestMulticall:
+    @pytest.fixture
+    def rp_instance(self, monkeypatch: pytest.MonkeyPatch) -> RocketPool:
+        # Simulated Multicall3: getValidatorInfo(id) returns id * 10 at _ADDR_A
+        # and reverts at _ADDR_B.
+        async def eth_call(tx: dict[str, Any], block_identifier: Any) -> bytes:
+            assert tx["to"] == _MULTICALL
+            (calls,) = abi.decode(["(address,bool,bytes)[]"], tx["data"][4:])
+            results = []
+            for target, allow_failure, calldata in calls:
+                if target.lower() != _ADDR_A.lower():
+                    assert allow_failure
+                    results.append((False, b""))
+                    continue
+                (validator_id,) = abi.decode(["uint32"], calldata[4:])
+                results.append((True, abi.encode(["uint256"], [validator_id * 10])))
+            return abi.encode(["(bool,bytes)[]"], [results])
+
+        monkeypatch.setattr(shared_w3.w3.eth, "call", eth_call)
+        instance = RocketPool()
+        instance._multicall = MagicMock(address=_MULTICALL)
+        return instance
+
+    async def test_decodes_each_result_and_nones_allowed_failures(
+        self, rp_instance: RocketPool
+    ) -> None:
+        a = AsyncWeb3().eth.contract(address=_ADDR_A, abi=_INFO_ABI)
+        b = AsyncWeb3().eth.contract(address=_ADDR_B, abi=_INFO_ABI)
+        results = await rp_instance.multicall(
+            [
+                a.functions.getValidatorInfo(1),
+                (b.functions.getValidatorInfo(2), False),
+                a.functions.getValidatorInfo(3),
+            ]
+        )
+        assert results == [10, None, 30]
 
 
 class TestAssembleContractCache:
