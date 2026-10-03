@@ -21,7 +21,7 @@ from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.event_logs import get_logs
 from rocketwatch.utils.rocketpool import ValidatorInfo, rp
 from rocketwatch.utils.shared_w3 import bacon, w3
-from rocketwatch.utils.time_debug import timerun, timerun_async
+from rocketwatch.utils.time_debug import timed
 
 log = logging.getLogger("rocketwatch.db_upkeep_task")
 
@@ -204,7 +204,7 @@ class DBUpkeepTask(commands.Cog):
 
     # -- Node operator tasks --
 
-    @timerun_async
+    @timed
     async def add_untracked_node_operators(self) -> None:
         nm = await rp.get_contract_by_name("rocketNodeManager")
         latest_rp = await rp.call("rocketNodeManager.getNodeCount") - 1
@@ -228,7 +228,7 @@ class DBUpkeepTask(commands.Cog):
             [{"_id": i, "address": w3.to_checksum_address(a)} for i, a in data.items()]
         )
 
-    @timerun_async
+    @timed
     async def add_static_node_operator_data(self) -> None:
         df = await rp.get_contract_by_name("rocketNodeDistributorFactory")
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
@@ -262,7 +262,7 @@ class DBUpkeepTask(commands.Cog):
             label="node operators",
         )
 
-    @timerun_async
+    @timed
     async def update_dynamic_node_operator_data(self) -> None:
         mf = await rp.get_contract_by_name("rocketMegapoolFactory")
         nd = await rp.get_contract_by_name("rocketNodeDeposit")
@@ -401,7 +401,7 @@ class DBUpkeepTask(commands.Cog):
             },
         )
 
-    @timerun_async
+    @timed
     async def update_dynamic_megapool_data(self) -> None:
         delegate_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
         proxy_abi = await rp.get_abi_by_name("rocketMegapoolProxy")
@@ -491,7 +491,7 @@ class DBUpkeepTask(commands.Cog):
 
     # -- Minipool tasks --
 
-    @timerun_async
+    @timed
     async def add_untracked_minipools(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
         latest_rp = await rp.call("rocketMinipoolManager.getMinipoolCount") - 1
@@ -519,7 +519,7 @@ class DBUpkeepTask(commands.Cog):
                 ]
             )
 
-    @timerun_async
+    @timed
     async def add_static_minipool_data(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
         minipool_abi = await rp.get_abi_by_name("rocketMinipool")
@@ -550,7 +550,7 @@ class DBUpkeepTask(commands.Cog):
             label="minipools",
         )
 
-    @timerun
+    @timed
     async def add_static_minipool_deposit_data(self) -> None:
         minipools = (
             await self.bot.db.minipools.find(
@@ -617,7 +617,7 @@ class DBUpkeepTask(commands.Cog):
                 ordered=False,
             )
 
-    @timerun_async
+    @timed
     async def update_dynamic_minipool_data(self) -> None:
         mc = await rp.get_contract_by_name("multicall3")
         minipool_abi = await rp.get_abi_by_name("rocketMinipool")
@@ -714,7 +714,7 @@ class DBUpkeepTask(commands.Cog):
             label="minipools",
         )
 
-    @timerun
+    @timed
     async def update_dynamic_minipool_beacon_data(self) -> None:
         pubkeys = await self.bot.db.minipools.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
@@ -758,7 +758,7 @@ class DBUpkeepTask(commands.Cog):
 
     # -- Megapool validator tasks --
 
-    @timerun_async
+    @timed
     async def add_untracked_megapool_validators(self) -> None:
         # get deployed megapools with their on-chain validator count
         nodes = await self.bot.db.node_operators.find(
@@ -817,7 +817,7 @@ class DBUpkeepTask(commands.Cog):
                         docs, ordered=False
                     )
 
-    @timerun_async
+    @timed
     async def add_static_megapool_deposit_data(self) -> None:
         validators = await self.bot.db.megapool_validators.find(
             {"deposit_time": {"$exists": False}},
@@ -870,7 +870,7 @@ class DBUpkeepTask(commands.Cog):
             if ops:
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
-    @timerun_async
+    @timed
     async def update_dynamic_megapool_validator_data(self) -> None:
         mp_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
 
@@ -906,7 +906,7 @@ class DBUpkeepTask(commands.Cog):
             if ops:
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
-    @timerun
+    @timed
     async def update_dynamic_megapool_validator_beacon_data(self) -> None:
         pubkeys = await self.bot.db.megapool_validators.distinct(
             "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}

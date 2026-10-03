@@ -22,7 +22,7 @@ from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.shared_w3 import bacon
 from rocketwatch.utils.solidity import beacon_block_to_date, date_to_beacon_block
-from rocketwatch.utils.time_debug import timerun_async
+from rocketwatch.utils.time_debug import timed
 from rocketwatch.utils.visibility import is_hidden
 
 cog_id = "proposals"
@@ -254,7 +254,7 @@ class Proposals(commands.Cog):
             "latest_proposals", viewOn="megapool_validators", pipeline=pipeline
         )
 
-    @timerun_async
+    @timed
     async def gather_attribute(
         self, attribute: str, remove_allnodes: bool = False
     ) -> dict[str, Any]:

@@ -48,7 +48,7 @@ from rocketwatch.utils.liquidity import (
 )
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
-from rocketwatch.utils.time_debug import timerun, timerun_async
+from rocketwatch.utils.time_debug import timed
 from rocketwatch.utils.visibility import is_hidden
 
 
@@ -225,7 +225,7 @@ class Wall(commands.GroupCog, name="wall"):
 
         return depth, liquidity
 
-    @timerun_async
+    @timed
     async def _get_cex_data(
         self,
         cex_set: set[CEX],
@@ -256,7 +256,7 @@ class Wall(commands.GroupCog, name="wall"):
             sorted(depth.items(), key=lambda e: liquidity[e[0]], reverse=True)
         )
 
-    @timerun
+    @timed
     async def _get_dex_data(
         self,
         dex_set: set[DEX],
