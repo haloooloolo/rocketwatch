@@ -1,6 +1,6 @@
 import time
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from aiohttp import ClientResponseError, RequestInfo
@@ -308,7 +308,7 @@ class TestGatherAttribute:
         )
         cog = _make_cog(make_bot(db=mongo_db))
         d = await cog.gather_attribute("consensus_client", remove_allnodes=True)
-        assert "remove_from_total" in d
+        assert d["remove_from_total"] == {"count": 1, "validator_count": 9}
         assert "Lighthouse" in d
         assert "Teku" not in d  # the Allnodes entry is filtered out
 
@@ -414,6 +414,81 @@ class TestDistributionCharts:
                 for i in range(5)
             ]
         )
+
+    async def test_totals_include_megapool_validators(
+        self, mongo_db: AsyncDatabase[dict[str, Any]]
+    ) -> None:
+        # One megapool-only operator with 3 validators and one minipool operator
+        # have proposed; a second minipool operator hasn't.
+        active = {"beacon": {"status": "active_ongoing"}}
+        await mongo_db.megapool_validators.insert_many(
+            [{"node_operator": "0xMEGA", **active} for _ in range(3)]
+        )
+        await mongo_db.minipools.insert_many(
+            [
+                {"node_operator": "0xMINI", **active},
+                {"node_operator": "0xIDLE", **active},
+            ]
+        )
+        await mongo_db.latest_proposals.insert_many(
+            [
+                {"latest_proposal": {"type": "Smart Node"}, "validator_count": 3},
+                {"latest_proposal": {"type": "Unknown"}, "validator_count": 1},
+            ]
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        ax1, ax2 = MagicMock(), MagicMock()
+
+        await cog.plot_axes_with_data("type", ax1, ax2)
+
+        validator_labels = ax1.legend.call_args.args[0]
+        operator_labels = ax2.legend.call_args.args[0]
+        assert any(label.startswith("1 No proposals yet") for label in validator_labels)
+        assert any(label.startswith("1 No proposals yet") for label in operator_labels)
+        assert all(size >= 0 for size in ax1.pie.call_args.args[0])
+        assert all(size >= 0 for size in ax2.pie.call_args.args[0])
+
+    async def test_remove_allnodes_drops_them_from_totals(
+        self, mongo_db: AsyncDatabase[dict[str, Any]]
+    ) -> None:
+        # 2 Allnodes validators (one operator), 1 Smart Node, 1 idle minipool.
+        active = {"beacon": {"status": "active_ongoing"}}
+        await mongo_db.minipools.insert_many(
+            [
+                {"node_operator": "0xALLNODES", **active},
+                {"node_operator": "0xALLNODES", **active},
+                {"node_operator": "0xSN", **active},
+                {"node_operator": "0xIDLE", **active},
+            ]
+        )
+        await mongo_db.latest_proposals.insert_many(
+            [
+                {
+                    "latest_proposal": {"type": "Allnodes", "consensus_client": "Teku"},
+                    "validator_count": 2,
+                },
+                {
+                    "latest_proposal": {
+                        "type": "Smart Node",
+                        "consensus_client": "Unknown",
+                    },
+                    "validator_count": 1,
+                },
+            ]
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+        ax1, ax2 = MagicMock(), MagicMock()
+
+        await cog.plot_axes_with_data(
+            "consensus_client", ax1, ax2, remove_allnodes=True
+        )
+
+        validator_labels = ax1.legend.call_args.args[0]
+        operator_labels = ax2.legend.call_args.args[0]
+        assert any(label.startswith("1 No proposals yet") for label in validator_labels)
+        assert any(label.startswith("1 No proposals yet") for label in operator_labels)
+        assert not any("Teku" in label for label in validator_labels)
+        assert sum(ax1.pie.call_args.args[0]) == 2
 
     async def test_operator_type_distribution_sends_image(
         self, mongo_db: AsyncDatabase[dict[str, Any]]

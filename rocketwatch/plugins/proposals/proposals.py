@@ -258,11 +258,6 @@ class Proposals(commands.Cog):
     async def gather_attribute(
         self, attribute: str, remove_allnodes: bool = False
     ) -> dict[str, Any]:
-        # Build the match stage to filter out Allnodes if needed
-        match_stage: dict[str, Any] = {}
-        if remove_allnodes:
-            match_stage["$match"] = {"latest_proposal.type": {"$ne": "Allnodes"}}
-
         pipeline: list[dict[str, Any]] = [
             {
                 "$project": {
@@ -279,31 +274,25 @@ class Proposals(commands.Cog):
                 }
             },
         ]
-
-        # Add match stage at the beginning if filtering Allnodes
-        if remove_allnodes:
-            pipeline.insert(0, match_stage)
-
         distribution = await (
             await self.bot.db.latest_proposals.aggregate(pipeline)
         ).to_list()
 
+        d: dict[str, Any] = {}
         if remove_allnodes:
-            d = {"remove_from_total": {"count": 0, "validator_count": 0}}
-            for entry in distribution:
-                d[entry["_id"]["attribute"]] = entry
-            return d
-        else:
-            # Convert nested _id structure and merge by attribute
-            d = {}
-            for entry in distribution:
+            # Allnodes counts are tallied here so callers can drop them from totals
+            d["remove_from_total"] = {"count": 0, "validator_count": 0}
+        for entry in distribution:
+            if remove_allnodes and entry["_id"]["type"] == "Allnodes":
+                key = "remove_from_total"
+            else:
                 key = entry["_id"]["attribute"]
-                if key in d:
-                    d[key]["count"] += entry["count"]
-                    d[key]["validator_count"] += entry["validator_count"]
-                else:
-                    d[key] = entry
-            return d
+            if key in d:
+                d[key]["count"] += entry["count"]
+                d[key]["validator_count"] += entry["validator_count"]
+            else:
+                d[key] = entry
+        return d
 
     type Color = str | tuple[float, float, float, float]
 
@@ -433,41 +422,48 @@ class Proposals(commands.Cog):
         await interaction.followup.send(embed=e, file=File(img, filename="chart.png"))
         img.close()
 
+    async def _count_active_validators(self) -> tuple[int, int]:
+        """Validator and node operator totals over the latest_proposals view's population."""
+        query = {"node_operator": {"$ne": None}, "beacon.status": "active_ongoing"}
+        validators = 0
+        node_operators: set[str] = set()
+        for collection in (self.bot.db.minipools, self.bot.db.megapool_validators):
+            validators += await collection.count_documents(query)
+            node_operators.update(await collection.distinct("node_operator", query))
+        return validators, len(node_operators)
+
     async def plot_axes_with_data(
         self, attr: str, ax1: Axes, ax2: Axes, remove_allnodes: bool = False
     ) -> None:
         # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
+        total_validators, total_node_operators = await self._count_active_validators()
 
-        minipools = [
+        validators = [
             (x, y["validator_count"])
             for x, y in data.items()
             if x != "remove_from_total"
         ]
-        minipools = sorted(minipools, key=lambda x: x[1])
+        validators = sorted(validators, key=lambda x: x[1])
 
-        # get total minipool count from rocketpool
-        distinct_ids = await self.bot.db.minipools.find(
-            {"beacon.status": "active_ongoing", "status": "staking"}
-        ).distinct("_id")
-        unobserved_minipools = len(distinct_ids) - sum(d[1] for d in minipools)
+        unobserved_validators = total_validators - sum(d[1] for d in validators)
         if "remove_from_total" in data:
-            unobserved_minipools -= data["remove_from_total"]["validator_count"]
-        minipools.insert(0, ("No proposals yet", unobserved_minipools))
+            unobserved_validators -= data["remove_from_total"]["validator_count"]
+        validators.insert(0, ("No proposals yet", unobserved_validators))
         # move "Unknown" to be before "No proposals yet"
-        minipools.insert(
+        validators.insert(
             1,
-            minipools.pop(
-                next(i for i, (x, y) in enumerate(minipools) if x == "Unknown")
+            validators.pop(
+                next(i for i, (x, y) in enumerate(validators) if x == "Unknown")
             ),
         )
         # move "External (if it exists) to be before "Unknown"
-        # minipools is a list of tuples (name, count)
-        if "External" in [x for x, y in minipools]:
-            minipools.insert(
+        # validators is a list of tuples (name, count)
+        if "External" in [x for x, y in validators]:
+            validators.insert(
                 2,
-                minipools.pop(
-                    next(i for i, (x, y) in enumerate(minipools) if x == "External")
+                validators.pop(
+                    next(i for i, (x, y) in enumerate(validators) if x == "External")
                 ),
             )
 
@@ -477,11 +473,7 @@ class Proposals(commands.Cog):
         ]
         node_operators = sorted(node_operators, key=lambda x: x[1])
 
-        # get total node operator count from rp
-        distinct_nos = await self.bot.db.minipools.find(
-            {"beacon.status": "active_ongoing", "status": "staking"}
-        ).distinct("node_operator")
-        unobserved_node_operators = len(distinct_nos) - sum(
+        unobserved_node_operators = total_node_operators - sum(
             d[1] for d in node_operators
         )
         if "remove_from_total" in data:
@@ -508,22 +500,21 @@ class Proposals(commands.Cog):
 
         # sort data
         ax1.pie(
-            [x[1] for x in minipools],
-            colors=[COLORS.get(x[0], "red") for x in minipools],
+            [x[1] for x in validators],
+            colors=[COLORS.get(x[0], "red") for x in validators],
             autopct=lambda pct: (f"{pct:.1f}%") if pct > 5 else "",
             startangle=90,
             textprops={"fontsize": "12"},
         )
-        # legend
-        total_minipols = sum(x[1] for x in minipools)
         # legend in the top left corner of the plot
+        validator_sum = sum(x[1] for x in validators)
         ax1.legend(
-            [f"{x[1]} {x[0]} ({x[1] / total_minipols:.2%})" for x in minipools],
+            [f"{x[1]} {x[0]} ({x[1] / validator_sum:.2%})" for x in validators],
             loc="lower left",
             bbox_to_anchor=(0, -0.1),
             fontsize=11,
         )
-        ax1.set_title("Minipools", fontsize=22)
+        ax1.set_title("Validators", fontsize=22)
 
         ax2.pie(
             [x[1] for x in node_operators],
@@ -532,13 +523,9 @@ class Proposals(commands.Cog):
             startangle=90,
             textprops={"fontsize": "12"},
         )
-        # legend
-        total_node_operators = sum(x[1] for x in node_operators)
+        node_operator_sum = sum(x[1] for x in node_operators)
         ax2.legend(
-            [
-                f"{x[1]} {x[0]} ({x[1] / total_node_operators:.2%})"
-                for x in node_operators
-            ],
+            [f"{x[1]} {x[0]} ({x[1] / node_operator_sum:.2%})" for x in node_operators],
             loc="lower left",
             bbox_to_anchor=(0, -0.1),
             fontsize=11,
