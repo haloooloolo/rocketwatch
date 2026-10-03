@@ -9,7 +9,7 @@ patching `w3.eth.get_logs = script.get_logs`.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from typing import Any
+from typing import Any, cast
 
 from eth_typing import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
@@ -33,8 +33,8 @@ def make_log(
     removed: bool = False,
 ) -> LogReceipt:
     """Construct a `LogReceipt` from convenient Python literals."""
-    return LogReceipt(  # type: ignore[typeddict-item]
-        address=address,  # type: ignore[arg-type]
+    return LogReceipt(
+        address=cast(ChecksumAddress, address),
         topics=[_to_hexbytes(t) for t in topics],
         data=_to_hexbytes(data),
         blockNumber=BlockNumber(block_number),

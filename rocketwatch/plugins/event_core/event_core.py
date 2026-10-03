@@ -165,15 +165,13 @@ class EventCore(commands.Cog):
                     continue
                 seen.add(event.unique_id)
 
-                # select channel dynamically from config based on event_name prefix
-                channel_candidates = [
-                    value
-                    for key, value in channels.items()
-                    if event.event_name.startswith(key)
-                ]
-                channel_id = (
-                    channel_candidates[0] if channel_candidates else channels["default"]
+                # the most specific configured event-name prefix picks the channel
+                prefix = max(
+                    (key for key in channels if event.event_name.startswith(key)),
+                    key=len,
+                    default="default",
                 )
+                channel_id = channels[prefix]
                 events.append(
                     {
                         "_id": event.unique_id,

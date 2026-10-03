@@ -138,6 +138,20 @@ class TestGatherNewEvents:
         }
         assert queued == {"a": DAO, "b": DEFAULT}
 
+    async def test_most_specific_prefix_wins(
+        self, core: EventCore, chain_head: MagicMock
+    ) -> None:
+        core.channels = {"default": DEFAULT, "dao": DAO, "dao_proposal": 300}
+        _plugin(core, [_event("dao_proposal_vote", "a"), _event("dao_vote", "b")])
+
+        await core.gather_new_events()
+
+        queued = {
+            d["_id"]: d["channel_id"]
+            async for d in core.bot.db.event_queue.find({"message_id": None})
+        }
+        assert queued == {"a": 300, "b": DAO}
+
     async def test_already_queued_event_is_not_queued_again(
         self, core: EventCore, chain_head: MagicMock
     ) -> None:
