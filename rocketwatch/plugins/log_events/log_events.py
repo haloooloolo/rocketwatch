@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import contextlib
 import hashlib
-import json
 import logging
 import warnings
 from collections.abc import Callable, Coroutine
@@ -11,7 +9,6 @@ from typing import Any, Literal, cast
 from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
-from discord.ui import Modal, TextInput
 from eth_typing import HexStr
 from eth_typing.evm import BlockNumber, ChecksumAddress
 from hexbytes import HexBytes
@@ -19,9 +16,16 @@ from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.contract.async_contract import AsyncContractEvent
 from web3.exceptions import BadFunctionCallOutput
 from web3.logs import DISCARD
-from web3.types import EventData, FilterParams, LogReceipt, TxReceipt, Wei
+from web3.types import EventData, FilterParams, LogReceipt, TxReceipt
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.chain_event import (
+    DUMMY_RECEIPT,
+    PreviewModal,
+    posted_name,
+    preview_fields,
+    send_preview,
+)
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.event import Event, EventPlugin
 from rocketwatch.utils.rocketpool import NoAddressFound, rp
@@ -37,24 +41,6 @@ from .event_definitions import (
 
 log = logging.getLogger("rocketwatch.log_events")
 
-_DUMMY_RECEIPT: TxReceipt = {
-    "blockHash": HexBytes(HASH_ZERO),
-    "blockNumber": BlockNumber(0),
-    "contractAddress": None,
-    "cumulativeGasUsed": 0,
-    "effectiveGasPrice": Wei(0),
-    "gasUsed": 0,
-    "from": ChecksumAddress(ADDRESS_ZERO),
-    "logs": [],
-    "logsBloom": HexBytes(b""),
-    "root": HexStr(""),
-    "status": 1,
-    "to": ChecksumAddress(ADDRESS_ZERO),
-    "transactionHash": HexBytes(HASH_ZERO),
-    "transactionIndex": 0,
-    "type": 0,
-}
-
 _DUMMY_EVENT: LogEventData = {
     "address": ChecksumAddress(ADDRESS_ZERO),
     "args": {},
@@ -67,78 +53,20 @@ _DUMMY_EVENT: LogEventData = {
 }
 
 
-def _get_event_fields(
-    event_cls: LogEvent,
-) -> list[tuple[str, bool]]:
-    """Return ``[(name, required), ...]`` for non-context fields of *event_cls*'s Args."""
-    args_type = type(event_cls).Args
-    if args_type is LogEventContext:
-        return []
-    context_keys = set(LogEventContext.__annotations__)
-    return [
-        (name, name in args_type.__required_keys__)
-        for name in args_type.__annotations__
-        if name not in context_keys
-    ]
-
-
-class _PreviewLogModal(Modal):
-    def __init__(
-        self,
-        event_cls: LogEvent,
-        block_number: int,
-        fields: list[tuple[str, bool]],
-    ) -> None:
-        super().__init__(title=event_cls.event_name[:45])
-        self.event_cls = event_cls
-        self.block_number = block_number
-        self.fields = fields
-        self.param_inputs: list[TextInput[_PreviewLogModal]] = []
-        for name, required in fields:
-            text_input: TextInput[_PreviewLogModal] = TextInput(
-                label=name[:45], required=required
-            )
-            self.add_item(text_input)
-            self.param_inputs.append(text_input)
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        await interaction.response.defer()
-        parsed_args: dict[str, Any] = {}
-        for text_input, (name, _) in zip(self.param_inputs, self.fields, strict=True):
-            if text_input.value:
-                val: Any = text_input.value
-                with contextlib.suppress(json.JSONDecodeError, ValueError):
-                    val = json.loads(val)
-                parsed_args[name] = val
-
-        args: dict[str, Any] = {
-            **parsed_args,
-            "transactionHash": HASH_ZERO,
-            "blockNumber": self.block_number,
-            "event_name": self.event_cls.event_name,
-        }
-        event_data: LogEventData = {**_DUMMY_EVENT, "blockNumber": self.block_number}
-        resolved = await self.event_cls.resolve(args, event_data)
-        if resolved is None:
-            await interaction.followup.send(content="Event filtered out.")
-            return
-        embeds = await resolved.build_embeds(args, event_data, _DUMMY_RECEIPT)
-        if embeds:
-            await interaction.followup.send(embeds=embeds)
-        else:
-            await interaction.followup.send(content="No events triggered.")
-
-
 PartialFilter = Callable[
     [BlockNumber, BlockNumber | Literal["latest"]],
     Coroutine[Any, Any, list[LogReceipt] | list[EventData]],
 ]
 
-# Upgrade event names that trigger contract re-init
-_UPGRADE_EVENTS: set[str] = {
-    "odao_contract_upgraded_event",
-    "odao_contract_added_event",
-}
+
+def _context(
+    handler: LogEvent, tx_hash: HexStr, block_number: BlockNumber
+) -> LogEventContext:
+    return {
+        "transactionHash": tx_hash,
+        "blockNumber": block_number,
+        "event_name": handler.event_name,
+    }
 
 
 class LogEvents(EventPlugin):
@@ -290,27 +218,20 @@ class LogEvents(EventPlugin):
             )
             return
 
-        fields = _get_event_fields(event_cls)
-        if fields:
-            modal = _PreviewLogModal(event_cls, block_number, fields)
-            await interaction.response.send_modal(modal)
+        block = BlockNumber(block_number)
+        context = _context(event_cls, HexStr(HASH_ZERO), block)
+        event_data: LogEventData = {**_DUMMY_EVENT, "blockNumber": block}
+
+        async def render(interaction: Interaction, args: dict[str, Any]) -> None:
+            await send_preview(interaction, event_cls, {**args, **context}, event_data)
+
+        if fields := preview_fields(event_cls, LogEventContext):
+            await interaction.response.send_modal(
+                PreviewModal(event_cls, fields, render)
+            )
         else:
             await interaction.response.defer()
-            args: dict[str, Any] = {
-                "transactionHash": HASH_ZERO,
-                "blockNumber": block_number,
-                "event_name": event_cls.event_name,
-            }
-            event_data: LogEventData = {**_DUMMY_EVENT, "blockNumber": block_number}
-            resolved = await event_cls.resolve(args, event_data)
-            if resolved is None:
-                await interaction.followup.send(content="Event filtered out.")
-                return
-            embeds = await resolved.build_embeds(args, event_data, _DUMMY_RECEIPT)
-            if embeds:
-                await interaction.followup.send(embeds=embeds)
-            else:
-                await interaction.followup.send(content="No events triggered.")
+            await render(interaction, {})
 
     @preview_log_event.autocomplete("contract")
     async def _autocomplete_contract(
@@ -496,30 +417,25 @@ class LogEvents(EventPlugin):
                 processed["args"] = dict(processed.get("args", {}))
                 hash_args(processed["args"])
 
-                # Global event enrichment (minipool/megapool validation, pubkey, sender)
-                if (
-                    event_cls.event_name not in _UPGRADE_EVENTS
-                    and event_cls.event_name != "sdao_upgrade_vetoed_event"
-                ):
-                    enriched = await self._enrich_global_event(processed)
-                    if not enriched:
-                        continue
+                # minipool/megapool validation, pubkey, sender
+                if not await self._enrich_global_event(processed):
+                    continue
             else:
                 log.debug("Skipping event %s", event)
                 continue
 
-            if event_cls.event_name in _UPGRADE_EVENTS and upgrade_block is None:
+            if event_cls.reloads_contracts and upgrade_block is None:
                 log.info("detected contract upgrade")
                 upgrade_block = BlockNumber(processed["blockNumber"])
 
-            # Build args dict for the event class
+            tx_hash_hex = (
+                processed["transactionHash"].hex()
+                if isinstance(processed["transactionHash"], (bytes, HexBytes))
+                else processed["transactionHash"]
+            )
             args: dict[str, Any] = {
                 **processed.get("args", {}),
-                "transactionHash": processed["transactionHash"].hex()
-                if isinstance(processed["transactionHash"], (bytes, HexBytes))
-                else processed["transactionHash"],
-                "blockNumber": processed["blockNumber"],
-                "event_name": event_cls.event_name,
+                **_context(event_cls, HexStr(tx_hash_hex), processed["blockNumber"]),
             }
 
             # Resolve dispatchers
@@ -527,11 +443,13 @@ class LogEvents(EventPlugin):
             resolved = await event_cls.resolve(args, event_data)
             if resolved is None:
                 continue
+            assert isinstance(resolved, LogEvent)
             event_cls = resolved
             event_name: str = event_cls.event_name
+            args["event_name"] = event_name
 
             # Get receipt for mainnet fee calculation
-            receipt: TxReceipt = _DUMMY_RECEIPT
+            receipt: TxReceipt = DUMMY_RECEIPT
             if cfg.rocketpool.chain == "mainnet":
                 tx_hash = processed["transactionHash"]
                 if isinstance(tx_hash, str):
@@ -546,8 +464,7 @@ class LogEvents(EventPlugin):
                 await self.bot.report_error(e)
                 continue
 
-            # Event name may have been mutated by build_embeds
-            event_name = args.get("event_name", event_name)
+            event_name = posted_name(event_cls, embeds)
 
             if not embeds:
                 continue
@@ -563,12 +480,6 @@ class LogEvents(EventPlugin):
             ]
             tx_log_index = processed.get("logIndex", 0) - min(
                 e.get("logIndex", 0) for e in identical_events
-            )
-
-            tx_hash_hex = (
-                processed["transactionHash"].hex()
-                if isinstance(processed["transactionHash"], (bytes, HexBytes))
-                else processed["transactionHash"]
             )
 
             for embed in embeds:

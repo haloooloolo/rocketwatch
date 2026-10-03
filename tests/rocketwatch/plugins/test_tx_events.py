@@ -3,18 +3,17 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from eth_typing import BlockNumber
 from hexbytes import HexBytes
 
 from rocketwatch.plugins.tx_events import event_definitions as defs
 from rocketwatch.plugins.tx_events import tx_events as txm
-from rocketwatch.plugins.tx_events.event_definitions import TRANSACTION_REGISTRY
-from rocketwatch.plugins.tx_events.tx_events import (
-    PreviewTxModal,
-    TxEvents,
-    _get_event_fields,
+from rocketwatch.plugins.tx_events.event_definitions import (
+    TRANSACTION_REGISTRY,
+    EventContext,
 )
+from rocketwatch.plugins.tx_events.tx_events import TxEvents
 from rocketwatch.utils import shared_w3
+from rocketwatch.utils.chain_event import PreviewModal, preview_fields
 from rocketwatch.utils.embeds import Embed
 from tests.lib.discord_harness import make_bot, make_interaction
 from tests.lib.explorer import stub_explorer_links
@@ -33,42 +32,11 @@ def _txn(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-class TestShouldProcess:
-    def test_skips_successful_node_deposit(self) -> None:
-        receipt = {"status": 1}
-        assert TxEvents._should_process("rocketNodeDeposit", receipt, _txn()) is False
-
-    def test_keeps_reverted_node_deposit(self) -> None:
-        receipt = {"status": 0}
-        assert TxEvents._should_process("rocketNodeDeposit", receipt, _txn()) is True
-
-    def test_skips_reverted_non_deposit(self) -> None:
-        receipt = {"status": 0}
-        assert TxEvents._should_process("rocketDAOProposal", receipt, _txn()) is False
-
-    def test_keeps_successful_non_deposit(self) -> None:
-        receipt = {"status": 1}
-        assert TxEvents._should_process("rocketDAOProposal", receipt, _txn()) is True
-
-
-class TestBuildEvent:
-    def test_merges_txn_args_and_block_metadata(self) -> None:
-        txn = _txn()
-        block = {"timestamp": 1_700_000_000}
-        event = TxEvents._build_event(txn, block, {"amount": 5}, "deposit")
-        assert event["args"]["amount"] == 5
-        assert event["args"]["timestamp"] == 1_700_000_000
-        assert event["args"]["function_name"] == "deposit"
-        # Original txn keys are preserved.
-        assert event["transactionIndex"] == 3
-
-
 class TestWrapEmbeds:
     def test_wraps_each_embed_into_event(self) -> None:
         txn = _txn()
-        event = {"blockNumber": 100, "transactionIndex": 3}
         embeds = [Embed(title="a"), Embed(title="b")]
-        responses = TxEvents._wrap_embeds(embeds, "my_event", txn, event, [])
+        responses = TxEvents._wrap_embeds(embeds, "my_event", txn, [])
         assert len(responses) == 2
         assert all(r.event_name == "my_event" for r in responses)
         assert all(r.block_number == 100 for r in responses)
@@ -77,35 +45,36 @@ class TestWrapEmbeds:
     def test_each_embed_is_stored_separately(self) -> None:
         # event_core keys stored events by unique_id; a shared id drops all
         # but the first embed (e.g. a claim from several treasury contracts)
-        event = {"blockNumber": 100, "transactionIndex": 3}
         embeds = [Embed(title="a"), Embed(title="b"), Embed(title="c")]
 
-        responses = TxEvents._wrap_embeds(embeds, "my_event", _txn(), event, [])
+        responses = TxEvents._wrap_embeds(embeds, "my_event", _txn(), [])
 
         assert len({r.unique_id for r in responses}) == 3
 
     def test_appends_child_responses(self) -> None:
         txn = _txn()
-        event = {"blockNumber": 100, "transactionIndex": 3}
-        child = TxEvents._wrap_embeds([Embed(title="child")], "child", txn, event, [])
-        responses = TxEvents._wrap_embeds(
-            [Embed(title="parent")], "parent", txn, event, child
-        )
+        child = TxEvents._wrap_embeds([Embed(title="child")], "child", txn, [])
+        responses = TxEvents._wrap_embeds([Embed(title="parent")], "parent", txn, child)
         # parent embed + appended child response.
         names = [r.event_name for r in responses]
         assert names == ["parent", "child"]
 
 
-class TestGetEventFields:
+class TestPreviewFields:
     def test_event_with_fields(self) -> None:
         ev = TRANSACTION_REGISTRY["rocketDAONodeTrusted"]["bootstrapMember"]
-        fields = _get_event_fields(ev)
+        fields = preview_fields(ev, EventContext)
         names = [n for n, _ in fields]
         assert "nodeAddress" in names
 
     def test_event_without_fields(self) -> None:
+        ev = TRANSACTION_REGISTRY["rocketUpgradeOneDotFour"]["execute"]
+        assert preview_fields(ev, EventContext) == []
+
+    def test_shared_dao_execute_asks_for_the_proposal(self) -> None:
+        # needed to resolve which DAO's execute event it is
         ev = TRANSACTION_REGISTRY["rocketDAOProposal"]["execute"]
-        assert _get_event_fields(ev) == []
+        assert preview_fields(ev, EventContext) == [("proposalID", True)]
 
 
 class TestParseTransactionConfig:
@@ -236,6 +205,7 @@ ODAO = addr("0x" + "a2" * 20)
 PROPOSAL = addr("0x" + "a3" * 20)
 PDAO_PROPOSAL = addr("0x" + "a4" * 20)
 UPGRADE = addr("0x" + "a5" * 20)
+NODE_DEPOSIT = addr("0x" + "a6" * 20)
 SENDER = addr("0x" + "11" * 20)
 
 
@@ -256,6 +226,7 @@ class Chain:
             ("rocketDAOProposal", PROPOSAL),
             ("rocketDAOProtocolProposal", PDAO_PROPOSAL),
             ("rocketUpgradeOneDotFour", UPGRADE),
+            ("rocketNodeDeposit", NODE_DEPOSIT),
         ]:
             scripted_rp.set_address(name, address)
 
@@ -272,7 +243,11 @@ class Chain:
         )
 
     def _receipt(self, tx_hash: HexBytes) -> dict[str, Any]:
-        return {"status": self.statuses.get(bytes(tx_hash), 1), "from": SENDER}
+        return {
+            "status": self.statuses.get(bytes(tx_hash), 1),
+            "from": SENDER,
+            "gasUsed": 21_000,
+        }
 
     def _transaction(self, tx_hash: str) -> dict[str, Any]:
         for block in self.blocks.values():
@@ -392,6 +367,36 @@ class TestProcessRegisteredTransaction:
         self, cog: TxEvents, chain: Chain
     ) -> None:
         txn = chain.tx(PDAO, "vote(uint256,uint8)", {"_proposalID": 1, "_vote": 1})
+
+        assert await _process(cog, chain, txn) == []
+
+
+class TestFailedDeposits:
+    DEPOSIT = "deposit(uint256,uint256,bytes,bytes,bytes32,uint256,address)"
+
+    async def test_reverted_deposit_is_reported(
+        self,
+        cog: TxEvents,
+        chain: Chain,
+        scripted_rp: ScriptedRocketPool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            scripted_rp,
+            "get_revert_reason",
+            AsyncMock(return_value="Invalid amount"),
+            raising=False,
+        )
+        txn = chain.tx(NODE_DEPOSIT, self.DEPOSIT, {}, status=0)
+
+        [event] = await _process(cog, chain, txn)
+
+        assert event.event_name == "minipool_failed_deposit"
+
+    async def test_successful_deposit_is_not_reported(
+        self, cog: TxEvents, chain: Chain
+    ) -> None:
+        txn = chain.tx(NODE_DEPOSIT, self.DEPOSIT, {})
 
         assert await _process(cog, chain, txn) == []
 
@@ -556,16 +561,16 @@ class TestPreview:
         [embed] = interaction.followup.send.call_args.kwargs["embeds"]
         assert embed.title == ":ringed_planet: Saturn 1 Upgrade Complete!"
 
-    async def test_modal_parses_json_values(self, chain: Chain) -> None:
-        event = TRANSACTION_REGISTRY["rocketDAOProtocolProposals"][
-            "proposalSettingBool"
-        ]
-        modal = PreviewTxModal(
-            event,
-            "proposalSettingBool",
-            BlockNumber(100),
-            _get_event_fields(event),
+    async def test_modal_parses_json_values(self, cog: TxEvents, chain: Chain) -> None:
+        interaction = make_interaction()
+        interaction.response.send_modal = AsyncMock()
+        await cog.preview_tx_event.callback(
+            cog,
+            interaction,
+            contract="rocketDAOProtocolProposals",
+            function="proposalSettingBool",
         )
+        modal: PreviewModal = interaction.response.send_modal.call_args.args[0]
         values = {
             "settingContractName": "",
             "settingPath": "node.smoothing.pool.enabled",
@@ -575,7 +580,6 @@ class TestPreview:
             SimpleNamespace(value=values[name])  # type: ignore[misc]
             for name, _ in modal.fields
         ]
-        interaction = make_interaction()
 
         await modal.on_submit(interaction)
 

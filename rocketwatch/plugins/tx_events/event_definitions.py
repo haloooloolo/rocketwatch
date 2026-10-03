@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import datetime
-from abc import ABC, abstractmethod
-from collections.abc import Mapping
 from typing import Any, ClassVar, TypedDict
 
 import humanize
@@ -10,6 +8,7 @@ from eth_typing import BlockNumber, HexStr
 from web3.types import TxData, TxReceipt
 
 from rocketwatch.utils import solidity
+from rocketwatch.utils.chain_event import ChainEvent
 from rocketwatch.utils.dao import (
     build_claimer_description,
     decode_setting_multi,
@@ -27,7 +26,6 @@ from rocketwatch.utils.type_markers import (
     NodeAddress,
     WalletAddress,
     Wei,
-    auto_format,
 )
 
 # ---------------------------------------------------------------------------
@@ -56,33 +54,16 @@ class TxEventData(TxData, total=False):
 # ---------------------------------------------------------------------------
 
 
-class TransactionEvent(ABC):
-    """Base class for transaction event types.
+class TransactionEvent(ChainEvent[TxEventData]):
+    """Base class for transaction event types, keyed by contract function."""
 
-    Each subclass builds its own Discord embed(s) explicitly — no template
-    lookup, no auto-transformation.  Return ``[]`` from ``build_embeds`` to
-    filter the event out entirely.
-
-    Subclasses should define a nested ``Args`` TypedDict to declare the
-    expected fields and their formatting markers.
-    """
-
-    event_name: str
+    # reported only when the transaction reverted (instead of only on success)
+    reverted_only: ClassVar[bool] = False
+    # the transaction executes a DAO proposal whose payload is reported too
+    executes_payload: ClassVar[bool] = False
 
     class Args(EventContext):
         """Default args type — override in subclasses."""
-
-    async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        """Auto-format *args* using this class's nested ``Args`` TypedDict."""
-        return dict(await auto_format(args, type(self).Args))
-
-    @abstractmethod
-    async def build_embeds(
-        self,
-        args: Any,
-        event: TxEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]: ...
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +225,8 @@ class SettingEvent(TransactionEvent):
 
 
 class ProposalExecuteEvent(TransactionEvent):
+    executes_payload = True
+
     class Args(EventContext):
         proposalID: int
         executor: WalletAddress
@@ -271,22 +254,24 @@ class ProposalExecuteEvent(TransactionEvent):
 
 
 class DAOProposalExecuteEvent(TransactionEvent):
-    """Placeholder for ``rocketDAOProposal.execute``.
-
-    The DAO prefix (odao/sdao) is resolved by ``process_transaction`` which
-    swaps this for the appropriate ``ProposalExecuteEvent`` instance.
-    ``build_embeds`` should never be called directly.
-    """
+    """``rocketDAOProposal.execute``, shared by the oDAO and security council:
+    resolves to the proposing DAO's execute event."""
 
     event_name = "dao_proposal_execute"
+
+    class Args(EventContext):
+        proposalID: int
+
+    async def resolve(
+        self, args: dict[str, Any], event: TxEventData
+    ) -> TransactionEvent:
+        dao_name: str = await rp.call("rocketDAOProposal.getDAO", args["proposalID"])
+        return DAO_PROPOSAL_EVENTS[dao_name]
 
     async def build_embeds(
         self, args: Any, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
-        raise RuntimeError(
-            "DAOProposalExecuteEvent.build_embeds should not be called directly; "
-            "process_transaction must resolve the DAO prefix first."
-        )
+        raise RuntimeError("Must be resolved first")
 
 
 # ---------------------------------------------------------------------------
@@ -627,6 +612,7 @@ class SDAOMemberReplaceEvent(TransactionEvent):
 
 class FailedDepositEvent(TransactionEvent):
     event_name = "minipool_failed_deposit"
+    reverted_only = True
 
     async def build_embeds(
         self, args: Any, event: TxEventData, receipt: TxReceipt
@@ -660,6 +646,8 @@ class FailedDepositEvent(TransactionEvent):
 
 
 class UpgradeTriggeredEvent(TransactionEvent):
+    reloads_contracts = True
+
     def __init__(self, event_name: str, title: str, image_url: str) -> None:
         self.event_name = event_name
         self._title = title

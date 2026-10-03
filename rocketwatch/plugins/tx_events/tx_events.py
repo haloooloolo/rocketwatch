@@ -1,22 +1,26 @@
 from __future__ import annotations
 
-import contextlib
-import json
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 import web3.exceptions
 from discord import Interaction
 from discord.app_commands import Choice, command, guilds
 from discord.ext.commands import is_owner
-from discord.ui import Modal, TextInput
 from eth_typing import BlockIdentifier, BlockNumber, ChecksumAddress, HexStr
 from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.types import BlockData, Nonce, TxData, TxReceipt, Wei
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.chain_event import (
+    PreviewModal,
+    posted_name,
+    preview_fields,
+    send_preview,
+)
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.dao import DefaultDAO, ProtocolDAO
 from rocketwatch.utils.embeds import Embed
@@ -25,35 +29,13 @@ from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
 
 from .event_definitions import (
-    DAO_PROPOSAL_EVENTS,
     TRANSACTION_REGISTRY,
-    DAOProposalExecuteEvent,
     EventContext,
-    ProposalExecuteEvent,
     TransactionEvent,
     TxEventData,
-    UpgradeTriggeredEvent,
 )
 
 log = logging.getLogger("rocketwatch.tx_events")
-
-_DUMMY_RECEIPT: TxReceipt = {
-    "blockHash": HexBytes(HASH_ZERO),
-    "blockNumber": BlockNumber(0),
-    "contractAddress": None,
-    "cumulativeGasUsed": 0,
-    "effectiveGasPrice": Wei(0),
-    "gasUsed": 0,
-    "from": ChecksumAddress(ADDRESS_ZERO),
-    "logs": [],
-    "logsBloom": HexBytes(b""),
-    "root": HexStr(""),
-    "status": 1,
-    "to": ChecksumAddress(ADDRESS_ZERO),
-    "transactionHash": HexBytes(HASH_ZERO),
-    "transactionIndex": 0,
-    "type": 0,
-}
 
 _DUMMY_EVENT: TxEventData = {
     "blockHash": HexBytes(HASH_ZERO),
@@ -70,65 +52,20 @@ _DUMMY_EVENT: TxEventData = {
 }
 
 
-def _get_event_fields(
-    event_cls: TransactionEvent,
-) -> list[tuple[str, bool]]:
-    """Return ``[(name, required), ...]`` for non-context fields of *event_cls*'s Args."""
-    args_type = type(event_cls).Args
-    if args_type is EventContext:
-        return []
-    context_keys = set(EventContext.__annotations__)
-    return [
-        (name, name in args_type.__required_keys__)
-        for name in args_type.__annotations__
-        if name not in context_keys
-    ]
-
-
-class PreviewTxModal(Modal):
-    def __init__(
-        self,
-        event_cls: TransactionEvent,
-        function: str,
-        block_number: BlockNumber,
-        fields: list[tuple[str, bool]],
-    ) -> None:
-        super().__init__(title=event_cls.event_name[:45])
-        self.event_cls = event_cls
-        self.function = function
-        self.block_number = block_number
-        self.fields = fields
-        self.param_inputs: list[TextInput[PreviewTxModal]] = []
-        for name, required in fields:
-            text_input: TextInput[PreviewTxModal] = TextInput(
-                label=name[:45], required=required
-            )
-            self.add_item(text_input)
-            self.param_inputs.append(text_input)
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        await interaction.response.defer()
-        parsed_args: dict[str, Any] = {}
-        for text_input, (name, _) in zip(self.param_inputs, self.fields, strict=True):
-            if text_input.value:
-                val: Any = text_input.value
-                with contextlib.suppress(json.JSONDecodeError, ValueError):
-                    val = json.loads(val)
-                parsed_args[name] = val
-
-        event_data: TxEventData = {**_DUMMY_EVENT, "blockNumber": self.block_number}
-        args: dict[str, Any] = {
-            **parsed_args,
-            "function_name": self.function,
-            "event_name": self.event_cls.event_name,
-            "transactionHash": HASH_ZERO,
-            "blockNumber": self.block_number,
-        }
-        embeds = await self.event_cls.build_embeds(args, event_data, _DUMMY_RECEIPT)
-        if embeds:
-            await interaction.followup.send(embeds=embeds)
-        else:
-            await interaction.followup.send(content="No events triggered.")
+def _context(
+    handler: TransactionEvent,
+    function_name: str,
+    tx_hash: HexStr,
+    block_number: BlockNumber,
+    timestamp: int,
+) -> EventContext:
+    return {
+        "transactionHash": tx_hash,
+        "blockNumber": block_number,
+        "event_name": handler.event_name,
+        "function_name": function_name,
+        "timestamp": timestamp,
+    }
 
 
 class TxEvents(EventPlugin):
@@ -169,26 +106,20 @@ class TxEvents(EventPlugin):
             )
             return
 
-        block_number = BlockNumber(block_number)
-        fields = _get_event_fields(event_cls)
-        if fields:
-            modal = PreviewTxModal(event_cls, function, block_number, fields)
-            await interaction.response.send_modal(modal)
+        block = BlockNumber(block_number)
+        context = _context(event_cls, function, HexStr(HASH_ZERO), block, 0)
+        event: TxEventData = {**_DUMMY_EVENT, "blockNumber": block}
+
+        async def render(interaction: Interaction, args: dict[str, Any]) -> None:
+            await send_preview(interaction, event_cls, {**args, **context}, event)
+
+        if fields := preview_fields(event_cls, EventContext):
+            await interaction.response.send_modal(
+                PreviewModal(event_cls, fields, render)
+            )
         else:
             await interaction.response.defer()
-            event_data: TxEventData = {**_DUMMY_EVENT, "blockNumber": block_number}
-            args: EventContext = {
-                "function_name": function,
-                "event_name": event_cls.event_name,
-                "transactionHash": HASH_ZERO,
-                "blockNumber": block_number,
-                "timestamp": 0,
-            }
-            embeds = await event_cls.build_embeds(args, event_data, _DUMMY_RECEIPT)
-            if embeds:
-                await interaction.followup.send(embeds=embeds)
-            else:
-                await interaction.followup.send(content="No events triggered.")
+            await render(interaction, {})
 
     @preview_tx_event.autocomplete("contract")
     async def _autocomplete_contract(
@@ -303,54 +234,59 @@ class TxEvents(EventPlugin):
         contract_name = rp.get_name_by_address(contract_address)
         if contract_name is None:
             return []
-        receipt: TxReceipt = await w3.eth.get_transaction_receipt(txn["hash"])
 
-        if not self._should_process(contract_name, receipt, txn):
-            return []
-
-        decoded = await self._decode_function(contract_address, fn_input, txn)
+        decoded = await self._decode_function(
+            contract_name, contract_address, fn_input, txn
+        )
         if decoded is None:
             return []
-        event_cls, function_name, decoded_args = decoded
+        handler, function_name, decoded_args = decoded
 
-        event: TxEventData = self._build_event(txn, block, decoded_args, function_name)
+        receipt: TxReceipt = await w3.eth.get_transaction_receipt(txn["hash"])
+        if bool(receipt["status"]) == handler.reverted_only:
+            log.info(
+                "Skipping %s transaction %s",
+                "successful" if receipt["status"] else "reverted",
+                txn["hash"].hex(),
+            )
+            return []
+
+        event = cast(TxEventData, {**txn, "args": decoded_args})
+        args: dict[str, Any] = {
+            **decoded_args,
+            **_context(
+                handler,
+                function_name,
+                HexStr(txn["hash"].to_0x_hex()),
+                BlockNumber(txn["blockNumber"]),
+                block["timestamp"],
+            ),
+        }
+        resolved = await handler.resolve(args, event)
+        if resolved is None:
+            return []
+        assert isinstance(resolved, TransactionEvent)
+        args["event_name"] = resolved.event_name
 
         payload_events: list[Event] = []
-        if isinstance(event_cls, ProposalExecuteEvent):
-            payload_events = await self._handle_dao_proposal(
-                event_cls, event, block, txn
+        if resolved.executes_payload:
+            payload_events = await self._process_proposal_payload(
+                resolved, args, block, txn
             )
 
-        args: dict[str, Any] = {
-            **event["args"],
-            "event_name": event_cls.event_name,
-            "transactionHash": event["hash"].to_0x_hex(),
-            "blockNumber": event["blockNumber"],
-        }
-
-        embeds = await event_cls.build_embeds(args, event, receipt)
-
+        embeds = await resolved.build_embeds(args, event, receipt)
         responses = self._wrap_embeds(
-            embeds, event_cls.event_name, txn, event, payload_events
+            embeds, posted_name(resolved, embeds), txn, payload_events
         )
 
-        if isinstance(event_cls, UpgradeTriggeredEvent):
-            await self._handle_upgrade(event["blockNumber"])
+        if resolved.reloads_contracts:
+            await self._handle_upgrade(txn["blockNumber"])
 
         return responses
 
-    @staticmethod
-    def _should_process(contract_name: str, receipt: TxReceipt, txn: TxData) -> bool:
-        if contract_name == "rocketNodeDeposit" and receipt["status"]:
-            log.info("Skipping successful node deposit %s", txn["hash"].hex())
-            return False
-        if contract_name != "rocketNodeDeposit" and not receipt["status"]:
-            log.info("Skipping reverted transaction %s", txn["hash"].hex())
-            return False
-        return True
-
     async def _decode_function(
         self,
+        contract_name: str,
         contract_address: ChecksumAddress,
         fn_input: HexBytes,
         txn: TxData,
@@ -358,61 +294,32 @@ class TxEvents(EventPlugin):
         try:
             contract = await rp.get_contract_by_address(contract_address)
             assert contract is not None
-            decoded = contract.decode_function_input(fn_input)
+            function, raw_args = contract.decode_function_input(fn_input)
         except ValueError:
             log.error(
                 "Skipping transaction %s as it has invalid input", txn["hash"].hex()
             )
             return None
-        log.debug(decoded)
 
-        function: str = decoded[0].abi_element_identifier
-        function_name: str = function.split("(")[0]
-        contract_name = rp.get_name_by_address(contract_address)
-        if contract_name is None:
+        function_name: str = function.abi_element_identifier.split("(")[0]
+        handler = TRANSACTION_REGISTRY.get(contract_name, {}).get(function_name)
+        if handler is None:
             return None
 
-        event_cls = TRANSACTION_REGISTRY.get(contract_name, {}).get(function_name)
-        if event_cls is None:
-            return None
+        decoded_args = {arg.lstrip("_"): value for arg, value in raw_args.items()}
+        return handler, function_name, decoded_args
 
-        decoded_args: dict[str, Any] = {
-            arg.lstrip("_"): value for arg, value in decoded[1].items()
-        }
-
-        # Resolve DAO proposal prefix: swap DAOProposalExecuteEvent for the
-        # appropriate odao/sdao ProposalExecuteEvent
-        if isinstance(event_cls, DAOProposalExecuteEvent):
-            dao_name: str = await rp.call(
-                "rocketDAOProposal.getDAO", decoded_args["proposalID"]
-            )
-            event_cls = DAO_PROPOSAL_EVENTS[dao_name]
-
-        return event_cls, function_name, decoded_args
-
-    @staticmethod
-    def _build_event(
-        txn: TxData,
-        block: BlockData,
-        decoded_args: dict[str, Any],
-        function_name: str,
-    ) -> TxEventData:
-        event = cast(TxEventData, {**txn})
-        event["args"] = decoded_args
-        event["args"]["timestamp"] = block["timestamp"]
-        event["args"]["function_name"] = function_name
-        return event
-
-    async def _handle_dao_proposal(
+    async def _process_proposal_payload(
         self,
-        event_cls: ProposalExecuteEvent,
-        event: TxEventData,
+        handler: TransactionEvent,
+        args: dict[str, Any],
         block: BlockData,
         txn: TxData,
     ) -> list[Event]:
-        proposal_id: int = event["args"]["proposalID"]
+        """Add the proposal's details to *args* and process the call it executed."""
+        proposal_id: int = args["proposalID"]
         dao: ProtocolDAO | DefaultDAO
-        if "pdao" in event_cls.event_name:
+        if "pdao" in handler.event_name:
             dao = ProtocolDAO()
             payload: HexBytes = await rp.call(
                 "rocketDAOProtocolProposal.getPayload", proposal_id
@@ -421,37 +328,38 @@ class TxEvents(EventPlugin):
             dao = DefaultDAO(await rp.call("rocketDAOProposal.getDAO", proposal_id))
             payload = await rp.call("rocketDAOProposal.getPayload", proposal_id)
 
-        event["args"]["executor"] = event["from"]
+        args["executor"] = txn["from"]
         proposal = await dao.fetch_proposal(proposal_id)
-        event["args"]["proposal_body"] = await dao.build_proposal_body(
+        args["proposal_body"] = await dao.build_proposal_body(
             proposal, include_proposer=False
         )
 
         dao_contract = await dao._get_contract()
-        dao_address: ChecksumAddress = dao_contract.address
-        return await self.process_transaction(block, txn, dao_address, payload)
+        return await self.process_transaction(block, txn, dao_contract.address, payload)
 
     @staticmethod
     def _wrap_embeds(
         embeds: list[Embed],
         event_name: str,
         txn: TxData,
-        event: TxEventData,
-        child_responses: list[Event],
+        payload_events: list[Event],
     ) -> list[Event]:
-        responses: list[Event] = []
-        for embed in embeds:
-            response = Event(
+        events = [
+            Event(
                 topic="transactions",
                 embed=embed,
                 event_name=event_name,
-                unique_id=f"{txn['hash'].hex()}:{event_name}:{len(responses)}",
-                block_number=event["blockNumber"],
-                transaction_index=event["transactionIndex"],
-                event_index=(999 - len(child_responses) - len(embeds) + len(responses)),
+                unique_id=f"{txn['hash'].hex()}:{event_name}:{i}",
+                block_number=txn["blockNumber"],
+                transaction_index=txn["transactionIndex"],
             )
-            responses.append(response)
-        return responses + child_responses
+            for i, embed in enumerate(embeds)
+        ] + payload_events
+        # after the transaction's log events, which are indexed by log index;
+        # a proposal comes before the payload it executed
+        return [
+            replace(e, event_index=999 - len(events) + i) for i, e in enumerate(events)
+        ]
 
     async def _handle_upgrade(self, block_number: int) -> None:
         log.info("Detected contract upgrade at block %s, reinitializing", block_number)

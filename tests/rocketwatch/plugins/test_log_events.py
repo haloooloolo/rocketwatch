@@ -41,6 +41,7 @@ STAKING, DEPOSIT_POOL, RETH, UPGRADE, MEGAPOOL_DELEGATE = (
     _addr(0xA4),
     _addr(0xA5),
 )
+MINIPOOL_DELEGATE = _addr(0xA6)
 NEW_STAKING = _addr(0xB1)
 NODE, MINIPOOL, MEGAPOOL, STRANGER = _addr(0x11), _addr(0x12), _addr(0x13), _addr(0x99)
 
@@ -102,6 +103,13 @@ ABIS: dict[str, list[dict[str, Any]]] = {
             ("time", "uint256", False),
         ),
     ],
+    "rocketMinipoolDelegate": [
+        _event(
+            "StatusUpdated",
+            ("status", "uint8", True),
+            ("time", "uint256", False),
+        ),
+    ],
     "rocketMegapoolDelegate": [
         _event(
             "MegapoolValidatorExiting",
@@ -129,6 +137,7 @@ class Chain:
             ("rocketTokenRETH", RETH),
             ("rocketDAONodeTrustedUpgrade", UPGRADE),
             ("rocketMegapoolDelegate", MEGAPOOL_DELEGATE),
+            ("rocketMinipoolDelegate", MINIPOOL_DELEGATE),
         ]:
             self.deploy(name, address)
 
@@ -136,7 +145,9 @@ class Chain:
         scripted_rp.set_call("rocketMinipool.getNodeAddress", NODE)
         scripted_rp.set_call("rocketMegapoolDelegate.getNodeAddress", NODE)
         scripted_rp.set_call("rocketMinipoolManager.getMinipoolPubkey", b"")
+        scripted_rp.set_call("rocketMinipoolDelegate.getNodeAddress", NODE)
         scripted_rp.mark_megapool(MEGAPOOL)
+        scripted_rp.mark_minipool(MINIPOOL)
         for name, method in [
             ("get_contract_by_name", self._contract_by_name),
             ("get_contract_by_address", self._contract_by_address),
@@ -421,6 +432,34 @@ class TestGlobalEvents:
             tx=chain.tx(to=STRANGER),
             address=STRANGER,
         )
+
+        assert await _scan(cog) == []
+
+    @staticmethod
+    def _status_update(chain: Chain, status: int) -> None:
+        chain.emit(
+            "rocketMinipoolDelegate",
+            "StatusUpdated",
+            {"status": status, "time": 0},
+            block=5,
+            tx=chain.tx(to=MINIPOOL),
+            address=MINIPOOL,
+        )
+
+    async def test_dissolve_status_is_posted_as_a_dissolve(
+        self, cog: LogEvents, chain: Chain
+    ) -> None:
+        self._status_update(chain, 4)
+
+        [event] = await _scan(cog)
+
+        assert event.event_name == "minipool_dissolve_event"
+        assert event.embed.title == ":rotating_light: Minipool Dissolved"
+
+    async def test_other_status_changes_are_not_posted(
+        self, cog: LogEvents, chain: Chain
+    ) -> None:
+        self._status_update(chain, 2)
 
         assert await _scan(cog) == []
 

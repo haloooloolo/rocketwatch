@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import warnings
-from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from typing import Any, ClassVar, TypedDict
 
@@ -14,6 +13,7 @@ from web3.types import EventData, TxReceipt
 
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import block_to_ts
+from rocketwatch.utils.chain_event import ChainEvent, NamedEmbeds
 from rocketwatch.utils.dao import (
     DefaultDAO,
     ProtocolDAO,
@@ -41,7 +41,6 @@ from rocketwatch.utils.type_markers import (
     WalletAddress,
     Wei,
     _addr,
-    auto_format,
 )
 
 log = logging.getLogger("rocketwatch.events")
@@ -147,45 +146,14 @@ class MegapoolFromCallerContext(_FromCallerField, MegapoolEventContext):
 # ---------------------------------------------------------------------------
 
 
-class LogEvent(ABC):
-    """Base class for log event types.
+class LogEvent(ChainEvent[LogEventData]):
+    """Base class for log event types, keyed by contract event."""
 
-    Each subclass builds its own Discord embed(s) explicitly — no template
-    lookup, no auto-transformation.  Return ``[]`` from ``build_embeds`` to
-    filter the event out entirely.
-
-    Subclasses should define a nested ``Args`` TypedDict to declare the
-    expected fields and their formatting markers.
-    """
-
-    event_name: str
+    # emitted by any contract (e.g. every minipool); matched by topic only
     is_global: ClassVar[bool] = False
 
     class Args(LogEventContext):
         """Default args type — override in subclasses."""
-
-    async def resolve(
-        self,
-        args: dict[str, Any],
-        event: LogEventData,
-    ) -> LogEvent | None:
-        """Override to dispatch to a different event class.
-
-        Return ``None`` to filter out the event entirely.
-        """
-        return self
-
-    async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        """Auto-format *args* using this class's nested ``Args`` TypedDict."""
-        return dict(await auto_format(args, type(self).Args))
-
-    @abstractmethod
-    async def build_embeds(
-        self,
-        args: Any,
-        event: LogEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]: ...
 
 
 # ===================================================================
@@ -575,14 +543,16 @@ class PoolDepositAssignedEvent(LogEvent):
 
         if count == 1:
             minipool_link = await _addr(args["minipool"])
-            args["event_name"] = "pool_deposit_assigned_single_event"
-            return [
-                await build_small_event_embed(
-                    f":handshake: Minipool {minipool_link} owned by operator "
-                    f"{node_link} has been matched and left the queue!",
-                    args["transactionHash"],
-                )
-            ]
+            return NamedEmbeds(
+                "pool_deposit_assigned_single_event",
+                [
+                    await build_small_event_embed(
+                        f":handshake: Minipool {minipool_link} owned by operator "
+                        f"{node_link} has been matched and left the queue!",
+                        args["transactionHash"],
+                    )
+                ],
+            )
 
         return [
             await build_small_event_embed(
@@ -797,14 +767,16 @@ class ValidatorMultiDepositEvent(LogEvent):
         amount_s = format_value(fmt["totalBond"])
 
         if num == 1:
-            args["event_name"] = "validator_deposit_event"
-            return [
-                await build_small_event_embed(
-                    f":construction_site: {fmt['from']} created a validator "
-                    f"with a **{amount_s} ETH** bond!",
-                    args["transactionHash"],
-                )
-            ]
+            return NamedEmbeds(
+                "validator_deposit_event",
+                [
+                    await build_small_event_embed(
+                        f":construction_site: {fmt['from']} created a validator "
+                        f"with a **{amount_s} ETH** bond!",
+                        args["transactionHash"],
+                    )
+                ],
+            )
 
         if num >= 5:
             return [
@@ -1715,7 +1687,6 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
         fmt = await self._fmt(args)
         challenged = fmt["nodeChallengedAddress"]
         if args["success"]:
-            args["event_name"] = "odao_member_challenge_accepted_event"
             rpl_bond = format_value(
                 solidity.to_float(
                     await rp.call(
@@ -1725,36 +1696,41 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
                     )
                 )
             )
-            return [
-                await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
-                    sender=args["nodeChallengeDeciderAddress"],
-                    caller=None,
-                    title=":warning: oDAO Member Challenge Passed",
-                    description=(
-                        f"{challenged} has been successfully challenged!\n"
-                        f"Their bond of {rpl_bond} RPL has been burned "
-                        f"and they have been kicked out of the oDAO!"
-                    ),
-                )
-            ]
+            return NamedEmbeds(
+                "odao_member_challenge_accepted_event",
+                [
+                    await build_rich_event_embed(
+                        tx_hash=args["transactionHash"],
+                        block_number=args["blockNumber"],
+                        receipt=receipt,
+                        sender=args["nodeChallengeDeciderAddress"],
+                        caller=None,
+                        title=":warning: oDAO Member Challenge Passed",
+                        description=(
+                            f"{challenged} has been successfully challenged!\n"
+                            f"Their bond of {rpl_bond} RPL has been burned "
+                            f"and they have been kicked out of the oDAO!"
+                        ),
+                    )
+                ],
+            )
         else:
-            args["event_name"] = "odao_member_challenge_rejected_event"
-            return [
-                await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
-                    sender=None,
-                    caller=None,
-                    title=":no_entry_sign: oDAO Member Challenge Rejected",
-                    description=(
-                        f"{challenged} has responded to the challenge, making it invalid!"
-                    ),
-                )
-            ]
+            return NamedEmbeds(
+                "odao_member_challenge_rejected_event",
+                [
+                    await build_rich_event_embed(
+                        tx_hash=args["transactionHash"],
+                        block_number=args["blockNumber"],
+                        receipt=receipt,
+                        sender=None,
+                        caller=None,
+                        title=":no_entry_sign: oDAO Member Challenge Rejected",
+                        description=(
+                            f"{challenged} has responded to the challenge, making it invalid!"
+                        ),
+                    )
+                ],
+            )
 
 
 class SDAOMemberJoinEvent(LogEvent):
@@ -1959,23 +1935,27 @@ class NodeSmoothingPoolStateChangedEvent(LogEvent):
 
         fmt = await self._fmt(args)
         if args["state"]:
-            args["event_name"] = "node_smoothing_pool_joined"
-            return [
-                await build_small_event_embed(
-                    f":cup_with_straw: {fmt['node']} joined the smoothing pool "
-                    f"with their {validator_count} validators!",
-                    args["transactionHash"],
-                )
-            ]
+            return NamedEmbeds(
+                "node_smoothing_pool_joined",
+                [
+                    await build_small_event_embed(
+                        f":cup_with_straw: {fmt['node']} joined the smoothing pool "
+                        f"with their {validator_count} validators!",
+                        args["transactionHash"],
+                    )
+                ],
+            )
         else:
-            args["event_name"] = "node_smoothing_pool_left"
-            return [
-                await build_small_event_embed(
-                    f":cup_with_straw: {fmt['node']} has left the smoothing pool "
-                    f"with their {validator_count} validators!",
-                    args["transactionHash"],
-                )
-            ]
+            return NamedEmbeds(
+                "node_smoothing_pool_left",
+                [
+                    await build_small_event_embed(
+                        f":cup_with_straw: {fmt['node']} has left the smoothing pool "
+                        f"with their {validator_count} validators!",
+                        args["transactionHash"],
+                    )
+                ],
+            )
 
 
 # ===================================================================
@@ -2001,7 +1981,6 @@ class MinipoolScrubEvent(LogEvent):
         is_vacant = await rp.call("rocketMinipoolDelegate.getVacant", address=minipool)
 
         if is_vacant:
-            args["event_name"] = "vacant_minipool_scrub_event"
             pubkey_hex = (
                 await rp.call("rocketMinipoolManager.getMinipoolPubkey", minipool)
             ).hex()
@@ -2071,6 +2050,8 @@ class MinipoolScrubEvent(LogEvent):
             )
 
         embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
+        if is_vacant:
+            return NamedEmbeds("vacant_minipool_scrub_event", [embed])
         return [embed]
 
 
@@ -2092,14 +2073,16 @@ class MinipoolScrubVoteEvent(LogEvent):
         minipool_link = await _addr(minipool)
         is_vacant = await rp.call("rocketMinipoolDelegate.getVacant", address=minipool)
         if is_vacant:
-            args["event_name"] = "vacant_minipool_scrub_vote_event"
-            return [
-                await build_small_event_embed(
-                    f":warning: {fmt['member']} has voted to scrub "
-                    f"vacant minipool {minipool_link}!",
-                    args["transactionHash"],
-                )
-            ]
+            return NamedEmbeds(
+                "vacant_minipool_scrub_vote_event",
+                [
+                    await build_small_event_embed(
+                        f":warning: {fmt['member']} has voted to scrub "
+                        f"vacant minipool {minipool_link}!",
+                        args["transactionHash"],
+                    )
+                ],
+            )
         return [
             await build_small_event_embed(
                 f":warning: {fmt['member']} has voted to scrub "
@@ -2238,8 +2221,7 @@ class MinipoolDepositReceivedEvent(LogEvent):
                 ),
             )
 
-        args["event_name"] = event_name
-        return [embed]
+        return NamedEmbeds(event_name, [embed])
 
 
 class MinipoolVacancyPreparedEvent(LogEvent):
@@ -2671,18 +2653,20 @@ class ODAOUpgradePendingEvent(LogEvent):
         )
 
         if contract_address == ADDRESS_ZERO:
-            args["event_name"] = "upgrade_pending_abi_event"
-            return [
-                await build_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    title=":hourglass: Contract Upgrade Pending",
-                    description=(
-                        f"The upgrade process for `{contract_name}` has been initiated.\n"
-                        f"Veto window ends <t:{veto_deadline}:f> (<t:{veto_deadline}:R>)."
-                    ),
-                )
-            ]
+            return NamedEmbeds(
+                "upgrade_pending_abi_event",
+                [
+                    await build_event_embed(
+                        tx_hash=args["transactionHash"],
+                        block_number=args["blockNumber"],
+                        title=":hourglass: Contract Upgrade Pending",
+                        description=(
+                            f"The upgrade process for `{contract_name}` has been initiated.\n"
+                            f"Veto window ends <t:{veto_deadline}:f> (<t:{veto_deadline}:R>)."
+                        ),
+                    )
+                ],
+            )
         else:
             addr_link = await _addr(contract_address)
             return [
@@ -2728,6 +2712,7 @@ class SDAOUpgradeVetoedEvent(LogEvent):
 
 class ODAOContractUpgradedEvent(LogEvent):
     event_name = "odao_contract_upgraded_event"
+    reloads_contracts = True
 
     class Args(LogEventContext):
         oldAddress: ContractAddress
@@ -2750,6 +2735,7 @@ class ODAOContractUpgradedEvent(LogEvent):
 
 class ODAOContractAddedEvent(LogEvent):
     event_name = "odao_contract_added_event"
+    reloads_contracts = True
 
     class Args(LogEventContext):
         newAddress: ContractAddress
