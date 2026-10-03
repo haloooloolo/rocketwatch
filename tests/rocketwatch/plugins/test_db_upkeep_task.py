@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pymongo.asynchronous.database import AsyncDatabase
+from web3 import AsyncWeb3
 
 from rocketwatch.plugins.db_upkeep_task import db_upkeep_task as dut
 from rocketwatch.plugins.db_upkeep_task.db_upkeep_task import (
@@ -11,6 +12,7 @@ from rocketwatch.plugins.db_upkeep_task.db_upkeep_task import (
     _parse_epoch,
     _unpack_validator_info,
     _unpack_validator_info_dynamic,
+    at_address,
     safe_inv,
     safe_state_to_str,
     safe_to_float,
@@ -39,6 +41,18 @@ _STAKING_INFO = (
     32_000_000_000,  # exit_balance (gwei → 32.0 ETH)
     0,  # locked_time
 )
+
+_INFO_ABI = [
+    {
+        "type": "function",
+        "name": "getValidatorInfo",
+        "stateMutability": "view",
+        "inputs": [{"name": "id", "type": "uint32"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+    }
+]
+_ADDR_A = AsyncWeb3.to_checksum_address("0x" + "aa" * 20)
+_ADDR_B = AsyncWeb3.to_checksum_address("0x" + "bb" * 20)
 
 
 def _make_cog(bot: Any) -> DBUpkeepTask:
@@ -166,6 +180,22 @@ class TestPureHelpers:
         out = _unpack_validator_info_dynamic(info)
         assert "express_used" not in out
         assert out["assignment_time"] == 42
+
+
+class TestAtAddress:
+    def test_targets_new_address_with_same_calldata(self) -> None:
+        template = AsyncWeb3().eth.contract(abi=_INFO_ABI)
+        fn = template.functions.getValidatorInfo(7)
+        bound = at_address(fn, _ADDR_A)
+        assert bound.address == _ADDR_A
+        assert bound._encode_transaction_data() == fn._encode_transaction_data()
+        assert bound.abi == fn.abi
+
+    def test_leaves_template_untouched(self) -> None:
+        template = AsyncWeb3().eth.contract(address=_ADDR_A, abi=_INFO_ABI)
+        fn = template.functions.getValidatorInfo(7)
+        at_address(fn, _ADDR_B)
+        assert fn.address == _ADDR_A
 
 
 class TestUpdateMinipoolBeaconData:

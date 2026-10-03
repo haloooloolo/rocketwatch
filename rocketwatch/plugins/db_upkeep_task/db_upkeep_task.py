@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import time
 from collections import defaultdict
@@ -9,7 +10,7 @@ from typing import Any
 import pymongo
 from discord.ext import commands
 from discord.utils import as_chunks
-from eth_typing import BlockNumber
+from eth_typing import BlockNumber, ChecksumAddress
 from pymongo import UpdateMany, UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
 from web3.contract.async_contract import AsyncContractFunction
@@ -27,6 +28,16 @@ log = logging.getLogger("rocketwatch.db_upkeep_task")
 
 # (contract_fn, require_success, transform, field_name)
 MulticallSpec = tuple[AsyncContractFunction, bool, Callable[[Any], Any] | None, str]
+
+
+def at_address(
+    fn: AsyncContractFunction, address: ChecksumAddress
+) -> AsyncContractFunction:
+    """Point a prepared contract call at another address. Far cheaper than
+    building a fresh contract per address, which re-parses the whole ABI."""
+    bound = copy.copy(fn)
+    bound.address = address
+    return bound
 
 
 def is_true(v: Any) -> bool:
@@ -403,78 +414,86 @@ class DBUpkeepTask(commands.Cog):
 
     @timed
     async def update_dynamic_megapool_data(self) -> None:
-        delegate_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
-        proxy_abi = await rp.get_abi_by_name("rocketMegapoolProxy")
+        mp = await rp.assemble_contract("rocketMegapoolDelegate")
+        proxy = await rp.assemble_contract("rocketMegapoolProxy")
 
         async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
             addr = n["megapool"]["address"]
-            mp = w3.eth.contract(address=addr, abi=delegate_abi)
-            proxy = w3.eth.contract(address=addr, abi=proxy_abi)
             return [
                 (
-                    mp.functions.getValidatorCount(),
+                    at_address(mp.functions.getValidatorCount(), addr),
                     True,
                     None,
                     "megapool.validator_count",
                 ),
                 (
-                    mp.functions.getActiveValidatorCount(),
+                    at_address(mp.functions.getActiveValidatorCount(), addr),
                     True,
                     None,
                     "megapool.active_validator_count",
                 ),
                 (
-                    mp.functions.getExitingValidatorCount(),
+                    at_address(mp.functions.getExitingValidatorCount(), addr),
                     True,
                     None,
                     "megapool.exiting_validator_count",
                 ),
                 (
-                    mp.functions.getLockedValidatorCount(),
+                    at_address(mp.functions.getLockedValidatorCount(), addr),
                     True,
                     None,
                     "megapool.locked_validator_count",
                 ),
-                (mp.functions.getNodeBond(), True, safe_to_float, "megapool.node_bond"),
                 (
-                    mp.functions.getUserCapital(),
+                    at_address(mp.functions.getNodeBond(), addr),
+                    True,
+                    safe_to_float,
+                    "megapool.node_bond",
+                ),
+                (
+                    at_address(mp.functions.getUserCapital(), addr),
                     True,
                     safe_to_float,
                     "megapool.user_capital",
                 ),
-                (mp.functions.getDebt(), True, safe_to_float, "megapool.debt"),
                 (
-                    mp.functions.getRefundValue(),
+                    at_address(mp.functions.getDebt(), addr),
+                    True,
+                    safe_to_float,
+                    "megapool.debt",
+                ),
+                (
+                    at_address(mp.functions.getRefundValue(), addr),
                     True,
                     safe_to_float,
                     "megapool.refund_value",
                 ),
                 (
-                    mp.functions.getPendingRewards(),
+                    at_address(mp.functions.getPendingRewards(), addr),
                     True,
                     safe_to_float,
                     "megapool.pending_rewards",
                 ),
                 (
-                    mp.functions.getLastDistributionTime(),
+                    at_address(mp.functions.getLastDistributionTime(), addr),
                     True,
                     None,
                     "megapool.last_distribution_time",
                 ),
                 (
-                    proxy.functions.getDelegate(),
+                    at_address(proxy.functions.getDelegate(), addr),
                     True,
                     w3.to_checksum_address,
                     "megapool.delegate",
                 ),
                 (
-                    proxy.functions.getEffectiveDelegate(),
+                    at_address(proxy.functions.getEffectiveDelegate(), addr),
                     True,
                     w3.to_checksum_address,
                     "megapool.effective_delegate",
                 ),
                 (
-                    proxy.functions.getUseLatestDelegate(),
+                    at_address(proxy.functions.getUseLatestDelegate(), addr),
                     True,
                     None,
                     "megapool.use_latest_delegate",
@@ -522,14 +541,12 @@ class DBUpkeepTask(commands.Cog):
     @timed
     async def add_static_minipool_data(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
-        minipool_abi = await rp.get_abi_by_name("rocketMinipool")
+        minipool = await rp.assemble_contract("rocketMinipool")
 
         async def lamb(n: dict[str, Any]) -> list[MulticallSpec]:
             return [
                 (
-                    w3.eth.contract(
-                        address=n["address"], abi=minipool_abi
-                    ).functions.getNodeAddress(),
+                    at_address(minipool.functions.getNodeAddress(), n["address"]),
                     True,
                     w3.to_checksum_address,
                     "node_operator",
@@ -620,86 +637,91 @@ class DBUpkeepTask(commands.Cog):
     @timed
     async def update_dynamic_minipool_data(self) -> None:
         mc = await rp.get_contract_by_name("multicall3")
-        minipool_abi = await rp.get_abi_by_name("rocketMinipool")
+        minipool = await rp.assemble_contract("rocketMinipool")
 
         async def get_calls(n: dict[str, Any]) -> list[MulticallSpec]:
-            minipool_contract = w3.eth.contract(address=n["address"], abi=minipool_abi)
+            addr = n["address"]
             return [
                 (
-                    minipool_contract.functions.getStatus(),
+                    at_address(minipool.functions.getStatus(), addr),
                     True,
                     safe_state_to_str,
                     "status",
                 ),
                 (
-                    minipool_contract.functions.getStatusTime(),
+                    at_address(minipool.functions.getStatusTime(), addr),
                     True,
                     None,
                     "status_time",
                 ),
-                (minipool_contract.functions.getVacant(), False, is_true, "vacant"),
                 (
-                    minipool_contract.functions.getFinalised(),
+                    at_address(minipool.functions.getVacant(), addr),
+                    False,
+                    is_true,
+                    "vacant",
+                ),
+                (
+                    at_address(minipool.functions.getFinalised(), addr),
                     True,
                     is_true,
                     "finalized",
                 ),
                 (
-                    minipool_contract.functions.getNodeDepositBalance(),
+                    at_address(minipool.functions.getNodeDepositBalance(), addr),
                     True,
                     safe_to_float,
                     "node_deposit_balance",
                 ),
                 (
-                    minipool_contract.functions.getNodeRefundBalance(),
+                    at_address(minipool.functions.getNodeRefundBalance(), addr),
                     True,
                     safe_to_float,
                     "node_refund_balance",
                 ),
                 (
-                    minipool_contract.functions.getPreMigrationBalance(),
+                    at_address(minipool.functions.getPreMigrationBalance(), addr),
                     False,
                     safe_to_float,
                     "pre_migration_balance",
                 ),
                 (
-                    minipool_contract.functions.getNodeFee(),
+                    at_address(minipool.functions.getNodeFee(), addr),
                     True,
                     safe_to_float,
                     "node_fee",
                 ),
                 (
-                    minipool_contract.functions.getDelegate(),
+                    at_address(minipool.functions.getDelegate(), addr),
                     True,
                     w3.to_checksum_address,
                     "delegate",
                 ),
                 (
-                    minipool_contract.functions.getPreviousDelegate(),
+                    at_address(minipool.functions.getPreviousDelegate(), addr),
                     False,
                     w3.to_checksum_address,
                     "previous_delegate",
                 ),
                 (
-                    minipool_contract.functions.getEffectiveDelegate(),
+                    at_address(minipool.functions.getEffectiveDelegate(), addr),
                     True,
                     w3.to_checksum_address,
                     "effective_delegate",
                 ),
                 (
-                    minipool_contract.functions.getUseLatestDelegate(),
+                    at_address(minipool.functions.getUseLatestDelegate(), addr),
                     True,
                     is_true,
                     "use_latest_delegate",
                 ),
                 (
-                    minipool_contract.functions.getUserDistributed(),
+                    at_address(minipool.functions.getUserDistributed(), addr),
                     False,
                     is_true,
                     "user_distributed",
                 ),
                 (
-                    mc.functions.getEthBalance(n["address"]),
+                    mc.functions.getEthBalance(addr),
                     True,
                     safe_to_float,
                     "execution_balance",
@@ -872,7 +894,7 @@ class DBUpkeepTask(commands.Cog):
 
     @timed
     async def update_dynamic_megapool_validator_data(self) -> None:
-        mp_abi = await rp.get_abi_by_name("rocketMegapoolDelegate")
+        mp = await rp.assemble_contract("rocketMegapoolDelegate")
 
         validators = await self.bot.db.megapool_validators.find(
             {"status": {"$nin": ["exited", "dissolved"]}},
@@ -887,9 +909,9 @@ class DBUpkeepTask(commands.Cog):
             end = min((i + 1) * self.batch_size, total)
             log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
             fns = [
-                w3.eth.contract(
-                    address=v["megapool"], abi=mp_abi
-                ).functions.getValidatorInfo(v["validator_id"])
+                at_address(
+                    mp.functions.getValidatorInfo(v["validator_id"]), v["megapool"]
+                )
                 for v in batch
             ]
             results = await rp.multicall(fns)

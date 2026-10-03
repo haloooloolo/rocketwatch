@@ -13,20 +13,24 @@ ScriptedResponse = Any | Callable[..., Any]
 
 class _ScriptedCall:
     """A `contract.functions.foo(...)` stand-in. Resolves via the parent
-    ScriptedRocketPool's `_calls` map on `.call(...)`."""
+    ScriptedRocketPool's `_calls` map on `.call(...)`. `address` holds the
+    contract key (a name or an address); rebinding it, as `at_address` does,
+    re-routes the call to `f"{address}.{method}"`."""
 
     def __init__(
         self,
         rp: ScriptedRocketPool,
-        path: str,
+        address: str,
+        method: str,
         args: tuple[Any, ...],
     ) -> None:
         self._rp = rp
-        self._path = path
+        self.address = address
+        self._method = method
         self._args = args
 
     async def call(self, block_identifier: Any = "latest") -> Any:
-        return await self._rp.call(self._path, *self._args)
+        return await self._rp.call(f"{self.address}.{self._method}", *self._args)
 
 
 class _ScriptedFunctions:
@@ -39,7 +43,7 @@ class _ScriptedFunctions:
 
     def __getattr__(self, method: str) -> Callable[..., _ScriptedCall]:
         def factory(*args: Any) -> _ScriptedCall:
-            return _ScriptedCall(self._rp, f"{self._contract}.{method}", args)
+            return _ScriptedCall(self._rp, self._contract, method, args)
 
         return factory
 
