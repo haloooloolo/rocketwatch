@@ -83,7 +83,7 @@ class TVL(Cog):
             "Total ETH Locked": {
                 "Minipool Stake": {
                     "Dissolved Minipools": {
-                        "Locked on Beacon Chain": {},  # accurate, db
+                        "Beacon Chain": {},  # accurate, db
                         "Contract Balance": {},  # accurate, db
                     },
                     "Staking Minipools": {
@@ -108,19 +108,19 @@ class TVL(Cog):
                     "Extra Collateral": {},  # accurate, live
                 },
                 "Undistributed Balances": {
-                    "Smoothing Pool Balance": {
+                    "Smoothing Pool": {
                         "rETH Share": {"_val": 0},
                         "Node Share": {"_val": 0},
                     },
-                    "Node Distributor Contracts": {
+                    "Fee Distributors": {
                         "rETH Share": {"_val": 0},  # done, db
                         "Node Share": {"_val": 0},  # done, db
                     },
-                    "Minipool Contract Balances": {
+                    "Minipool Balances": {
                         "rETH Share": {"_val": 0},  # done, db
                         "Node Share": {"_val": 0},  # done, db
                     },
-                    "Megapool Contract Balances": {
+                    "Megapool Balances": {
                         "rETH Share": {"_val": 0},
                         "Node Share": {"_val": 0},
                         "Voter Share": {"_val": 0},
@@ -167,7 +167,7 @@ class TVL(Cog):
         if len(tmp) > 0:
             tmp_doc = tmp[0]
             data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"][
-                "Locked on Beacon Chain"
+                "Beacon Chain"
             ]["_val"] = tmp_doc["beacon_balance"]
             data["Total ETH Locked"]["Minipool Stake"]["Dissolved Minipools"][
                 "Contract Balance"
@@ -195,13 +195,13 @@ class TVL(Cog):
                     if contract_balance >= refund_balance:
                         contract_balance -= refund_balance
                         data["Total ETH Locked"]["Undistributed Balances"][
-                            "Minipool Contract Balances"
+                            "Minipool Balances"
                         ]["Node Share"]["_val"] += refund_balance
                         refund_balance = 0
                     else:
                         refund_balance -= contract_balance
                         data["Total ETH Locked"]["Undistributed Balances"][
-                            "Minipool Contract Balances"
+                            "Minipool Balances"
                         ]["Node Share"]["_val"] += contract_balance
                         contract_balance = 0
                 # if there is still a refund balance, we try to pay it off using the beacon balance
@@ -238,12 +238,12 @@ class TVL(Cog):
                 d = minipool_split_rewards_logic(
                     contract_balance, node_share, commission
                 )
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Minipool Contract Balances"
-                ]["Node Share"]["_val"] += d["base"]["node"] + d["rewards"]["node"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Minipool Contract Balances"
-                ]["rETH Share"]["_val"] += d["base"]["reth"] + d["rewards"]["reth"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Minipool Balances"][
+                    "Node Share"
+                ]["_val"] += d["base"]["node"] + d["rewards"]["node"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Minipool Balances"][
+                    "rETH Share"
+                ]["_val"] += d["base"]["reth"] + d["rewards"]["reth"]
 
         # Megapool commission settings
         network_settings = await rp.get_contract_by_name(
@@ -367,9 +367,9 @@ class TVL(Cog):
             pending_rewards = mp.get("pending_rewards", 0)
             # refundValue minus debt → Node Share
             node_refund = max(0, refund_value - debt_val)
-            data["Total ETH Locked"]["Undistributed Balances"][
-                "Megapool Contract Balances"
-            ]["Node Share"]["_val"] += node_refund
+            data["Total ETH Locked"]["Undistributed Balances"]["Megapool Balances"][
+                "Node Share"
+            ]["_val"] += node_refund
             # pendingRewards → split by commission
             if pending_rewards > 0:
                 total_capital = mp.get("node_bond", 0) + mp.get("user_capital", 0)
@@ -379,18 +379,18 @@ class TVL(Cog):
                 split = megapool_split_rewards(
                     pending_rewards, capital_ratio, node_share, voter_share, dao_share
                 )
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Megapool Contract Balances"
-                ]["Node Share"]["_val"] += split["node"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Megapool Contract Balances"
-                ]["rETH Share"]["_val"] += split["reth"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Megapool Contract Balances"
-                ]["Voter Share"]["_val"] += split["voter"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Megapool Contract Balances"
-                ]["DAO Share"]["_val"] += split["dao"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Balances"][
+                    "Node Share"
+                ]["_val"] += split["node"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Balances"][
+                    "rETH Share"
+                ]["_val"] += split["reth"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Balances"][
+                    "Voter Share"
+                ]["_val"] += split["voter"]
+                data["Total ETH Locked"]["Undistributed Balances"]["Megapool Balances"][
+                    "DAO Share"
+                ]["_val"] += split["dao"]
 
         # Deposit Pool Balance: calls the contract and asks what its balance is, simple enough.
         # ETH in here has been swapped for rETH and is waiting to be matched with a minipool.
@@ -420,9 +420,9 @@ class TVL(Cog):
                 await rp.get_address_by_name("rocketSmoothingPool")
             )
         )
-        data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool Balance"][
-            "_val"
-        ] = smoothie_balance
+        data["Total ETH Locked"]["Undistributed Balances"]["Smoothing Pool"]["_val"] = (
+            smoothie_balance
+        )
 
         # Unclaimed Smoothing Pool Rewards: This is ETH from the previous Reward Periods that have not been claimed yet.
         data["Total ETH Locked"]["Unclaimed Rewards"]["_val"] = solidity.to_float(
@@ -530,26 +530,26 @@ class TVL(Cog):
             )
         ).to_list()
         if len(tmp) > 0:
-            data["Total ETH Locked"]["Undistributed Balances"][
-                "Node Distributor Contracts"
-            ]["Node Share"]["_val"] = tmp[0]["node_share"]
-            data["Total ETH Locked"]["Undistributed Balances"][
-                "Node Distributor Contracts"
-            ]["rETH Share"]["_val"] = tmp[0]["reth_share"]
+            data["Total ETH Locked"]["Undistributed Balances"]["Fee Distributors"][
+                "Node Share"
+            ]["_val"] = tmp[0]["node_share"]
+            data["Total ETH Locked"]["Undistributed Balances"]["Fee Distributors"][
+                "rETH Share"
+            ]["_val"] = tmp[0]["reth_share"]
 
         def set_val_of_branch(branch: dict[str, Any], unit: str) -> float:
             val = 0
             for child in branch:
                 if isinstance(branch[child], dict):
                     branch[child]["_val"] = set_val_of_branch(branch[child], unit)
-                    branch[child]["_value"] = f"{branch[child]['_val']:,.2f} {unit}"
+                    branch[child]["_value"] = f"{branch[child]['_val']:,.0f} {unit}"
                     if branch[child].get("_is_estimate", False):
                         branch[child]["_value"] = f"~{branch[child]['_value']}"
                     val += branch[child]["_val"]
                 elif not child.startswith("_") or child == "_val":
                     val += branch[child]
             branch["_val"] = val
-            branch["_value"] = f"{val:,.2f} {unit}"
+            branch["_value"] = f"{val:,.0f} {unit}"
             if branch.get("_is_estimate", False):
                 branch["_value"] = f"~{branch['_value']}"
             return val
@@ -561,7 +561,7 @@ class TVL(Cog):
             data["Total RPL Locked"]["_val"] * rpl_price
         )
         usdc_total_tvl = total_tvl * eth_price
-        data["_value"] = f"{total_tvl:,.2f} ETH"
+        data["_value"] = f"{total_tvl:,.0f} ETH"
         test = render_tree(data, "Total Locked Value", max_depth=0 if show_all else 2)
         # send embed with tvl
         closer = f"or about {Style.BRIGHT}{humanize.intword(usdc_total_tvl, format='%.3f')} USDC{Style.RESET_ALL}".rjust(

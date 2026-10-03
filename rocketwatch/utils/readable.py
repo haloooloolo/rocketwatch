@@ -191,7 +191,7 @@ def render_tree(data: dict[str, Any], name: str, max_depth: int = 0) -> str:
         for depth in set(depths)
     )
 
-    max_right_len += 2
+    max_right_len += 1
     COLORS = [
         Style.BRIGHT,
         Style.BRIGHT,
@@ -206,6 +206,4 @@ def render_tree(data: dict[str, Any], name: str, max_depth: int = 0) -> str:
         lines[i] = (
             f"{lines[i].ljust(max_left_len, ' ')}{' ' * (max_right_len - len(str(v)))}{_v}"
         )
-    # replace all spaces with non-breaking spaces
-    lines = [line.replace(" ", "\u00a0") for line in lines]
     return "\n".join(lines)

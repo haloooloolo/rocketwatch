@@ -167,14 +167,6 @@ class TestRenderTree:
         assert "active" in out
         assert "empty" not in out
 
-    def test_uses_nbsp_in_output(self):
-        # render_tree replaces spaces with U+00A0 so Discord won't collapse them.
-        data = {"only": {"_value": 1}}
-        out = render_tree(data, "X")
-        assert "\u00a0" in out
-        # No regular ASCII spaces should remain in the rendered output.
-        assert " " not in out
-
 
 class TestAdvancedTxnUrl:
     def test_returns_empty_string(self):

@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterator
 from typing import Any
 from unittest.mock import AsyncMock
@@ -262,3 +263,32 @@ class TestTvlCommand:
         embed = interaction.followup.send.call_args.kwargs["embed"]
         # show_all renders deeper leaves like the rETH/Node Share breakdown.
         assert "Share" in (embed.description or "")
+
+    @pytest.mark.parametrize("show_all", [False, True])
+    async def test_rendered_lines_fit_discord_width(
+        self,
+        show_all: bool,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        scripted_rp: ScriptedRocketPool,
+        _stub_tvl_externals: None,
+        _stub_eth_usdc: None,
+    ) -> None:
+        # Discord embed code blocks wrap around 42 visible characters; lines
+        # wider than that break the tree formatting.
+        _seed_tvl_calls(scripted_rp)
+        # Push an RPL value to a realistic 7-digit max so the right column
+        # exercises its widest formatting.
+        scripted_rp.set_call(
+            "rocketNodeStaking.getTotalLegacyStakedRPL", 9_876_543 * ETH
+        )
+
+        cog = TVL(make_bot(db=mongo_db))
+        interaction = make_interaction()
+        await cog.tvl.callback(cog, interaction, show_all=show_all)
+
+        embed = interaction.followup.send.call_args.kwargs["embed"]
+        body = (embed.description or "").strip("`").removeprefix("ansi\n")
+        ansi_re = re.compile(r"\x1b\[[0-9;]*m")
+        for raw in body.split("\n"):
+            visible = ansi_re.sub("", raw)
+            assert len(visible) <= 42, f"{len(visible)}-char line: {visible!r}"
