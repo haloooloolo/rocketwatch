@@ -358,3 +358,87 @@ class TestProposalExecute:
 
         with pytest.raises(RuntimeError):
             await _build(event, _args(proposalID=1))
+
+
+class TestSimpleEvents:
+    @pytest.mark.parametrize(
+        ("contract", "function", "args", "title", "shows"),
+        [
+            (
+                "rocketDAONodeTrusted",
+                "bootstrapMember",
+                {"nodeAddress": NODE},
+                ":satellite_orbital: oDAO Bootstrap Mode: Member Added",
+                [NODE, "added as a new oDAO member"],
+            ),
+            (
+                "rocketDAONodeTrustedProposals",
+                "proposalInvite",
+                {"id": "alice", "nodeAddress": NODE},
+                ":crystal_ball: oDAO Invite",
+                ["**alice**", NODE, "invited to join the oDAO"],
+            ),
+            (
+                "rocketDAOProtocolProposals",
+                "proposalSecurityInvite",
+                {"memberAddress": NODE},
+                ":lock: Security Council Invite",
+                [NODE, "invited to join the security council"],
+            ),
+            (
+                "rocketDAOProtocolProposals",
+                "proposalSecurityKick",
+                {"memberAddress": NODE},
+                ":boot: Security Council Expulsion",
+                [NODE, "kicked from the security council"],
+            ),
+            (
+                "rocketDAOProtocolProposals",
+                "proposalSecurityReplace",
+                {"existingMemberAddress": NODE, "newMemberAddress": OTHER},
+                ":repeat: Security Council Replacement",
+                [NODE, "has been replaced by", OTHER],
+            ),
+        ],
+    )
+    async def test_renders_its_facts(
+        self,
+        contract: str,
+        function: str,
+        args: dict[str, Any],
+        title: str,
+        shows: list[str],
+    ) -> None:
+        handler = TRANSACTION_REGISTRY[contract][function]
+
+        [embed] = await _build(handler, _args(**args))
+
+        assert embed.title == title
+        assert embed.description is not None
+        for fragment in shows:
+            assert fragment in embed.description
+
+    @pytest.mark.parametrize(
+        ("function", "args"),
+        [
+            ("proposalSecurityKick", {"memberAddress": OTHER}),
+            (
+                "proposalSecurityReplace",
+                {"existingMemberAddress": OTHER, "newMemberAddress": NODE},
+            ),
+        ],
+    )
+    async def test_departing_member_is_named_as_before_the_event(
+        self, monkeypatch: pytest.MonkeyPatch, function: str, args: dict[str, Any]
+    ) -> None:
+        blocks: dict[str, Any] = {}
+
+        async def link(target: str, *_: Any, block: Any = "latest", **__: Any) -> str:
+            blocks[target] = block
+            return target
+
+        monkeypatch.setattr(defs, "el_explorer_url", link)
+
+        await _build(PROTOCOL[function], _args(**args))
+
+        assert blocks[OTHER] == 99
