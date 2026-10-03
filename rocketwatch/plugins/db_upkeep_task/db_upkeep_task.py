@@ -7,7 +7,6 @@ from datetime import timedelta
 from typing import Any
 
 import pymongo
-from cronitor import Monitor
 from discord.ext import commands
 from discord.utils import as_chunks
 from eth_typing import BlockNumber
@@ -18,7 +17,7 @@ from web3.contract.async_contract import AsyncContractFunction
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import ts_to_block
-from rocketwatch.utils.config import cfg
+from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.event_logs import get_logs
 from rocketwatch.utils.rocketpool import ValidatorInfo, rp
 from rocketwatch.utils.shared_w3 import bacon, w3
@@ -106,7 +105,7 @@ def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
 class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("db-task", api_key=cfg.secrets.cronitor)
+        self.monitor = AsyncMonitor("db-task")
         self.batch_size = 250
         self.cooldown = timedelta(minutes=10)
         self.bot.loop.create_task(self.loop())
@@ -117,7 +116,7 @@ class DBUpkeepTask(commands.Cog):
         await self.check_indexes()
         while not self.bot.is_closed():
             p_id = time.time()
-            self.monitor.ping(state="run", series=p_id)
+            await self.monitor.ping(state="run", series=p_id)
             try:
                 log.debug("starting db upkeep task")
                 # node operator tasks
@@ -137,9 +136,9 @@ class DBUpkeepTask(commands.Cog):
                 await self.update_dynamic_megapool_validator_data()
                 await self.update_dynamic_megapool_validator_beacon_data()
                 log.debug("finished db upkeep task")
-                self.monitor.ping(state="complete", series=p_id)
+                await self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
-                self.monitor.ping(state="fail", series=p_id)
+                await self.monitor.ping(state="fail", series=p_id)
                 await self.bot.report_error(err)
             finally:
                 await asyncio.sleep(self.cooldown.total_seconds())

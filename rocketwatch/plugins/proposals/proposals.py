@@ -9,7 +9,6 @@ from typing import Any
 
 import numpy as np
 from aiohttp.client_exceptions import ClientResponseError
-from cronitor import Monitor
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
@@ -19,7 +18,7 @@ from matplotlib.axes import Axes
 from pymongo import ASCENDING, DESCENDING
 
 from rocketwatch.bot import RocketWatch
-from rocketwatch.utils.config import cfg
+from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.shared_w3 import bacon
 from rocketwatch.utils.solidity import beacon_block_to_date, date_to_beacon_block
@@ -121,7 +120,7 @@ def parse_proposal(beacon_block: dict[str, Any]) -> dict[str, Any]:
 class Proposals(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("proposals-task", api_key=cfg.secrets.cronitor)
+        self.monitor = AsyncMonitor("proposals-task")
         self.batch_size = 100
         self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
@@ -131,16 +130,16 @@ class Proposals(commands.Cog):
         await self.check_indexes()
         while not self.bot.is_closed():
             p_id = time.time()
-            self.monitor.ping(state="run", series=p_id)
+            await self.monitor.ping(state="run", series=p_id)
             try:
                 log.debug("starting proposal task")
                 await self.fetch_proposals()
                 await self.create_latest_proposal_view()
                 log.debug("finished proposal task")
-                self.monitor.ping(state="complete", series=p_id)
+                await self.monitor.ping(state="complete", series=p_id)
             except Exception as err:
                 await self.bot.report_error(err)
-                self.monitor.ping(state="fail", series=p_id)
+                await self.monitor.ping(state="fail", series=p_id)
             finally:
                 await asyncio.sleep(self.cooldown.total_seconds())
 

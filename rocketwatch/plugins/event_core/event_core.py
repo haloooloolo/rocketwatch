@@ -9,7 +9,6 @@ from typing import Any
 
 import discord
 import pymongo
-from cronitor import Monitor
 from discord.abc import Messageable
 from discord.ext import commands, tasks
 from eth_typing import BlockNumber
@@ -17,6 +16,7 @@ from eth_typing import BlockNumber
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.support_utils.support_utils import generate_template_embed
 from rocketwatch.utils.config import StatusMessageConfig, cfg
+from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.event import EventPlugin
 from rocketwatch.utils.shared_w3 import w3
@@ -42,7 +42,7 @@ class EventCore(commands.Cog):
         self.at_head: bool = False
         self._catchup_start_block: BlockNumber | None = None
         self.block_batch_size: int = cfg.events.block_batch_size
-        self.monitor = Monitor("event-core", api_key=cfg.secrets.cronitor)
+        self.monitor = AsyncMonitor("event-core")
         self.task.start()
 
     async def cog_unload(self) -> None:
@@ -51,16 +51,16 @@ class EventCore(commands.Cog):
     @tasks.loop(seconds=30)
     async def task(self) -> None:
         p_id = time.time()
-        self.monitor.ping(state="run", series=p_id)
+        await self.monitor.ping(state="run", series=p_id)
 
         try:
             await self.gather_new_events()
             await self.process_event_queue()
             await self.update_status_messages()
             await self.on_success()
-            self.monitor.ping(state="complete", series=p_id)
+            await self.monitor.ping(state="complete", series=p_id)
         except Exception as error:
-            self.monitor.ping(state="fail", series=p_id)
+            await self.monitor.ping(state="fail", series=p_id)
             await self.on_error(error)
 
     @task.before_loop

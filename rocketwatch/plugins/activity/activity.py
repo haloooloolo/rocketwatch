@@ -1,11 +1,10 @@
 import logging
 
-from cronitor import Monitor
 from discord import Activity, ActivityType
 from discord.ext import commands, tasks
 
 from rocketwatch.bot import RocketWatch
-from rocketwatch.utils.config import cfg
+from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 
 log = logging.getLogger("rocketwatch.rich_activity")
 
@@ -13,7 +12,7 @@ log = logging.getLogger("rocketwatch.rich_activity")
 class RichActivity(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
-        self.monitor = Monitor("update-activity", api_key=cfg.secrets.cronitor)
+        self.monitor = AsyncMonitor("update-activity")
         self.task.start()
 
     async def cog_unload(self) -> None:
@@ -21,7 +20,7 @@ class RichActivity(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def task(self) -> None:
-        self.monitor.ping()
+        await self.monitor.ping()
         log.debug("Updating Discord activity")
 
         minipool_count = await self.bot.db.minipools.count_documents(
