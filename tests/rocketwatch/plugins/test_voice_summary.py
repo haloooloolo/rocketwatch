@@ -1,14 +1,17 @@
 import asyncio
-from typing import Any
+from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from discord import TextChannel, ui
 from discord.ext.voice_recv import VoiceRecvClient
 
-from rocketwatch.plugins.voice_summary.session import CallSession
+from rocketwatch.plugins.voice_summary import voice_summary as vs_mod
+from rocketwatch.plugins.voice_summary.session import CallResult, CallSession
 from rocketwatch.plugins.voice_summary.voice_summary import VoiceSummary
 from rocketwatch.utils.config import LLMConfig, STTConfig, TranscriptionConfig, cfg
-from tests.lib.discord_harness import make_bot
+from tests.lib.discord_harness import make_bot, make_interaction
 
 GRACE = 0.05
 
@@ -196,3 +199,200 @@ class TestSessionVoiceClient:
         await session.stop()
 
         vc.disconnect.assert_awaited_once_with(force=True)
+
+
+def _result(tmp_path: Path, *, audio_bytes: int = 100, summary: str = "") -> CallResult:
+    audio = tmp_path / "recording.mp3"
+    audio.write_bytes(bytes(audio_bytes))
+    return CallResult(
+        transcript="[0:00] Alice: gm",
+        summary=summary or "**Topics Discussed**\n- <@111> proposed a fee change",
+        audio_path=audio,
+    )
+
+
+def _bot(cog: VoiceSummary) -> MagicMock:
+    return cast(MagicMock, cog.bot)
+
+
+def _output_channel(cog: VoiceSummary, *, upload_limit: int = 10_000) -> MagicMock:
+    channel = MagicMock(spec=TextChannel)
+    channel.guild.filesize_limit = upload_limit
+    channel.send = AsyncMock()
+    _bot(cog).get_or_fetch_channel = AsyncMock(return_value=channel)
+    cog._config.output_channel_id = 555
+    return channel
+
+
+def _texts(view: ui.LayoutView) -> list[str]:
+    return [c.content for c in view.walk_children() if isinstance(c, ui.TextDisplay)]
+
+
+class TestPostResults:
+    async def test_posts_summary_with_recording_and_transcript(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        channel = _output_channel(cog)
+
+        await cog._post_results(_result(tmp_path))
+
+        kwargs = channel.send.call_args.kwargs
+        assert [f.filename for f in kwargs["files"]] == [
+            "recording.mp3",
+            "transcript.txt",
+        ]
+        assert any("proposed a fee change" in t for t in _texts(kwargs["view"]))
+        # the summary mentions participants; posting it must not ping them
+        assert kwargs["allowed_mentions"].users is False
+
+    async def test_recording_over_upload_limit_is_left_out(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        channel = _output_channel(cog, upload_limit=1_000)
+
+        await cog._post_results(_result(tmp_path, audio_bytes=2_000))
+
+        files = channel.send.call_args.kwargs["files"]
+        assert [f.filename for f in files] == ["transcript.txt"]
+
+    async def test_long_summary_fits_discord_text_limit(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        channel = _output_channel(cog)
+
+        await cog._post_results(_result(tmp_path, summary="x" * 5_000))
+
+        view = channel.send.call_args.kwargs["view"]
+        assert sum(len(t) for t in _texts(view)) <= 4000
+
+    async def test_without_output_channel_nothing_is_posted(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        _bot(cog).get_or_fetch_channel = AsyncMock()
+
+        await cog._post_results(_result(tmp_path))
+
+        _bot(cog).get_or_fetch_channel.assert_not_awaited()
+
+
+class TestFinishCall:
+    async def test_finished_call_is_posted(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        channel = _output_channel(cog)
+        session = _recording(cog, _channel(0))
+        session.finalize.return_value = _result(tmp_path)
+
+        await cog._stop_recording()
+
+        channel.send.assert_awaited_once()
+        assert cog._session is None
+
+    async def test_call_without_summary_posts_nothing(
+        self, cog: VoiceSummary, tmp_path: Path
+    ) -> None:
+        channel = _output_channel(cog)
+        _recording(cog, _channel(0))
+
+        await cog._stop_recording()
+
+        channel.send.assert_not_awaited()
+
+    async def test_finalize_failure_is_reported(self, cog: VoiceSummary) -> None:
+        session = _recording(cog, _channel(0))
+        error = RuntimeError("stt down")
+        session.finalize.side_effect = error
+
+        await cog._stop_recording()
+
+        _bot(cog).report_error.assert_awaited_once_with(error)
+        assert cog._session is None
+
+
+class TestCommands:
+    async def test_start_while_recording_is_refused(self, cog: VoiceSummary) -> None:
+        _recording(cog, _channel(6))
+        interaction = make_interaction()
+        target = MagicMock()
+        target.guild.voice_client = None
+        target.connect = AsyncMock()
+
+        await cog.start_recording.callback(cog, interaction, target)  # type: ignore[arg-type, call-arg]
+
+        assert interaction.followup.send.call_args.args[0] == "Already recording."
+        target.connect.assert_not_awaited()
+
+    async def test_start_joins_the_channel(self, cog: VoiceSummary) -> None:
+        interaction = make_interaction()
+        target = MagicMock()
+        target.guild.voice_client = None
+        target.connect = AsyncMock()
+
+        await cog.start_recording.callback(cog, interaction, target)  # type: ignore[arg-type, call-arg]
+
+        target.connect.assert_awaited_once_with(cls=VoiceRecvClient)
+
+    async def test_stop_when_idle_is_refused(self, cog: VoiceSummary) -> None:
+        interaction = make_interaction()
+
+        await cog.stop_recording.callback(cog, interaction)  # type: ignore[arg-type, call-arg]
+
+        assert interaction.followup.send.call_args.args[0] == "Not currently recording."
+
+    async def test_stop_leaves_the_call(self, cog: VoiceSummary) -> None:
+        session = _recording(cog, _channel(6))
+        interaction = make_interaction()
+
+        await cog.stop_recording.callback(cog, interaction)  # type: ignore[arg-type, call-arg]
+
+        session.voice_client.disconnect.assert_awaited_once()
+        assert interaction.followup.send.call_args.args[0] == "Recording stopped."
+
+
+class TestAutoStart:
+    async def test_enough_members_joining_starts_recording(
+        self, cog: VoiceSummary
+    ) -> None:
+        channel = _channel(5)
+        channel.guild.voice_client = None
+        channel.connect = AsyncMock()
+
+        await _update(cog, _member(), None, channel)
+
+        channel.connect.assert_awaited_once_with(cls=VoiceRecvClient)
+
+    async def test_small_group_is_not_recorded(self, cog: VoiceSummary) -> None:
+        channel = _channel(4)
+        channel.guild.voice_client = None
+        channel.connect = AsyncMock()
+
+        await _update(cog, _member(), None, channel)
+
+        channel.connect.assert_not_awaited()
+
+    async def test_bot_joining_starts_a_session(
+        self, cog: VoiceSummary, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session = MagicMock(start=AsyncMock())
+        monkeypatch.setattr(vs_mod, "CallSession", MagicMock(return_value=session))
+        channel = _channel(5)
+        channel.guild.voice_client = _voice_client(channel)
+        assert cog.bot.user is not None
+        bot_member = _member()
+        bot_member.id = cog.bot.user.id
+
+        await _update(cog, bot_member, None, channel)
+
+        session.start.assert_awaited_once_with(channel.guild.voice_client)
+        assert cog._session is session
+        cog._cancel_scheduled_tasks()
+
+    async def test_unload_stops_without_posting(self, cog: VoiceSummary) -> None:
+        session = _recording(cog, _channel(6))
+        session.stop = AsyncMock()
+
+        await cog.cog_unload()
+
+        session.stop.assert_awaited_once()
+        session.finalize.assert_not_awaited()
+        assert cog._session is None
