@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import pickle
 import time
@@ -153,11 +154,16 @@ class EventCore(commands.Cog):
         channels = self.channels
         events: list[dict[str, Any]] = []
 
+        seen: set[str] = set()
         for result in results:
             for event in result:
-                if await self.bot.db.event_queue.find_one({"_id": event.unique_id}):
+                # a repeated id would fail insert_many for the rest of the batch
+                if event.unique_id in seen or await self.bot.db.event_queue.find_one(
+                    {"_id": event.unique_id}
+                ):
                     log.debug(f"Event {event} already exists, skipping")
                     continue
+                seen.add(event.unique_id)
 
                 # select channel dynamically from config based on event_name prefix
                 channel_candidates = [
@@ -232,8 +238,10 @@ class EventCore(commands.Cog):
             for state_message in await self.bot.db.state_messages.find(
                 {"channel_id": channel_id}
             ).to_list(None):
-                msg = await channel.fetch_message(state_message["message_id"])
-                await msg.delete()
+                # already gone if someone deleted it by hand
+                with contextlib.suppress(discord.errors.NotFound):
+                    msg = await channel.fetch_message(state_message["message_id"])
+                    await msg.delete()
                 await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
 
             for event_entry in db_events:
@@ -312,7 +320,11 @@ class EventCore(commands.Cog):
         await self._replace_or_add_status(channel_name, embed, state_message)
 
     def _build_catching_up_embed(self) -> Embed:
-        start = self._catchup_start_block or self.head_block
+        start = (
+            self.head_block
+            if self._catchup_start_block is None
+            else self._catchup_start_block
+        )
         total = self.latest_block - start
         processed = self.head_block - start
         remaining = self.latest_block - self.head_block
