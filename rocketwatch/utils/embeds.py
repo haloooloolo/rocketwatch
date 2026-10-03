@@ -287,8 +287,7 @@ async def el_explorer_url(
         elif await rp.is_megapool(target):
             url = f"https://rocketdash.net/megapool/{target}{dashboard_network}"
         elif await rp.is_minipool(target):
-            if chain == "mainnet":
-                url = f"https://rocketexplorer.net/validator/{target}"
+            url = f"https://rocketdash.net/minipool/{target}{dashboard_network}"
 
         if not name:
             name = await ens.get_name(target) or ""

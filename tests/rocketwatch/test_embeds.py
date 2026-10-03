@@ -730,19 +730,16 @@ class TestElExplorerUrlMegapoolAndMinipool:
         out = await el_explorer_url("0xMEGA", name="MP")
         assert "?network=" not in out
 
-    async def test_minipool_mainnet_uses_rocketexplorer(
+    async def test_minipool_appends_network_query_on_testnet(
+        self, testnet_cfg, explorer_mocks
+    ):
+        embeds.rp.is_minipool = AsyncMock(return_value=True)
+        out = await el_explorer_url("0xMINI", name="MP")
+        assert "?network=holesky" in out
+
+    async def test_minipool_mainnet_has_no_network_query(
         self, mainnet_cfg, explorer_mocks
     ):
         embeds.rp.is_minipool = AsyncMock(return_value=True)
         out = await el_explorer_url("0xMINI", name="MP")
-        assert "rocketexplorer.net/validator/0xMINI" in out
-
-    async def test_minipool_non_mainnet_keeps_address_url(
-        self, testnet_cfg, explorer_mocks
-    ):
-        # Spec: rocketexplorer.net is mainnet-only; testnet minipools fall back
-        # to the chain's normal address explorer URL.
-        embeds.rp.is_minipool = AsyncMock(return_value=True)
-        out = await el_explorer_url("0xMINI", name="MP")
-        assert "rocketexplorer.net" not in out
-        assert "/address/0xMINI" in out
+        assert "?network=" not in out
