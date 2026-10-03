@@ -74,6 +74,16 @@ class TestWrapEmbeds:
         assert all(r.block_number == 100 for r in responses)
         assert responses[0].embed.title == "a"
 
+    def test_each_embed_is_stored_separately(self) -> None:
+        # event_core keys stored events by unique_id; a shared id drops all
+        # but the first embed (e.g. a claim from several treasury contracts)
+        event = {"blockNumber": 100, "transactionIndex": 3}
+        embeds = [Embed(title="a"), Embed(title="b"), Embed(title="c")]
+
+        responses = TxEvents._wrap_embeds(embeds, "my_event", _txn(), event, [])
+
+        assert len({r.unique_id for r in responses}) == 3
+
     def test_appends_child_responses(self) -> None:
         txn = _txn()
         event = {"blockNumber": 100, "transactionIndex": 3}

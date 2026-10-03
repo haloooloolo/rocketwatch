@@ -445,7 +445,7 @@ class TxEvents(EventPlugin):
                 topic="transactions",
                 embed=embed,
                 event_name=event_name,
-                unique_id=f"{txn['hash'].hex()}:{event_name}",
+                unique_id=f"{txn['hash'].hex()}:{event_name}:{len(responses)}",
                 block_number=event["blockNumber"],
                 transaction_index=event["transactionIndex"],
                 event_index=(999 - len(child_responses) - len(embeds) + len(responses)),
