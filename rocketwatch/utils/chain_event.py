@@ -44,6 +44,15 @@ DUMMY_RECEIPT: TxReceipt = {
 }
 
 
+class MissingEventField(Exception):
+    """Event data lacks a field its handler reads, e.g. after a contract
+    upgrade renamed an argument. Retrying can't fix it, so only that event
+    is skipped."""
+
+    def __init__(self, event_name: str, field: object, tx_hash: str) -> None:
+        super().__init__(f"{event_name} in {tx_hash} has no field {field!r}")
+
+
 class NamedEmbeds(list[Embed]):
     """Embeds posted under a different event name than the handler's own,
     for handlers whose outcome decides the name (e.g. joined vs. left)."""

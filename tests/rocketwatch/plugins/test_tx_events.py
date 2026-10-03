@@ -13,7 +13,11 @@ from rocketwatch.plugins.tx_events.event_definitions import (
 )
 from rocketwatch.plugins.tx_events.tx_events import TxEvents
 from rocketwatch.utils import shared_w3
-from rocketwatch.utils.chain_event import PreviewModal, preview_fields
+from rocketwatch.utils.chain_event import (
+    MissingEventField,
+    PreviewModal,
+    preview_fields,
+)
 from rocketwatch.utils.embeds import Embed
 from tests.lib.discord_harness import make_bot, make_interaction
 from tests.lib.explorer import stub_explorer_links
@@ -369,6 +373,18 @@ class TestProcessRegisteredTransaction:
         txn = chain.tx(PDAO, "vote(uint256,uint8)", {"_proposalID": 1, "_vote": 1})
 
         assert await _process(cog, chain, txn) == []
+
+
+class TestMissingField:
+    async def test_event_missing_a_field_is_reported_not_raised(
+        self, cog: TxEvents, chain: Chain
+    ) -> None:
+        txn = chain.tx(PDAO, SETTING, {"_value": 5})
+
+        assert await _process(cog, chain, txn) == []
+        [reported] = cog.bot.report_error.await_args.args  # type: ignore[attr-defined]
+        assert isinstance(reported, MissingEventField)
+        assert "'settingPath'" in str(reported)
 
 
 class TestFailedDeposits:

@@ -21,6 +21,7 @@ from web3.types import EventData, FilterParams, LogReceipt, TxReceipt
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.chain_event import (
     DUMMY_RECEIPT,
+    MissingEventField,
     PreviewModal,
     posted_name,
     preview_fields,
@@ -462,6 +463,12 @@ class LogEvents(EventPlugin):
             except BadFunctionCallOutput as e:
                 log.exception("Failed to build embeds for %s", event_name)
                 await self.bot.report_error(e)
+                continue
+            except KeyError as err:
+                missing = MissingEventField(event_name, err.args[0], tx_hash_hex)
+                missing.__cause__ = err
+                log.error("%s", missing)
+                await self.bot.report_error(missing)
                 continue
 
             event_name = posted_name(event_cls, embeds)

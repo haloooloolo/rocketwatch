@@ -20,6 +20,7 @@ from web3.types import LogReceipt
 from rocketwatch.plugins.log_events import event_definitions as defs
 from rocketwatch.plugins.log_events.log_events import LogEvents
 from rocketwatch.utils import shared_w3
+from rocketwatch.utils.chain_event import MissingEventField
 from rocketwatch.utils.event import Event
 from rocketwatch.utils.rocketpool import NoAddressFound
 from tests.lib.discord_harness import make_bot
@@ -462,6 +463,44 @@ class TestGlobalEvents:
         self._status_update(chain, 2)
 
         assert await _scan(cog) == []
+
+
+class TestMissingField:
+    async def test_event_missing_a_field_is_reported_and_skipped(
+        self, cog: LogEvents, chain: Chain
+    ) -> None:
+        # an upgraded contract renamed the withdrawal's `to` argument
+        renamed = [dict(e) for e in ABIS["rocketNodeStaking"]]
+        withdrawn = next(e for e in renamed if e["name"] == "RPLWithdrawn")
+        withdrawn["inputs"] = [
+            {**i, "name": "recipient"} if i["name"] == "to" else i
+            for i in withdrawn["inputs"]
+        ]
+        chain.contracts["rocketNodeStaking"] = Web3().eth.contract(
+            address=STAKING, abi=renamed
+        )
+        chain.emit(
+            "rocketNodeStaking",
+            "RPLWithdrawn",
+            {"recipient": NODE, "amount": 2_000 * ETH, "time": 0},
+            block=5,
+            tx=chain.tx(),
+        )
+        chain.emit(
+            "rocketTokenRETH",
+            "Transfer",
+            {"from": NODE, "to": STRANGER, "value": 1_500 * ETH},
+            block=6,
+            tx=chain.tx(to=RETH),
+        )
+
+        events = await _scan(cog)
+
+        assert [e.event_name for e in events] == ["reth_transfer_event"]
+        [reported] = cog.bot.report_error.await_args.args  # type: ignore[attr-defined]
+        assert isinstance(reported, MissingEventField)
+        assert "rpl_withdraw_event" in str(reported)
+        assert "'to'" in str(reported)
 
 
 class TestContractUpgrade:

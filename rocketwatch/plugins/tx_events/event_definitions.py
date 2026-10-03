@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any, ClassVar, TypedDict
+from typing import Any, ClassVar, NotRequired, TypedDict
 
 import humanize
 from eth_typing import BlockNumber, ChecksumAddress, HexStr
@@ -155,7 +155,7 @@ class PDAOSpendTreasuryEvent(TransactionEvent):
 
 class SettingEvent(TransactionEvent):
     class Args(EventContext):
-        settingContractName: str
+        settingContractName: NotRequired[str]
         settingPath: str
         value: int | bool
 
@@ -401,8 +401,9 @@ class PDAOSetDelegateEvent(TransactionEvent):
     event_name = "pdao_set_delegate"
 
     class Args(EventContext):
-        delegate: NodeAddress
-        newDelegate: NodeAddress
+        # one of the two, depending on the function
+        delegate: NotRequired[NodeAddress]
+        newDelegate: NotRequired[NodeAddress]
 
     async def build_embeds(
         self, args: Args, event: TxEventData, receipt: TxReceipt

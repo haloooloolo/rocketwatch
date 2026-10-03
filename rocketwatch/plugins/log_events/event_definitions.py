@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Mapping
-from typing import Any, ClassVar, TypedDict
+from typing import Any, ClassVar, NotRequired, TypedDict
 
 import humanize
 from discord import Color
@@ -90,7 +90,7 @@ class MinipoolEventContext(LogEventContext):
     """Fields injected by global-event preprocessing for minipool events."""
 
     minipool: MinipoolAddress
-    pubkey: HexStr
+    pubkey: NotRequired[HexStr]
 
 
 class MegapoolEventContext(LogEventContext):
@@ -111,7 +111,7 @@ class FromNodeContext(_FromNodeField, LogEventContext):
 
 _FromNodeCallerField = TypedDict(
     "_FromNodeCallerField",
-    {"from": NodeAddress, "caller": NodeAddress},
+    {"from": NodeAddress, "caller": NotRequired[NodeAddress]},
 )
 
 
@@ -122,6 +122,7 @@ class FromNodeCallerContext(_FromNodeCallerField, LogEventContext):
 _FromCallerField = TypedDict(
     "_FromCallerField",
     {"from": ChecksumAddress, "caller": ChecksumAddress},
+    total=False,
 )
 
 
@@ -896,7 +897,7 @@ class _BootstrapPDAOTreasuryRecurringEvent(LogEvent):
         recipientAddress: WalletAddress
         numPeriods: int
         periodLength: int
-        startTime: int
+        startTime: NotRequired[int]
 
     _action: str
 
@@ -1008,10 +1009,11 @@ class _DAOProposalEvent(LogEvent):
 
     class Args(LogEventContext):
         proposalID: int
-        proposer: NodeAddress
-        voter: NodeAddress
-        supported: bool
-        canceller: NodeAddress
+        # per action: add has proposer, vote has voter/supported, cancel canceller
+        proposer: NotRequired[NodeAddress]
+        voter: NotRequired[NodeAddress]
+        supported: NotRequired[bool]
+        canceller: NotRequired[NodeAddress]
 
     def __init__(self, event_name: str, action: str) -> None:
         self.event_name = event_name
@@ -1099,8 +1101,8 @@ class PDAOProposalAddEvent(LogEvent):
 
     class Args(LogEventContext):
         proposer: NodeAddress
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1132,8 +1134,8 @@ class PDAOProposalVoteEvent(LogEvent):
         voter: NodeAddress
         votingPower: Wei
         direction: int
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1170,8 +1172,8 @@ class PDAOProposalVoteOverrideEvent(LogEvent):
         voter: NodeAddress
         delegate: NodeAddress
         direction: int
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1212,8 +1214,8 @@ class PDAOProposalFinaliseEvent(LogEvent):
     event_name = "pdao_proposal_finalise_event"
 
     class Args(LogEventContext):
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1238,8 +1240,8 @@ class PDAOProposalDestroyEvent(LogEvent):
     event_name = "pdao_proposal_destroy_event"
 
     class Args(LogEventContext):
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1270,8 +1272,8 @@ class PDAOProposalRootEvent(LogEvent):
     class Args(LogEventContext):
         proposer: NodeAddress
         index: int
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1322,9 +1324,9 @@ class PDAOProposalChallengeEvent(LogEvent):
 
     class Args(LogEventContext):
         challenger: NodeAddress
-        index: int
-        proposalID: int
-        proposalId: int
+        index: NotRequired[int]
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt
@@ -1374,8 +1376,8 @@ class PDAOProposalBondBurnEvent(LogEvent):
     class Args(LogEventContext):
         amount: Wei
         proposer: NodeAddress
-        proposalID: int
-        proposalId: int
+        proposalID: NotRequired[int]
+        proposalId: NotRequired[int]
 
     async def build_embeds(
         self, args: Args, event: LogEventData, receipt: TxReceipt

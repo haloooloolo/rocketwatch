@@ -16,6 +16,7 @@ from web3.types import BlockData, Nonce, TxData, TxReceipt, Wei
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.chain_event import (
+    MissingEventField,
     PreviewModal,
     posted_name,
     preview_fields,
@@ -274,7 +275,16 @@ class TxEvents(EventPlugin):
                 resolved, args, block, txn
             )
 
-        embeds = await resolved.build_embeds(args, event, receipt)
+        try:
+            embeds = await resolved.build_embeds(args, event, receipt)
+        except KeyError as err:
+            missing = MissingEventField(
+                resolved.event_name, err.args[0], args["transactionHash"]
+            )
+            missing.__cause__ = err
+            log.error("%s", missing)
+            await self.bot.report_error(missing)
+            embeds = []
         responses = self._wrap_embeds(
             embeds, posted_name(resolved, embeds), txn, payload_events
         )
