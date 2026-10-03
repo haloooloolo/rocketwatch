@@ -46,6 +46,9 @@ class ScamChecks:
         )
         # Catches "ticket" misspellings in X usernames (tcket, tlcket, t1cket, etc.)
         self.x_ticket_pattern = re.compile(r"t[i1l]?[ck]+[e3l][tl]", re.IGNORECASE)
+        self.open_ticket_pattern = re.compile(
+            r"\b(?:support|open|create|raise|raisse)\W+(?:\w+\W+){0,2}?t[i1l!]?[ck]+[e3]t"
+        )
 
     def run_all(self, message: Message) -> str | None:
         checks = [
@@ -162,7 +165,13 @@ class ScamChecks:
         content_only = txt.split("---")[0]
         # Auto-generated embeds from video platforms may contain event/ticket
         # language (e.g. YouTube 🎫 TICKETS) — only check content for those.
-        rich_embed_domains = ("youtube.com", "youtu.be", "twitch.tv")
+        rich_embed_domains = (
+            "youtube.com",
+            "youtu.be",
+            "twitch.tv",
+            "tenor.com",
+            "giphy.com",
+        )
         content_urls = list(self.basic_url_pattern.finditer(content_only))
         if content_urls and all(
             any(d in m.group(0) for d in rich_embed_domains) for m in content_urls
@@ -186,15 +195,11 @@ class ScamChecks:
         if len(content_only_txt) > 500:
             return None
 
-        ticket_keywords = [
-            ("support", "open", "create", "raise", "raisse"),
-            "ticket",
-        ]
-        # For short messages, also check full text (including embeds) for ticket keywords.
+        # For short messages, also check full text (including embeds) for ticket phrases.
         # Scammers use embeds (via X posts, Discord invites) to carry ticket/support language.
-        # Only use the ticket pattern here; the contact+admin pattern is too broad for embed text
-        # (e.g. "administration" in news articles matches "admin").
-        if len(content_only_txt) <= 200 and self.__txt_contains(txt, ticket_keywords):
+        # Require "open a ticket"-style phrasing; loose keyword co-occurrence is too broad for
+        # embed text (e.g. "tickets to the US Open", "administration" matching "admin").
+        if len(content_only_txt) <= 200 and self.open_ticket_pattern.search(txt):
             return default_reason
 
         trusted_url_domains = (
