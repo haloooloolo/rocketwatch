@@ -13,7 +13,7 @@ from rocketwatch.bot import RocketWatch
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.file import TextFile
-from rocketwatch.utils.rocketpool import rp
+from rocketwatch.utils.rocketpool import at_address, rp
 from rocketwatch.utils.shared_w3 import bacon, w3
 from rocketwatch.utils.visibility import is_hidden
 
@@ -169,6 +169,7 @@ class UserDistribute(commands.Cog):
             "rocketDAOProtocolSettingsMinipool.getUserDistributeWindowLength"
         )
 
+        minipool_contract = await rp.assemble_contract("rocketMinipool")
         for mp in minipools:
             mp["address"] = w3.to_checksum_address(mp["address"])
             storage = await w3.eth.get_storage_at(mp["address"], 0x17)
@@ -183,12 +184,10 @@ class UserDistribute(commands.Cog):
                 distributable.append(mp)
             else:
                 # double check, DB may lag behind
-                minipool_contract = await rp.assemble_contract(
-                    "rocketMinipool", address=mp["address"]
-                )
-                if await minipool_contract.functions.getUserDistributed().call():
+                fns = minipool_contract.functions
+                if await at_address(fns.getUserDistributed(), mp["address"]).call():
                     continue
-                if await minipool_contract.functions.getFinalised().call():
+                if await at_address(fns.getFinalised(), mp["address"]).call():
                     continue
 
                 eligible.append(mp)

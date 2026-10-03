@@ -1,3 +1,4 @@
+import copy
 import logging
 import os
 from collections.abc import Sequence
@@ -41,6 +42,16 @@ class ValidatorInfo(NamedTuple):
 
 class NoAddressFound(Exception):
     pass
+
+
+def at_address(
+    fn: AsyncContractFunction, address: ChecksumAddress
+) -> AsyncContractFunction:
+    """Point a prepared contract call at another address. Far cheaper than
+    building a fresh contract per address, which re-parses the whole ABI."""
+    bound = copy.copy(fn)
+    bound.address = address
+    return bound
 
 
 class RocketPool:

@@ -96,8 +96,8 @@ class TestFetchMinipools:
         _stub_env["0xDIST"] = NOW - 200
         _stub_env["0xELIG"] = NOW - 400
         # The eligible double-check: not yet distributed/finalised → stays eligible.
-        scripted_rp.set_call("rocketMinipool.getUserDistributed", False)
-        scripted_rp.set_call("rocketMinipool.getFinalised", False)
+        scripted_rp.set_call("0xELIG.getUserDistributed", False)
+        scripted_rp.set_call("0xELIG.getFinalised", False)
 
         cog = _make_cog(make_bot(db=mongo_db))
         eligible, pending, distributable = await cog._fetch_minipools()
@@ -122,8 +122,8 @@ class TestFetchMinipools:
         await mongo_db.minipools.insert_one(_minipool("0xDONE"))
         _stub_env["0xDONE"] = NOW - 400  # past the window → eligible branch
         # DB lagged: chain says it's already distributed → skip.
-        scripted_rp.set_call("rocketMinipool.getUserDistributed", True)
-        scripted_rp.set_call("rocketMinipool.getFinalised", False)
+        scripted_rp.set_call("0xDONE.getUserDistributed", True)
+        scripted_rp.set_call("0xDONE.getFinalised", False)
 
         cog = _make_cog(make_bot(db=mongo_db))
         eligible, pending, distributable = await cog._fetch_minipools()
@@ -141,8 +141,8 @@ class TestFetchMinipools:
         scripted_bacon.set_block_header("head", {"slot": str(6000 * 32)})
         await mongo_db.minipools.insert_one(_minipool("0xFIN"))
         _stub_env["0xFIN"] = NOW - 400
-        scripted_rp.set_call("rocketMinipool.getUserDistributed", False)
-        scripted_rp.set_call("rocketMinipool.getFinalised", True)
+        scripted_rp.set_call("0xFIN.getUserDistributed", False)
+        scripted_rp.set_call("0xFIN.getFinalised", True)
 
         cog = _make_cog(make_bot(db=mongo_db))
         eligible, _, _ = await cog._fetch_minipools()
@@ -164,8 +164,8 @@ class TestUserDistributeStatusCommand:
         _stub_env["0xPEND"] = NOW - 50
         _stub_env["0xDIST"] = NOW - 200
         _stub_env["0xELIG"] = NOW - 400
-        scripted_rp.set_call("rocketMinipool.getUserDistributed", False)
-        scripted_rp.set_call("rocketMinipool.getFinalised", False)
+        scripted_rp.set_call("0xELIG.getUserDistributed", False)
+        scripted_rp.set_call("0xELIG.getFinalised", False)
 
         cog = _make_cog(make_bot(db=mongo_db))
         interaction = make_interaction()

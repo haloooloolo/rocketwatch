@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import logging
 import time
 from collections import defaultdict
@@ -10,7 +9,7 @@ from typing import Any
 import pymongo
 from discord.ext import commands
 from discord.utils import as_chunks
-from eth_typing import BlockNumber, ChecksumAddress
+from eth_typing import BlockNumber
 from pymongo import UpdateMany, UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
 from web3.contract.async_contract import AsyncContractFunction
@@ -20,7 +19,7 @@ from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import ts_to_block
 from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.event_logs import get_logs
-from rocketwatch.utils.rocketpool import ValidatorInfo, rp
+from rocketwatch.utils.rocketpool import ValidatorInfo, at_address, rp
 from rocketwatch.utils.shared_w3 import bacon, w3
 from rocketwatch.utils.time_debug import timed
 
@@ -28,16 +27,6 @@ log = logging.getLogger("rocketwatch.db_upkeep_task")
 
 # (contract_fn, require_success, transform, field_name)
 MulticallSpec = tuple[AsyncContractFunction, bool, Callable[[Any], Any] | None, str]
-
-
-def at_address(
-    fn: AsyncContractFunction, address: ChecksumAddress
-) -> AsyncContractFunction:
-    """Point a prepared contract call at another address. Far cheaper than
-    building a fresh contract per address, which re-parses the whole ABI."""
-    bound = copy.copy(fn)
-    bound.address = address
-    return bound
 
 
 def is_true(v: Any) -> bool:

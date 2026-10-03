@@ -6,7 +6,35 @@ from eth_abi import abi
 from web3 import AsyncWeb3
 
 from rocketwatch.utils import rocketpool as rp_module
-from rocketwatch.utils.rocketpool import RocketPool
+from rocketwatch.utils.rocketpool import RocketPool, at_address
+
+_INFO_ABI = [
+    {
+        "type": "function",
+        "name": "getValidatorInfo",
+        "stateMutability": "view",
+        "inputs": [{"name": "id", "type": "uint32"}],
+        "outputs": [{"name": "", "type": "uint256"}],
+    }
+]
+_ADDR_A = AsyncWeb3.to_checksum_address("0x" + "aa" * 20)
+_ADDR_B = AsyncWeb3.to_checksum_address("0x" + "bb" * 20)
+
+
+class TestAtAddress:
+    def test_targets_new_address_with_same_calldata(self) -> None:
+        template = AsyncWeb3().eth.contract(abi=_INFO_ABI)
+        fn = template.functions.getValidatorInfo(7)
+        bound = at_address(fn, _ADDR_A)
+        assert bound.address == _ADDR_A
+        assert bound._encode_transaction_data() == fn._encode_transaction_data()
+        assert bound.abi == fn.abi
+
+    def test_leaves_template_untouched(self) -> None:
+        template = AsyncWeb3().eth.contract(address=_ADDR_A, abi=_INFO_ABI)
+        fn = template.functions.getValidatorInfo(7)
+        at_address(fn, _ADDR_B)
+        assert fn.address == _ADDR_A
 
 
 class TestAbiTypeStr:
