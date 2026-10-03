@@ -13,7 +13,7 @@ from web3.types import EventData, TxReceipt
 
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import block_to_ts
-from rocketwatch.utils.chain_event import ChainEvent, NamedEmbeds
+from rocketwatch.utils.chain_event import ChainEvent, NamedEmbeds, TemplateEvent
 from rocketwatch.utils.dao import (
     DefaultDAO,
     ProtocolDAO,
@@ -22,7 +22,6 @@ from rocketwatch.utils.dao import (
 )
 from rocketwatch.utils.embeds import (
     Embed,
-    el_explorer_url,
     format_value,
 )
 from rocketwatch.utils.readable import cl_explorer_url, s_hex
@@ -151,6 +150,18 @@ class LogEvent(ChainEvent[LogEventData]):
 
     class Args(LogEventContext):
         """Default args type — override in subclasses."""
+
+
+class LogTemplate(TemplateEvent[LogEventData], LogEvent):
+    """A log event that is one sentence over its fields; see ``TemplateEvent``."""
+
+
+class GlobalLogTemplate(LogTemplate):
+    is_global = True
+
+
+THIS_IS_FINE_GIF = "https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif"
+PENALTY_GIF = "https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp"
 
 
 # ===================================================================
@@ -444,30 +455,13 @@ class RPLWithdrawEvent(LogEvent):
         ]
 
 
-class NodeRPLSlashEvent(LogEvent):
-    event_name = "node_rpl_slash_event"
-
-    class Args(LogEventContext):
-        amount: Wei
-        ethValue: Wei
-        node: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        amount_s = format_value(fmt["amount"])
-        eth_s = format_value(fmt["ethValue"])
-        embed = await self.embed(
-            args,
-            title=":rotating_light: Node Operator Slashed",
-            description=(
-                f"Node operator {fmt['node']} has been slashed "
-                f"for **{amount_s} RPL** ({eth_s} ETH)!"
-            ),
-        )
-        embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
-        return [embed]
+_node_rpl_slash = LogTemplate(
+    "node_rpl_slash_event",
+    "Node operator {node} has been slashed for **{amount} RPL** ({ethValue} ETH)!",
+    fields={"amount": Wei, "ethValue": Wei, "node": NodeAddress},
+    title=":rotating_light: Node Operator Slashed",
+    image=THIS_IS_FINE_GIF,
+)
 
 
 # ===================================================================
@@ -549,24 +543,12 @@ class PoolDepositAssignedEvent(LogEvent):
         ]
 
 
-class PoolDepositRecycledEvent(LogEvent):
-    event_name = "pool_deposit_recycled_event"
-
-    class Args(LogEventContext):
-        amount: Wei
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        amount_s = format_value(fmt["amount"])
-        return [
-            await self.line(
-                args,
-                f":recycle: A protocol contract deposited "
-                f"**{amount_s} ETH** into the deposit pool!",
-            )
-        ]
+_pool_deposit_recycled = LogTemplate(
+    "pool_deposit_recycled_event",
+    ":recycle: A protocol contract deposited **{amount} ETH** into the deposit pool!",
+    fields={"amount": Wei},
+    style="line",
+)
 
 
 class ValidatorQueueExitedEvent(LogEvent):
@@ -716,24 +698,12 @@ class CreditWithdrawnEvent(LogEvent):
         ]
 
 
-class ValidatorDepositEvent(LogEvent):
-    event_name = "validator_deposit_event"
-
-    class Args(FromNodeContext):
-        amount: Wei
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        amount_s = format_value(fmt["amount"])
-        return [
-            await self.line(
-                args,
-                f":construction_site: {fmt['from']} created a validator "
-                f"with a **{amount_s} ETH** bond!",
-            )
-        ]
+_validator_deposit = LogTemplate(
+    "validator_deposit_event",
+    ":construction_site: {from} created a validator with a **{amount} ETH** bond!",
+    fields={"from": NodeAddress, "amount": Wei},
+    style="line",
+)
 
 
 class ValidatorMultiDepositEvent(LogEvent):
@@ -800,29 +770,12 @@ class NodeMerkleRewardsClaimedEvent(LogEvent):
 # ===================================================================
 
 
-class AuctionLotCreateEvent(LogEvent):
-    event_name = "auction_lot_create_event"
-
-    class Args(LogEventContext):
-        by: NodeAddress
-        rplAmount: Wei
-        lotIndex: int
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        rpl_s = format_value(fmt["rplAmount"])
-        return [
-            await self.embed(
-                args,
-                title=":scales: Lot Created",
-                description=(
-                    f"{fmt['by']} created Lot #{args['lotIndex']}, "
-                    f"which will auction off {rpl_s} RPL!"
-                ),
-            )
-        ]
+_auction_lot_create = LogTemplate(
+    "auction_lot_create_event",
+    "{by} created Lot #{lotIndex}, which will auction off {rplAmount} RPL!",
+    fields={"by": NodeAddress, "rplAmount": Wei, "lotIndex": int},
+    title=":scales: Lot Created",
+)
 
 
 class AuctionBidEvent(LogEvent):
@@ -858,25 +811,12 @@ class AuctionBidEvent(LogEvent):
         ]
 
 
-class AuctionRPLRecoverEvent(LogEvent):
-    event_name = "auction_rpl_recover_event"
-
-    class Args(LogEventContext):
-        rplAmount: Wei
-        lotIndex: int
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        rpl_s = format_value(fmt["rplAmount"])
-        return [
-            await self.embed(
-                args,
-                title=":scales: RPL Recovered From Lot",
-                description=(f"{rpl_s} RPL recovered from Lot #{args['lotIndex']}!"),
-            )
-        ]
+_auction_rpl_recover = LogTemplate(
+    "auction_rpl_recover_event",
+    "{rplAmount} RPL recovered from Lot #{lotIndex}!",
+    fields={"rplAmount": Wei, "lotIndex": int},
+    title=":scales: RPL Recovered From Lot",
+)
 
 
 # ===================================================================
@@ -884,24 +824,12 @@ class AuctionRPLRecoverEvent(LogEvent):
 # ===================================================================
 
 
-class BootstrapPDAOSettingEvent(LogEvent):
-    event_name = "bootstrap_pdao_setting_event"
-
-    class Args(LogEventContext):
-        settingPath: str
-        value: Any
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        value = args["value"]
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode: Setting Modified",
-                description=(f"Setting `{args['settingPath']}` set to `{value}`!"),
-            )
-        ]
+_bootstrap_pdao_setting = LogTemplate(
+    "bootstrap_pdao_setting_event",
+    "Setting `{settingPath}` set to `{value}`!",
+    fields={"settingPath": str, "value": Any},
+    title=":satellite_orbital: pDAO Bootstrap Mode: Setting Modified",
+)
 
 
 class BootstrapPDAOSettingMultiEvent(LogEvent):
@@ -952,25 +880,12 @@ class BootstrapPDAOClaimerEvent(LogEvent):
         ]
 
 
-class BootstrapPDAOSpendTreasuryEvent(LogEvent):
-    event_name = "bootstrap_pdao_spend_treasury_event"
-
-    class Args(LogEventContext):
-        amount: Wei
-        recipientAddress: WalletAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        amount_s = format_value(fmt["amount"])
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode: Treasury Spend",
-                description=f"**{amount_s} RPL** from treasury sent to {fmt['recipientAddress']}!",
-            )
-        ]
+_bootstrap_pdao_spend_treasury = LogTemplate(
+    "bootstrap_pdao_spend_treasury_event",
+    "**{amount} RPL** from treasury sent to {recipientAddress}!",
+    fields={"amount": Wei, "recipientAddress": WalletAddress},
+    title=":satellite_orbital: pDAO Bootstrap Mode: Treasury Spend",
+)
 
 
 class _BootstrapPDAOTreasuryRecurringEvent(LogEvent):
@@ -1030,83 +945,36 @@ class BootstrapPDAOTreasuryUpdateEvent(_BootstrapPDAOTreasuryRecurringEvent):
     _action = "Updated"
 
 
-class BootstrapSDAOMemberInviteEvent(LogEvent):
-    event_name = "bootstrap_sdao_member_invite_event"
-
-    class Args(LogEventContext):
-        memberAddress: WalletAddress
-        id: str
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode: Security Council Invite",
-                description=(
-                    f"**{args['id']}** ({fmt['memberAddress']}) has been invited "
-                    f"to join the security council!"
-                ),
-            )
-        ]
+_bootstrap_sdao_member_invite = LogTemplate(
+    "bootstrap_sdao_member_invite_event",
+    "**{id}** ({memberAddress}) has been invited to join the security council!",
+    fields={"memberAddress": WalletAddress, "id": str},
+    title=":satellite_orbital: pDAO Bootstrap Mode: Security Council Invite",
+)
 
 
-class BootstrapSDAOMemberKickEvent(LogEvent):
-    event_name = "bootstrap_sdao_member_kick_event"
-
-    class Args(LogEventContext):
-        memberAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        member_link = await el_explorer_url(
-            args["memberAddress"], block=(args["blockNumber"] - 1)
-        )
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode: Kicked Security Council Member",
-                description=(
-                    f"{member_link} has been removed from the security council!"
-                ),
-            )
-        ]
+_bootstrap_sdao_member_kick = LogTemplate(
+    "bootstrap_sdao_member_kick_event",
+    "{memberAddress} has been removed from the security council!",
+    fields={"memberAddress": ChecksumAddress},
+    title=":satellite_orbital: pDAO Bootstrap Mode: Kicked Security Council Member",
+    before=("memberAddress",),
+)
 
 
-class BootstrapPDAODisableEvent(LogEvent):
-    event_name = "bootstrap_pdao_disable_event"
-
-    async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode Disabled",
-                description=(
-                    "Bootstrap mode for the pDAO is now disabled! The guardian has "
-                    "handed off full control over the Protocol DAO to on-chain governance!"
-                ),
-            )
-        ]
+_bootstrap_pdao_disable = LogTemplate(
+    "bootstrap_pdao_disable_event",
+    "Bootstrap mode for the pDAO is now disabled! The guardian has handed off full "
+    "control over the Protocol DAO to on-chain governance!",
+    title=":satellite_orbital: pDAO Bootstrap Mode Disabled",
+)
 
 
-class BootstrapPDAOEnableGovernanceEvent(LogEvent):
-    event_name = "bootstrap_pdao_enable_governance_event"
-
-    async def build_embeds(
-        self, args: Any, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: pDAO Bootstrap Mode: Enable Governance",
-                description="On-chain governance has been enabled!",
-            )
-        ]
+_bootstrap_pdao_enable_governance = LogTemplate(
+    "bootstrap_pdao_enable_governance_event",
+    "On-chain governance has been enabled!",
+    title=":satellite_orbital: pDAO Bootstrap Mode: Enable Governance",
+)
 
 
 # ===================================================================
@@ -1535,69 +1403,30 @@ class PDAOProposalBondBurnEvent(LogEvent):
 # ===================================================================
 
 
-class ODAOMemberJoinEvent(LogEvent):
-    event_name = "odao_member_join_event"
-
-    class Args(LogEventContext):
-        nodeAddress: NodeAddress
-        rplBondAmount: Wei
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        bond = format_value(fmt["rplBondAmount"])
-        return [
-            await self.embed(
-                args,
-                title=":new: oDAO Member Joined",
-                description=(
-                    f"{fmt['nodeAddress']} joined the oDAO with a bond of **{bond} RPL**!"
-                ),
-            )
-        ]
+_odao_member_join = LogTemplate(
+    "odao_member_join_event",
+    "{nodeAddress} joined the oDAO with a bond of **{rplBondAmount} RPL**!",
+    fields={"nodeAddress": NodeAddress, "rplBondAmount": Wei},
+    title=":new: oDAO Member Joined",
+)
 
 
-class ODAOMemberLeaveEvent(LogEvent):
-    event_name = "odao_member_leave_event"
-
-    class Args(LogEventContext):
-        nodeAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        node_link = await el_explorer_url(
-            args["nodeAddress"], block=(args["blockNumber"] - 1)
-        )
-        return [
-            await self.embed(
-                args,
-                title=":door: oDAO Member Left",
-                description=f"{node_link} left the oDAO!",
-            )
-        ]
+_odao_member_leave = LogTemplate(
+    "odao_member_leave_event",
+    "{nodeAddress} left the oDAO!",
+    fields={"nodeAddress": ChecksumAddress},
+    title=":door: oDAO Member Left",
+    before=("nodeAddress",),
+)
 
 
-class ODAOMemberKickEvent(LogEvent):
-    event_name = "odao_member_kick_event"
-
-    class Args(LogEventContext):
-        nodeAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        node_link = await el_explorer_url(
-            args["nodeAddress"], block=(args["blockNumber"] - 1)
-        )
-        return [
-            await self.embed(
-                args,
-                title=":boot: oDAO Member Kicked",
-                description=f"{node_link} was kicked from the oDAO!",
-            )
-        ]
+_odao_member_kick = LogTemplate(
+    "odao_member_kick_event",
+    "{nodeAddress} was kicked from the oDAO!",
+    fields={"nodeAddress": ChecksumAddress},
+    title=":boot: oDAO Member Kicked",
+    before=("nodeAddress",),
+)
 
 
 class ODAOMemberChallengeEvent(LogEvent):
@@ -1689,67 +1518,30 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
             )
 
 
-class SDAOMemberJoinEvent(LogEvent):
-    event_name = "sdao_member_join_event"
-
-    class Args(LogEventContext):
-        nodeAddress: WalletAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":new: Security Council Induction",
-                description=f"{fmt['nodeAddress']} has joined the security council!",
-            )
-        ]
+_sdao_member_join = LogTemplate(
+    "sdao_member_join_event",
+    "{nodeAddress} has joined the security council!",
+    fields={"nodeAddress": WalletAddress},
+    title=":new: Security Council Induction",
+)
 
 
-class SDAOMemberLeaveEvent(LogEvent):
-    event_name = "sdao_member_leave_event"
-
-    class Args(LogEventContext):
-        nodeAddress: WalletAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        node_link = await el_explorer_url(
-            args["nodeAddress"], block=(args["blockNumber"] - 1)
-        )
-        return [
-            await self.embed(
-                args,
-                title=":door: Security Council Resignation",
-                description=f"{node_link} has left the security council!",
-            )
-        ]
+_sdao_member_leave = LogTemplate(
+    "sdao_member_leave_event",
+    "{nodeAddress} has left the security council!",
+    fields={"nodeAddress": ChecksumAddress},
+    title=":door: Security Council Resignation",
+    before=("nodeAddress",),
+)
 
 
-class SDAOMemberRequestLeaveEvent(LogEvent):
-    event_name = "sdao_member_request_leave_event"
-
-    class Args(LogEventContext):
-        nodeAddress: WalletAddress
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        node_link = await el_explorer_url(
-            args["nodeAddress"], block=(args["blockNumber"] - 1)
-        )
-        return [
-            await self.embed(
-                args,
-                title=":door: Security Council Resignation Request",
-                description=(
-                    f"{node_link} has requested to leave the security council!"
-                ),
-            )
-        ]
+_sdao_member_request_leave = LogTemplate(
+    "sdao_member_request_leave_event",
+    "{nodeAddress} has requested to leave the security council!",
+    fields={"nodeAddress": ChecksumAddress},
+    title=":door: Security Council Resignation Request",
+    before=("nodeAddress",),
+)
 
 
 # ===================================================================
@@ -1997,7 +1789,7 @@ class MinipoolScrubEvent(LogEvent):
                 ),
             )
 
-        embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
+        embed.set_image(url=THIS_IS_FINE_GIF)
         if is_vacant:
             return NamedEmbeds("vacant_minipool_scrub_event", [embed])
         return [embed]
@@ -2280,56 +2072,29 @@ class MinipoolDissolveEvent(LogEvent):
                 f"failed to stake its assigned ETH and has been dissolved!"
             ),
         )
-        embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
+        embed.set_image(url=THIS_IS_FINE_GIF)
         return [embed]
 
 
 _minipool_dissolve_event = MinipoolDissolveEvent()
 
 
-class MinipoolPenaltyUpdatedEvent(LogEvent):
-    event_name = "minipool_penalty_updated"
-
-    class Args(LogEventContext):
-        minipoolAddress: MinipoolAddress
-        penalty: Percentage
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        embed = await self.embed(
-            args,
-            title=":rotating_light: Minipool Penalty Updated",
-            description=(
-                f"Minipool {fmt['minipoolAddress']} has had its Penalty "
-                f"increased to {format_value(fmt['penalty'])}%!"
-            ),
-        )
-        embed.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
-        return [embed]
+_minipool_penalty_updated = LogTemplate(
+    "minipool_penalty_updated",
+    "Minipool {minipoolAddress} has had its Penalty increased to {penalty}%!",
+    fields={"minipoolAddress": MinipoolAddress, "penalty": Percentage},
+    title=":rotating_light: Minipool Penalty Updated",
+    image=PENALTY_GIF,
+)
 
 
-class ODAOMinipoolPenaltyEvent(LogEvent):
-    event_name = "odao_minipool_penalty_updated"
-
-    class Args(LogEventContext):
-        rate: Percentage
-
-    async def build_embeds(
-        self, args: Args, event: LogEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        embed = await self.embed(
-            args,
-            title=":rotating_light: Minipool Penalty",
-            description=(
-                f"The maximum minipool penalty rate has been raised "
-                f"to {format_value(fmt['rate'])}%!"
-            ),
-        )
-        embed.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
-        return [embed]
+_odao_minipool_penalty = LogTemplate(
+    "odao_minipool_penalty_updated",
+    "The maximum minipool penalty rate has been raised to {rate}%!",
+    fields={"rate": Percentage},
+    title=":rotating_light: Minipool Penalty",
+    image=PENALTY_GIF,
+)
 
 
 # ===================================================================
@@ -2371,109 +2136,40 @@ class MegapoolValidatorAssignedEvent(LogEvent):
         ]
 
 
-class MegapoolValidatorExitingEvent(LogEvent):
-    event_name = "megapool_validator_exiting_event"
-    is_global = True
-
-    class Args(MegapoolEventContext):
-        validatorId: int
-
-    async def build_embeds(
-        self,
-        args: Args,
-        event: LogEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.line(
-                args,
-                f":octagonal_sign: Validator {args['validatorId']} of node "
-                f"{fmt['node']} has started exiting!",
-            )
-        ]
+_megapool_validator_exiting = GlobalLogTemplate(
+    "megapool_validator_exiting_event",
+    ":octagonal_sign: Validator {validatorId} of node {node} has started exiting!",
+    fields={"node": NodeAddress, "validatorId": int},
+    style="line",
+)
 
 
-class MegapoolValidatorExitedEvent(LogEvent):
-    event_name = "megapool_validator_exited_event"
-    is_global = True
-
-    class Args(MegapoolEventContext):
-        validatorId: int
-
-    async def build_embeds(
-        self,
-        args: Args,
-        event: LogEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.line(
-                args,
-                f":leaves: Validator {args['validatorId']} of node "
-                f"{fmt['node']} has exited!",
-            )
-        ]
+_megapool_validator_exited = GlobalLogTemplate(
+    "megapool_validator_exited_event",
+    ":leaves: Validator {validatorId} of node {node} has exited!",
+    fields={"node": NodeAddress, "validatorId": int},
+    style="line",
+)
 
 
-class MegapoolValidatorDissolveEvent(LogEvent):
-    event_name = "megapool_validator_dissolve_event"
-    is_global = True
-
-    class Args(MegapoolFromCallerContext):
-        validatorId: int
-
-    async def build_embeds(
-        self,
-        args: Args,
-        event: LogEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        node_link = fmt["node"]
-        embed = await self.rich_embed(
-            args,
-            receipt,
-            sender=args.get("from"),
-            caller=args.get("caller"),
-            title=":rotating_light: Validator Dissolved",
-            description=(
-                f":leaves: Validator {args['validatorId']} of node "
-                f"{node_link} has been dissolved!"
-            ),
-        )
-        embed.set_image(url="https://c.tenor.com/p3hWK5YRo6IAAAAC/this-is-fine-dog.gif")
-        return [embed]
+_megapool_validator_dissolve = GlobalLogTemplate(
+    "megapool_validator_dissolve_event",
+    ":leaves: Validator {validatorId} of node {node} has been dissolved!",
+    fields={"node": NodeAddress, "validatorId": int},
+    title=":rotating_light: Validator Dissolved",
+    style="rich",
+    image=THIS_IS_FINE_GIF,
+)
 
 
-class MegapoolPenaltyEvent(LogEvent):
-    event_name = "megapool_penalty_event"
-    is_global = True
-
-    class Args(MegapoolFromCallerContext):
-        amount: Wei
-
-    async def build_embeds(
-        self,
-        args: Args,
-        event: LogEventData,
-        receipt: TxReceipt,
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        amount_s = format_value(fmt["amount"])
-        embed = await self.rich_embed(
-            args,
-            receipt,
-            sender=args.get("from"),
-            caller=args.get("caller"),
-            title=":police_car: Megapool Penalty Applied",
-            description=(
-                f"Node {fmt['node']} has been penalized for **{amount_s} ETH**!"
-            ),
-        )
-        embed.set_image(url="https://i.giphy.com/jmSjPi6soIoQCFwaXJ.webp")
-        return [embed]
+_megapool_penalty = GlobalLogTemplate(
+    "megapool_penalty_event",
+    "Node {node} has been penalized for **{amount} ETH**!",
+    fields={"node": NodeAddress, "amount": Wei},
+    title=":police_car: Megapool Penalty Applied",
+    style="rich",
+    image=PENALTY_GIF,
+)
 
 
 # ===================================================================
@@ -2859,12 +2555,12 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
     "rocketDepositPool": {
         "DepositReceived": PoolDepositEvent(),
         "DepositAssigned": PoolDepositAssignedEvent(),
-        "DepositRecycled": PoolDepositRecycledEvent(),
+        "DepositRecycled": _pool_deposit_recycled,
         "QueueExited": ValidatorQueueExitedEvent(),
         "CreditWithdrawn": CreditWithdrawnEvent(),
     },
     "rocketNetworkPenalties": {
-        "PenaltyUpdated": MinipoolPenaltyUpdatedEvent(),
+        "PenaltyUpdated": _minipool_penalty_updated,
     },
     "rocketDAOProposal": {
         "ProposalAdded": _DAOProposalEvent("dao_proposal_add_event", "add"),
@@ -2872,11 +2568,11 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "ProposalCancelled": _DAOProposalEvent("dao_proposal_cancel_event", "cancel"),
     },
     "rocketDAONodeTrustedActions": {
-        "ActionJoined": ODAOMemberJoinEvent(),
-        "ActionLeave": ODAOMemberLeaveEvent(),
+        "ActionJoined": _odao_member_join,
+        "ActionLeave": _odao_member_leave,
         "ActionChallengeMade": ODAOMemberChallengeEvent(),
         "ActionChallengeDecided": ODAOMemberChallengeDecisionEvent(),
-        "ActionKick": ODAOMemberKickEvent(),
+        "ActionKick": _odao_member_kick,
     },
     "rocketNodeManager": {
         "NodeRegistered": NodeRegisterEvent(),
@@ -2891,42 +2587,42 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
         "RewardSnapshotSubmitted": ODAORewardsSnapshotSubmissionEvent(),
     },
     "rocketAuctionManager": {
-        "LotCreated": AuctionLotCreateEvent(),
+        "LotCreated": _auction_lot_create,
         "BidPlaced": AuctionBidEvent(),
-        "RPLRecovered": AuctionRPLRecoverEvent(),
+        "RPLRecovered": _auction_rpl_recover,
     },
     "rocketNodeStaking": {
         "RPLStaked(address,address,uint256,uint256)": RPLStakeEvent(),
         "RPLWithdrawn": RPLWithdrawEvent(),
-        "RPLSlashed": NodeRPLSlashEvent(),
+        "RPLSlashed": _node_rpl_slash,
     },
     "rocketMinipoolPenalty": {
-        "MaxPenaltyRateUpdated": ODAOMinipoolPenaltyEvent(),
+        "MaxPenaltyRateUpdated": _odao_minipool_penalty,
     },
     "rocketDAOProtocol": {
         "BootstrapSettingMulti": BootstrapPDAOSettingMultiEvent(),
-        "BootstrapSettingUint": BootstrapPDAOSettingEvent(),
-        "BootstrapSettingBool": BootstrapPDAOSettingEvent(),
-        "BootstrapSettingAddress": BootstrapPDAOSettingEvent(),
+        "BootstrapSettingUint": _bootstrap_pdao_setting,
+        "BootstrapSettingBool": _bootstrap_pdao_setting,
+        "BootstrapSettingAddress": _bootstrap_pdao_setting,
         "BootstrapSettingClaimers": BootstrapPDAOClaimerEvent(),
-        "BootstrapSpendTreasury": BootstrapPDAOSpendTreasuryEvent(),
+        "BootstrapSpendTreasury": _bootstrap_pdao_spend_treasury,
         "BootstrapTreasuryNewContract": BootstrapPDAOTreasuryNewEvent(),
         "BootstrapTreasuryUpdateContract": BootstrapPDAOTreasuryUpdateEvent(),
-        "BootstrapSecurityInvite": BootstrapSDAOMemberInviteEvent(),
-        "BootstrapSecurityKick": BootstrapSDAOMemberKickEvent(),
-        "BootstrapDisabled": BootstrapPDAODisableEvent(),
-        "BootstrapProtocolDAOEnabled": BootstrapPDAOEnableGovernanceEvent(),
+        "BootstrapSecurityInvite": _bootstrap_sdao_member_invite,
+        "BootstrapSecurityKick": _bootstrap_sdao_member_kick,
+        "BootstrapDisabled": _bootstrap_pdao_disable,
+        "BootstrapProtocolDAOEnabled": _bootstrap_pdao_enable_governance,
     },
     "rocketNodeDeposit": {
         "DepositFor": ETHDepositEvent(),
         "Withdrawal": ETHWithdrawEvent(),
-        "DepositReceived": ValidatorDepositEvent(),
+        "DepositReceived": _validator_deposit,
         "MultiDepositReceived": ValidatorMultiDepositEvent(),
     },
     "rocketDAOSecurityActions": {
-        "ActionJoined": SDAOMemberJoinEvent(),
-        "ActionLeave": SDAOMemberLeaveEvent(),
-        "ActionRequestLeave": SDAOMemberRequestLeaveEvent(),
+        "ActionJoined": _sdao_member_join,
+        "ActionLeave": _sdao_member_leave,
+        "ActionRequestLeave": _sdao_member_request_leave,
     },
     "rocketDAOProtocolProposal": {
         "ProposalAdded": PDAOProposalAddEvent(),
@@ -2985,9 +2681,9 @@ EVENT_REGISTRY: dict[str, dict[str, LogEvent]] = {
     },
     "rocketMegapoolDelegate": {
         "MegapoolValidatorAssigned": MegapoolValidatorAssignedEvent(),
-        "MegapoolValidatorExiting": MegapoolValidatorExitingEvent(),
-        "MegapoolValidatorExited": MegapoolValidatorExitedEvent(),
-        "MegapoolValidatorDissolved": MegapoolValidatorDissolveEvent(),
-        "MegapoolPenaltyApplied": MegapoolPenaltyEvent(),
+        "MegapoolValidatorExiting": _megapool_validator_exiting,
+        "MegapoolValidatorExited": _megapool_validator_exited,
+        "MegapoolValidatorDissolved": _megapool_validator_dissolve,
+        "MegapoolPenaltyApplied": _megapool_penalty,
     },
 }

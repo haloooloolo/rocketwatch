@@ -4,11 +4,11 @@ import datetime
 from typing import Any, ClassVar, TypedDict
 
 import humanize
-from eth_typing import BlockNumber, HexStr
+from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.types import TxData, TxReceipt
 
 from rocketwatch.utils import solidity
-from rocketwatch.utils.chain_event import ChainEvent
+from rocketwatch.utils.chain_event import ChainEvent, TemplateEvent
 from rocketwatch.utils.dao import (
     build_claimer_description,
     decode_setting_multi,
@@ -64,28 +64,26 @@ class TransactionEvent(ChainEvent[TxEventData]):
         """Default args type — override in subclasses."""
 
 
+class TxTemplate(TemplateEvent[TxEventData], TransactionEvent):
+    """A transaction event that is one sentence over its fields; see ``TemplateEvent``."""
+
+
+YOURE_FIRED_GIF = (
+    "https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
+)
+
+
 # ---------------------------------------------------------------------------
 # Group 1: Simple one-off events
 # ---------------------------------------------------------------------------
 
 
-class BootstrapODAOMemberEvent(TransactionEvent):
-    event_name = "bootstrap_odao_member"
-
-    class Args(EventContext):
-        nodeAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: TxEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":satellite_orbital: oDAO Bootstrap Mode: Member Added",
-                description=f"{fmt['nodeAddress']} added as a new oDAO member!",
-            )
-        ]
+_bootstrap_odao_member = TxTemplate(
+    "bootstrap_odao_member",
+    "{nodeAddress} added as a new oDAO member!",
+    fields={"nodeAddress": NodeAddress},
+    title=":satellite_orbital: oDAO Bootstrap Mode: Member Added",
+)
 
 
 class BootstrapODAODisableEvent(TransactionEvent):
@@ -111,47 +109,20 @@ class BootstrapODAODisableEvent(TransactionEvent):
         ]
 
 
-class ODAOMemberInviteEvent(TransactionEvent):
-    event_name = "odao_member_invite"
-
-    class Args(EventContext):
-        id: str
-        nodeAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: TxEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":crystal_ball: oDAO Invite",
-                description=(
-                    f"**{args['id']}** ({fmt['nodeAddress']}) has been invited to join the oDAO!"
-                ),
-            )
-        ]
+_odao_member_invite = TxTemplate(
+    "odao_member_invite",
+    "**{id}** ({nodeAddress}) has been invited to join the oDAO!",
+    fields={"id": str, "nodeAddress": NodeAddress},
+    title=":crystal_ball: oDAO Invite",
+)
 
 
-class SDAOMemberInviteEvent(TransactionEvent):
-    event_name = "sdao_member_invite"
-
-    class Args(EventContext):
-        memberAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: TxEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":lock: Security Council Invite",
-                description=(
-                    f"{fmt['memberAddress']} has been invited to join the security council!"
-                ),
-            )
-        ]
+_sdao_member_invite = TxTemplate(
+    "sdao_member_invite",
+    "{memberAddress} has been invited to join the security council!",
+    fields={"memberAddress": NodeAddress},
+    title=":lock: Security Council Invite",
+)
 
 
 class PDAOSpendTreasuryEvent(TransactionEvent):
@@ -518,27 +489,14 @@ class PDAOSettingMultiEvent(TransactionEvent):
         ]
 
 
-class SDAOMemberKickEvent(TransactionEvent):
-    event_name = "sdao_member_kick"
-
-    class Args(EventContext):
-        memberAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: TxEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        member_link = await el_explorer_url(
-            args["memberAddress"], block=(args["blockNumber"] - 1)
-        )
-        embed = await self.embed(
-            args,
-            title=":boot: Security Council Expulsion",
-            description=f"{member_link} has been kicked from the security council!",
-        )
-        embed.set_image(
-            url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
-        )
-        return [embed]
+_sdao_member_kick = TxTemplate(
+    "sdao_member_kick",
+    "{memberAddress} has been kicked from the security council!",
+    fields={"memberAddress": ChecksumAddress},
+    title=":boot: Security Council Expulsion",
+    image=YOURE_FIRED_GIF,
+    before=("memberAddress",),
+)
 
 
 class SDAOMemberKickMultiEvent(TransactionEvent):
@@ -563,33 +521,17 @@ class SDAOMemberKickMultiEvent(TransactionEvent):
                 f"{member_list}"
             ),
         )
-        embed.set_image(
-            url="https://media1.tenor.com/m/Xuv3IEoH1a4AAAAC/youre-fired-donald-trump.gif"
-        )
+        embed.set_image(url=YOURE_FIRED_GIF)
         return [embed]
 
 
-class SDAOMemberReplaceEvent(TransactionEvent):
-    event_name = "sdao_member_replace"
-
-    class Args(EventContext):
-        existingMemberAddress: NodeAddress
-        newMemberAddress: NodeAddress
-
-    async def build_embeds(
-        self, args: Args, event: TxEventData, receipt: TxReceipt
-    ) -> list[Embed]:
-        existing_link = await el_explorer_url(
-            args["existingMemberAddress"], block=(args["blockNumber"] - 1)
-        )
-        fmt = await self._fmt(args)
-        return [
-            await self.embed(
-                args,
-                title=":repeat: Security Council Replacement",
-                description=f"{existing_link} has been replaced by {fmt['newMemberAddress']}!",
-            )
-        ]
+_sdao_member_replace = TxTemplate(
+    "sdao_member_replace",
+    "{existingMemberAddress} has been replaced by {newMemberAddress}!",
+    fields={"existingMemberAddress": ChecksumAddress, "newMemberAddress": NodeAddress},
+    title=":repeat: Security Council Replacement",
+    before=("existingMemberAddress",),
+)
 
 
 class FailedDepositEvent(TransactionEvent):
@@ -692,7 +634,7 @@ DAO_PROPOSAL_EVENTS: dict[str, ProposalExecuteEvent] = {
 TRANSACTION_REGISTRY: dict[str, dict[str, TransactionEvent]] = {
     # Bootstrap oDAO
     "rocketDAONodeTrusted": {
-        "bootstrapMember": BootstrapODAOMemberEvent(),
+        "bootstrapMember": _bootstrap_odao_member,
         "bootstrapSettingUint": _bootstrap_odao_setting,
         "bootstrapSettingBool": _bootstrap_odao_setting,
         "bootstrapUpgrade": BootstrapNetworkUpgradeEvent(),
@@ -707,7 +649,7 @@ TRANSACTION_REGISTRY: dict[str, dict[str, TransactionEvent]] = {
         "execute": _odao_proposal_execute,
         "proposalSettingUint": _odao_setting,
         "proposalSettingBool": _odao_setting,
-        "proposalInvite": ODAOMemberInviteEvent(),
+        "proposalInvite": _odao_member_invite,
     },
     # Security council proposals
     "rocketDAOSecurityProposals": {
@@ -738,10 +680,10 @@ TRANSACTION_REGISTRY: dict[str, dict[str, TransactionEvent]] = {
             ":bank: DAO Treasury: Updated Recurring Spend",
             has_start_time=False,
         ),
-        "proposalSecurityInvite": SDAOMemberInviteEvent(),
-        "proposalSecurityKick": SDAOMemberKickEvent(),
+        "proposalSecurityInvite": _sdao_member_invite,
+        "proposalSecurityKick": _sdao_member_kick,
         "proposalSecurityKickMulti": SDAOMemberKickMultiEvent(),
-        "proposalSecurityReplace": SDAOMemberReplaceEvent(),
+        "proposalSecurityReplace": _sdao_member_replace,
     },
     # Treasury claims
     "rocketClaimDAO": {

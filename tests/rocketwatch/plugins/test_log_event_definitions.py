@@ -271,7 +271,7 @@ class TestSimpleEvents:
             blocks[target] = block
             return target
 
-        monkeypatch.setattr(defs, "el_explorer_url", link)
+        stub_explorer_links(monkeypatch, defs, link=link)
 
         await _build(_handler(contract, event), _args(**{member_arg: OTHER}))
 

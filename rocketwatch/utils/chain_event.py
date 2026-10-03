@@ -6,7 +6,7 @@ import contextlib
 import json
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal, TypedDict
 
 from discord import Interaction
 from discord.ui import Modal, TextInput
@@ -20,6 +20,8 @@ from rocketwatch.utils.embeds import (
     build_event_embed,
     build_rich_event_embed,
     build_small_event_embed,
+    el_explorer_url,
+    format_value,
 )
 from rocketwatch.utils.type_markers import auto_format
 
@@ -69,9 +71,13 @@ class ChainEvent[DataT](ABC):
         """Dispatch to the event type that handles *args*; ``None`` filters it out."""
         return self
 
+    def args_type(self) -> type:
+        """The TypedDict declaring this event's fields and formatting markers."""
+        return type(self).Args  # type: ignore[attr-defined, no-any-return]
+
     async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
-        """Auto-format *args* using this class's nested ``Args`` TypedDict."""
-        return dict(await auto_format(args, type(self).Args))  # type: ignore[attr-defined]
+        """Auto-format *args* using this event's Args TypedDict."""
+        return dict(await auto_format(args, self.args_type()))
 
     @staticmethod
     async def embed(args: Mapping[str, Any], **kwargs: Any) -> Embed:
@@ -105,6 +111,70 @@ class ChainEvent[DataT](ABC):
     ) -> list[Embed]: ...
 
 
+class TemplateEvent[DataT](ChainEvent[DataT]):
+    """An event that is one sentence over its formatted fields, e.g.
+    ``text="{node} has been slashed for **{amount} RPL**!"``.
+
+    Amounts are formatted with ``format_value``. Fields in *before* are linked
+    as of the block before the event, for members the event removed (their
+    member name no longer resolves after it). Anything with conditions or
+    lookups should be a class instead.
+    """
+
+    def __init__(
+        self,
+        event_name: str,
+        text: str,
+        *,
+        fields: dict[str, Any] | None = None,
+        title: str | None = None,
+        style: Literal["embed", "line", "rich"] = "embed",
+        image: str | None = None,
+        before: tuple[str, ...] = (),
+    ) -> None:
+        self.event_name = event_name
+        self._args: type = TypedDict(f"{event_name}_args", fields or {})  # type: ignore[misc]
+        self._text = text
+        self._title = title
+        self._style = style
+        self._image = image
+        self._before = before
+
+    def args_type(self) -> type:
+        return self._args
+
+    async def build_embeds(
+        self, args: Any, event: DataT, receipt: TxReceipt
+    ) -> list[Embed]:
+        values = {
+            k: format_value(v) if isinstance(v, float) else v
+            for k, v in (await self._fmt(args)).items()
+        }
+        for name in self._before:
+            values[name] = await el_explorer_url(
+                args[name], block=args["blockNumber"] - 1
+            )
+        text = self._text.format(**values)
+
+        if self._style == "line":
+            embed = await self.line(args, text)
+        elif self._style == "rich":
+            embed = await self.rich_embed(
+                args,
+                receipt,
+                sender=args.get("from"),
+                caller=args.get("caller"),
+                title=self._title,
+                description=text,
+            )
+        else:
+            embed = await self.embed(args, title=self._title, description=text)
+
+        if self._image:
+            embed.set_image(url=self._image)
+        return [embed]
+
+
 def posted_name(handler: ChainEvent[Any], embeds: list[Embed]) -> str:
     """The event name *embeds* are posted under."""
     if isinstance(embeds, NamedEmbeds):
@@ -119,10 +189,10 @@ def posted_name(handler: ChainEvent[Any], embeds: list[Embed]) -> str:
 
 def preview_fields(handler: ChainEvent[Any], context: type) -> list[tuple[str, bool]]:
     """``[(name, required), ...]`` for *handler*'s Args fields not in *context*."""
-    args_type = type(handler).Args  # type: ignore[attr-defined]
+    args_type = handler.args_type()
     context_keys = set(context.__annotations__)
     return [
-        (name, name in args_type.__required_keys__)
+        (name, name in args_type.__required_keys__)  # type: ignore[attr-defined]
         for name in args_type.__annotations__
         if name not in context_keys
     ]

@@ -1,12 +1,13 @@
 """Deterministic stand-ins for explorer links and block timestamps in embeds."""
 
+from collections.abc import Awaitable, Callable
 from types import ModuleType
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 
-from rocketwatch.utils import embeds, type_markers
+from rocketwatch.utils import chain_event, embeds, type_markers
 
 BLOCK_TS = 1_700_000_000
 
@@ -22,12 +23,15 @@ async def _link(
 
 
 def stub_explorer_links(
-    monkeypatch: pytest.MonkeyPatch, *importers: ModuleType
+    monkeypatch: pytest.MonkeyPatch,
+    *importers: ModuleType,
+    link: Callable[..., Awaitable[str]] = _link,
 ) -> None:
     """Stub link/timestamp lookups in the embed helpers and in *importers*,
-    modules that imported ``el_explorer_url`` by name."""
-    for module in (embeds, type_markers, *importers):
-        monkeypatch.setattr(module, "el_explorer_url", _link)
+    modules that may have imported ``el_explorer_url`` by name."""
+    for module in (embeds, type_markers, chain_event, *importers):
+        if hasattr(module, "el_explorer_url"):
+            monkeypatch.setattr(module, "el_explorer_url", link)
     for module in (embeds, type_markers):
         monkeypatch.setattr(
             module, "get_sea_creature_for_address", AsyncMock(return_value="")
