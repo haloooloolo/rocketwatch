@@ -63,6 +63,9 @@ COLORS = {
     "Unknown": "#AAAAAA",
 }
 
+# drawn first, in this order, ahead of the remaining slices (smallest first)
+LEADING_SLICES = ("No proposals yet", "Unknown", "External")
+
 PROPOSAL_TEMPLATE = {
     "type": "Unknown",
     "consensus_client": "Unknown",
@@ -437,69 +440,24 @@ class Proposals(commands.Cog):
         self, attr: str, remove_allnodes: bool = False
     ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
         """Pie slices (label, count) for validators and node operators."""
-        # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
         total_validators, total_node_operators = await self._count_active_validators()
+        excluded = data.pop("remove_from_total", {"count": 0, "validator_count": 0})
 
-        validators = [
-            (x, y["validator_count"])
-            for x, y in data.items()
-            if x != "remove_from_total"
-        ]
-        validators = sorted(validators, key=lambda x: x[1])
-
-        unobserved_validators = total_validators - sum(d[1] for d in validators)
-        if "remove_from_total" in data:
-            unobserved_validators -= data["remove_from_total"]["validator_count"]
-        validators.insert(0, ("No proposals yet", unobserved_validators))
-        # move "Unknown" to be before "No proposals yet"
-        validators.insert(
-            1,
-            validators.pop(
-                next(i for i, (x, y) in enumerate(validators) if x == "Unknown")
-            ),
-        )
-        # move "External (if it exists) to be before "Unknown"
-        # validators is a list of tuples (name, count)
-        if "External" in [x for x, y in validators]:
-            validators.insert(
-                2,
-                validators.pop(
-                    next(i for i, (x, y) in enumerate(validators) if x == "External")
-                ),
+        def slices(field: str, total: int) -> list[tuple[str, int]]:
+            counts = [(name, entry[field]) for name, entry in data.items()]
+            unobserved = total - sum(c for _, c in counts) - excluded[field]
+            counts.append(("No proposals yet", unobserved))
+            leading = [s for name in LEADING_SLICES for s in counts if s[0] == name]
+            rest = sorted(
+                (s for s in counts if s[0] not in LEADING_SLICES), key=lambda s: s[1]
             )
+            return leading + rest
 
-        # get node operators
-        node_operators = [
-            (x, y["count"]) for x, y in data.items() if x != "remove_from_total"
-        ]
-        node_operators = sorted(node_operators, key=lambda x: x[1])
-
-        unobserved_node_operators = total_node_operators - sum(
-            d[1] for d in node_operators
+        return (
+            slices("validator_count", total_validators),
+            slices("count", total_node_operators),
         )
-        if "remove_from_total" in data:
-            unobserved_node_operators -= data["remove_from_total"]["count"]
-        node_operators.insert(0, ("No proposals yet", unobserved_node_operators))
-        # move "Unknown" to be before "No proposals yet"
-        node_operators.insert(
-            1,
-            node_operators.pop(
-                next(i for i, (x, y) in enumerate(node_operators) if x == "Unknown")
-            ),
-        )
-        # move "External (if it exists) to be before "Unknown"
-        # node_operators is a list of tuples (name, count)
-        if "External" in [x for x, y in node_operators]:
-            node_operators.insert(
-                2,
-                node_operators.pop(
-                    next(
-                        i for i, (x, y) in enumerate(node_operators) if x == "External"
-                    )
-                ),
-            )
-        return validators, node_operators
 
     @staticmethod
     def _plot_distribution(

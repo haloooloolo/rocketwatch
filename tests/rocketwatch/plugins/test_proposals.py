@@ -381,8 +381,6 @@ class TestClientComboRanking:
 
 class TestDistributionCharts:
     async def _seed(self, mongo_db: AsyncDatabase[dict[str, Any]]) -> None:
-        # _distribution_slices explicitly reorders an "Unknown" bucket and crashes
-        # if absent, so the seed must include one.
         await mongo_db.latest_proposals.insert_many(
             [
                 {
@@ -478,6 +476,29 @@ class TestDistributionCharts:
 
         assert dict(validators) == {"No proposals yet": 1, "Unknown": 1}
         assert dict(node_operators) == {"No proposals yet": 1, "Unknown": 1}
+
+    async def test_slices_without_unknown_bucket(
+        self, mongo_db: AsyncDatabase[dict[str, Any]]
+    ) -> None:
+        active = {"beacon": {"status": "active_ongoing"}}
+        await mongo_db.minipools.insert_many(
+            [{"node_operator": f"0xNO{i}", **active} for i in range(6)]
+        )
+        await mongo_db.latest_proposals.insert_many(
+            [
+                {"latest_proposal": {"type": "Smart Node"}, "validator_count": 3},
+                {"latest_proposal": {"type": "Allnodes"}, "validator_count": 1},
+            ]
+        )
+        cog = _make_cog(make_bot(db=mongo_db))
+
+        validators, _ = await cog._distribution_slices("type")
+
+        assert validators == [
+            ("No proposals yet", 2),
+            ("Allnodes", 1),
+            ("Smart Node", 3),
+        ]
 
     async def test_operator_type_distribution_sends_image(
         self, mongo_db: AsyncDatabase[dict[str, Any]]
