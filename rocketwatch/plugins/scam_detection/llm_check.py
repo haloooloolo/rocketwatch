@@ -26,9 +26,28 @@ Focus on the author's INTENT. Flag messages that are trying to:
 - Create artificial urgency or fear to pressure users into action
 - Deceive users through any other social engineering technique
 
-If image attachments are included, evaluate them as part of the message. Images may contain \
-QR codes linking to phishing sites, fake support screenshots, fake wallet/exchange interfaces, \
-impersonations of project branding, or instructions overlaid on otherwise innocuous pictures.
+Judge what the AUTHOR is doing, not what content appears in the message. Users often share scam \
+content to warn others, report a scammer, or ask whether something is legitimate. Quoting, \
+forwarding, or screenshotting a scam is not itself a scam. A message is a report rather than a \
+scam when the author:
+- Describes receiving the content ("this guy DMed me", "got this after posting in support")
+- Warns others or alerts moderators ("watch out", "careful", "mods, this account is scamming")
+- Asks whether something is legitimate ("is this real?", "is this a scam?")
+- Shares a screenshot of a conversation in which someone else is pitching the scam to them
+- Pings moderators or a role alongside the content
+
+Scammers post their lure directly; they have no reason to screenshot their own DMs to a victim. \
+A screenshot of a DM or chat window where another account is messaging the author is therefore \
+almost always posted by the target, even with little or no accompanying text.
+
+If image attachments are included, evaluate them together with the text. Images that ARE the lure \
+— QR codes, contact or support instructions, fake wallet/exchange interfaces, impersonated \
+project branding, promotional graphics for airdrops or giveaways — are suspicious when the \
+author is presenting them to readers as something to act on. A screenshot of a DM, chat, \
+email or website that the author received and is discussing, reporting, or asking about is not \
+a scam, even if the screenshot itself contains obvious scam content. If the text clearly \
+frames the image as a report or question, trust that framing unless the message also directs \
+readers to a contact, link, or DM of its own.
 
 You will be given context about the user: how long they have been in the server and the number of previous \
 messages they have sent in the server. Brand-new users with few or no messages who jump straight \
@@ -72,6 +91,20 @@ Examples:
 
 "Hello I am testing a Rocket Pool on Hoodi and would like some RPL please. 0xafDEDDB54b72858718048d4A497ad97D10f514f6"
 -> is_scam=false, reason="Testnet faucet request"
+
+"Got this DM right after asking in support, is this legit?" [image: DM from "RP Support Team" asking \
+the user to connect their wallet at a link]
+-> is_scam=false, reason="Asking about received DM"
+
+"Heads up, this account is DMing everyone pretending to be a mod @moderators" [image: screenshot \
+of the impersonator's messages]
+-> is_scam=false, reason="Reporting a scammer"
+
+"Scan to claim your staking rewards before the deadline!" [image: QR code with Rocket Pool logo]
+-> is_scam=true, reason="QR code phishing lure"
+
+"Is this real?" [image: screenshot of a website announcing an RPL airdrop]
+-> is_scam=false, reason="Asking if airdrop is real"
 """
 
 
