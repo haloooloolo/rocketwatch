@@ -15,7 +15,12 @@ from hexbytes import HexBytes
 from web3.constants import ADDRESS_ZERO, HASH_ZERO
 from web3.types import TxReceipt, Wei
 
-from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.embeds import (
+    Embed,
+    build_event_embed,
+    build_rich_event_embed,
+    build_small_event_embed,
+)
 from rocketwatch.utils.type_markers import auto_format
 
 DUMMY_RECEIPT: TxReceipt = {
@@ -67,6 +72,32 @@ class ChainEvent[DataT](ABC):
     async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Auto-format *args* using this class's nested ``Args`` TypedDict."""
         return dict(await auto_format(args, type(self).Args))  # type: ignore[attr-defined]
+
+    @staticmethod
+    async def embed(args: Mapping[str, Any], **kwargs: Any) -> Embed:
+        """A full embed with the transaction footer."""
+        return await build_event_embed(
+            tx_hash=args["transactionHash"],
+            block_number=args["blockNumber"],
+            **kwargs,
+        )
+
+    @staticmethod
+    async def rich_embed(
+        args: Mapping[str, Any], receipt: TxReceipt, **kwargs: Any
+    ) -> Embed:
+        """A full embed with sender, fee and the transaction footer."""
+        return await build_rich_event_embed(
+            tx_hash=args["transactionHash"],
+            block_number=args["blockNumber"],
+            receipt=receipt,
+            **kwargs,
+        )
+
+    @staticmethod
+    async def line(args: Mapping[str, Any], text: str) -> Embed:
+        """A one-line embed linking the transaction."""
+        return await build_small_event_embed(text, args["transactionHash"])
 
     @abstractmethod
     async def build_embeds(

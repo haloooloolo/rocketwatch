@@ -22,9 +22,6 @@ from rocketwatch.utils.dao import (
 )
 from rocketwatch.utils.embeds import (
     Embed,
-    build_event_embed,
-    build_rich_event_embed,
-    build_small_event_embed,
     el_explorer_url,
     format_value,
 )
@@ -183,9 +180,8 @@ class NegativeRETHRatioEvent(LogEvent):
         if d > 0 or abs(d) < 0.00001:
             return []
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":warning: Negative rETH Ratio Update",
                 description=(
                     f"The rETH ratio has decreased from "
@@ -223,9 +219,8 @@ class PriceUpdateEvent(LogEvent):
             return []
 
         value = format_value(solidity.to_float(args["rplPrice"]))
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":moneybag: RPL Price Update",
             description=(
                 f"The RPL price has been updated to **`{value} RPL/ETH`!**\n\n"
@@ -262,10 +257,9 @@ class TransferEvent(LogEvent):
 
         fmt = await self._fmt(args)
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":whale: Large rETH Transfer",
@@ -297,16 +291,15 @@ class RETHBurnEvent(LogEvent):
         if amount < 100:
             sender = _inline_sender(fmt, args)
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":fire: {sender} burned **{amount_s} rETH** for {eth_s} ETH!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":fire: rETH Burn",
@@ -331,9 +324,8 @@ class RPLInflationEvent(LogEvent):
         )
         inflation = round(await rp.get_annual_rpl_inflation() * 100, 4)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":chart_with_upwards_trend: RPL Inflation Occurred",
                 description=(
                     f"{value} new RPL minted! "
@@ -358,16 +350,15 @@ class RPLMigrationEvent(LogEvent):
         amount_s = format_value(amount)
         if amount < 1000:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":arrows_counterclockwise: {fmt['from']} migrated **{amount_s} RPL**!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":arrows_counterclockwise: RPL Migration",
@@ -402,17 +393,16 @@ class RPLStakeEvent(LogEvent):
         if amount < threshold:
             fancy = _inline_sender(fmt, args)
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":moneybag: {fancy} staked "
                     f"**{amount_s} RPL** (worth {eth_s} ETH)!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":moneybag: RPL Stake",
@@ -444,9 +434,8 @@ class RPLWithdrawEvent(LogEvent):
         amount_s = format_value(amount)
         eth_s = format_value(eth_amount)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":leaves: RPL Withdrawal",
                 description=(
                     f"{fmt['to']} withdrew **{amount_s} RPL** (worth {eth_s} ETH)!"
@@ -469,9 +458,8 @@ class NodeRPLSlashEvent(LogEvent):
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
         eth_s = format_value(fmt["ethValue"])
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":rotating_light: Node Operator Slashed",
             description=(
                 f"Node operator {fmt['node']} has been slashed "
@@ -502,15 +490,14 @@ class PoolDepositEvent(LogEvent):
         if amount < 100:
             fancy = _inline_sender(fmt, args)
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":rocket: {fancy} deposited **{amount_s} ETH** for rETH!",
-                    args["transactionHash"],
                 )
             ]
-        embed = await build_rich_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
-            receipt=receipt,
+        embed = await self.rich_embed(
+            args,
+            receipt,
             sender=args["from"],
             caller=receipt["from"],
             title=":rocket: Pool Deposit",
@@ -546,18 +533,18 @@ class PoolDepositAssignedEvent(LogEvent):
             return NamedEmbeds(
                 "pool_deposit_assigned_single_event",
                 [
-                    await build_small_event_embed(
+                    await self.line(
+                        args,
                         f":handshake: Minipool {minipool_link} owned by operator "
                         f"{node_link} has been matched and left the queue!",
-                        args["transactionHash"],
                     )
                 ],
             )
 
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":handshake: {count} minipools have been matched and left the queue!",
-                args["transactionHash"],
             )
         ]
 
@@ -574,10 +561,10 @@ class PoolDepositRecycledEvent(LogEvent):
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":recycle: A protocol contract deposited "
                 f"**{amount_s} ETH** into the deposit pool!",
-                args["transactionHash"],
             )
         ]
 
@@ -623,9 +610,9 @@ class ValidatorQueueExitedEvent(LogEvent):
             log.exception("Failed to determine queue type for QueueExited event")
 
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":leaves: {fmt['nodeAddress']} has removed a validator from the{queue_type} queue!",
-                args["transactionHash"],
             )
         ]
 
@@ -645,17 +632,16 @@ class ETHDepositEvent(LogEvent):
         amount_s = format_value(amount)
         if amount < 32:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":moneybag: {fmt['from']} deposited "
                     f"**{amount_s} ETH** into node {fmt['nodeAddress']}!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":moneybag: Node ETH Deposit",
@@ -682,16 +668,15 @@ class ETHWithdrawEvent(LogEvent):
         amount_s = format_value(amount)
         if amount < 100:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":leaves: {fmt['to']} withdrew "
                     f"**{amount_s} ETH** from node {fmt['nodeAddress']}!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":leaves: Node ETH Withdrawal",
                 description=(
                     f"{fmt['to']} withdrew **{amount_s} ETH** from node {fmt['nodeAddress']}!"
@@ -714,16 +699,15 @@ class CreditWithdrawnEvent(LogEvent):
         amount = fmt["amount"]
         if amount < 32:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":leaves: {fmt['nodeAddress']} withdrew "
                     f"**{format_value(amount)} ETH** of credit!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":leaves: Credit Withdrawal",
                 description=(
                     f"{fmt['nodeAddress']} withdrew **{format_value(amount)} ETH** of credit!"
@@ -744,10 +728,10 @@ class ValidatorDepositEvent(LogEvent):
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":construction_site: {fmt['from']} created a validator "
                 f"with a **{amount_s} ETH** bond!",
-                args["transactionHash"],
             )
         ]
 
@@ -770,20 +754,19 @@ class ValidatorMultiDepositEvent(LogEvent):
             return NamedEmbeds(
                 "validator_deposit_event",
                 [
-                    await build_small_event_embed(
+                    await self.line(
+                        args,
                         f":construction_site: {fmt['from']} created a validator "
                         f"with a **{amount_s} ETH** bond!",
-                        args["transactionHash"],
                     )
                 ],
             )
 
         if num >= 5:
             return [
-                await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
+                await self.rich_embed(
+                    args,
+                    receipt,
                     sender=args["from"],
                     caller=receipt["from"],
                     title=":construction_site: Multi Validator Deposit",
@@ -795,10 +778,10 @@ class ValidatorMultiDepositEvent(LogEvent):
             ]
 
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":construction_site: {fmt['from']} created "
                 f"**{num} validators** with a **{amount_s} ETH** bond!",
-                args["transactionHash"],
             )
         ]
 
@@ -831,9 +814,8 @@ class AuctionLotCreateEvent(LogEvent):
         fmt = await self._fmt(args)
         rpl_s = format_value(fmt["rplAmount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":scales: Lot Created",
                 description=(
                     f"{fmt['by']} created Lot #{args['lotIndex']}, "
@@ -865,9 +847,8 @@ class AuctionBidEvent(LogEvent):
         )
         rpl_amount = eth / price
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":scales: Bid On Lot",
                 description=(
                     f"{fmt['by']} bid {format_value(eth)} ETH for "
@@ -890,9 +871,8 @@ class AuctionRPLRecoverEvent(LogEvent):
         fmt = await self._fmt(args)
         rpl_s = format_value(fmt["rplAmount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":scales: RPL Recovered From Lot",
                 description=(f"{rpl_s} RPL recovered from Lot #{args['lotIndex']}!"),
             )
@@ -916,9 +896,8 @@ class BootstrapPDAOSettingEvent(LogEvent):
     ) -> list[Embed]:
         value = args["value"]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Setting Modified",
                 description=(f"Setting `{args['settingPath']}` set to `{value}`!"),
             )
@@ -942,9 +921,8 @@ class BootstrapPDAOSettingMultiEvent(LogEvent):
     ) -> list[Embed]:
         description = decode_setting_multi(dict(args), args["values"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Multiple Settings Modified",
                 description=description,
             )
@@ -966,9 +944,8 @@ class BootstrapPDAOClaimerEvent(LogEvent):
         receipt: TxReceipt,
     ) -> list[Embed]:
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Changed Reward Distribution",
                 description=f"```{build_claimer_description(args)}```",
             )
@@ -988,9 +965,8 @@ class BootstrapPDAOSpendTreasuryEvent(LogEvent):
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Treasury Spend",
                 description=f"**{amount_s} RPL** from treasury sent to {fmt['recipientAddress']}!",
             )
@@ -1032,9 +1008,8 @@ class _BootstrapPDAOTreasuryRecurringEvent(LogEvent):
                 )
             )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=f":satellite_orbital: pDAO Bootstrap Mode: {self._action} Recurring Spend",
                 description=(
                     f"{fmt['recipientAddress']} will be awarded "
@@ -1067,9 +1042,8 @@ class BootstrapSDAOMemberInviteEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Security Council Invite",
                 description=(
                     f"**{args['id']}** ({fmt['memberAddress']}) has been invited "
@@ -1092,9 +1066,8 @@ class BootstrapSDAOMemberKickEvent(LogEvent):
             args["memberAddress"], block=(args["blockNumber"] - 1)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Kicked Security Council Member",
                 description=(
                     f"{member_link} has been removed from the security council!"
@@ -1110,9 +1083,8 @@ class BootstrapPDAODisableEvent(LogEvent):
         self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode Disabled",
                 description=(
                     "Bootstrap mode for the pDAO is now disabled! The guardian has "
@@ -1129,9 +1101,8 @@ class BootstrapPDAOEnableGovernanceEvent(LogEvent):
         self, args: Any, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: pDAO Bootstrap Mode: Enable Governance",
                 description="On-chain governance has been enabled!",
             )
@@ -1208,9 +1179,8 @@ class _DAOProposalEvent(LogEvent):
                 desc = ""
 
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=_DAO_TITLES[self._action][prefix],
                 description=f"{desc}\n```{body}```",
             )
@@ -1276,9 +1246,8 @@ class PDAOProposalAddEvent(LogEvent):
         )
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":bulb: New pDAO Proposal",
                 description=(
                     f"{fmt['proposer']} created **proposal #{proposal_id}**!\n```{body}```"
@@ -1314,9 +1283,8 @@ class PDAOProposalVoteEvent(LogEvent):
             args["direction"]
         ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":ballot_box: Major pDAO Vote",
                 description=(
                     f"**Proposal #{proposal_id}**:\n"
@@ -1360,9 +1328,8 @@ class PDAOProposalVoteOverrideEvent(LogEvent):
         ]
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":person_gesturing_no: pDAO Delegate Override",
                 description=(
                     f"**Proposal #{proposal_id}**:\n"
@@ -1388,9 +1355,8 @@ class PDAOProposalFinaliseEvent(LogEvent):
             return []
         proposal_id = _get_proposal_id(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":x: pDAO Proposal Finalized",
                 description=(
                     f"**Proposal #{proposal_id}** has been finalized "
@@ -1418,9 +1384,8 @@ class PDAOProposalDestroyEvent(LogEvent):
             await rp.call("rocketDAOProtocolVerifier.getProposalBond", proposal_id)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":bomb: pDAO Proposal Destroyed",
                 description=(
                     f"**Proposal #{proposal_id}** has been destroyed "
@@ -1460,9 +1425,8 @@ class PDAOProposalRootEvent(LogEvent):
         import datetime
 
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":shield: pDAO Proposal Defense",
                 description=(
                     f"**Proposal #{proposal_id}**:\n"
@@ -1514,9 +1478,8 @@ class PDAOProposalChallengeEvent(LogEvent):
         import datetime
 
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":crossed_swords: pDAO Proposal Challenge",
                 description=(
                     f"{fmt['challenger']} challenged **proposal #{proposal_id}**!\n```{body}```"
@@ -1556,9 +1519,8 @@ class PDAOProposalBondBurnEvent(LogEvent):
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":fire: pDAO Proposal Bond Burned",
                 description=(
                     f"**Proposal #{proposal_id}**:\n"
@@ -1586,9 +1548,8 @@ class ODAOMemberJoinEvent(LogEvent):
         fmt = await self._fmt(args)
         bond = format_value(fmt["rplBondAmount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":new: oDAO Member Joined",
                 description=(
                     f"{fmt['nodeAddress']} joined the oDAO with a bond of **{bond} RPL**!"
@@ -1610,9 +1571,8 @@ class ODAOMemberLeaveEvent(LogEvent):
             args["nodeAddress"], block=(args["blockNumber"] - 1)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":door: oDAO Member Left",
                 description=f"{node_link} left the oDAO!",
             )
@@ -1632,9 +1592,8 @@ class ODAOMemberKickEvent(LogEvent):
             args["nodeAddress"], block=(args["blockNumber"] - 1)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":boot: oDAO Member Kicked",
                 description=f"{node_link} was kicked from the oDAO!",
             )
@@ -1657,9 +1616,8 @@ class ODAOMemberChallengeEvent(LogEvent):
             "rocketDAONodeTrustedSettingsMembers.getChallengeWindow"
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":rotating_light: oDAO Member Challenge Started",
                 description=(
                     f"{fmt['nodeChallengedAddress']} has been challenged by {fmt['nodeChallengerAddress']}!\n"
@@ -1699,10 +1657,9 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
             return NamedEmbeds(
                 "odao_member_challenge_accepted_event",
                 [
-                    await build_rich_event_embed(
-                        tx_hash=args["transactionHash"],
-                        block_number=args["blockNumber"],
-                        receipt=receipt,
+                    await self.rich_embed(
+                        args,
+                        receipt,
                         sender=args["nodeChallengeDeciderAddress"],
                         caller=None,
                         title=":warning: oDAO Member Challenge Passed",
@@ -1718,10 +1675,9 @@ class ODAOMemberChallengeDecisionEvent(LogEvent):
             return NamedEmbeds(
                 "odao_member_challenge_rejected_event",
                 [
-                    await build_rich_event_embed(
-                        tx_hash=args["transactionHash"],
-                        block_number=args["blockNumber"],
-                        receipt=receipt,
+                    await self.rich_embed(
+                        args,
+                        receipt,
                         sender=None,
                         caller=None,
                         title=":no_entry_sign: oDAO Member Challenge Rejected",
@@ -1744,9 +1700,8 @@ class SDAOMemberJoinEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":new: Security Council Induction",
                 description=f"{fmt['nodeAddress']} has joined the security council!",
             )
@@ -1766,9 +1721,8 @@ class SDAOMemberLeaveEvent(LogEvent):
             args["nodeAddress"], block=(args["blockNumber"] - 1)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":door: Security Council Resignation",
                 description=f"{node_link} has left the security council!",
             )
@@ -1788,9 +1742,8 @@ class SDAOMemberRequestLeaveEvent(LogEvent):
             args["nodeAddress"], block=(args["blockNumber"] - 1)
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":door: Security Council Resignation Request",
                 description=(
                     f"{node_link} has requested to leave the security council!"
@@ -1828,9 +1781,8 @@ class ODAORewardsSnapshotEvent(LogEvent):
                 )
             )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":camera_with_flash: Reward Snapshot Published",
                 description=(
                     f"Snapshot #{args['rewardIndex']} has been published by the oDAO!\n"
@@ -1866,10 +1818,9 @@ class ODAORewardsSnapshotSubmissionEvent(LogEvent):
                 )
             )
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args["from"],
                 caller=receipt["from"],
                 title=":writing_hand: Reward Snapshot Submission Submitted",
@@ -1901,9 +1852,8 @@ class NodeRegisterEvent(LogEvent):
         )
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":mailbox_with_mail: Node Registered",
                 description=f"{fmt['node']} registered as a node operator!",
                 fields=[("Timezone", f"`{timezone}`", False)],
@@ -1938,10 +1888,10 @@ class NodeSmoothingPoolStateChangedEvent(LogEvent):
             return NamedEmbeds(
                 "node_smoothing_pool_joined",
                 [
-                    await build_small_event_embed(
+                    await self.line(
+                        args,
                         f":cup_with_straw: {fmt['node']} joined the smoothing pool "
                         f"with their {validator_count} validators!",
-                        args["transactionHash"],
                     )
                 ],
             )
@@ -1949,10 +1899,10 @@ class NodeSmoothingPoolStateChangedEvent(LogEvent):
             return NamedEmbeds(
                 "node_smoothing_pool_left",
                 [
-                    await build_small_event_embed(
+                    await self.line(
+                        args,
                         f":cup_with_straw: {fmt['node']} has left the smoothing pool "
                         f"with their {validator_count} validators!",
-                        args["transactionHash"],
                     )
                 ],
             )
@@ -2023,10 +1973,9 @@ class MinipoolScrubEvent(LogEvent):
                 if block_time - minipool_creation > scrub_period // 2:
                     reason = "taking too long to migrate their withdrawal credentials on the beacon chain"
 
-            embed = await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            embed = await self.rich_embed(
+                args,
+                receipt,
                 sender=args.get("from"),
                 caller=args.get("caller"),
                 title=":rotating_light: Vacant Minipool Scrubbed",
@@ -2036,10 +1985,9 @@ class MinipoolScrubEvent(LogEvent):
                 ),
             )
         else:
-            embed = await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            embed = await self.rich_embed(
+                args,
+                receipt,
                 sender=args.get("from"),
                 caller=args.get("caller"),
                 title=":rotating_light: Minipool Scrubbed",
@@ -2076,18 +2024,18 @@ class MinipoolScrubVoteEvent(LogEvent):
             return NamedEmbeds(
                 "vacant_minipool_scrub_vote_event",
                 [
-                    await build_small_event_embed(
+                    await self.line(
+                        args,
                         f":warning: {fmt['member']} has voted to scrub "
                         f"vacant minipool {minipool_link}!",
-                        args["transactionHash"],
                     )
                 ],
             )
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":warning: {fmt['member']} has voted to scrub "
                 f"minipool {minipool_link}!",
-                args["transactionHash"],
             )
         ]
 
@@ -2159,10 +2107,9 @@ class MinipoolDepositReceivedEvent(LogEvent):
             if balance_amount == 0:
                 event_name += "_credit"
                 credit_s = format_value(solidity.to_float(credit_amount))
-                embed = await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
+                embed = await self.rich_embed(
+                    args,
+                    receipt,
                     sender=node,
                     caller=args.get("caller"),
                     title=":magic_wand: Minipool Created Using Credit",
@@ -2175,10 +2122,9 @@ class MinipoolDepositReceivedEvent(LogEvent):
             elif credit_amount == 0:
                 event_name += "_balance"
                 balance_s = format_value(solidity.to_float(balance_amount))
-                embed = await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
+                embed = await self.rich_embed(
+                    args,
+                    receipt,
                     sender=node,
                     caller=args.get("caller"),
                     title=":magic_wand: Minipool Created Using ETH Balance",
@@ -2193,10 +2139,9 @@ class MinipoolDepositReceivedEvent(LogEvent):
                 event_name += "_shared"
                 credit_s = format_value(solidity.to_float(credit_amount))
                 balance_s = format_value(solidity.to_float(balance_amount))
-                embed = await build_rich_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
-                    receipt=receipt,
+                embed = await self.rich_embed(
+                    args,
+                    receipt,
                     sender=node,
                     caller=args.get("caller"),
                     title=":magic_wand: Minipool Created Using Credit",
@@ -2208,10 +2153,9 @@ class MinipoolDepositReceivedEvent(LogEvent):
                     ),
                 )
         else:
-            embed = await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            embed = await self.rich_embed(
+                args,
+                receipt,
                 sender=node,
                 caller=args.get("caller"),
                 title=":construction_site: Minipool Created",
@@ -2242,10 +2186,9 @@ class MinipoolVacancyPreparedEvent(LogEvent):
         minipool_link = await _addr(args["minipool"])
         bond_s = format_value(fmt["bondAmount"])
         return [
-            await build_rich_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
-                receipt=receipt,
+            await self.rich_embed(
+                args,
+                receipt,
                 sender=args.get("from"),
                 caller=args.get("caller"),
                 title=":link: Solo Migration Initiated",
@@ -2278,10 +2221,10 @@ class MinipoolWithdrawalProcessedEvent(LogEvent):
         minipool_link = await _addr(args["minipool"])
         node_link = await _addr(node)
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":moneybag: **{format_value(total)} ETH** has been distributed "
                 f"from minipool {minipool_link}, owned by operator {node_link}!",
-                args["transactionHash"],
             )
         ]
 
@@ -2326,10 +2269,9 @@ class MinipoolDissolveEvent(LogEvent):
         )
         minipool_link = await _addr(args["minipool"])
         operator_link = await _addr(operator)
-        embed = await build_rich_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
-            receipt=receipt,
+        embed = await self.rich_embed(
+            args,
+            receipt,
             sender=args.get("from"),
             caller=args.get("caller"),
             title=":rotating_light: Minipool Dissolved",
@@ -2356,9 +2298,8 @@ class MinipoolPenaltyUpdatedEvent(LogEvent):
         self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":rotating_light: Minipool Penalty Updated",
             description=(
                 f"Minipool {fmt['minipoolAddress']} has had its Penalty "
@@ -2379,9 +2320,8 @@ class ODAOMinipoolPenaltyEvent(LogEvent):
         self, args: Args, event: LogEventData, receipt: TxReceipt
     ) -> list[Embed]:
         fmt = await self._fmt(args)
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":rotating_light: Minipool Penalty",
             description=(
                 f"The maximum minipool penalty rate has been raised "
@@ -2415,18 +2355,18 @@ class MegapoolValidatorAssignedEvent(LogEvent):
 
         if count == 1:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":handshake: Validator {args['validatorId']} of node "
                     f"{fmt['node']} has been assigned funds from the deposit pool!",
-                    args["transactionHash"],
                 )
             ]
 
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":handshake: **{count} validators** of node "
                 f"{fmt['node']} have been assigned funds from the deposit pool!",
-                args["transactionHash"],
             )
         ]
 
@@ -2446,10 +2386,10 @@ class MegapoolValidatorExitingEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":octagonal_sign: Validator {args['validatorId']} of node "
                 f"{fmt['node']} has started exiting!",
-                args["transactionHash"],
             )
         ]
 
@@ -2469,10 +2409,10 @@ class MegapoolValidatorExitedEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_small_event_embed(
+            await self.line(
+                args,
                 f":leaves: Validator {args['validatorId']} of node "
                 f"{fmt['node']} has exited!",
-                args["transactionHash"],
             )
         ]
 
@@ -2492,10 +2432,9 @@ class MegapoolValidatorDissolveEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         node_link = fmt["node"]
-        embed = await build_rich_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
-            receipt=receipt,
+        embed = await self.rich_embed(
+            args,
+            receipt,
             sender=args.get("from"),
             caller=args.get("caller"),
             title=":rotating_light: Validator Dissolved",
@@ -2523,10 +2462,9 @@ class MegapoolPenaltyEvent(LogEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         amount_s = format_value(fmt["amount"])
-        embed = await build_rich_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
-            receipt=receipt,
+        embed = await self.rich_embed(
+            args,
+            receipt,
             sender=args.get("from"),
             caller=args.get("caller"),
             title=":police_car: Megapool Penalty Applied",
@@ -2588,17 +2526,16 @@ class _ConstellationVaultEvent(LogEvent):
 
         if not use_large:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f"{_NODESET_EMOJI} {fmt['sender']} {self._verb} "
                     f"**{shares_s} {self._unit_shares}** "
                     f"{self._prep} **{assets_s} {self._unit_assets}**!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=f"{_NODESET_EMOJI} {self._unit_shares} {self._action.capitalize()}",
                 description=(
                     f"**{shares_s} {self._unit_shares}** {self._verb} "
@@ -2656,9 +2593,8 @@ class ODAOUpgradePendingEvent(LogEvent):
             return NamedEmbeds(
                 "upgrade_pending_abi_event",
                 [
-                    await build_event_embed(
-                        tx_hash=args["transactionHash"],
-                        block_number=args["blockNumber"],
+                    await self.embed(
+                        args,
                         title=":hourglass: Contract Upgrade Pending",
                         description=(
                             f"The upgrade process for `{contract_name}` has been initiated.\n"
@@ -2670,9 +2606,8 @@ class ODAOUpgradePendingEvent(LogEvent):
         else:
             addr_link = await _addr(contract_address)
             return [
-                await build_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
+                await self.embed(
+                    args,
                     title=":hourglass: Contract Upgrade Pending",
                     description=(
                         f"The upgrade process for `{contract_name}` has been initiated.\n"
@@ -2698,9 +2633,8 @@ class SDAOUpgradeVetoedEvent(LogEvent):
             block=args["blockNumber"],
         )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":no_entry: Contract Upgrade Vetoed",
                 description=(
                     f"Upgrade #{args['upgradeProposalID']} for `{contract_name}` "
@@ -2724,9 +2658,8 @@ class ODAOContractUpgradedEvent(LogEvent):
         fmt = await self._fmt(args)
         contract_name = rp.get_name_by_address(args["oldAddress"]) or "Unknown"
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":page_facing_up: Contract Upgraded",
                 description=f"`{contract_name}` has been upgraded to {fmt['newAddress']}.",
             )
@@ -2746,9 +2679,8 @@ class ODAOContractAddedEvent(LogEvent):
         fmt = await self._fmt(args)
         contract_name = rp.get_name_by_address(args["newAddress"]) or "Unknown"
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":page_facing_up: Contract Added",
                 description=f"New contract `{contract_name}` added at {fmt['newAddress']}.",
             )
@@ -2775,9 +2707,8 @@ class UnstETHWithdrawalEvent(LogEvent):
         if amount < 10_000:
             return []
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":money_with_wings: Large stETH Withdrawal Requested",
                 description=(
                     f"{fmt['owner']} has requested a withdrawal of "
@@ -2805,16 +2736,15 @@ class ExitArbitrageEvent(LogEvent):
         receiver = fmt["receiver"]
         if amount < 100:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":money_mouth: {receiver} earned "
                     f"**{format_value(profit)} ETH** from an exit arbitrage!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":money_mouth: Large Exit Arbitrage",
                 description=(
                     f"{receiver} earned **{format_value(profit)} ETH** "
@@ -2841,16 +2771,15 @@ class RockSolidDepositEvent(LogEvent):
 
         if assets < 50:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f"{_RS} {fmt['sender']} deposited "
                     f"**{assets_s} rETH** into the RockSolid vault!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=f"{_RS} RockSolid rETH Deposit",
                 description=(
                     f"**{assets_s} rETH** deposited into the RockSolid vault!"
@@ -2881,16 +2810,15 @@ class RockSolidWithdrawalEvent(LogEvent):
 
         if shares < 50:
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f"{_RS} {fmt['sender']} requested a withdrawal for "
                     f"**{assets_s} rETH** from the RockSolid vault!",
-                    args["transactionHash"],
                 )
             ]
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=f"{_RS} RockSolid rETH Withdrawal",
                 description=(
                     f"New withdrawal request for **{assets_s} rETH** "

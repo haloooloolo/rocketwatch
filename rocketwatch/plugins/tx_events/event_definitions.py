@@ -15,8 +15,6 @@ from rocketwatch.utils.dao import (
 )
 from rocketwatch.utils.embeds import (
     Embed,
-    build_event_embed,
-    build_small_event_embed,
     el_explorer_url,
     format_value,
 )
@@ -82,9 +80,8 @@ class BootstrapODAOMemberEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: oDAO Bootstrap Mode: Member Added",
                 description=f"{fmt['nodeAddress']} added as a new oDAO member!",
             )
@@ -103,9 +100,8 @@ class BootstrapODAODisableEvent(TransactionEvent):
         if not args["confirmDisableBootstrapMode"]:
             return []
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: oDAO Bootstrap Mode Disabled",
                 description=(
                     "Bootstrap mode for the oDAO is now disabled! The guardian has "
@@ -127,9 +123,8 @@ class ODAOMemberInviteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":crystal_ball: oDAO Invite",
                 description=(
                     f"**{args['id']}** ({fmt['nodeAddress']}) has been invited to join the oDAO!"
@@ -149,9 +144,8 @@ class SDAOMemberInviteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":lock: Security Council Invite",
                 description=(
                     f"{fmt['memberAddress']} has been invited to join the security council!"
@@ -174,9 +168,8 @@ class PDAOSpendTreasuryEvent(TransactionEvent):
         fmt = await self._fmt(args)
         amount = format_value(fmt["amount"])
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":bank: DAO Treasury Spend",
                 description=f"**{amount} RPL** from treasury sent to {fmt['recipientAddress']}!",
                 fields=[("Invoice ID", f"`{args['invoiceID']}`", False)],
@@ -209,9 +202,8 @@ class SettingEvent(TransactionEvent):
         if "settingContractName" in args:
             fields.append(("Contract", f"`{args['settingContractName']}`", False))
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=self._title,
                 description=f"Setting `{args['settingPath']}` set to `{value}`!",
                 fields=fields or None,
@@ -241,9 +233,8 @@ class ProposalExecuteEvent(TransactionEvent):
     ) -> list[Embed]:
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=self._title,
                 description=(
                     f"{fmt['executor']} executed **proposal #{args['proposalID']}**!\n"
@@ -317,9 +308,8 @@ class TreasuryRecurringSpendEvent(TransactionEvent):
                 )
             )
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=self._title,
                 description=(
                     f"{fmt['recipientAddress']} will be awarded "
@@ -370,9 +360,8 @@ class TreasuryRecurringClaimEvent(TransactionEvent):
                 validity = f"The contract is valid for {periods_left} more periods."
 
             embeds.append(
-                await build_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
+                await self.embed(
+                    args,
                     title=":bank: DAO Treasury Contract Claim",
                     description=(
                         f"{recipient_link} has claimed **{amount} RPL** "
@@ -429,9 +418,8 @@ class BootstrapNetworkUpgradeEvent(TransactionEvent):
         if template is None:
             raise Exception(f"Network Upgrade of type {args['type']} is not known.")
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":satellite_orbital: oDAO Bootstrap Mode: Network Upgrade",
                 description=template.format(name=args["name"]),
             )
@@ -468,9 +456,8 @@ class PDAOSetDelegateEvent(TransactionEvent):
 
         if voting_power >= 200:
             return [
-                await build_event_embed(
-                    tx_hash=args["transactionHash"],
-                    block_number=args["blockNumber"],
+                await self.embed(
+                    args,
                     title=":handshake: Large pDAO Delegation",
                     description=(
                         f"{delegator_link} has delegated their voting power of "
@@ -482,10 +469,10 @@ class PDAOSetDelegateEvent(TransactionEvent):
             delegator_clean = await el_explorer_url(delegator, prefix=None)
             delegate_clean = await el_explorer_url(delegate, prefix=None)
             return [
-                await build_small_event_embed(
+                await self.line(
+                    args,
                     f":handshake: {delegator_clean} has delegated their voting "
                     f"power of **{power_str}** to {delegate_clean}!",
-                    args["transactionHash"],
                 )
             ]
 
@@ -502,9 +489,8 @@ class PDAOClaimerEvent(TransactionEvent):
         self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":classical_building: Protocol DAO: Changed Reward Distribution",
                 description=f"```{build_claimer_description(args)}```",
             )
@@ -524,9 +510,8 @@ class PDAOSettingMultiEvent(TransactionEvent):
         self, args: Args, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":classical_building: Protocol DAO: Multiple Settings Modified",
                 description=decode_setting_multi(args, args["data"]),
             )
@@ -545,9 +530,8 @@ class SDAOMemberKickEvent(TransactionEvent):
         member_link = await el_explorer_url(
             args["memberAddress"], block=(args["blockNumber"] - 1)
         )
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":boot: Security Council Expulsion",
             description=f"{member_link} has been kicked from the security council!",
         )
@@ -571,9 +555,8 @@ class SDAOMemberKickMultiEvent(TransactionEvent):
             await el_explorer_url(addr, block=block) for addr in args["memberAddresses"]
         ]
         member_list = ", ".join(member_links)
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=":boot: Security Council Mass Expulsion",
             description=(
                 f"Multiple members have been kicked from the security council!\n"
@@ -601,9 +584,8 @@ class SDAOMemberReplaceEvent(TransactionEvent):
         )
         fmt = await self._fmt(args)
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":repeat: Security Council Replacement",
                 description=f"{existing_link} has been replaced by {fmt['newMemberAddress']}!",
             )
@@ -627,9 +609,8 @@ class FailedDepositEvent(TransactionEvent):
         if reason:
             fields.append(("Likely Revert Reason", f"`{reason}`", False))
         return [
-            await build_event_embed(
-                tx_hash=args["transactionHash"],
-                block_number=args["blockNumber"],
+            await self.embed(
+                args,
                 title=":fire: Failed Validator Deposit",
                 description=(
                     f":fire_engine: {node_link} burned **{burned} ETH** "
@@ -656,9 +637,8 @@ class UpgradeTriggeredEvent(TransactionEvent):
     async def build_embeds(
         self, args: Any, event: TxEventData, receipt: TxReceipt
     ) -> list[Embed]:
-        embed = await build_event_embed(
-            tx_hash=args["transactionHash"],
-            block_number=args["blockNumber"],
+        embed = await self.embed(
+            args,
             title=self._title,
         )
         embed.set_image(url=self._image_url)
