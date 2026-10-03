@@ -28,7 +28,8 @@ def stub_explorer_links(
     modules that imported ``el_explorer_url`` by name."""
     for module in (embeds, type_markers, *importers):
         monkeypatch.setattr(module, "el_explorer_url", _link)
-    monkeypatch.setattr(
-        type_markers, "get_sea_creature_for_address", AsyncMock(return_value="")
-    )
+    for module in (embeds, type_markers):
+        monkeypatch.setattr(
+            module, "get_sea_creature_for_address", AsyncMock(return_value="")
+        )
     monkeypatch.setattr(embeds, "block_to_ts", AsyncMock(return_value=BLOCK_TS))

@@ -414,7 +414,11 @@ class LogEvents(EventPlugin):
         try:
             await rp.flush()
             await self.async_init()
-            return messages + await self.get_past_events(
+            # later blocks are rescanned with the new contracts
+            before_upgrade = [
+                m for m in messages if m.block_number <= contract_upgrade_block
+            ]
+            return before_upgrade + await self.get_past_events(
                 BlockNumber(contract_upgrade_block + 1), to_block
             )
         except Exception as err:
@@ -492,11 +496,6 @@ class LogEvents(EventPlugin):
                 processed["args"] = dict(processed.get("args", {}))
                 hash_args(processed["args"])
 
-                # Check for upgrade events
-                if event_cls.event_name in _UPGRADE_EVENTS:
-                    log.info("detected contract upgrade")
-                    upgrade_block = BlockNumber(event_data["blockNumber"])
-
                 # Global event enrichment (minipool/megapool validation, pubkey, sender)
                 if (
                     event_cls.event_name not in _UPGRADE_EVENTS
@@ -508,6 +507,10 @@ class LogEvents(EventPlugin):
             else:
                 log.debug("Skipping event %s", event)
                 continue
+
+            if event_cls.event_name in _UPGRADE_EVENTS and upgrade_block is None:
+                log.info("detected contract upgrade")
+                upgrade_block = BlockNumber(processed["blockNumber"])
 
             # Build args dict for the event class
             args: dict[str, Any] = {
