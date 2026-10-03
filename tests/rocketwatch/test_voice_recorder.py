@@ -8,8 +8,11 @@ produced which region of the WAV file.
 
 from __future__ import annotations
 
+import time
 import wave
 from pathlib import Path
+
+import pytest
 
 from rocketwatch.plugins.voice_summary.recorder import (
     CHANNELS,
@@ -20,40 +23,7 @@ from rocketwatch.plugins.voice_summary.recorder import (
     SILENCE_DURATION,
     CallRecorder,
 )
-
-
-class ScriptedOpusDecoder:
-    """Stand-in for ``discord.opus.Decoder``.
-
-    Each packet's "decoded" PCM is filled with the packet's first byte, so
-    test code can identify which packet ended up where in the WAV. PLC and
-    FEC produce their own distinct, recognizable patterns.
-    """
-
-    SAMPLING_RATE = 48000
-    CHANNELS = 2
-    SAMPLE_SIZE = 4  # bytes per stereo frame
-    SAMPLES_PER_FRAME = 960
-    FRAME_LENGTH = 20
-
-    PLC_MARKER = b"\xfd"
-    FEC_MARKER = b"\xfe"
-
-    @staticmethod
-    def packet_get_nb_frames(_data: bytes) -> int:
-        return 1
-
-    @staticmethod
-    def packet_get_samples_per_frame(_data: bytes) -> int:
-        return 960
-
-    def decode(self, data: bytes | None, *, fec: bool = False) -> bytes:
-        frame_bytes = self.SAMPLES_PER_FRAME * self.SAMPLE_SIZE
-        if data is None:
-            return self.PLC_MARKER * frame_bytes
-        if fec:
-            return self.FEC_MARKER * frame_bytes
-        return bytes([data[0]]) * frame_bytes
+from tests.lib.opus import ScriptedOpusDecoder
 
 
 def _read_wav(path: Path) -> bytes:
@@ -228,6 +198,112 @@ def _speak(rec: CallRecorder, user_id: int, rtp_start: int, seconds: float) -> i
     for i in range(n):
         rec.on_opus(user_id, _packet(0x11), rtp_start + i * OPUS_FRAME_SAMPLES)
     return rtp_start + n * OPUS_FRAME_SAMPLES
+
+
+class Clock:
+    def __init__(self, now: float = 1000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
+    clock = Clock()
+    monkeypatch.setattr(time, "monotonic", clock)
+    return clock
+
+
+class TestSegmentPlacement:
+    def test_rtp_stalled_through_silence_uses_arrival_time(
+        self, tmp_path: Path, clock: Clock
+    ) -> None:
+        # some clients don't advance RTP while silent; 30 s of real silence
+        # must not pull the next utterance back onto earlier speech
+        rec = CallRecorder(
+            tmp_path, start_time=clock.now, decoder_factory=ScriptedOpusDecoder
+        )
+        rtp = _speak(rec, 1, 0, 1.0)
+        clock.now += 31.0
+        _speak(rec, 1, rtp + int((SILENCE_DURATION + 0.5) * SAMPLE_RATE), 1.0)
+        rec.stop()
+
+        offsets = [offset for offset, _ in rec.get_user_segments()[1]]
+        assert offsets == [pytest.approx(0.0), pytest.approx(31.0)]
+
+    def test_rtp_jump_ahead_uses_arrival_time(
+        self, tmp_path: Path, clock: Clock
+    ) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=clock.now, decoder_factory=ScriptedOpusDecoder
+        )
+        rtp = _speak(rec, 1, 0, 1.0)
+        clock.now += 4.0
+        _speak(rec, 1, rtp + 60 * SAMPLE_RATE, 1.0)
+        rec.stop()
+
+        offsets = [offset for offset, _ in rec.get_user_segments()[1]]
+        assert offsets == [pytest.approx(0.0), pytest.approx(4.0)]
+
+    def test_max_duration_split_stays_contiguous(
+        self, tmp_path: Path, clock: Clock
+    ) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=clock.now, decoder_factory=ScriptedOpusDecoder
+        )
+        # continuous speech arrives in real time, slightly jittered
+        n = int(61 * SAMPLE_RATE) // OPUS_FRAME_SAMPLES
+        for i in range(n):
+            clock.now = 1000.0 + i * 0.02 + 0.015 * (i % 3)
+            rec.on_opus(1, _packet(0x11), i * OPUS_FRAME_SAMPLES)
+        rec.stop()
+
+        (first_offset, first), (second_offset, _) = rec.get_user_segments()[1]
+        first_len = len(_read_wav(first)) / FRAME_SIZE / SAMPLE_RATE
+        assert second_offset == pytest.approx(first_offset + first_len)
+
+
+class TestClockStallInsideSegment:
+    def _feed(self, rec: CallRecorder, clock: Clock, arrivals: list[float]) -> Path:
+        for i, arrival in enumerate(arrivals):
+            clock.now = 1000.0 + arrival
+            rec.on_opus(1, _packet(0x11), i * OPUS_FRAME_SAMPLES)
+        rec.stop()
+        [(_, wav)] = rec.get_user_segments()[1]
+        return wav
+
+    def test_short_pause_with_stalled_rtp_keeps_its_length(
+        self, tmp_path: Path, clock: Clock
+    ) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=clock.now, decoder_factory=ScriptedOpusDecoder
+        )
+        # RTP runs on without a gap, but 1.5 s of real time pass mid-speech
+        arrivals = [i * 0.02 for i in range(50)]
+        arrivals += [1.5 + i * 0.02 for i in range(50, 150)]
+
+        audio = _read_wav(self._feed(rec, clock, arrivals))
+
+        assert len(audio) / FRAME_SIZE / SAMPLE_RATE == pytest.approx(4.5, abs=0.03)
+        pause = audio[
+            int(1.1 * SAMPLE_RATE) * FRAME_SIZE : int(2.4 * SAMPLE_RATE) * FRAME_SIZE
+        ]
+        assert pause == bytes(len(pause))
+
+    def test_network_hiccup_is_not_a_stall(self, tmp_path: Path, clock: Clock) -> None:
+        rec = CallRecorder(
+            tmp_path, start_time=clock.now, decoder_factory=ScriptedOpusDecoder
+        )
+        # packets 40-54 are held up 300 ms, then burst in and catch up
+        arrivals = [i * 0.02 for i in range(100)]
+        for i in range(40, 55):
+            arrivals[i] = 1.1 + (i - 40) * 0.001
+
+        audio = _read_wav(self._feed(rec, clock, arrivals))
+
+        assert len(audio) == 100 * FRAME_BYTES
+        assert audio == bytes([0x11]) * len(audio)
 
 
 class TestStreamRestart:

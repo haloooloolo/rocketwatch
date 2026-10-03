@@ -3,6 +3,7 @@ import logging
 import threading
 import time
 import wave
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
@@ -43,6 +44,12 @@ MIN_TRANSCRIBE_DURATION = 1.0
 # zero-padded. Past ~100 ms, Opus PLC starts sounding robotic, so silence is
 # the lesser evil.
 MAX_CONCEAL_FRAMES = 5
+# Some clients' RTP clocks stall across pauses. When arrival time falls behind
+# RTP time by more than network jitter explains, silence is inserted to match.
+CLOCK_STALL_TOLERANCE = 0.25
+# Lag is judged by its minimum over this much following audio, so a network
+# hiccup (late packets that then burst in and catch up) isn't taken for a stall.
+CLOCK_STALL_WINDOW = 1.0
 
 SILENCE_DURATION_SAMPLES = int(SILENCE_DURATION * SAMPLE_RATE)
 MAX_SEGMENT_DURATION_SAMPLES = int(MAX_SEGMENT_DURATION * SAMPLE_RATE)
@@ -58,6 +65,49 @@ def _opus_packet_samples(decoder: _OpusDecoderLike, data: bytes) -> int:
     if nb_frames <= 0 or spf <= 0:
         return 0
     return nb_frames * spf
+
+
+def _correct_clock_stalls(
+    packets: list[tuple[int, tuple[bytes, int, float]]],
+) -> list[tuple[int, bytes, int]]:
+    """Shift RTP positions later where the sender's clock stalled.
+
+    Returns (rtp, opus, samples) sorted by RTP. Only ever inserts time: pulling
+    audio earlier would overlap (and drop) audio already placed, and a forward
+    RTP jump inside a segment is under SILENCE_DURATION by construction.
+    """
+    if not packets:
+        return []
+    rtp0 = packets[0][0]
+    lags = [arrival - (rtp - rtp0) / SAMPLE_RATE for rtp, (_, _, arrival) in packets]
+
+    # minimum lag over the following CLOCK_STALL_WINDOW of audio; None where
+    # the window runs past the end and the minimum isn't trustworthy yet
+    window = int(CLOCK_STALL_WINDOW * SAMPLE_RATE)
+    floors: list[float | None] = [None] * len(packets)
+    candidates: deque[int] = deque()
+    last_rtp = packets[-1][0]
+    for i in range(len(packets) - 1, -1, -1):
+        while candidates and lags[candidates[-1]] >= lags[i]:
+            candidates.pop()
+        candidates.append(i)
+        while packets[candidates[0]][0] >= packets[i][0] + window:
+            candidates.popleft()
+        if last_rtp >= packets[i][0] + window:
+            floors[i] = lags[candidates[0]]
+
+    baseline = floors[0] if floors[0] is not None else min(lags)
+    shift = 0
+    out: list[tuple[int, bytes, int]] = []
+    for (rtp, (opus, samples, _)), floor in zip(packets, floors, strict=True):
+        if floor is not None:
+            if floor - baseline > CLOCK_STALL_TOLERANCE:
+                shift += round((floor - baseline) * SAMPLE_RATE)
+                baseline = floor
+            elif floor < baseline:
+                baseline = floor
+        out.append((rtp + shift, opus, samples))
+    return out
 
 
 class _PendingSegment:
@@ -82,8 +132,8 @@ class _PendingSegment:
         self.rtp_start = rtp_start
         self.max_rtp_end = rtp_start
         self.call_time = call_time
-        # rtp_timestamp -> (opus_data, n_samples_per_channel)
-        self.packets: dict[int, tuple[bytes, int]] = {}
+        # rtp_timestamp -> (opus_data, n_samples_per_channel, arrival_time)
+        self.packets: dict[int, tuple[bytes, int, float]] = {}
         self.stat_pkts = 0
         self.stat_drops = 0
 
@@ -185,11 +235,7 @@ class UserStream:
             if self._rtp_anchor is None:
                 self._anchor_rtp(rtp_timestamp)
 
-            call_time = self._rtp_to_call_time(rtp_timestamp)
-
-            if self._open is None:
-                self._open = _PendingSegment(rtp_timestamp, call_time)
-            else:
+            if self._open is not None:
                 seg = self._open
                 # Out-of-order arrival earlier than the segment's current
                 # start: expand the segment's bounds. Real-world reorder is
@@ -197,15 +243,26 @@ class UserStream:
                 # backfills cleanly too.
                 if rtp_timestamp < seg.rtp_start:
                     seg.rtp_start = rtp_timestamp
-                    seg.call_time = min(seg.call_time, call_time)
+                    seg.call_time = min(
+                        seg.call_time, self._rtp_to_call_time(rtp_timestamp)
+                    )
                 over_max = rtp_timestamp - seg.rtp_start >= MAX_SEGMENT_DURATION_SAMPLES
                 silence_gap = rtp_timestamp > seg.max_rtp_end + SILENCE_DURATION_SAMPLES
                 if over_max or silence_gap:
                     self._finalize(seg)
-                    self._open = _PendingSegment(rtp_timestamp, call_time)
+                    self._open = None
+                if silence_gap:
+                    # some clients' RTP clocks stall or jump across silence,
+                    # so each utterance is placed by its arrival time
+                    self._anchor_rtp(rtp_timestamp)
+
+            if self._open is None:
+                self._open = _PendingSegment(
+                    rtp_timestamp, self._rtp_to_call_time(rtp_timestamp)
+                )
 
             seg = self._open
-            seg.packets[rtp_timestamp] = (opus_data, samples)
+            seg.packets[rtp_timestamp] = (opus_data, samples, time.monotonic())
             seg.stat_pkts += 1
             if rtp_end > seg.max_rtp_end:
                 seg.max_rtp_end = rtp_end
@@ -262,7 +319,7 @@ class UserStream:
         if not seg.packets:
             return
 
-        sorted_packets = sorted(seg.packets.items())
+        sorted_packets = _correct_clock_stalls(sorted(seg.packets.items()))
         path = self._out_dir / f"{self.user_id}_{self._segment_index}.wav"
         self._segment_index += 1
 
@@ -282,7 +339,7 @@ class UserStream:
 
             last_end_rtp = sorted_packets[0][0]
 
-            for rtp, (opus, samples) in sorted_packets:
+            for rtp, opus, samples in sorted_packets:
                 if rtp < last_end_rtp:
                     # Overlap from a packet whose audio extent reached into
                     # another packet's slot. Skip the overlapping prefix.
