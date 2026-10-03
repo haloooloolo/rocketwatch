@@ -50,6 +50,10 @@ class RocketPool:
     def __init__(self) -> None:
         self.addresses: bidict[str, ChecksumAddress] = bidict()
         self._multicall: AsyncContract | None = None
+        # building a contract re-parses its whole ABI, which is costly
+        self._contract_cache: LRUCache[
+            tuple[str, ChecksumAddress | None, bool], AsyncContract
+        ] = LRUCache(maxsize=256)
 
     async def async_init(self) -> None:
         await self._init_contract_addresses()
@@ -58,6 +62,7 @@ class RocketPool:
         log.warning("FLUSHING RP CACHE")
         self.ABI_CACHE.clear()
         self.ADDRESS_CACHE.clear()
+        self._contract_cache.clear()
         self.addresses.clear()
         await self._init_contract_addresses()
 
@@ -273,11 +278,16 @@ class RocketPool:
         address: ChecksumAddress | None = None,
         mainnet: bool = False,
     ) -> AsyncContract:
+        key = (name, address, mainnet)
+        if (contract := self._contract_cache.get(key)) is not None:
+            return contract
         contract_abi = await self.get_abi_by_name(name)
         provider = w3_mainnet if mainnet else w3
-        return cast(
+        contract = cast(
             AsyncContract, provider.eth.contract(address=address, abi=contract_abi)
         )
+        self._contract_cache[key] = contract
+        return contract
 
     def get_name_by_address(self, address: ChecksumAddress) -> str | None:
         return self.addresses.inverse.get(address, None)

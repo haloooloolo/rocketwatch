@@ -1,8 +1,11 @@
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from eth_abi import abi
+from web3 import AsyncWeb3
 
+from rocketwatch.utils import rocketpool as rp_module
 from rocketwatch.utils.rocketpool import RocketPool
 
 
@@ -142,6 +145,54 @@ class TestMulticallShortCircuits:
         # short-circuit to not touch `_multicall`.
         rp_instance = RocketPool()
         assert await rp_instance.multicall([]) == []
+
+
+class TestAssembleContractCache:
+    _ABI = json.dumps(
+        [
+            {
+                "type": "function",
+                "name": "getNodeCount",
+                "stateMutability": "view",
+                "inputs": [],
+                "outputs": [{"name": "", "type": "uint256"}],
+            }
+        ]
+    )
+    _A = AsyncWeb3.to_checksum_address("0x" + "aa" * 20)
+    _B = AsyncWeb3.to_checksum_address("0x" + "bb" * 20)
+
+    @pytest.fixture
+    def rp_instance(self, monkeypatch: pytest.MonkeyPatch) -> RocketPool:
+        monkeypatch.setattr(rp_module, "w3", AsyncWeb3())
+        instance = RocketPool()
+        monkeypatch.setattr(
+            instance, "get_abi_by_name", AsyncMock(return_value=self._ABI)
+        )
+        monkeypatch.setattr(instance, "_init_contract_addresses", AsyncMock())
+        return instance
+
+    async def test_reuses_contract_for_same_name_and_address(
+        self, rp_instance: RocketPool
+    ) -> None:
+        first = await rp_instance.assemble_contract("rocketNodeManager", self._A)
+        second = await rp_instance.assemble_contract("rocketNodeManager", self._A)
+        assert first is second
+        assert first.address == self._A
+
+    async def test_distinct_addresses_get_distinct_contracts(
+        self, rp_instance: RocketPool
+    ) -> None:
+        a = await rp_instance.assemble_contract("rocketMinipool", self._A)
+        b = await rp_instance.assemble_contract("rocketMinipool", self._B)
+        assert a is not b
+        assert (a.address, b.address) == (self._A, self._B)
+
+    async def test_flush_rebuilds_contracts(self, rp_instance: RocketPool) -> None:
+        before = await rp_instance.assemble_contract("rocketNodeManager", self._A)
+        await rp_instance.flush()
+        after = await rp_instance.assemble_contract("rocketNodeManager", self._A)
+        assert before is not after
 
 
 class TestGetRevertReason:
