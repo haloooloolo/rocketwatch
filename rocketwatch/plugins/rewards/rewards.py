@@ -1,19 +1,19 @@
 import logging
 from dataclasses import dataclass, replace
-from io import BytesIO
 from typing import Any
 
 import aiohttp
-import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
 from eth_typing import ChecksumAddress
+from matplotlib.figure import Figure
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import ts_to_block
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed, resolve_ens
 from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
@@ -219,79 +219,79 @@ class Rewards(commands.Cog):
             )
             return
 
-        fig, ax = plt.subplots(figsize=(5, 2.5))
-        ax.grid()
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax.grid()
 
-        one_perc_borrowed = max(actual_borrowed_eth, borrowed_eth) / (rpl_ratio * 100)
+            one_perc_borrowed = max(actual_borrowed_eth, borrowed_eth) / (
+                rpl_ratio * 100
+            )
 
-        x_min = 0
-        x_max = max(rpl_stake * 2, actual_rpl_stake * 5, one_perc_borrowed * 20)
-        ax.set_xlim((x_min, x_max))
+            x_min = 0
+            x_max = max(rpl_stake * 2, actual_rpl_stake * 5, one_perc_borrowed * 20)
+            ax.set_xlim((x_min, x_max))
 
-        cur_color, cur_label, cur_ls = "#eb8e55", "current", "solid"
-        sim_color, sim_label, sim_ls = "darkred", "simulated", "dashed"
+            cur_color, cur_label, cur_ls = "#eb8e55", "current", "solid"
+            sim_color, sim_label, sim_ls = "darkred", "simulated", "dashed"
 
-        def draw_reward_curve(
-            _color: str, _label: str | None, _line_style: str, _borrowed_eth: float
-        ) -> None:
-            step_size = max(1, (x_max - x_min) // 1000)
-            x = np.arange(x_min, x_max, step_size, dtype=int)
-            y = np.array([rewards_at(int(x), _borrowed_eth) for x in x])
-            ax.plot(x, y, color=_color, linestyle=_line_style, label=_label)
+            def draw_reward_curve(
+                _color: str, _label: str | None, _line_style: str, _borrowed_eth: float
+            ) -> None:
+                step_size = max(1, (x_max - x_min) // 1000)
+                x = np.arange(x_min, x_max, step_size, dtype=int)
+                y = np.array([rewards_at(int(x), _borrowed_eth) for x in x])
+                ax.plot(x, y, color=_color, linestyle=_line_style, label=_label)
 
-            def plot_point(_pt_color: str, _pt_label: str, _x: float) -> None:
-                label = _pt_label if _label is None else None
-                _y = rewards_at(_x, _borrowed_eth)
-                ax.plot(_x, _y, "o", color=_pt_color, label=label)
-                ax.annotate(
-                    f"{_y:.2f}",
-                    (_x, _y),
-                    textcoords="offset points",
-                    xytext=(5, -10 if _y > 0 else 5),
-                    ha="left",
-                )
+                def plot_point(_pt_color: str, _pt_label: str, _x: float) -> None:
+                    label = _pt_label if _label is None else None
+                    _y = rewards_at(_x, _borrowed_eth)
+                    ax.plot(_x, _y, "o", color=_pt_color, label=label)
+                    ax.annotate(
+                        f"{_y:.2f}",
+                        (_x, _y),
+                        textcoords="offset points",
+                        xytext=(5, -10 if _y > 0 else 5),
+                        ha="left",
+                    )
 
-            plot_point(cur_color, cur_label, actual_rpl_stake)
-            if rpl_stake > 0:
-                plot_point(sim_color, sim_label, rpl_stake)
+                plot_point(cur_color, cur_label, actual_rpl_stake)
+                if rpl_stake > 0:
+                    plot_point(sim_color, sim_label, rpl_stake)
 
-        if (actual_borrowed_eth > 0) and (borrowed_eth > 0):
-            draw_reward_curve(cur_color, cur_label, cur_ls, actual_borrowed_eth)
-            draw_reward_curve(sim_color, sim_label, sim_ls, borrowed_eth)
-        elif actual_borrowed_eth > 0:
-            draw_reward_curve(cur_color, None, cur_ls, actual_borrowed_eth)
-        else:
-            draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
-
-        def formatter(_x: float, _pos: float) -> str:
-            if _x < 1000:
-                return f"{_x:.0f}"
-            elif _x < 10_000:
-                return f"{(_x / 1000):.1f}k"
-            elif _x < 1_000_000:
-                return f"{(_x / 1000):.0f}k"
+            if (actual_borrowed_eth > 0) and (borrowed_eth > 0):
+                draw_reward_curve(cur_color, cur_label, cur_ls, actual_borrowed_eth)
+                draw_reward_curve(sim_color, sim_label, sim_ls, borrowed_eth)
+            elif actual_borrowed_eth > 0:
+                draw_reward_curve(cur_color, None, cur_ls, actual_borrowed_eth)
             else:
-                return f"{(_x / 1_000_000):.1f}m"
+                draw_reward_curve(sim_color, None, sim_ls, borrowed_eth)
 
-        ax.set_xlabel("rpl stake")
-        ax.set_ylabel("rewards")
-        ax.xaxis.set_major_formatter(formatter)
+            def formatter(_x: float, _pos: float) -> str:
+                if _x < 1000:
+                    return f"{_x:.0f}"
+                elif _x < 10_000:
+                    return f"{(_x / 1000):.1f}k"
+                elif _x < 1_000_000:
+                    return f"{(_x / 1000):.0f}k"
+                else:
+                    return f"{(_x / 1_000_000):.1f}m"
 
-        y_min = min(
-            rewards_at(x_min, borrowed_eth), rewards_at(x_min, actual_borrowed_eth)
-        )
-        _, y_max = ax.get_ylim()
-        ax.set_ylim((y_min, y_max))
+            ax.set_xlabel("rpl stake")
+            ax.set_ylabel("rewards")
+            ax.xaxis.set_major_formatter(formatter)
 
-        handles, labels = ax.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles, strict=False))
-        ax.legend(by_label.values(), by_label.keys(), loc="lower right")
-        fig.tight_layout()
+            y_min = min(
+                rewards_at(x_min, borrowed_eth), rewards_at(x_min, actual_borrowed_eth)
+            )
+            _, y_max = ax.get_ylim()
+            ax.set_ylim((y_min, y_max))
 
-        img = BytesIO()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
+            handles, labels = ax.get_legend_handles_labels()
+            by_label = dict(zip(labels, handles, strict=False))
+            ax.legend(by_label.values(), by_label.keys(), loc="lower right")
+            fig.tight_layout()
+
+        img = await render_png(draw, figsize=(5, 2.5))
 
         sim_info = []
         if rpl_stake > 0:

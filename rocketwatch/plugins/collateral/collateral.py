@@ -1,22 +1,22 @@
 import functools
 import logging
 import operator
-from io import BytesIO
 from typing import Any, TypedDict
 
 import matplotlib as mpl
 import matplotlib.colors as mcolors
-import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
 from eth_typing import ChecksumAddress
+from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 from pymongo.asynchronous.database import AsyncDatabase
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import ens, solidity
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed, resolve_ens
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
@@ -206,66 +206,66 @@ class Collateral(commands.Cog):
             max_validators = max(max_validators, int(node["validators"]))
 
         e = Embed()
-        img = BytesIO()
-        fig, (ax, ax2) = plt.subplots(2)
-        fig.set_figheight(fig.get_figheight() * 2)
-
-        # create the scatter plot
-        paths = ax.scatter(x, y, c=c, alpha=0.25, norm="log")
-        polys = ax2.hexbin(x, y, gridsize=20, bins="log", xscale="log", cmap="viridis")
-        # fill the background in with the default color.
-        ax2.set_facecolor(mcolors.to_rgba(mpl.colormaps["viridis"](0), 0.9))
-        max_nodes = max(polys.get_array())
-
-        # log-scale the X-axis to account for thomas
-        ax.set_xscale("log", base=8)
-
-        # Add a legend for the color-coding on the scatter plot
-        formatToInt = "{x:.0f}"
-        cb = fig.colorbar(mappable=paths, ax=ax, format=formatToInt)
-        cb.set_label("Validator Count")
-        cb.set_ticks(_log_ticks(max_validators))
-
-        # Add a legend for the color-coding on the hex distribution
-        cb = fig.colorbar(mappable=polys, ax=ax2, format=formatToInt)
-        cb.set_label("Nodes")
-        cb.set_ticks(_log_ticks(max_nodes - 1))
-
-        # Add labels and units
-        ylabel = f"Collateral (percent {'bonded' if bonded else 'borrowed'})"
-        ax.set_ylabel(ylabel)
-        ax2.set_ylabel(ylabel)
-        ax.yaxis.set_major_formatter(formatToInt + "%")
-        ax2.yaxis.set_major_formatter(formatToInt + "%")
-        ax2.set_xlabel("Node Bond (Eth only - log scale)")
-        ax.xaxis.set_major_formatter(formatToInt)
-        ax2.xaxis.set_major_formatter(formatToInt)
-
-        # Add a red dot if the user asked to highlight their node
+        target_node = None
         if address is not None:
-            # Print a vline and hline through the requested node
             try:
                 target_node = data[address]
-                ax.plot(target_node["bonded"], node_collateral(target_node), "ro")
-                ax2.plot(target_node["bonded"], node_collateral(target_node), "ro")
-                e.description = f"Showing location of {display_name}"
             except KeyError:
                 await interaction.followup.send(
                     f"{display_name} not found in data set - it must have at least one validator"
                 )
                 return
+            e.description = f"Showing location of {display_name}"
 
-        # Add horizontal lines showing the 10-15% range made optimal by RPIP-30
-        if not bonded:
-            ax.axhspan(10, 15, alpha=0.1, color="grey")
+        def draw(fig: Figure) -> None:
+            ax, ax2 = fig.subplots(2)
+            fig.set_figheight(fig.get_figheight() * 2)
 
-        fig.tight_layout()
+            # create the scatter plot
+            paths = ax.scatter(x, y, c=c, alpha=0.25, norm="log")
+            polys = ax2.hexbin(
+                x, y, gridsize=20, bins="log", xscale="log", cmap="viridis"
+            )
+            # fill the background in with the default color.
+            ax2.set_facecolor(mcolors.to_rgba(mpl.colormaps["viridis"](0), 0.9))
+            max_nodes = max(polys.get_array())
 
-        img = BytesIO()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        fig.clear()
-        plt.close()
+            # log-scale the X-axis to account for thomas
+            ax.set_xscale("log", base=8)
+
+            # Add a legend for the color-coding on the scatter plot
+            formatToInt = "{x:.0f}"
+            cb = fig.colorbar(mappable=paths, ax=ax, format=formatToInt)
+            cb.set_label("Validator Count")
+            cb.set_ticks(_log_ticks(max_validators))
+
+            # Add a legend for the color-coding on the hex distribution
+            cb = fig.colorbar(mappable=polys, ax=ax2, format=formatToInt)
+            cb.set_label("Nodes")
+            cb.set_ticks(_log_ticks(max_nodes - 1))
+
+            # Add labels and units
+            ylabel = f"Collateral (percent {'bonded' if bonded else 'borrowed'})"
+            ax.set_ylabel(ylabel)
+            ax2.set_ylabel(ylabel)
+            ax.yaxis.set_major_formatter(formatToInt + "%")
+            ax2.yaxis.set_major_formatter(formatToInt + "%")
+            ax2.set_xlabel("Node Bond (Eth only - log scale)")
+            ax.xaxis.set_major_formatter(formatToInt)
+            ax2.xaxis.set_major_formatter(formatToInt)
+
+            # Add a red dot if the user asked to highlight their node
+            if target_node is not None:
+                ax.plot(target_node["bonded"], node_collateral(target_node), "ro")
+                ax2.plot(target_node["bonded"], node_collateral(target_node), "ro")
+
+            # Add horizontal lines showing the 10-15% range made optimal by RPIP-30
+            if not bonded:
+                ax.axhspan(10, 15, alpha=0.1, color="grey")
+
+            fig.tight_layout()
+
+        img = await render_png(draw)
 
         e.title = "Node TVL vs Collateral Scatter Plot"
         e.set_image(url="attachment://graph.png")
@@ -310,49 +310,50 @@ class Collateral(commands.Cog):
             return
 
         e = Embed()
-        img = BytesIO()
+
         # create figure with 2 separate y axes
-        fig, ax = plt.subplots()
-        ax2 = ax.twinx()
-
-        x_keys = [str(x) for x, _ in distribution]
-        rects = ax.bar(
-            x_keys, [y for _, y in distribution], color=str(e.color), align="edge"
-        )
-        ax.bar_label(rects)
-
-        ax.tick_params(axis="x", rotation=90)
-        ax.set_xlabel(f"Collateral Percent of {'Bonded' if bonded else 'Borrowed'} Eth")
-
-        ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
-        ax.yaxis.set_visible(False)
-        ax.get_xaxis().set_major_formatter(
-            FuncFormatter(
-                lambda n, _: (
-                    f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys) - 1 else ''}%"
-                )
-            )
-        )
-
         bars = {
             collateral: sum(nodes)
             for collateral, nodes in sorted(data.items(), key=lambda x: x[0])
         }
-        line = ax2.plot(x_keys, [bars.get(float(x), 0) for x in x_keys])
-        ax2.set_ylim(top=(ax2.get_ylim()[1] * 1.1))
-        ax2.tick_params(axis="y", colors=line[0].get_color())
-        ax2.get_yaxis().set_major_formatter(
-            FuncFormatter(lambda y, _: f"{int(y / 10**3)}k")
-        )
 
-        fig.tight_layout()
-        ax.legend(rects, ["Node Operators"], loc="upper left")
-        ax2.legend(line, ["Staked RPL"], loc="upper right")
-        fig.savefig(img, format="png")
-        img.seek(0)
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax2 = ax.twinx()
 
-        fig.clear()
-        plt.close()
+            x_keys = [str(x) for x, _ in distribution]
+            rects = ax.bar(
+                x_keys, [y for _, y in distribution], color=str(e.color), align="edge"
+            )
+            ax.bar_label(rects)
+
+            ax.tick_params(axis="x", rotation=90)
+            ax.set_xlabel(
+                f"Collateral Percent of {'Bonded' if bonded else 'Borrowed'} Eth"
+            )
+
+            ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
+            ax.yaxis.set_visible(False)
+            ax.get_xaxis().set_major_formatter(
+                FuncFormatter(
+                    lambda n, _: (
+                        f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys) - 1 else ''}%"
+                    )
+                )
+            )
+
+            line = ax2.plot(x_keys, [bars.get(float(x), 0) for x in x_keys])
+            ax2.set_ylim(top=(ax2.get_ylim()[1] * 1.1))
+            ax2.tick_params(axis="y", colors=line[0].get_color())
+            ax2.get_yaxis().set_major_formatter(
+                FuncFormatter(lambda y, _: f"{int(y / 10**3)}k")
+            )
+
+            fig.tight_layout()
+            ax.legend(rects, ["Node Operators"], loc="upper left")
+            ax2.legend(line, ["Staked RPL"], loc="upper right")
+
+        img = await render_png(draw)
 
         e.title = "RPL Collateral Distribution"
         e.set_image(url="attachment://collateral_distribution.png")
@@ -452,30 +453,7 @@ class Collateral(commands.Cog):
             [],
         )
 
-        img = BytesIO()
-        fig, ax = plt.subplots()
-
-        # Mark the overall average RPL per borrowed ETH
-        avg_pos = avg_ratio / step_size
-        ax.axvline(
-            avg_pos,
-            color="tab:olive",
-            linestyle="--",
-            zorder=1,
-            label=f"Average Stake ({avg_ratio:.1f})",
-        )
-
-        leb8_14_breakeven_ratio = avg_ratio / 9
-        breakeven_pos = leb8_14_breakeven_ratio / step_size
-        ax.axvline(
-            breakeven_pos,
-            color="tab:red",
-            linestyle="--",
-            zorder=1,
-            label=f"LEB8 14% Breakeven ({leb8_14_breakeven_ratio:.1f})",
-        )
-
-        # Highlight target node if provided
+        target_ratio: float | None = None
         if address is not None:
             target = await self.bot.db.node_operators.find_one(
                 {"address": address},
@@ -485,6 +463,37 @@ class Collateral(commands.Cog):
                 rpl_stake = (target.get("rpl") or {}).get("megapool_stake", 0)
                 borrowed = (target.get("megapool") or {}).get("user_capital", 0)
                 target_ratio = (rpl_stake / borrowed) if (borrowed > 0) else 0
+
+        # Match decimal places to step size precision
+        decimals = (
+            len(f"{step_size:.10f}".rstrip("0").split(".")[1]) if step_size % 1 else 0
+        )
+
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+
+            # Mark the overall average RPL per borrowed ETH
+            avg_pos = avg_ratio / step_size
+            ax.axvline(
+                avg_pos,
+                color="tab:olive",
+                linestyle="--",
+                zorder=1,
+                label=f"Average Stake ({avg_ratio:.1f})",
+            )
+
+            leb8_14_breakeven_ratio = avg_ratio / 9
+            breakeven_pos = leb8_14_breakeven_ratio / step_size
+            ax.axvline(
+                breakeven_pos,
+                color="tab:red",
+                linestyle="--",
+                zorder=1,
+                label=f"LEB8 14% Breakeven ({leb8_14_breakeven_ratio:.1f})",
+            )
+
+            # Highlight target node if provided
+            if target_ratio is not None:
                 target_pos = min(target_ratio, cap) / step_size
                 ax.axvline(
                     target_pos,
@@ -494,36 +503,29 @@ class Collateral(commands.Cog):
                     label=f"{display_name} ({target_ratio:.1f})",
                 )
 
-        # Match decimal places to step size precision
-        decimals = (
-            len(f"{step_size:.10f}".rstrip("0").split(".")[1]) if step_size % 1 else 0
-        )
-        x_keys = [f"{x:.{decimals}f}" for x, _ in distribution]
-        rects = ax.bar(
-            x_keys, [y for _, y in distribution], color=str(e.color), align="edge"
-        )
-        ax.bar_label(rects)
+            x_keys = [f"{x:.{decimals}f}" for x, _ in distribution]
+            rects = ax.bar(
+                x_keys, [y for _, y in distribution], color=str(e.color), align="edge"
+            )
+            ax.bar_label(rects)
 
-        ax.tick_params(axis="x", rotation=90)
-        ax.set_xlabel("RPL per borrowed ETH")
+            ax.tick_params(axis="x", rotation=90)
+            ax.set_xlabel("RPL per borrowed ETH")
 
-        ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
-        ax.set_ylabel("Validators")
-        ax.get_xaxis().set_major_formatter(
-            FuncFormatter(
-                lambda n, _: (
-                    f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys) - 1 else ''}"
+            ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
+            ax.set_ylabel("Validators")
+            ax.get_xaxis().set_major_formatter(
+                FuncFormatter(
+                    lambda n, _: (
+                        f"{x_keys[n] if n < len(x_keys) else 0}{'+' if n == len(x_keys) - 1 else ''}"
+                    )
                 )
             )
-        )
 
-        fig.tight_layout()
-        ax.legend(loc="upper right")
-        fig.savefig(img, format="png")
-        img.seek(0)
+            fig.tight_layout()
+            ax.legend(loc="upper right")
 
-        fig.clear()
-        plt.close()
+        img = await render_png(draw)
 
         e.set_image(url="attachment://voter_share_distribution.png")
         f = File(img, filename="voter_share_distribution.png")

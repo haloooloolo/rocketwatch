@@ -1,19 +1,19 @@
 import logging
 from datetime import datetime, timedelta
-from io import BytesIO
 
-import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext.commands import Cog
 from eth_typing import BlockNumber
 from matplotlib.dates import DateFormatter
+from matplotlib.figure import Figure
 from pymongo import InsertOne
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed, el_explorer_url
 from rocketwatch.utils.event_logs import get_logs
 from rocketwatch.utils.rocketpool import rp
@@ -128,21 +128,20 @@ class RockSolid(Cog):
             x.append(current_date)
             y.append(current_assets)
 
-        fig, ax = plt.subplots(figsize=(6, 2))
-        ax.grid()
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax.grid()
 
-        x_arr = np.array(x)
-        ax.plot(x_arr, y, color="#50b1f7")
-        ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
-        ax.set_ylabel("AUM (rETH)")
-        ax.set_xlim((x_arr[0], x_arr[-1]))
-        ax.set_ylim((y[0], y[-1] * 1.05))
+            x_arr = np.array(x)
+            ax.plot(x_arr, y, color="#50b1f7")
+            ax.xaxis.set_major_formatter(DateFormatter("%b %d"))
+            ax.set_ylabel("AUM (rETH)")
+            ax.set_xlim((x_arr[0], x_arr[-1]))
+            ax.set_ylim((y[0], y[-1] * 1.05))
 
-        img = BytesIO()
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
+            fig.tight_layout()
+
+        img = await render_png(draw, figsize=(6, 2))
 
         ca_reth = await rp.get_address_by_name("rocketTokenRETH")
         ca_rock_reth = await rp.get_address_by_name("RockSolidVault")

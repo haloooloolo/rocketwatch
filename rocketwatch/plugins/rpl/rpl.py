@@ -1,13 +1,13 @@
 import logging
-from io import BytesIO
 
-import matplotlib.pyplot as plt
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands
+from matplotlib.figure import Figure
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.visibility import is_hidden
@@ -66,21 +66,20 @@ class RPL(commands.Cog):
         def autopct(pct: float) -> str:
             return f"{fmt(pct / 100 * total)} ({pct:.1f}%)"
 
-        fig, ax = plt.subplots()
-        ax.pie(
-            sizes,
-            labels=labels,
-            colors=colors,
-            autopct=autopct,
-            startangle=90,
-            wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
-        )
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax.pie(
+                sizes,
+                labels=labels,
+                colors=colors,
+                autopct=autopct,
+                startangle=90,
+                wedgeprops={"linewidth": 0.5, "edgecolor": "white"},
+            )
 
-        img = BytesIO()
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
+            fig.tight_layout()
+
+        img = await render_png(draw)
 
         embed = Embed()
         embed.title = "Staked RPL"
@@ -162,38 +161,36 @@ class RPL(commands.Cog):
         embed = Embed()
 
         # plot the data
-        fig, ax = plt.subplots()
-        ax.plot(x, y, color=str(embed.color))
-        ax.plot(rpl_eth_price, current_withdrawable_rpl, "bo")
-        ax.set_xlim(min(x), max(x))
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax.plot(x, y, color=str(embed.color))
+            ax.plot(rpl_eth_price, current_withdrawable_rpl, "bo")
+            ax.set_xlim(min(x), max(x))
 
-        ax.annotate(
-            f"{rpl_eth_price:.4f}",
-            (rpl_eth_price, current_withdrawable_rpl),
-            textcoords="offset points",
-            xytext=(-10, -5),
-            ha="right",
-        )
-        ax.annotate(
-            f"{current_withdrawable_rpl / 1000000:.2f} million RPL withdrawable",
-            (rpl_eth_price, current_withdrawable_rpl),
-            textcoords="offset points",
-            xytext=(10, -5),
-            ha="left",
-        )
-        ax.grid()
+            ax.annotate(
+                f"{rpl_eth_price:.4f}",
+                (rpl_eth_price, current_withdrawable_rpl),
+                textcoords="offset points",
+                xytext=(-10, -5),
+                ha="right",
+            )
+            ax.annotate(
+                f"{current_withdrawable_rpl / 1000000:.2f} million RPL withdrawable",
+                (rpl_eth_price, current_withdrawable_rpl),
+                textcoords="offset points",
+                xytext=(10, -5),
+                ha="left",
+            )
+            ax.grid()
 
-        ax.set_ylabel("Withdrawable RPL")
-        ax.set_xlabel("RPL / ETH ratio")
-        ax.yaxis.set_major_formatter(lambda x, _: f"{x / 1000000:.1f}m")
-        ax.xaxis.set_major_formatter(lambda x, _: f"{x:.4f}")
+            ax.set_ylabel("Withdrawable RPL")
+            ax.set_xlabel("RPL / ETH ratio")
+            ax.yaxis.set_major_formatter(lambda x, _: f"{x / 1000000:.1f}m")
+            ax.xaxis.set_major_formatter(lambda x, _: f"{x:.4f}")
 
-        img = BytesIO()
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
+            fig.tight_layout()
 
-        plt.close(fig)
+        img = await render_png(draw)
 
         embed.title = "Available RPL Liquidity"
         embed.set_image(url="attachment://graph.png")

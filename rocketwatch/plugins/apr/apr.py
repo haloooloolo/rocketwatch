@@ -1,19 +1,19 @@
 import logging
 from datetime import datetime
-from io import BytesIO
 from typing import TypedDict, cast
 
 import matplotlib.axes
-import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands, tasks
 from matplotlib.dates import DateFormatter
+from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
@@ -234,63 +234,63 @@ class APR(commands.Cog):
             inline=False,
         )
         x_arr = np.array(x)
-        fig, ax1 = plt.subplots()
-        ax2: matplotlib.axes.Axes = ax1.twinx()
 
-        ax2.plot(
-            x_arr,
-            y,
-            marker="+",
-            linestyle="",
-            label="Period Average",
-            alpha=0.6,
-            color="orange",
-        )
-        # ax2.plot(x_arr, y_virtual, marker="x", linestyle="", label="Period Average (Virtual)", alpha=0.4)
-        # ax2.plot(x_arr, y_node_operators, marker="+", linestyle="", label="Node Operator APR", alpha=0.4)
-        ax2.plot(
-            x_arr,
-            y_7d,
-            linestyle="-",
-            label=f"{y_7d_claim:.1f} Day Average",
-            color="orange",
-        )
-        ax2.plot(
-            x_arr,
-            y_7d_virtual,
-            linestyle="-",
-            label=f"{y_7d_claim:.1f} Day Average (Virtual)",
-            color="green",
-        )
-        ax1.plot(
-            x_arr,
-            y_effectiveness,
-            linestyle="--",
-            label="Effectiveness",
-            alpha=0.7,
-            color="royalblue",
-        )
+        def draw(fig: Figure) -> None:
+            ax1 = fig.subplots()
+            ax2: matplotlib.axes.Axes = ax1.twinx()
 
-        ax1.set_title("Observed rETH APR values")
-        ax1.set_xlabel("Date")
-        ax1.grid(True)
-        ax1.set_xlim(left=x_arr[38])
-        ax1.tick_params(axis="x", rotation=45)
-        ax1.xaxis.set_major_formatter(DateFormatter("%b %d"))
+            ax2.plot(
+                x_arr,
+                y,
+                marker="+",
+                linestyle="",
+                label="Period Average",
+                alpha=0.6,
+                color="orange",
+            )
+            # ax2.plot(x_arr, y_virtual, marker="x", linestyle="", label="Period Average (Virtual)", alpha=0.4)
+            # ax2.plot(x_arr, y_node_operators, marker="+", linestyle="", label="Node Operator APR", alpha=0.4)
+            ax2.plot(
+                x_arr,
+                y_7d,
+                linestyle="-",
+                label=f"{y_7d_claim:.1f} Day Average",
+                color="orange",
+            )
+            ax2.plot(
+                x_arr,
+                y_7d_virtual,
+                linestyle="-",
+                label=f"{y_7d_claim:.1f} Day Average (Virtual)",
+                color="green",
+            )
+            ax1.plot(
+                x_arr,
+                y_effectiveness,
+                linestyle="--",
+                label="Effectiveness",
+                alpha=0.7,
+                color="royalblue",
+            )
 
-        ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
-        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
-        ax1.set_ylabel("Effectiveness")
-        ax2.set_ylabel("APR")
-        ax1.set_ylim(top=1)
-        ax1.legend(loc="upper left")
-        ax2.legend(loc="upper right")
+            ax1.set_title("Observed rETH APR values")
+            ax1.set_xlabel("Date")
+            ax1.grid(True)
+            ax1.set_xlim(left=x_arr[38])
+            ax1.tick_params(axis="x", rotation=45)
+            ax1.xaxis.set_major_formatter(DateFormatter("%b %d"))
 
-        img = BytesIO()
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
+            ax2.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
+            ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
+            ax1.set_ylabel("Effectiveness")
+            ax2.set_ylabel("APR")
+            ax1.set_ylim(top=1)
+            ax1.legend(loc="upper left")
+            ax2.legend(loc="upper right")
+
+            fig.tight_layout()
+
+        img = await render_png(draw)
 
         e.set_image(url="attachment://reth_apr.png")
 
@@ -436,55 +436,55 @@ class APR(commands.Cog):
         )
 
         x_arr = np.array(x)
-        fig, ax1 = plt.subplots()
 
-        ax1.plot(
-            x_arr,
-            y_7d_node_operators_leb4,
-            linestyle="-",
-            label=f"{y_7d_claim} Day Average (leb4 {leb4_commission:.0%})",
-            color="orange",
-        )
-        ax1.plot(
-            x_arr,
-            y_7d_node_operators_leb8_05,
-            linestyle="--",
-            label=f"{y_7d_claim} Day Average (leb8 5%)",
-            color="red",
-            alpha=0.7,
-        )
-        ax1.plot(
-            x_arr,
-            y_7d_node_operators_leb8_14,
-            linestyle="-.",
-            label=f"{y_7d_claim:.1f} Day Average (leb8 14%)",
-            color="red",
-            alpha=0.5,
-        )
-        ax1.plot(
-            x_arr,
-            y_7d_solo,
-            linestyle=":",
-            label=f"{y_7d_claim:.1f} Day Average (solo)",
-            color="black",
-            alpha=0.5,
-        )
+        def draw(fig: Figure) -> None:
+            ax1 = fig.subplots()
 
-        ax1.set_title("Observed NO APR values")
-        ax1.grid(True)
-        ax1.set_xlim(left=x_arr[38])
-        ax1.tick_params(axis="x", rotation=0)
-        ax1.set_ylim(bottom=0.02)
-        ax1.xaxis.set_major_formatter(DateFormatter("%m.%d"))
+            ax1.plot(
+                x_arr,
+                y_7d_node_operators_leb4,
+                linestyle="-",
+                label=f"{y_7d_claim} Day Average (leb4 {leb4_commission:.0%})",
+                color="orange",
+            )
+            ax1.plot(
+                x_arr,
+                y_7d_node_operators_leb8_05,
+                linestyle="--",
+                label=f"{y_7d_claim} Day Average (leb8 5%)",
+                color="red",
+                alpha=0.7,
+            )
+            ax1.plot(
+                x_arr,
+                y_7d_node_operators_leb8_14,
+                linestyle="-.",
+                label=f"{y_7d_claim:.1f} Day Average (leb8 14%)",
+                color="red",
+                alpha=0.5,
+            )
+            ax1.plot(
+                x_arr,
+                y_7d_solo,
+                linestyle=":",
+                label=f"{y_7d_claim:.1f} Day Average (solo)",
+                color="black",
+                alpha=0.5,
+            )
 
-        ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
-        ax1.legend(loc="lower left")
+            ax1.set_title("Observed NO APR values")
+            ax1.grid(True)
+            ax1.set_xlim(left=x_arr[38])
+            ax1.tick_params(axis="x", rotation=0)
+            ax1.set_ylim(bottom=0.02)
+            ax1.xaxis.set_major_formatter(DateFormatter("%m.%d"))
 
-        img = BytesIO()
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
+            ax1.yaxis.set_major_formatter(FuncFormatter(lambda x, loc: f"{x:.1%}"))
+            ax1.legend(loc="lower left")
+
+            fig.tight_layout()
+
+        img = await render_png(draw)
 
         e.add_field(
             name="Current Average Effective Commission:",

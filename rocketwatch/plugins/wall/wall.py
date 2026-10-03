@@ -2,7 +2,6 @@ import asyncio
 import logging
 from collections import OrderedDict
 from dataclasses import dataclass
-from io import BytesIO
 from typing import Literal, cast
 
 import aiohttp
@@ -13,10 +12,10 @@ from discord.ext import commands
 from eth_typing import ChecksumAddress, HexStr
 from matplotlib import figure, ticker
 from matplotlib import font_manager as fm
-from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.liquidity import (
     CEX,
@@ -327,6 +326,7 @@ class Wall(commands.GroupCog, name="wall"):
 
     @staticmethod
     def _plot_data(
+        fig: figure.Figure,
         x: np.ndarray,
         primary_price: float,
         cex_data: OrderedDict[CEX, np.ndarray],
@@ -335,8 +335,8 @@ class Wall(commands.GroupCog, name="wall"):
         bottom_formatter: ticker.Formatter,
         top_formatter: ticker.Formatter,
         y_right_formatter: ticker.Formatter,
-    ) -> figure.Figure:
-        fig, ax = plt.subplots(figsize=(10, 5))
+    ) -> None:
+        ax = fig.subplots()
 
         ax.minorticks_on()
         ax.grid(True, which="major", linestyle="--", linewidth=0.5, alpha=0.5)
@@ -427,8 +427,6 @@ class Wall(commands.GroupCog, name="wall"):
         ax_right.set_ylim(ax.get_ylim())
         ax_right.yaxis.set_major_formatter(y_right_formatter)
 
-        return fig
-
     async def _run(
         self,
         interaction: Interaction,
@@ -495,20 +493,20 @@ class Wall(commands.GroupCog, name="wall"):
         liquidity_primary = sum((y[0] + y[-1]) for y in (dex_data | cex_data).values())
         liquidity_secondary = liquidity_primary * (secondary_price / primary_price)
 
-        buffer = BytesIO()
-        fig = self._plot_data(
-            x,
-            primary_price,
-            cex_data,
-            dex_data,
-            config,
-            bottom_formatter=bottom_formatter,
-            top_formatter=top_formatter,
-            y_right_formatter=y_right_formatter,
-        )
-        fig.savefig(buffer, format="png")
-        plt.close(fig)
-        buffer.seek(0)
+        def draw(fig: figure.Figure) -> None:
+            self._plot_data(
+                fig,
+                x,
+                primary_price,
+                cex_data,
+                dex_data,
+                config,
+                bottom_formatter=bottom_formatter,
+                top_formatter=top_formatter,
+                y_right_formatter=y_right_formatter,
+            )
+
+        buffer = await render_png(draw, figsize=(10, 5))
 
         embed.add_field(
             name="Current Price",

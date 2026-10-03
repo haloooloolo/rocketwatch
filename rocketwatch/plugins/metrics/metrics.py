@@ -1,14 +1,14 @@
 import logging
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
 
 from bson import SON
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands
-from matplotlib import pyplot as plt
+from matplotlib.figure import Figure
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.visibility import is_hidden
 
@@ -159,34 +159,29 @@ class Metrics(commands.Cog):
         ).to_list(None)
 
         # create a new figure
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+        def draw(fig: Figure) -> None:
+            ax1, ax2 = fig.subplots(2, 1)
 
-        # plot the command usage as bars
-        ax1.bar(
-            [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in command_usage],
-            [x["total"] for x in command_usage],
-        )
-        ax1.set_title("Command Usage")
-        ax1.tick_params(axis="x", rotation=45)
+            # plot the command usage as bars
+            ax1.bar(
+                [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in command_usage],
+                [x["total"] for x in command_usage],
+            )
+            ax1.set_title("Command Usage")
+            ax1.tick_params(axis="x", rotation=45)
 
-        # plot the event usage
-        ax2.bar(
-            [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in event_emission],
-            [x["total"] for x in event_emission],
-        )
-        ax2.set_title("Event Emission")
-        ax2.tick_params(axis="x", rotation=45)
+            # plot the event usage
+            ax2.bar(
+                [f"{x['_id']['year']}-{x['_id']['month']:0>2}" for x in event_emission],
+                [x["total"] for x in event_emission],
+            )
+            ax2.set_title("Event Emission")
+            ax2.tick_params(axis="x", rotation=45)
 
-        # use minimal whitespace
-        fig.tight_layout()
+            # use minimal whitespace
+            fig.tight_layout()
 
-        # store the graph in an file object
-        file = BytesIO()
-        fig.savefig(file, format="png")
-        file.seek(0)
-
-        # clear plot from memory
-        plt.close(fig)
+        file = await render_png(draw, figsize=(10, 10))
 
         e = Embed(title="Command Usage and Event ")
         e.set_image(url="attachment://metrics.png")

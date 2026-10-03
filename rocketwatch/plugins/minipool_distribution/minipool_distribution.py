@@ -1,16 +1,16 @@
 import logging
 import re
 from collections.abc import Generator
-from io import BytesIO
 from typing import Any
 
-import matplotlib.pyplot as plt
 import numpy as np
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
+from matplotlib.figure import Figure
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.visibility import is_hidden
 
@@ -87,26 +87,23 @@ class MinipoolDistribution(commands.Cog):
             await minipool_distribution_raw(interaction, distribution[::-1])
             return
 
-        img = BytesIO()
-        fig, ax = plt.subplots(1, 1)
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots(1, 1)
 
-        # First chart is sorted bars showing total minipools provided by nodes with x minipools per node
-        # Remove the 0,0 value, since it doesn't provide any insight
-        x_keys = [str(x) for x, _ in distribution]
-        rects = ax.bar(x_keys, [x * y for x, y in distribution], color=str(e.color))
-        ax.bar_label(rects, rotation=90, padding=3, fontsize=7)
-        ax.set_ylabel("Total Minipools")
-        # tilt the x axis labels
-        ax.tick_params(axis="x", labelrotation=90, labelsize=7)
-        # Add a 5% buffer to the ylim to help fit all the bar labels
-        ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
+            # First chart is sorted bars showing total minipools provided by nodes with x minipools per node
+            # Remove the 0,0 value, since it doesn't provide any insight
+            x_keys = [str(x) for x, _ in distribution]
+            rects = ax.bar(x_keys, [x * y for x, y in distribution], color=str(e.color))
+            ax.bar_label(rects, rotation=90, padding=3, fontsize=7)
+            ax.set_ylabel("Total Minipools")
+            # tilt the x axis labels
+            ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+            # Add a 5% buffer to the ylim to help fit all the bar labels
+            ax.set_ylim(top=(ax.get_ylim()[1] * 1.1))
 
-        fig.tight_layout()
-        fig.savefig(img, format="png")
-        img.seek(0)
+            fig.tight_layout()
 
-        fig.clear()
-        plt.close()
+        img = await render_png(draw)
 
         e.title = "Minipool Distribution"
         e.set_image(url="attachment://graph.png")
@@ -165,47 +162,45 @@ class MinipoolDistribution(commands.Cog):
             await interaction.followup.send(embed=e)
             return
 
-        fig, ax = plt.subplots(1, 1)
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots(1, 1)
 
-        ax.plot(x, y)
-        ax.set_xlabel("number of nodes")
-        ax.set_ylabel("protocol share")
-        ax.set_xscale("log")
-        ax.set_xlim((1, x[-1]))
-        ax.set_ylim((0, 1))
+            ax.plot(x, y)
+            ax.set_xlabel("number of nodes")
+            ax.set_ylabel("protocol share")
+            ax.set_xscale("log")
+            ax.set_xlim((1, x[-1]))
+            ax.set_ylim((0, 1))
 
-        x_ticks = [x[-1]]
+            x_ticks = [x[-1]]
 
-        def draw_threshold(threshold: float, color: str) -> None:
-            index = y.searchsorted(threshold)
-            x_pos = x[index]
-            percentage = round(100 * threshold)
-            x_ticks.append(x_pos)
-            ax.axvline(x=float(x_pos), linestyle="--", c=color, label=f"{percentage}%")
+            def draw_threshold(threshold: float, color: str) -> None:
+                index = y.searchsorted(threshold)
+                x_pos = x[index]
+                percentage = round(100 * threshold)
+                x_ticks.append(x_pos)
+                ax.axvline(
+                    x=float(x_pos), linestyle="--", c=color, label=f"{percentage}%"
+                )
 
-        draw_threshold(1 / 3, "tab:green")
-        draw_threshold(0.5, "tab:olive")
-        draw_threshold(2 / 3, "tab:orange")
-        draw_threshold(0.9, "tab:red")
+            draw_threshold(1 / 3, "tab:green")
+            draw_threshold(0.5, "tab:olive")
+            draw_threshold(2 / 3, "tab:orange")
+            draw_threshold(0.9, "tab:red")
 
-        # add powers of 10 to x ticks if not too close to existing ticks
-        i = 1
-        while i < x[-1]:
-            if not any((i / 1.5 < tick < i * 1.5) for tick in x_ticks):
-                x_ticks.append(i)
-            i *= 10
+            # add powers of 10 to x ticks if not too close to existing ticks
+            i = 1
+            while i < x[-1]:
+                if not any((i / 1.5 < tick < i * 1.5) for tick in x_ticks):
+                    x_ticks.append(i)
+                i *= 10
 
-        ax.set_xticks(x_ticks, map(str, x_ticks))
-        ax.legend()
+            ax.set_xticks(x_ticks, map(str, x_ticks))
+            ax.legend()
 
-        fig.tight_layout()
+            fig.tight_layout()
 
-        img = BytesIO()
-        fig.savefig(img, format="png")
-        img.seek(0)
-
-        fig.clear()
-        plt.close()
+        img = await render_png(draw)
 
         e.set_image(url="attachment://graph.png")
         f = File(img, filename="graph.png")

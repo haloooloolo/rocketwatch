@@ -8,7 +8,6 @@ import aiohttp
 import numpy as np
 import pytest
 from matplotlib import figure
-from matplotlib import pyplot as plt
 
 from rocketwatch.plugins.wall.wall import MarketConfig, Wall
 from tests.lib.discord_harness import make_bot, make_interaction
@@ -310,26 +309,25 @@ class TestPlotData:
     ) -> figure.Figure:
         x = np.linspace(1.0, 2.0, 5)
         fmt = Wall._get_formatter(".2f", prefix="$")
-        return Wall._plot_data(x, 1.5, cex, dex, _config(), fmt, fmt, fmt)
+        fig = figure.Figure()
+        Wall._plot_data(fig, x, 1.5, cex, dex, _config(), fmt, fmt, fmt)
+        return fig
 
     def test_renders_with_both_dex_and_cex(self) -> None:
         e1, y1 = _exchange_series("CexA", "#111")
         e2, y2 = _exchange_series("DexA", "#222")
         fig = self._run_plot(OrderedDict({e1: y1}), OrderedDict({e2: y2}))
-        assert isinstance(fig, figure.Figure)
-        plt.close(fig)
+        assert fig.axes
 
     def test_renders_cex_only(self) -> None:
         e1, y1 = _exchange_series("CexA", "#111")
         fig = self._run_plot(OrderedDict({e1: y1}), OrderedDict())
-        assert isinstance(fig, figure.Figure)
-        plt.close(fig)
+        assert fig.axes
 
     def test_renders_dex_only(self) -> None:
         e2, y2 = _exchange_series("DexA", "#222")
         fig = self._run_plot(OrderedDict(), OrderedDict({e2: y2}))
-        assert isinstance(fig, figure.Figure)
-        plt.close(fig)
+        assert fig.axes
 
 
 # --- _run ------------------------------------------------------------------

@@ -5,10 +5,10 @@ from typing import Any, Literal
 from discord import File, Interaction
 from discord.app_commands import command
 from discord.ext import commands
-from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.readable import render_tree_legacy
 from rocketwatch.utils.visibility import is_hidden
@@ -50,39 +50,43 @@ class FeeDistribution(commands.Cog):
             tree[f"{bond} ETH"] = subtree
         return tree
 
-    async def _get_pie(self) -> Figure:
-        fig, axs = plt.subplots(1, 2)
-        for i, bond in enumerate((8, 16)):
-            labels = []
-            sizes = []
+    async def _get_pie(self) -> BytesIO:
+        minipools = {bond: await self._get_minipools(bond) for bond in (8, 16)}
 
-            for entry in await self._get_minipools(bond):
-                fee_percentage = entry["_id"] * 100
-                labels.append(f"{fee_percentage:.0f}%")
-                sizes.append(entry["count"])
+        def draw(fig: Figure) -> None:
+            axs = fig.subplots(1, 2)
+            for ax, (bond, entries) in zip(axs, minipools.items(), strict=True):
+                labels = []
+                sizes = []
 
-            ax = axs[i]
-            ax.set_title(f"{bond} ETH")
+                for entry in entries:
+                    fee_percentage = entry["_id"] * 100
+                    labels.append(f"{fee_percentage:.0f}%")
+                    sizes.append(entry["count"])
 
-            total = sum(sizes)
-            if total == 0:
-                ax.text(0.5, 0.5, "No data", ha="center", va="center")
-                ax.axis("off")
-                continue
+                ax.set_title(f"{bond} ETH")
 
-            # avoid overlapping labels for small slices
-            for j in range(len(sizes)):
-                if sizes[j] < 0.05 * total:
-                    labels[j] = ""
+                total = sum(sizes)
+                if total == 0:
+                    ax.text(0.5, 0.5, "No data", ha="center", va="center")
+                    ax.axis("off")
+                    continue
 
-            ax.pie(
-                sizes,
-                labels=labels,
-                autopct=lambda p, _total=total: (
-                    f"{p * _total / 100:.0f}" if (p >= 5) else ""
-                ),
-            )
-        return fig
+                # avoid overlapping labels for small slices
+                for j in range(len(sizes)):
+                    if sizes[j] < 0.05 * total:
+                        labels[j] = ""
+
+                ax.pie(
+                    sizes,
+                    labels=labels,
+                    autopct=lambda p, _total=total: (
+                        f"{p * _total / 100:.0f}" if (p >= 5) else ""
+                    ),
+                )
+            fig.tight_layout()
+
+        return await render_png(draw)
 
     @command()
     async def fee_distribution(
@@ -101,13 +105,7 @@ class FeeDistribution(commands.Cog):
             e.description = f"```\n{render_tree_legacy(tree, 'Minipools')}\n```"
             await interaction.followup.send(embed=e)
         elif mode == "pie":
-            img = BytesIO()
-            fig = await self._get_pie()
-            fig.tight_layout()
-            fig.savefig(img, format="png")
-            img.seek(0)
-            fig.clear()
-            plt.close()
+            img = await self._get_pie()
 
             file_name = "fee_distribution.png"
             e.set_image(url=f"attachment://{file_name}")

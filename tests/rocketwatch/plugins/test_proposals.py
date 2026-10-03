@@ -1,6 +1,6 @@
 import time
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from aiohttp import ClientResponseError, RequestInfo
@@ -381,7 +381,7 @@ class TestClientComboRanking:
 
 class TestDistributionCharts:
     async def _seed(self, mongo_db: AsyncDatabase[dict[str, Any]]) -> None:
-        # plot_axes_with_data explicitly reorders an "Unknown" bucket and crashes
+        # _distribution_slices explicitly reorders an "Unknown" bucket and crashes
         # if absent, so the seed must include one.
         await mongo_db.latest_proposals.insert_many(
             [
@@ -437,16 +437,11 @@ class TestDistributionCharts:
             ]
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        ax1, ax2 = MagicMock(), MagicMock()
+        validators, node_operators = await cog._distribution_slices("type")
 
-        await cog.plot_axes_with_data("type", ax1, ax2)
-
-        validator_labels = ax1.legend.call_args.args[0]
-        operator_labels = ax2.legend.call_args.args[0]
-        assert any(label.startswith("1 No proposals yet") for label in validator_labels)
-        assert any(label.startswith("1 No proposals yet") for label in operator_labels)
-        assert all(size >= 0 for size in ax1.pie.call_args.args[0])
-        assert all(size >= 0 for size in ax2.pie.call_args.args[0])
+        assert dict(validators)["No proposals yet"] == 1
+        assert dict(node_operators)["No proposals yet"] == 1
+        assert all(count >= 0 for _, count in validators + node_operators)
 
     async def test_remove_allnodes_drops_them_from_totals(
         self, mongo_db: AsyncDatabase[dict[str, Any]]
@@ -477,18 +472,12 @@ class TestDistributionCharts:
             ]
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        ax1, ax2 = MagicMock(), MagicMock()
-
-        await cog.plot_axes_with_data(
-            "consensus_client", ax1, ax2, remove_allnodes=True
+        validators, node_operators = await cog._distribution_slices(
+            "consensus_client", remove_allnodes=True
         )
 
-        validator_labels = ax1.legend.call_args.args[0]
-        operator_labels = ax2.legend.call_args.args[0]
-        assert any(label.startswith("1 No proposals yet") for label in validator_labels)
-        assert any(label.startswith("1 No proposals yet") for label in operator_labels)
-        assert not any("Teku" in label for label in validator_labels)
-        assert sum(ax1.pie.call_args.args[0]) == 2
+        assert dict(validators) == {"No proposals yet": 1, "Unknown": 1}
+        assert dict(node_operators) == {"No proposals yet": 1, "Unknown": 1}
 
     async def test_operator_type_distribution_sends_image(
         self, mongo_db: AsyncDatabase[dict[str, Any]]
@@ -517,7 +506,7 @@ class TestDistributionCharts:
         self, mongo_db: AsyncDatabase[dict[str, Any]]
     ) -> None:
         # Exercises the remove_allnodes subtraction and the "External" reorder
-        # branch in plot_axes_with_data.
+        # branch in _distribution_slices.
         await mongo_db.latest_proposals.insert_many(
             [
                 {

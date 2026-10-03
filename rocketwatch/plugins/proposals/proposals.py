@@ -4,20 +4,21 @@ import re
 import time
 from datetime import datetime, timedelta
 from http import HTTPStatus
-from io import BytesIO
 from typing import Any
 
+import matplotlib
 import numpy as np
 from aiohttp.client_exceptions import ClientResponseError
 from discord import File, Interaction
 from discord.app_commands import command, describe
 from discord.ext import commands
 from discord.utils import as_chunks
-from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 from pymongo import ASCENDING, DESCENDING
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.cronitor_monitor import AsyncMonitor
 from rocketwatch.utils.embeds import Embed
 from rocketwatch.utils.shared_w3 import bacon
@@ -367,7 +368,7 @@ class Proposals(commands.Cog):
             for version in data[date]:
                 value[version] /= total
 
-        # use plt.stackplot to stack the data
+        # stack the data with ax.stackplot
         x = list(data.keys())
         y: dict[str, list[float]] = {v: [] for v in versions}
         for _date, value_ in data.items():
@@ -375,7 +376,7 @@ class Proposals(commands.Cog):
                 y[version].append(value_.get(version, 0))
 
         # generate enough distinct colors for all recent versions
-        cmap = plt.colormaps["tab20"]
+        cmap = matplotlib.colormaps["tab20"]
         recent_colors = [
             cmap(i / max(len(recent_versions) - 1, 1))
             for i in range(len(recent_versions))
@@ -394,28 +395,28 @@ class Proposals(commands.Cog):
         ]
         # add percentage to labels
         x_arr = np.array(x)
-        fig, ax = plt.subplots()
-        ax.stackplot(x_arr, *y.values(), labels=labels, colors=colors)
-        # hide y axis
-        ax.tick_params(axis="y", which="both", left=False, right=False, labelleft=False)
-        fig.autofmt_xdate()
-        handles, legend_labels = ax.get_legend_handles_labels()
-        ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
-        # add a thin line at current time from y=0 to y=1 with a width of 0.5
-        ax.plot([x_arr[-1], x_arr[-1]], [0, 1], color="white", alpha=0.25)
-        # calculate future point to make latest data more visible
-        future_point = x[-1] + timedelta(days=window_length)
-        last_y_values = [[yy[-1]] * 2 for yy in y.values()]
-        ax.stackplot(
-            [x_arr[-1], np.datetime64(future_point)], *last_y_values, colors=colors
-        )
-        fig.tight_layout()
 
-        # respond with image
-        img = BytesIO()
-        fig.savefig(img, format="png", bbox_inches="tight", dpi=300)
-        img.seek(0)
-        plt.close(fig)
+        def draw(fig: Figure) -> None:
+            ax = fig.subplots()
+            ax.stackplot(x_arr, *y.values(), labels=labels, colors=colors)
+            # hide y axis
+            ax.tick_params(
+                axis="y", which="both", left=False, right=False, labelleft=False
+            )
+            fig.autofmt_xdate()
+            handles, legend_labels = ax.get_legend_handles_labels()
+            ax.legend(reversed(handles), reversed(legend_labels), loc="upper left")
+            # add a thin line at current time from y=0 to y=1 with a width of 0.5
+            ax.plot([x_arr[-1], x_arr[-1]], [0, 1], color="white", alpha=0.25)
+            # calculate future point to make latest data more visible
+            future_point = x[-1] + timedelta(days=window_length)
+            last_y_values = [[yy[-1]] * 2 for yy in y.values()]
+            ax.stackplot(
+                [x_arr[-1], np.datetime64(future_point)], *last_y_values, colors=colors
+            )
+            fig.tight_layout()
+
+        img = await render_png(draw, bbox_inches="tight", dpi=300)
         e.set_image(url="attachment://chart.png")
 
         # send data
@@ -432,9 +433,10 @@ class Proposals(commands.Cog):
             node_operators.update(await collection.distinct("node_operator", query))
         return validators, len(node_operators)
 
-    async def plot_axes_with_data(
-        self, attr: str, ax1: Axes, ax2: Axes, remove_allnodes: bool = False
-    ) -> None:
+    async def _distribution_slices(
+        self, attr: str, remove_allnodes: bool = False
+    ) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+        """Pie slices (label, count) for validators and node operators."""
         # group by client and get count
         data = await self.gather_attribute(attr, remove_allnodes)
         total_validators, total_node_operators = await self._count_active_validators()
@@ -497,8 +499,15 @@ class Proposals(commands.Cog):
                     )
                 ),
             )
+        return validators, node_operators
 
-        # sort data
+    @staticmethod
+    def _plot_distribution(
+        ax1: Axes,
+        ax2: Axes,
+        validators: list[tuple[str, int]],
+        node_operators: list[tuple[str, int]],
+    ) -> None:
         ax1.pie(
             [x[1] for x in validators],
             colors=[COLORS.get(x[0], "red") for x in validators],
@@ -535,22 +544,19 @@ class Proposals(commands.Cog):
     async def proposal_vs_node_operators_embed(
         self, attribute: str, name: str, remove_allnodes: bool = False
     ) -> tuple[Embed, File]:
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 8))
-        # iterate axes in pairs
         title = f"Rocket Pool {name} Distribution {'without Allnodes' if remove_allnodes else ''}"
-        await self.plot_axes_with_data(attribute, ax1, ax2, remove_allnodes)
+        validators, node_operators = await self._distribution_slices(
+            attribute, remove_allnodes
+        )
 
+        def draw(fig: Figure) -> None:
+            ax1, ax2 = fig.subplots(1, 2)
+            self._plot_distribution(ax1, ax2, validators, node_operators)
+            fig.subplots_adjust(left=0, right=1, top=0.9, bottom=0, wspace=0)
+            fig.suptitle(title, fontsize=24)
+
+        img = await render_png(draw, figsize=(12, 8))
         e = Embed(title=title)
-
-        fig.subplots_adjust(left=0, right=1, top=0.9, bottom=0, wspace=0)
-        # set title
-        fig.suptitle(title, fontsize=24)
-
-        # respond with image
-        img = BytesIO()
-        fig.savefig(img, format="png")
-        img.seek(0)
-        plt.close(fig)
         e.set_image(url=f"attachment://{attribute}.png")
 
         # send data
