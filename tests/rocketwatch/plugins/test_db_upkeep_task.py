@@ -47,7 +47,8 @@ def _make_cog(bot: Any) -> DBUpkeepTask:
     # Both are irrelevant to the per-method tests below.
     cog = DBUpkeepTask.__new__(DBUpkeepTask)
     cog.bot = bot
-    cog.batch_size = 50
+    cog.beacon_batch_size = 50
+    cog.multicall_batch_size = 200
     return cog
 
 

@@ -103,8 +103,8 @@ def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     }
 
 
-# batches in flight per step; the steps mostly wait on RPC, beacon and
-# Mongo round trips, so overlapping a few of them cuts wall time
+# beacon requests in flight per step; higher values barely speed this up
+# but delay other beacon callers by seconds
 _BATCH_CONCURRENCY = 4
 
 
@@ -150,7 +150,8 @@ class DBUpkeepTask(commands.Cog):
     def __init__(self, bot: RocketWatch):
         self.bot = bot
         self.monitor = AsyncMonitor("db-task")
-        self.batch_size = 250
+        self.beacon_batch_size = 250
+        self.multicall_batch_size = 1000
         self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
 
@@ -219,9 +220,8 @@ class DBUpkeepTask(commands.Cog):
 
         total = len(items)
         first_calls = await call_fn(items[0])
-        batch_size = self.batch_size // len(first_calls)
-
-        async def process(i: int, batch: list[Any]) -> None:
+        batch_size = self.multicall_batch_size // len(first_calls)
+        for i, batch in enumerate(as_chunks(items, batch_size)):
             if label:
                 start = i * batch_size + 1
                 end = min((i + 1) * batch_size, total)
@@ -247,8 +247,6 @@ class DBUpkeepTask(commands.Cog):
                 ordered=False,
             )
 
-        await _for_each_batch(as_chunks(items, batch_size), process)
-
     # -- Node operator tasks --
 
     @timed
@@ -265,7 +263,7 @@ class DBUpkeepTask(commands.Cog):
             return
         data: dict[int, Any] = {}
         for index_batch in as_chunks(
-            range(latest_db + 1, latest_rp + 1), self.batch_size
+            range(latest_db + 1, latest_rp + 1), self.beacon_batch_size
         ):
             results = await rp.multicall(
                 [nm.functions.getNodeAt(i) for i in index_batch]
@@ -564,7 +562,7 @@ class DBUpkeepTask(commands.Cog):
             f"Latest minipool in db: {latest_db}, latest minipool in rp: {latest_rp}"
         )
         for index_batch in as_chunks(
-            range(latest_db + 1, latest_rp + 1), self.batch_size
+            range(latest_db + 1, latest_rp + 1), self.beacon_batch_size
         ):
             results = await rp.multicall(
                 [mm.functions.getMinipoolAt(i) for i in index_batch]
@@ -621,7 +619,7 @@ class DBUpkeepTask(commands.Cog):
         nd = await rp.get_contract_by_name("rocketNodeDeposit")
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
 
-        for minipool_batch in as_chunks(minipools, self.batch_size):
+        for minipool_batch in as_chunks(minipools, self.beacon_batch_size):
             block_start = BlockNumber(
                 await ts_to_block(minipool_batch[0]["status_time"]) - 1
             )
@@ -785,8 +783,8 @@ class DBUpkeepTask(commands.Cog):
         total = len(pubkeys)
 
         async def process(i: int, pubkey_batch: list[Any]) -> None:
-            start = i * self.batch_size + 1
-            end = min((i + 1) * self.batch_size, total)
+            start = i * self.beacon_batch_size + 1
+            end = min((i + 1) * self.beacon_batch_size, total)
             log.info(
                 f"Updating beacon chain data for minipools [{start}, {end}]/{total}"
             )
@@ -819,7 +817,7 @@ class DBUpkeepTask(commands.Cog):
                     ordered=False,
                 )
 
-        await _for_each_batch(as_chunks(pubkeys, self.batch_size), process)
+        await _for_each_batch(as_chunks(pubkeys, self.beacon_batch_size), process)
 
     # -- Megapool validator tasks --
 
@@ -850,7 +848,7 @@ class DBUpkeepTask(commands.Cog):
             megapool_contract = await rp.assemble_contract(
                 "rocketMegapoolDelegate", address=megapool_addr
             )
-            for id_batch in as_chunks(new_ids, self.batch_size // 2):
+            for id_batch in as_chunks(new_ids, self.beacon_batch_size // 2):
                 fns = [
                     fn
                     for vid in id_batch
@@ -948,10 +946,9 @@ class DBUpkeepTask(commands.Cog):
             return
 
         total = len(validators)
-
-        async def process(i: int, batch: list[Any]) -> None:
-            start = i * self.batch_size + 1
-            end = min((i + 1) * self.batch_size, total)
+        for i, batch in enumerate(as_chunks(validators, self.multicall_batch_size)):
+            start = i * self.multicall_batch_size + 1
+            end = min((i + 1) * self.multicall_batch_size, total)
             log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
             fns = [
                 at_address(mp_calls.getValidatorInfo(v["validator_id"]), v["megapool"])
@@ -971,8 +968,6 @@ class DBUpkeepTask(commands.Cog):
             if ops:
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
-        await _for_each_batch(as_chunks(validators, self.batch_size), process)
-
     @timed
     async def update_dynamic_megapool_validator_beacon_data(self) -> None:
         pubkeys = await self.bot.db.megapool_validators.distinct(
@@ -984,8 +979,8 @@ class DBUpkeepTask(commands.Cog):
         total = len(pubkeys)
 
         async def process(i: int, pubkey_batch: list[Any]) -> None:
-            start = i * self.batch_size + 1
-            end = min((i + 1) * self.batch_size, total)
+            start = i * self.beacon_batch_size + 1
+            end = min((i + 1) * self.beacon_batch_size, total)
             log.debug(
                 f"Updating beacon data for megapool validators [{start}, {end}]/{total}"
             )
@@ -1018,7 +1013,7 @@ class DBUpkeepTask(commands.Cog):
                     ordered=False,
                 )
 
-        await _for_each_batch(as_chunks(pubkeys, self.batch_size), process)
+        await _for_each_batch(as_chunks(pubkeys, self.beacon_batch_size), process)
 
 
 async def setup(self: RocketWatch) -> None:
