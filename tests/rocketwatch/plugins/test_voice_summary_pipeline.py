@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,6 +7,7 @@ from openai import omit
 
 from rocketwatch.plugins.voice_summary import pipeline as pipeline_mod
 from rocketwatch.plugins.voice_summary.pipeline import (
+    MAX_CONCURRENT_TRANSCRIPTIONS,
     SUMMARY_CHAR_LIMIT,
     SummaryResult,
     TranscriptionPipeline,
@@ -51,6 +53,42 @@ class TestTranscribeWav:
         await TranscriptionPipeline(stt, MagicMock()).transcribe_wav(wav)
 
         assert transcribe.call_args.kwargs.get("keywords", omit) is omit
+
+    async def test_limits_concurrent_requests(
+        self, transcribe: AsyncMock, wav: Path
+    ) -> None:
+        in_flight = peak = 0
+        release = asyncio.Event()
+
+        async def slow_create(**_: object) -> MagicMock:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await release.wait()
+            in_flight -= 1
+            return MagicMock(text="ok")
+
+        transcribe.side_effect = slow_create
+        pipeline = TranscriptionPipeline(STT, MagicMock())
+        tasks = [asyncio.create_task(pipeline.transcribe_wav(wav)) for _ in range(10)]
+        await asyncio.sleep(0.01)
+        assert peak == MAX_CONCURRENT_TRANSCRIPTIONS
+
+        release.set()
+        assert await asyncio.gather(*tasks) == ["ok"] * 10
+
+    async def test_reuses_one_client(
+        self, monkeypatch: pytest.MonkeyPatch, transcribe: AsyncMock, wav: Path
+    ) -> None:
+        client = MagicMock()
+        client.audio.transcriptions.create = transcribe
+        ctor = MagicMock(return_value=client)
+        monkeypatch.setattr(pipeline_mod, "AsyncOpenAI", ctor)
+        pipeline = TranscriptionPipeline(STT, MagicMock())
+        for _ in range(3):
+            await pipeline.transcribe_wav(wav)
+
+        assert ctor.call_count == 1
 
 
 STT = STTConfig(provider="openai", model="gpt-transcribe")

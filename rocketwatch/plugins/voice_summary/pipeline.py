@@ -1,3 +1,4 @@
+import asyncio
 import io
 import logging
 import re
@@ -12,6 +13,8 @@ from rocketwatch.utils.llm import LLMProvider
 log = logging.getLogger("rocketwatch.voice_summary.pipeline")
 
 SUMMARY_CHAR_LIMIT = 3800
+# each in-flight request holds its whole WAV in memory
+MAX_CONCURRENT_TRANSCRIPTIONS = 4
 
 SUMMARIZE_SYSTEM_PROMPT = """\
 You are summarizing a Rocket Pool community call transcript for Discord server members \
@@ -78,21 +81,32 @@ class TranscriptionPipeline:
     ) -> None:
         self._stt = stt_config
         self._llm = llm_provider
+        self._client: AsyncOpenAI | None = None
+        self._slots = asyncio.Semaphore(MAX_CONCURRENT_TRANSCRIPTIONS)
+
+    def _get_client(self) -> AsyncOpenAI:
+        if self._client is None:
+            self._client = AsyncOpenAI(api_key=self._stt.api_key)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()
+            self._client = None
 
     async def transcribe_wav(self, wav_path: Path) -> str:
         """Transcribe a single WAV file."""
-        client = AsyncOpenAI(api_key=self._stt.api_key)
+        async with self._slots:
+            buf = io.BytesIO(wav_path.read_bytes())
+            buf.name = wav_path.name
 
-        buf = io.BytesIO(wav_path.read_bytes())
-        buf.name = wav_path.name
-
-        response = await client.audio.transcriptions.create(
-            model=self._stt.model,
-            language="en",
-            file=buf,
-            response_format="json",
-            keywords=self._stt.keywords or omit,
-        )
+            response = await self._get_client().audio.transcriptions.create(
+                model=self._stt.model,
+                language="en",
+                file=buf,
+                response_format="json",
+                keywords=self._stt.keywords or omit,
+            )
         return response.text.strip()
 
     @staticmethod

@@ -319,6 +319,7 @@ class VoiceSummary(Cog):
         if self._session:
             await self._session.stop()
             self._session = None
+        await self._pipeline.close()
 
 
 async def setup(bot: RocketWatch) -> None:
