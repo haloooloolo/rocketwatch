@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -827,3 +828,31 @@ class TestAddStaticMegapoolDepositData:
         assert doc is not None
         assert doc["deposit_time"] == 5678
         ts_to_block.assert_awaited_once_with(1000)
+
+
+class TestForEachBatch:
+    async def test_processes_every_batch_with_bounded_concurrency(self) -> None:
+        seen: list[tuple[int, list[int]]] = []
+        running = peak = 0
+
+        async def process(i: int, batch: list[int]) -> None:
+            nonlocal running, peak
+            running += 1
+            peak = max(peak, running)
+            await asyncio.sleep(0.01)
+            seen.append((i, batch))
+            running -= 1
+
+        batches = [[n, n + 1] for n in range(0, 20, 2)]
+        await dut._for_each_batch(batches, process)
+
+        assert sorted(seen) == list(enumerate(batches))
+        assert 1 < peak <= dut._BATCH_CONCURRENCY
+
+    async def test_failure_propagates_as_original_exception(self) -> None:
+        async def process(i: int, batch: list[int]) -> None:
+            if i == 2:
+                raise ValueError("rpc failed")
+
+        with pytest.raises(ValueError, match="rpc failed"):
+            await dut._for_each_batch([[n] for n in range(5)], process)

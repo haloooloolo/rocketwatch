@@ -2,7 +2,7 @@ import asyncio
 import logging
 import time
 from collections import defaultdict
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from datetime import timedelta
 from typing import Any
 
@@ -103,6 +103,30 @@ def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     }
 
 
+# batches in flight per step; the steps mostly wait on RPC, beacon and
+# Mongo round trips, so overlapping a few of them cuts wall time
+_BATCH_CONCURRENCY = 4
+
+
+async def _for_each_batch[T](
+    batches: Iterable[list[T]], process: Callable[[int, list[T]], Awaitable[None]]
+) -> None:
+    """Run process(i, batch) for each batch, a few at a time."""
+    sem = asyncio.Semaphore(_BATCH_CONCURRENCY)
+
+    async def run(i: int, batch: list[T]) -> None:
+        async with sem:
+            await process(i, batch)
+
+    try:
+        async with asyncio.TaskGroup() as tg:
+            for i, batch in enumerate(batches):
+                tg.create_task(run(i, batch))
+    except ExceptionGroup as eg:
+        # surface the first failure as-is for error reporting
+        raise eg.exceptions[0] from None
+
+
 class _CachedCalls:
     """Builds each contract.functions.<name>(*args) call once, so per-item
     calls only need a cheap at_address rebind."""
@@ -196,7 +220,8 @@ class DBUpkeepTask(commands.Cog):
         total = len(items)
         first_calls = await call_fn(items[0])
         batch_size = self.batch_size // len(first_calls)
-        for i, batch in enumerate(as_chunks(items, batch_size)):
+
+        async def process(i: int, batch: list[Any]) -> None:
             if label:
                 start = i * batch_size + 1
                 end = min((i + 1) * batch_size, total)
@@ -221,6 +246,8 @@ class DBUpkeepTask(commands.Cog):
                 ],
                 ordered=False,
             )
+
+        await _for_each_batch(as_chunks(items, batch_size), process)
 
     # -- Node operator tasks --
 
@@ -756,7 +783,8 @@ class DBUpkeepTask(commands.Cog):
         )
         pubkeys = [pk for pk in pubkeys if pk is not None]
         total = len(pubkeys)
-        for i, pubkey_batch in enumerate(as_chunks(pubkeys, self.batch_size)):
+
+        async def process(i: int, pubkey_batch: list[Any]) -> None:
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.info(
@@ -790,6 +818,8 @@ class DBUpkeepTask(commands.Cog):
                     [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
                     ordered=False,
                 )
+
+        await _for_each_batch(as_chunks(pubkeys, self.batch_size), process)
 
     # -- Megapool validator tasks --
 
@@ -918,7 +948,8 @@ class DBUpkeepTask(commands.Cog):
             return
 
         total = len(validators)
-        for i, batch in enumerate(as_chunks(validators, self.batch_size)):
+
+        async def process(i: int, batch: list[Any]) -> None:
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.debug(f"Processing megapool validators [{start}, {end}]/{total}")
@@ -940,6 +971,8 @@ class DBUpkeepTask(commands.Cog):
             if ops:
                 await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
+        await _for_each_batch(as_chunks(validators, self.batch_size), process)
+
     @timed
     async def update_dynamic_megapool_validator_beacon_data(self) -> None:
         pubkeys = await self.bot.db.megapool_validators.distinct(
@@ -949,7 +982,8 @@ class DBUpkeepTask(commands.Cog):
         if not pubkeys:
             return
         total = len(pubkeys)
-        for i, pubkey_batch in enumerate(as_chunks(pubkeys, self.batch_size)):
+
+        async def process(i: int, pubkey_batch: list[Any]) -> None:
             start = i * self.batch_size + 1
             end = min((i + 1) * self.batch_size, total)
             log.debug(
@@ -983,6 +1017,8 @@ class DBUpkeepTask(commands.Cog):
                     [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
                     ordered=False,
                 )
+
+        await _for_each_batch(as_chunks(pubkeys, self.batch_size), process)
 
 
 async def setup(self: RocketWatch) -> None:
