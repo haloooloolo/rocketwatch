@@ -6,9 +6,11 @@ services:
       - bash
       - -c
       - |
-        uv pip install --system --no-cache memray &&
-        memray run --live-remote --live-port 1234 __main__.py
-    cap_add:
-      - SYS_PTRACE
-    ports:
-      - "1234:1234"
+        pip install --quiet --no-cache-dir --target /opt/memray memray &&
+        PYTHONPATH=/app:/opt/memray exec python -m memray run \
+          --aggregate --trace-python-allocators \
+          -o /tmp/memray/rocketwatch-$$(date +%Y%m%d-%H%M%S).bin __main__.py
+    # memray writes the aggregated capture on exit; SIGINT lets the bot shut
+    # down cleanly so the file is complete
+    stop_signal: SIGINT
+    stop_grace_period: 2m
