@@ -139,7 +139,7 @@ class Proposal:
                 (_x_offset, _y_offset),
                 _choice,
                 self._TEXT_SIZE,
-                max_width=(width / 2),
+                max_width=(width * 3 / 4),
                 anchor="lt",
             )
             choice_height += self._TEXT_SIZE + self._V_SPACE_SMALL
