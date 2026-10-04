@@ -132,6 +132,7 @@ class DBUpkeepTask(commands.Cog):
 
     async def loop(self) -> None:
         await self.bot.wait_until_ready()
+        await asyncio.sleep(self.cooldown.total_seconds())
         await self.check_indexes()
         while not self.bot.is_closed():
             p_id = time.time()
