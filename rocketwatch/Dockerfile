@@ -7,10 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends binutils && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY pyproject.toml pyproject.toml
+# Install the exact versions from uv.lock, without the dev/test groups.
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv venv /opt/venv && \
-    VIRTUAL_ENV=/opt/venv uv pip install -r pyproject.toml
+    UV_PROJECT_ENVIRONMENT=/opt/venv UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never \
+    uv sync --frozen --no-default-groups --no-install-project
 
 # Strip symbols from compiled extensions and drop bundled tests/__pycache__.
 RUN find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) \
