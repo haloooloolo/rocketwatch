@@ -4,11 +4,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from eth_abi import abi
+from hexbytes import HexBytes
 from web3 import AsyncWeb3
 
 from rocketwatch.utils import rocketpool as rp_module
 from rocketwatch.utils import shared_w3
-from rocketwatch.utils.rocketpool import RocketPool, at_address
+from rocketwatch.utils.rocketpool import RocketPool, _calldata, at_address
 
 _INFO_ABI = [
     {
@@ -38,6 +39,66 @@ class TestAtAddress:
         fn = template.functions.getValidatorInfo(7)
         at_address(fn, _ADDR_B)
         assert fn.address == _ADDR_A
+
+
+_ENCODE_ABI = [
+    {
+        "type": "function",
+        "name": n,
+        "stateMutability": "view",
+        "inputs": i,
+        "outputs": [],
+    }
+    for n, i in [
+        ("none", []),
+        (
+            "scalars",
+            [
+                {"name": "a", "type": "address"},
+                {"name": "b", "type": "uint256"},
+                {"name": "c", "type": "bytes32"},
+                {"name": "d", "type": "string"},
+                {"name": "e", "type": "bool"},
+            ],
+        ),
+        (
+            "nested",
+            [
+                {
+                    "name": "t",
+                    "type": "tuple",
+                    "components": [
+                        {"name": "x", "type": "address"},
+                        {"name": "y", "type": "uint64[]"},
+                    ],
+                },
+                {"name": "z", "type": "bytes"},
+            ],
+        ),
+        ("hash", [{"name": "h", "type": "bytes32"}]),
+    ]
+]
+
+
+class TestCalldata:
+    @pytest.mark.parametrize(
+        ("method", "args"),
+        [
+            ("none", ()),
+            ("scalars", (_ADDR_A, 5, b"\x01" * 32, "hi", True)),
+            ("nested", ((_ADDR_A, (1, 2)), b"xyz")),
+            # a list arg is unhashable, so it bypasses the cache
+            ("nested", ((_ADDR_A, [1, 2]), b"xyz")),
+            # hex string for bytes32 is only accepted by web3's normalizers
+            ("hash", ("0x" + "11" * 32,)),
+        ],
+    )
+    def test_matches_web3_encoding(self, method: str, args: tuple[Any, ...]) -> None:
+        contract = AsyncWeb3().eth.contract(abi=_ENCODE_ABI)
+        fn = contract.functions[method](*args)
+        assert _calldata(fn) == HexBytes(fn._encode_transaction_data())
+        # second lookup may come from the cache and must be identical
+        assert _calldata(fn) == HexBytes(fn._encode_transaction_data())
 
 
 class TestAbiTypeStr:

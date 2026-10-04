@@ -30,6 +30,34 @@ _AGGREGATE3_SELECTOR = function_signature_to_4byte_selector(
 _AGGREGATE3_INPUT = ["(address,bool,bytes)[]"]
 _AGGREGATE3_OUTPUT = ["(bool,bytes)[]"]
 
+_calldata_cache: LRUCache[tuple[str, tuple[Any, ...]], bytes] = LRUCache(maxsize=4096)
+_encodings: dict[str, tuple[bytes, list[str]]] = {}
+
+
+def _calldata(fn: AsyncContractFunction) -> bytes:
+    """Calldata for fn, cached by signature and args. Encodes with eth_abi
+    directly, falling back to web3 for args only its normalizers accept
+    (e.g. ENS names or hex strings for bytes)."""
+    key = (fn.signature, tuple(fn.args))
+    try:
+        if (data := _calldata_cache.get(key)) is not None:
+            return data
+    except TypeError:  # unhashable args
+        return HexBytes(fn._encode_transaction_data())
+    if fn.kwargs:
+        return HexBytes(fn._encode_transaction_data())
+    if (encoding := _encodings.get(fn.signature)) is None:
+        arg_types = [RocketPool._abi_type_str(dict(i)) for i in fn.abi["inputs"]]
+        encoding = function_signature_to_4byte_selector(fn.signature), arg_types
+        _encodings[fn.signature] = encoding
+    selector, arg_types = encoding
+    try:
+        data = selector + abi.encode(arg_types, key[1])
+    except Exception:
+        data = HexBytes(fn._encode_transaction_data())
+    _calldata_cache[key] = data
+    return data
+
 
 class ValidatorInfo(NamedTuple):
     last_assignment_time: int
@@ -178,8 +206,7 @@ class RocketPool:
 
         fns, flags = self._normalize_calls(calls, require_success)
         encoded = [
-            (fn.address, af, HexBytes(fn._encode_transaction_data()))
-            for fn, af in zip(fns, flags, strict=False)
+            (fn.address, af, _calldata(fn)) for fn, af in zip(fns, flags, strict=False)
         ]
         assert self._multicall is not None
         # encode aggregate3 with eth_abi directly; web3's argument normalization
