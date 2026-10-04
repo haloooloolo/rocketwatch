@@ -29,6 +29,17 @@ log = logging.getLogger("rocketwatch.voice_summary.session")
 # resolved against the repo root so the location doesn't depend on cwd.
 TRANSCRIPTIONS_DIR = Path(__file__).resolve().parents[3] / "voice_calls"
 
+MIX_WINDOW_SAMPLES = 60 * SAMPLE_RATE
+
+
+def _read_mono(wav_path: Path, start: int, stop: int) -> np.ndarray:
+    """Read frames [start, stop) of a WAV, downmixed to mono."""
+    data, _ = sf.read(
+        str(wav_path), start=start, stop=stop, dtype="int16", always_2d=True
+    )
+    mono: np.ndarray = data.sum(axis=1, dtype=np.int32) // data.shape[1]
+    return mono
+
 
 class SegmentEntry(TypedDict):
     file: str
@@ -199,33 +210,36 @@ class CallSession:
         log.info(f"Transcript saved to {out.parent}")
 
     def mix_audio(self, user_segments: dict[int, list[tuple[float, Path]]]) -> Path:
-        """Mix per-user WAV files into a single mono MP3."""
-        tracks: list[tuple[int, np.ndarray]] = []
-        total_samples = 0
+        """Mix per-user WAV files into a single mono MP3, one window at a time."""
+        # (start, length) in samples
+        tracks: list[tuple[int, int, Path]] = []
         for segments in user_segments.values():
             for offset, wav_path in segments:
-                data, _ = sf.read(str(wav_path), dtype="int16", always_2d=False)
-                if data.ndim > 1:
-                    # downmix to mono via mean
-                    data = data.mean(axis=1).astype(np.int16)
-                start_sample = int(offset * SAMPLE_RATE)
-                tracks.append((start_sample, data))
-                total_samples = max(total_samples, start_sample + len(data))
-
-        # sum in int32 to give summed samples headroom, then saturate to int16.
-        mixed_i32 = np.zeros(total_samples, dtype=np.int32)
-        for start_sample, data in tracks:
-            mixed_i32[start_sample : start_sample + len(data)] += data
-        mixed = np.clip(
-            mixed_i32, np.iinfo(np.int16).min, np.iinfo(np.int16).max
-        ).astype(np.int16)
+                length = sf.info(str(wav_path)).frames
+                tracks.append((int(offset * SAMPLE_RATE), length, wav_path))
+        total_samples = max((start + n for start, n, _ in tracks), default=0)
 
         out = self._ensure_artifact_dir() / "recording.mp3"
         encoder = lameenc.Encoder()
         encoder.set_bit_rate(64)
         encoder.set_in_sample_rate(SAMPLE_RATE)
         encoder.set_channels(1)
-        out.write_bytes(encoder.encode(mixed.tobytes()) + encoder.flush())
+        with out.open("wb") as f:
+            for w0 in range(0, total_samples, MIX_WINDOW_SAMPLES):
+                w1 = min(w0 + MIX_WINDOW_SAMPLES, total_samples)
+                # sum in int32 to give summed samples headroom, then saturate.
+                window = np.zeros(w1 - w0, dtype=np.int32)
+                for start, n, wav_path in tracks:
+                    a, b = max(w0, start), min(w1, start + n)
+                    if a < b:
+                        window[a - w0 : b - w0] += _read_mono(
+                            wav_path, a - start, b - start
+                        )
+                np.clip(
+                    window, np.iinfo(np.int16).min, np.iinfo(np.int16).max, out=window
+                )
+                f.write(encoder.encode(window.astype(np.int16)))
+            f.write(encoder.flush())
         log.info(f"Audio saved to {out.parent}")
         return out
 

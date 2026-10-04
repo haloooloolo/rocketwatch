@@ -132,8 +132,7 @@ class TestCall:
         assert "Bob: gn" in result.transcript
         assert result.summary == "Call recap"
         audio, rate = sf.read(str(result.audio_path))
-        assert rate == SAMPLE_RATE
-        assert len(audio) / SAMPLE_RATE == pytest.approx(1.2, abs=0.1)
+        assert len(audio) / rate == pytest.approx(1.2, abs=0.1)
         vc.disconnect.assert_awaited_once()
 
     async def test_silent_call_is_discarded(
@@ -239,9 +238,23 @@ class TestMixAudio:
             {ALICE: [(0.0, tmp_path / "a.wav")], BOB: [(1.0, tmp_path / "b.wav")]}
         )
 
-        audio, _ = sf.read(str(out))
-        assert len(audio) / SAMPLE_RATE == pytest.approx(1.5, abs=0.1)
-        second = SAMPLE_RATE
+        audio, second = sf.read(str(out))
+        assert len(audio) / second == pytest.approx(1.5, abs=0.1)
         assert np.abs(audio[int(0.1 * second) : int(0.4 * second)]).max() > 0.1
         assert np.abs(audio[int(0.6 * second) : int(0.9 * second)]).max() < 0.01
         assert np.abs(audio[int(1.1 * second) : int(1.4 * second)]).max() > 0.1
+
+    def test_long_stereo_segment_is_continuous(
+        self, session: CallSession, tmp_path: Path
+    ) -> None:
+        n = 90 * SAMPLE_RATE
+        tone = (np.sin(np.arange(n) / 10) * 10000).astype(np.int16)
+        sf.write(str(tmp_path / "a.wav"), np.column_stack([tone, tone]), SAMPLE_RATE)
+
+        out = session.mix_audio({ALICE: [(30.0, tmp_path / "a.wav")]})
+
+        audio, second = sf.read(str(out))
+        assert len(audio) / second == pytest.approx(120, abs=0.1)
+        assert np.abs(audio[: 29 * second]).max() < 0.01
+        loud = np.abs(audio[31 * second : 119 * second]).reshape(-1, second // 10)
+        assert loud.max(axis=1).min() > 0.1
