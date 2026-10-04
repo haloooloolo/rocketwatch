@@ -233,15 +233,7 @@ class EventCore(commands.Cog):
             channel = await self.bot.get_or_fetch_channel(channel_id)
             assert isinstance(channel, Messageable)
 
-            for state_message in await self.bot.db.state_messages.find(
-                {"channel_id": channel_id}
-            ).to_list(None):
-                # already gone if someone deleted it by hand
-                with contextlib.suppress(discord.errors.NotFound):
-                    msg = await channel.fetch_message(state_message["message_id"])
-                    await msg.delete()
-                await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
-
+            posted = False
             for event_entry in db_events:
                 embed: Embed | None = await try_load(event_entry, "embed")
                 if not embed:
@@ -265,8 +257,24 @@ class EventCore(commands.Cog):
                 await self.bot.db.event_queue.update_one(
                     {"_id": event_entry["_id"]}, {"$set": {"message_id": msg.id}}
                 )
+                if not posted:
+                    posted = True
+                    # re-posted below the new events; kept if nothing could be posted
+                    await self._remove_status_messages(channel, channel_id)
 
         log.info("Processed all events in queue")
+
+    async def _remove_status_messages(
+        self, channel: Messageable, channel_id: int
+    ) -> None:
+        for state_message in await self.bot.db.state_messages.find(
+            {"channel_id": channel_id}
+        ).to_list(None):
+            # already gone if someone deleted it by hand
+            with contextlib.suppress(discord.errors.NotFound):
+                msg = await channel.fetch_message(state_message["message_id"])
+                await msg.delete()
+            await self.bot.db.state_messages.delete_one({"channel_id": channel_id})
 
     async def update_status_messages(self) -> None:
         configs = cfg.events.status_message

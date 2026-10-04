@@ -294,7 +294,7 @@ class TestProcessEventQueue:
         assert channels.sent_titles(DEFAULT) == ["good"]
         _bot(core).report_error.assert_awaited()
 
-    async def test_status_message_is_removed_before_posting(
+    async def test_status_message_is_removed_once_events_post(
         self, core: EventCore, channels: Channels
     ) -> None:
         # so the status message is re-posted below the new events
@@ -327,6 +327,25 @@ class TestProcessEventQueue:
 
         assert channels.sent_titles(DEFAULT) == ["a"]
         assert await core.bot.db.state_messages.count_documents({}) == 0
+
+    async def test_status_message_is_kept_when_nothing_could_be_posted(
+        self, core: EventCore, channels: Channels
+    ) -> None:
+        await core.bot.db.state_messages.insert_one(
+            {"_id": "default", "channel_id": DEFAULT, "message_id": 5}
+        )
+        channels.get(DEFAULT).send.side_effect = discord.Forbidden(
+            MagicMock(status=403), "Missing Permissions"
+        )
+        await _queue(
+            core, {"_id": "a", "score": 1, "embed": pickle.dumps(Embed(title="a"))}
+        )
+
+        with pytest.raises(discord.Forbidden):
+            await core.process_event_queue()
+
+        channels.get(DEFAULT).fetch_message.assert_not_awaited()
+        assert await core.bot.db.state_messages.count_documents({}) == 1
 
 
 @pytest.fixture
@@ -471,6 +490,28 @@ class TestErrorState:
         await core.on_error(RuntimeError("rpc still down"))
 
         assert len(channels.sent_titles(DEFAULT)) == 1
+
+    async def test_failing_post_does_not_recreate_the_interrupt(
+        self, core: EventCore, channels: Channels, status_config: Any
+    ) -> None:
+        await core.on_error(RuntimeError("discord down"))
+        channels.get(DEFAULT).send.side_effect = discord.HTTPException(
+            MagicMock(status=500), "Internal Server Error"
+        )
+        await _queue(
+            core, {"_id": "a", "score": 1, "embed": pickle.dumps(Embed(title="a"))}
+        )
+
+        for _ in range(2):
+            with pytest.raises(discord.HTTPException) as error:
+                await core.process_event_queue()
+            await core.on_error(error.value)
+
+        assert (
+            channels.sent_titles(DEFAULT).count(":warning: Failure in Event Processing")
+            == 1
+        )
+        channels.get(DEFAULT).fetch_message.assert_not_awaited()
 
     async def test_recovers_after_success(self, core: EventCore) -> None:
         await core.on_error(RuntimeError("rpc down"))
