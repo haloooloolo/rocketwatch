@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -2357,11 +2357,11 @@ wheels = [
 
 [[package]]
 name = "pyunormalize"
-version = "17.0.0"
+version = "18.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/25/ab/b912c484cfb96ba4834efe050bbf10c9e157bd8189eb859aefba8712b136/pyunormalize-17.0.0.tar.gz", hash = "sha256:0949a3e56817e287febcaf1b0cc4b5adf0bb107628d379335938040947eec792", size = 53121, upload-time = "2025-09-28T20:53:06.141Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/49/64/5c8ce34a4e366ee052ce7b3b2ddd11b9711a072902a31d0385f3a0f394e8/pyunormalize-18.0.0.tar.gz", hash = "sha256:2b2e65201e688bb38c66ab66ef1071cc07b32e9840e5ae07aab716db6ede7d6d", size = 575086, upload-time = "2026-09-26T08:38:39.334Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/92/80/61512483dc509e3ae8a42fb143479d1e406ce1d91f8f08d538a3dde39c6d/pyunormalize-17.0.0-py3-none-any.whl", hash = "sha256:f0d93b076f938db2b26d319d04f2b58505d1cd7a80b5b72badbe7d1aa4d2a31c", size = 51358, upload-time = "2025-09-28T20:53:04.876Z" },
+    { url = "https://files.pythonhosted.org/packages/fb/0a/5370bd67bdfc4acf97f25b08cb6fbcb7e898fa391716535c60b4bd761492/pyunormalize-18.0.0-py3-none-any.whl", hash = "sha256:cdc571ab761c2bd905275c9f3e3cf386d10b4f9bc8d55b32d410cc635e684ba8", size = 78292, upload-time = "2026-09-26T08:38:37.886Z" },
 ]
 
 [[package]]
@@ -2628,7 +2628,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0,<3.0.0" },
     { name = "pymongo", specifier = "==4.18.2" },
     { name = "pytz", specifier = "==2026.4" },
-    { name = "pyunormalize", specifier = "<18" },
+    { name = "pyunormalize", specifier = "<19" },
     { name = "regex", specifier = "==2026.9.29" },
     { name = "retry-async", specifier = "==0.1.4" },
     { name = "soundfile", specifier = ">=0.13.1" },

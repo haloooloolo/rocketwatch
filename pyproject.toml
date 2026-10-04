@@ -29,7 +29,7 @@ dependencies = [
     "pydantic>=2.0.0,<3.0.0",
     "pymongo==4.18.2",
     # 18 rejects the list that web3's ENS normalizer passes to NFC
-    "pyunormalize<18",
+    "pyunormalize<19",
     "pytz==2026.4",
     "regex==2026.9.29",
     "retry-async==0.1.4",
