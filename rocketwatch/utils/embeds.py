@@ -238,6 +238,12 @@ async def get_pdao_delegates() -> dict[str, str]:
     return _pdao_delegates
 
 
+def rocketdash_url(path: str) -> str:
+    chain = cfg.rocketpool.chain
+    network = "" if (chain == "mainnet") else f"?network={chain}"
+    return f"https://rocketdash.net/{path}{network}"
+
+
 async def el_explorer_url(
     target: str,
     name: str = "",
@@ -254,15 +260,12 @@ async def el_explorer_url(
         target = w3.to_checksum_address(target)
         url = f"{cfg.execution_layer.explorer}/address/{target}"
 
-        chain = cfg.rocketpool.chain
-        dashboard_network = "" if (chain == "mainnet") else f"?network={chain}"
-
         if await rp.is_node(target):
             megapool_address = await rp.call(
                 "rocketNodeManager.getMegapoolAddress", target
             )
             if megapool_address != ADDRESS_ZERO:
-                url = f"https://rocketdash.net/megapool/{megapool_address}{dashboard_network}"
+                url = rocketdash_url(f"megapool/{megapool_address}")
             if await rp.call(
                 "rocketNodeManager.getSmoothingPoolRegistrationState",
                 target,
@@ -285,9 +288,9 @@ async def el_explorer_url(
                 name = name or delegate_name
 
         elif await rp.is_megapool(target):
-            url = f"https://rocketdash.net/megapool/{target}{dashboard_network}"
+            url = rocketdash_url(f"megapool/{target}")
         elif await rp.is_minipool(target):
-            url = f"https://rocketdash.net/minipool/{target}{dashboard_network}"
+            url = rocketdash_url(f"minipool/{target}")
 
         if not name:
             name = await ens.get_name(target) or ""

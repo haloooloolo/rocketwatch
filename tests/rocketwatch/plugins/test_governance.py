@@ -87,7 +87,7 @@ def cog(monkeypatch: pytest.MonkeyPatch, stub_collaborators: None) -> Governance
     bot = make_bot()
     cog_instance = Governance(bot)
     # Make every async helper a no-data default; tests override per-instance.
-    cog_instance._get_active_snapshot_proposals = AsyncMock(return_value=[])  # type: ignore[method-assign]
+    cog_instance._get_active_signaling_proposals = AsyncMock(return_value=[])  # type: ignore[method-assign]
     cog_instance._get_draft_rpips = AsyncMock(return_value=[])  # type: ignore[method-assign]
     cog_instance._get_latest_forum_topics = AsyncMock(return_value=[])  # type: ignore[method-assign]
     return cog_instance
@@ -138,7 +138,7 @@ class TestGovernanceDigest:
         cog: Governance,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # On-chain pDAO proposals + Snapshot proposals + draft RPIPs all
+        # On-chain pDAO proposals + signaling proposals + draft RPIPs all
         # render under the same Protocol DAO header.
         monkeypatch.setattr(
             Governance,
@@ -146,13 +146,13 @@ class TestGovernanceDigest:
             AsyncMock(return_value=[_pdao_proposal(proposal_id=1, message="On-chain")]),
         )
 
-        # Snapshot.Proposal is exposed as a small dataclass in the snapshot
-        # plugin; here we just need title + url attributes.
+        # signaling.Proposal is a dataclass in the signaling plugin; here we
+        # just need title + url attributes.
         from types import SimpleNamespace
 
-        cog._get_active_snapshot_proposals = AsyncMock(  # type: ignore[method-assign]
+        cog._get_active_signaling_proposals = AsyncMock(  # type: ignore[method-assign]
             return_value=[
-                SimpleNamespace(title="Snap title", url="https://snap.example/1")
+                SimpleNamespace(title="Signal title", url="https://signal.example/1")
             ]
         )
         cog._get_draft_rpips = AsyncMock(  # type: ignore[method-assign]
@@ -169,7 +169,7 @@ class TestGovernanceDigest:
         desc = embed.description or ""
         assert "### Protocol DAO" in desc
         assert "On-chain" in desc
-        assert "Snap title" in desc
+        assert "Signal title" in desc
         assert "RPIP-99" in desc
 
     async def test_forum_section_appears_when_topics_recent(
@@ -227,24 +227,24 @@ class TestGovernanceCommands:
 
 
 class TestGovernanceErrorPaths:
-    async def test_snapshot_error_swallowed_and_reported(
+    async def test_signaling_error_swallowed_and_reported(
         self,
         monkeypatch: pytest.MonkeyPatch,
         stub_collaborators: None,
     ) -> None:
-        # When `Snapshot.fetch_proposals` raises, `_get_active_snapshot_proposals`
+        # When `Signaling.fetch_proposals` raises, `_get_active_signaling_proposals`
         # must return [] and forward the error to bot.report_error.
         from rocketwatch.plugins.governance import governance as mod
 
         monkeypatch.setattr(
-            mod.Snapshot,
+            mod.Signaling,
             "fetch_proposals",
-            AsyncMock(side_effect=RuntimeError("snapshot down")),
+            AsyncMock(side_effect=RuntimeError("rocketdash down")),
         )
 
         bot = make_bot()
         cog = Governance(bot)
-        result = await cog._get_active_snapshot_proposals()
+        result = await cog._get_active_signaling_proposals()
         assert result == []
         assert cog.bot.report_error.await_count == 1
 

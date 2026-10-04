@@ -10,7 +10,7 @@ A Discord bot that monitors and reports on [Rocket Pool](https://rocketpool.net)
 
 - **On-chain event tracking**: monitors Rocket Pool smart contract events (deposits, minipools, rewards, governance votes, etc.) and posts formatted embeds to Discord
 - **Beacon chain integration**: tracks validator proposals, sync committees, and consensus layer activity
-- **Governance monitoring**: follows on-chain DAO votes (pDAO, oDAO, Security Council) and Snapshot proposals
+- **Governance monitoring**: follows on-chain DAO votes (pDAO, oDAO, Security Council) and RocketDash signaling proposals
 - **Data visualization**: generates APR charts, collateral distributions, fee breakdowns, and TVL calculations using matplotlib
 - **ENS resolution**: resolves and caches ENS names for readable address display
 - **Multi-channel support**: split event tracking and status messages across multiple channels
@@ -29,7 +29,7 @@ rocketwatch/
 ├── plugins/                 # 40+ plugin modules
 │   ├── event_core/          # Main event tracking logic
 │   ├── dao/                 # On-chain governance
-│   ├── snapshot/            # Off-chain governance
+│   ├── signaling/           # Off-chain governance
 │   ├── apr/                 # APR calculations & charts
 │   ├── rewards/             # Reward estimation
 │   ├── tvl/                 # Total Value Locked

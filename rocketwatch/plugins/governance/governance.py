@@ -11,7 +11,7 @@ from web3.constants import HASH_ZERO
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.forum.forum import Forum
 from rocketwatch.plugins.rpips.rpips import RPIPs
-from rocketwatch.plugins.snapshot.snapshot import Snapshot
+from rocketwatch.plugins.signaling.signaling import Proposal, Signaling
 from rocketwatch.utils.block_time import ts_to_block
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.dao import (
@@ -69,9 +69,9 @@ class Governance(StatusPlugin):
 
         return HASH_ZERO
 
-    async def _get_active_snapshot_proposals(self) -> list[Snapshot.Proposal]:
+    async def _get_active_signaling_proposals(self) -> list[Proposal]:
         try:
-            return list(await Snapshot.fetch_proposals("active", reverse=True))
+            return await Signaling.fetch_active_proposals()
         except Exception as e:
             await self.bot.report_error(e)
             return []
@@ -147,12 +147,12 @@ class Governance(StatusPlugin):
         pdao = ProtocolDAO()
 
         if pdao_proposals := await self._get_active_pdao_proposals(pdao):
-            section_content += "- **Active on-chain proposals**\n"
+            section_content += "- **Active on-chain votes**\n"
             section_content += await print_proposals(pdao, pdao_proposals)
 
-        if snapshot_proposals := await self._get_active_snapshot_proposals():
-            section_content += "- **Active Snapshot proposals**\n"
-            for i, proposal in enumerate(snapshot_proposals, start=1):
+        if signaling_proposals := await self._get_active_signaling_proposals():
+            section_content += "- **Active signaling votes**\n"
+            for i, proposal in enumerate(signaling_proposals, start=1):
                 title = sanitize(proposal.title)
                 section_content += f"  {i}. [{title}]({proposal.url})\n"
 
