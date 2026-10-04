@@ -151,7 +151,7 @@ class DBUpkeepTask(commands.Cog):
         self.bot = bot
         self.monitor = AsyncMonitor("db-task")
         self.batch_size = 250
-        self.cooldown = timedelta(minutes=10)
+        self.cooldown = timedelta(minutes=5)
         self.bot.loop.create_task(self.loop())
 
     async def loop(self) -> None:
