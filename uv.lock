@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -2571,6 +2571,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pymongo" },
     { name = "pytz" },
+    { name = "pyunormalize" },
     { name = "regex" },
     { name = "retry-async" },
     { name = "soundfile" },
@@ -2627,6 +2628,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.0.0,<3.0.0" },
     { name = "pymongo", specifier = "==4.18.2" },
     { name = "pytz", specifier = "==2026.4" },
+    { name = "pyunormalize", specifier = "<18" },
     { name = "regex", specifier = "==2026.9.29" },
     { name = "retry-async", specifier = "==0.1.4" },
     { name = "soundfile", specifier = ">=0.13.1" },

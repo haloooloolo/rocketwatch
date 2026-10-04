@@ -22,7 +22,7 @@ async def get_name(address: ChecksumAddress) -> str | None:
         result: str | None = await _client().name(address)
         return result
     except Exception as e:
-        log.warning(f"ENS name lookup failed for {address}: {e}")
+        log.warning(f"ENS name lookup failed for {address}: {e}", exc_info=True)
         return None
 
 
@@ -33,5 +33,5 @@ async def resolve_name(name: str) -> ChecksumAddress | None:
         result: ChecksumAddress | None = await _client().address(name)
         return result
     except Exception as e:
-        log.warning(f"ENS address resolution failed for {name}: {e}")
+        log.warning(f"ENS address resolution failed for {name}: {e}", exc_info=True)
         return None
