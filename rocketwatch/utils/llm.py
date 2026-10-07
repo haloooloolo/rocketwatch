@@ -89,6 +89,7 @@ class AnthropicProvider(LLMProvider):
         response = await self._get_client().messages.create(
             model=self._model,
             max_tokens=max_tokens,
+            thinking={"type": "disabled"},
             system=[
                 {
                     "type": "text",
@@ -122,6 +123,7 @@ class AnthropicProvider(LLMProvider):
         response = await self._get_client().messages.create(
             model=self._model,
             max_tokens=max_tokens,
+            thinking={"type": "disabled"},
             system=[
                 {
                     "type": "text",
