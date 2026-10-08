@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import numpy as np
 from discord import File, Interaction
@@ -25,7 +25,7 @@ log = logging.getLogger(f"rocketwatch.{cog_id}")
 
 
 class RockSolid(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.deployment_block = 23237366
 
@@ -114,7 +114,8 @@ class RockSolid(Cog):
         )
         current_assets = 0.0
 
-        x, y = [], []
+        x: list[date] = []
+        y: list[float] = []
         for ts, assets in asset_updates:
             update_date = datetime.fromtimestamp(ts).date()
             while current_date < update_date:

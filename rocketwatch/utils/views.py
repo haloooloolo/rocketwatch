@@ -6,7 +6,7 @@ from rocketwatch.utils.embeds import Embed
 
 
 class PageView(ui.View):
-    def __init__(self, page_size: int):
+    def __init__(self, page_size: int) -> None:
         super().__init__(timeout=None)
         self.page_index = 0
         self.page_size = page_size
@@ -66,7 +66,7 @@ class PageView(ui.View):
         await interaction.response.edit_message(embed=embed, view=self)
 
     class JumpToModal(ui.Modal, title="Jump To Position"):
-        def __init__(self, view: "PageView"):
+        def __init__(self, view: "PageView") -> None:
             super().__init__()
             self.view = view
             self.position_field: ui.TextInput[PageView.JumpToModal] = ui.TextInput(

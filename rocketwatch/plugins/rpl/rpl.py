@@ -16,7 +16,7 @@ log = logging.getLogger("rocketwatch.rpl")
 
 
 class RPL(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()

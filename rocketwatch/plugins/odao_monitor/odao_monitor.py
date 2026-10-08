@@ -150,7 +150,7 @@ async def _add_pending_submissions_fields(
 
 
 class ODAOMonitor(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.collection = self.bot.db.odao_monitor
         self.task.start()

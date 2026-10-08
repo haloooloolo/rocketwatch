@@ -54,7 +54,7 @@ log = logging.getLogger("rocketwatch.scam_detection")
 
 
 class ScamDetection(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self._ctx = ReportContext(
             bot=bot,

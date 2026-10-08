@@ -122,7 +122,7 @@ def parse_proposal(beacon_block: dict[str, Any]) -> dict[str, Any]:
 
 
 class Proposals(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.monitor = AsyncMonitor("proposals-task")
         self.batch_size = 100
@@ -206,7 +206,7 @@ class Proposals(commands.Cog):
 
     async def create_latest_proposal_view(self) -> None:
         log.info("creating latest proposals view")
-        pipeline = [
+        pipeline: list[dict[str, Any]] = [
             {
                 "$match": {
                     "node_operator": {"$ne": None},
@@ -333,7 +333,7 @@ class Proposals(commands.Cog):
         )
         max_slot = proposals[-1]["slot"]
         # get versions used after max_slot - window
-        start_slot = max_slot - int(5 * 60 * 24 * window_length)
+        start_slot = max_slot - 5 * 60 * 24 * window_length
         recent_version_docs = await (
             await self.bot.db.proposals.aggregate(
                 [
@@ -428,7 +428,10 @@ class Proposals(commands.Cog):
 
     async def _count_active_validators(self) -> tuple[int, int]:
         """Validator and node operator totals over the latest_proposals view's population."""
-        query = {"node_operator": {"$ne": None}, "beacon.status": "active_ongoing"}
+        query: dict[str, Any] = {
+            "node_operator": {"$ne": None},
+            "beacon.status": "active_ongoing",
+        }
         validators = 0
         node_operators: set[str] = set()
         for collection in (self.bot.db.minipools, self.bot.db.megapool_validators):
@@ -530,7 +533,8 @@ class Proposals(commands.Cog):
         Generate a distribution graph of clients.
         """
         await interaction.response.defer(ephemeral=is_hidden(interaction))
-        embeds, files = [], []
+        embeds: list[Embed] = []
+        files: list[File] = []
         for attr, name in [
             ["consensus_client", "Consensus Client"],
             ["execution_client", "Execution Client"],

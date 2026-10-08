@@ -141,7 +141,7 @@ class RocketWatch(Bot):
                 cmd_name = interaction.command.name
             else:
                 cmd_name = getattr(interaction, "data", {}).get("name", "unknown")
-            cmd_options = (
+            cmd_options: Any = (
                 interaction.namespace.__dict__
                 if interaction.namespace
                 else (interaction.data.get("options", []) if interaction.data else [])

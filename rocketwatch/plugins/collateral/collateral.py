@@ -159,7 +159,7 @@ async def get_average_collateral_percentage_per_node(
 
 
 class Collateral(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()
@@ -194,7 +194,9 @@ class Collateral(commands.Cog):
                 return 0.0
             return float(100 * node["rpl_stake"] * rpl_price / eth)
 
-        x, y, c = [], [], []
+        x: list[float] = []
+        y: list[float] = []
+        c: list[int] = []
         max_validators = 0
         for node in data.values():
             if not node["bonded"]:

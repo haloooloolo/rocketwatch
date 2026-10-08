@@ -154,8 +154,9 @@ def _format_footer(tweet: dict[str, Any]) -> str:
 
 
 def _screen_name_and_id(tweet: dict[str, Any]) -> tuple[str, str]:
-    author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
-    assert isinstance(author, dict)
+    author: dict[str, Any] = (
+        tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
+    )
     return author.get("screen_name") or "", str(tweet.get("id") or "")
 
 
@@ -219,8 +220,9 @@ def build_tweet_components(
     button is always a separate row *beneath* the card (and the only piece when
     there is no card to add).
     """
-    author = tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
-    assert isinstance(author, dict)
+    author: dict[str, Any] = (
+        tweet.get("author") if isinstance(tweet.get("author"), dict) else {}
+    )
     status_url = xcancel_status_url(tweet)
     media = tweet.get("media")
 
@@ -263,7 +265,7 @@ def build_tweet_components(
 
 
 class TwitterEmbed(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     async def _fetch_tweet(self, user: str, tweet_id: str) -> dict[str, Any] | None:

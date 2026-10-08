@@ -16,7 +16,7 @@ log = logging.getLogger("rocketwatch.deposit_pool")
 
 
 class DepositPool(StatusPlugin):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot)
 
     @staticmethod

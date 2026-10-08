@@ -22,7 +22,7 @@ log = logging.getLogger("rocketwatch.debug")
 
 
 class Debug(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()

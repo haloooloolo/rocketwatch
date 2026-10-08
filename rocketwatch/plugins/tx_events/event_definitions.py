@@ -60,8 +60,8 @@ class TransactionEvent(ChainEvent[TxEventData]):
     # the transaction executes a DAO proposal whose payload is reported too
     executes_payload: ClassVar[bool] = False
 
-    class Args(EventContext):
-        """Default args type — override in subclasses."""
+    # default args type — override in subclasses
+    Args = EventContext
 
 
 class TxTemplate(TemplateEvent[TxEventData], TransactionEvent):

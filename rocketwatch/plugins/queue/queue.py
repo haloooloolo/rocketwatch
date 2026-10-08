@@ -24,11 +24,11 @@ class Queue(Cog):
         bond: int  # always 4,000 for now
         deposit_size: int  # always 32,000 for now
 
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     class ValidatorPageView(PageView):
-        def __init__(self, lane: Literal["combined", "standard", "express"]):
+        def __init__(self, lane: Literal["combined", "standard", "express"]) -> None:
             super().__init__(page_size=15)
             if lane == "standard":
                 self.queue_name = "🐢 Validator Standard Queue"
@@ -53,8 +53,8 @@ class Queue(Cog):
     @staticmethod
     @cached(key_builder=lambda _, address, prefix="": (address, prefix))
     async def _cached_el_url(address: ChecksumAddress, prefix: str = "") -> str:
-        return str(
-            await el_explorer_url(address, name_fmt=lambda n: f"`{n}`", prefix=prefix)
+        return await el_explorer_url(
+            address, name_fmt=lambda n: f"`{n}`", prefix=prefix
         )
 
     @staticmethod

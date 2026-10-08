@@ -23,7 +23,7 @@ log = logging.getLogger("rocketwatch.dao")
 
 
 class OnchainDAO(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @staticmethod
@@ -176,7 +176,7 @@ class OnchainDAO(Cog):
         time: int
 
     class VoterPageView(PageView):
-        def __init__(self, proposal: ProtocolDAO.Proposal):
+        def __init__(self, proposal: ProtocolDAO.Proposal) -> None:
             super().__init__(page_size=25)
             self.proposal = proposal
             self._voter_list: list[OnchainDAO.Vote] | None = None

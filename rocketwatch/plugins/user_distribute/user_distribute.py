@@ -26,7 +26,7 @@ class InstructionsView(ui.View):
         eligible: list[dict[str, Any]],
         distributable: list[dict[str, Any]],
         instruction_timeout: int,
-    ):
+    ) -> None:
         super().__init__(timeout=instruction_timeout)
         self.eligible = eligible
         self.distributable = distributable
@@ -92,7 +92,7 @@ class InstructionsView(ui.View):
 
 
 class UserDistribute(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.task.start()
 

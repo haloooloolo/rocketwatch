@@ -22,7 +22,7 @@ log = logging.getLogger("rocketwatch.scam_detection")
 
 
 def _get_cog(interaction: Interaction[RocketWatch]) -> ScamDetection | None:
-    return interaction.client.get_cog("ScamDetection")  # type: ignore[return-value]
+    return interaction.client.get_cog("ScamDetection")  # pyrefly: ignore[bad-return]
 
 
 class ReportReviewView(ui.View):

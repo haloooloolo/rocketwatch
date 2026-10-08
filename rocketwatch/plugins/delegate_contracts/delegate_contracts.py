@@ -16,7 +16,7 @@ log = logging.getLogger("rocketwatch.delegate_contracts")
 
 
 class DelegateContracts(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     async def _delegate_stats(

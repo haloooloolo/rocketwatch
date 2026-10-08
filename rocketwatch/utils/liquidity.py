@@ -20,7 +20,7 @@ log = logging.getLogger("rocketwatch.liquidity")
 
 
 class Liquidity:
-    def __init__(self, price: float, depth_fn: Callable[[float], float]):
+    def __init__(self, price: float, depth_fn: Callable[[float], float]) -> None:
         self.price = price
         self.__depth_fn = depth_fn
 
@@ -45,7 +45,7 @@ class Market:
 
 
 class CEX(Exchange, ABC):
-    def __init__(self, major: str, minors: list[str]):
+    def __init__(self, major: str, minors: list[str]) -> None:
         self.markets = {Market(major.upper(), minor.upper()) for minor in minors}
 
     @property
@@ -664,7 +664,7 @@ class DigiFinex(CEX):
 
 
 class ERC20Token:
-    def __init__(self, address: ChecksumAddress, symbol: str, decimals: int):
+    def __init__(self, address: ChecksumAddress, symbol: str, decimals: int) -> None:
         self.address = address
         self.symbol = symbol
         self.decimals = decimals
@@ -707,7 +707,7 @@ class DEX(Exchange, ABC):
         async def get_liquidity(self) -> Liquidity | None:
             pass
 
-    def __init__(self, pools: Sequence[LiquidityPool]):
+    def __init__(self, pools: Sequence[LiquidityPool]) -> None:
         self.pools = pools
 
     async def get_liquidity(self) -> dict[LiquidityPool, Liquidity]:
@@ -726,7 +726,7 @@ class BalancerV2(DEX):
             vault: AsyncContract,
             token_0: ERC20Token,
             token_1: ERC20Token,
-        ):
+        ) -> None:
             self.id = pool_id
             self.vault = vault
             self.token_0 = token_0
@@ -803,7 +803,7 @@ class BalancerV2(DEX):
             rate_fn_0: Callable[[], Any] | None,
             rate_fn_1: Callable[[], Any] | None,
             primary_is_token_0: bool = False,
-        ):
+        ) -> None:
             self.id = pool_id
             self.vault = vault
             self.pool_contract = pool_contract
@@ -939,7 +939,7 @@ class BalancerV2(DEX):
             liq_price_raw = raw_spot if primary_0 else 1.0 / raw_spot
             return Liquidity(liq_price_raw * rate_quote, depth_at)
 
-    def __init__(self, pools: list[DEX.LiquidityPool]):
+    def __init__(self, pools: list[DEX.LiquidityPool]) -> None:
         super().__init__(pools)
 
     def __str__(self) -> str:
@@ -968,7 +968,7 @@ class BalancerV3(DEX):
             token_0: ERC20Token,
             token_1: ERC20Token,
             primary_is_token_0: bool = False,
-        ):
+        ) -> None:
             # Bypass V2 __init__ since our state model differs (no pool_id, no
             # V2 vault, no rate callbacks — V3 vault returns pre-scaled balances)
             self.pool_address = pool_address
@@ -979,7 +979,7 @@ class BalancerV3(DEX):
             self.primary_is_token_0 = primary_is_token_0
 
         @classmethod
-        async def create(  # type: ignore[override]
+        async def create(  # pyrefly: ignore[bad-override]
             cls,
             pool_address: ChecksumAddress,
             primary_is_token_0: bool = False,
@@ -1026,7 +1026,7 @@ class BalancerV3(DEX):
             N1 = balances_live[1] / 1e18
             return N0, N1, amp, r0, r1
 
-    def __init__(self, pools: list[StablePool]):
+    def __init__(self, pools: list[StablePool]) -> None:
         super().__init__(pools)
 
     def __str__(self) -> str:
@@ -1048,7 +1048,7 @@ class Curve(DEX):
             token_0: ERC20Token,
             token_1: ERC20Token,
             primary_is_token_0: bool = False,
-        ):
+        ) -> None:
             self.pool_address = pool_address
             self.contract = contract
             self.token_0 = token_0
@@ -1189,7 +1189,7 @@ class Curve(DEX):
             liq_price = spot_0 if primary_0 else 1.0 / spot_0
             return Liquidity(liq_price, depth_at)
 
-    def __init__(self, pools: list[StablePool]):
+    def __init__(self, pools: list[StablePool]) -> None:
         super().__init__(pools)
 
     def __str__(self) -> str:
@@ -1222,7 +1222,7 @@ class UniswapV3(DEX):
             token_0: ERC20Token,
             token_1: ERC20Token,
             primary_is_token_0: bool = False,
-        ):
+        ) -> None:
             self.pool_address = pool_address
             self.contract = contract
             self.tick_spacing = tick_spacing
@@ -1275,11 +1275,11 @@ class UniswapV3(DEX):
             return self.contract.functions.tickBitmap(word)
 
         def tick_to_word_and_bit(self, tick: int) -> tuple[int, int]:
-            compressed = int(tick // self.tick_spacing)
+            compressed = tick // self.tick_spacing
             if (tick < 0) and (tick % self.tick_spacing):
                 compressed -= 1
 
-            word_position = int(compressed // UniswapV3.TICK_WORD_SIZE)
+            word_position = compressed // UniswapV3.TICK_WORD_SIZE
             bit_position = compressed % UniswapV3.TICK_WORD_SIZE
             return word_position, bit_position
 
@@ -1393,7 +1393,7 @@ class UniswapV3(DEX):
             quote_price = price / balance_norm if primary_0 else balance_norm / price
             return Liquidity(quote_price, depth_at)
 
-    def __init__(self, pools: list[Pool]):
+    def __init__(self, pools: list[Pool]) -> None:
         super().__init__(pools)
 
     @classmethod
@@ -1425,7 +1425,7 @@ class UniswapV4(DEX):
             tick_spacing: int,
             token_0: ERC20Token,
             token_1: ERC20Token,
-        ):
+        ) -> None:
             self.pool_id = pool_id
             self.state_view = state_view
             self.tick_spacing = tick_spacing
@@ -1434,7 +1434,7 @@ class UniswapV4(DEX):
             self.primary_is_token_0 = False
 
         @classmethod
-        async def create(  # type: ignore[override]
+        async def create(  # pyrefly: ignore[bad-override]
             cls,
             pool_id: HexStr,
             tick_spacing: int,
@@ -1460,7 +1460,7 @@ class UniswapV4(DEX):
         def _fn_tick_bitmap(self, word: int) -> AsyncContractFunction:
             return self.state_view.functions.getTickBitmap(self.pool_id, word)
 
-    def __init__(self, pools: list[Pool]):
+    def __init__(self, pools: list[Pool]) -> None:
         super().__init__(pools)
 
     @classmethod

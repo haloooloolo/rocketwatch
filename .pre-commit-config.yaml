@@ -26,16 +26,16 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-      - id: mypy
-        name: mypy (rocketwatch)
-        entry: uv run --group test mypy rocketwatch/
+      - id: pyrefly
+        name: pyrefly (rocketwatch)
+        entry: uv run --group test pyrefly check
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
-      - id: mypy-sentinel
-        name: mypy (sentinel)
-        entry: uv run --project sentinel --group dev mypy --config-file sentinel/pyproject.toml sentinel/
+      - id: pyrefly-sentinel
+        name: pyrefly (sentinel)
+        entry: uv run --project sentinel --group dev pyrefly check --config sentinel/pyproject.toml
         language: system
         pass_filenames: false
         always_run: true

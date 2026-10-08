@@ -8,7 +8,7 @@ from rocketwatch.bot import RocketWatch
 
 
 class ChickenSoup(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.duration = timedelta(minutes=5)
         self.dispense_end: dict[int, datetime] = {}

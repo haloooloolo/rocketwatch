@@ -7,7 +7,7 @@ from discord import Interaction
 from discord.app_commands import command
 from eth_typing import BlockNumber, ChecksumAddress, HexStr
 from web3.contract import AsyncContract
-from web3.types import EventData
+from web3.types import EventData, LogReceipt
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
@@ -659,6 +659,7 @@ class DexTrades(EventPlugin):
         """Filter for RPL/rETH relevance, apply thresholds, build events."""
         assert self._tokens is not None
         assert self._token_names is not None
+        assert self._rpl is not None and self._reth is not None
 
         events: list[Event] = []
         for swap in raw_swaps:
@@ -862,7 +863,7 @@ class DexTrades(EventPlugin):
         # Query once for tokenIn=RPL/rETH, once for tokenOut=RPL/rETH
         padded_tokens = ["0x" + addr[2:].lower().zfill(64) for addr in self._tokens]
 
-        all_logs = []
+        all_logs: list[LogReceipt] = []
         for topic_pos in (2, 3):  # tokenIn, tokenOut
             topics: list[Any] = [swap_event.topic, None, None, None]
             topics[topic_pos] = padded_tokens
@@ -932,7 +933,7 @@ class DexTrades(EventPlugin):
         # [2]=tokenIn, [3]=tokenOut. Filter token topics same way as V2.
         padded_tokens = ["0x" + addr[2:].lower().zfill(64) for addr in self._tokens]
 
-        all_logs = []
+        all_logs: list[LogReceipt] = []
         for topic_pos in (2, 3):
             topics: list[Any] = [swap_event.topic, None, None, None]
             topics[topic_pos] = padded_tokens

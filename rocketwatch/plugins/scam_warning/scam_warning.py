@@ -17,7 +17,7 @@ log = logging.getLogger("rocketwatch.scam_warning")
 
 
 class ScamWarning(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.channel_ids = set(cfg.rocketpool.dm_warning.channels)
         self.inactivity_cooldown = timedelta(days=90)
