@@ -477,6 +477,71 @@ class TestReportMessage:
         doc = await mongo_db.scam_reports.find_one({"message_id": 100})
         assert doc is not None and doc["warning_id"] is None
 
+    async def test_message_deleted_before_warning_is_tolerated(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discord import errors
+
+        ctx, message = self._ctx_message(mongo_db)
+        unknown_reference = {
+            "code": 50035,
+            "message": "Invalid Form Body",
+            "errors": {
+                "message_reference": {
+                    "_errors": [
+                        {
+                            "code": "MESSAGE_REFERENCE_UNKNOWN_MESSAGE",
+                            "message": "Unknown message",
+                        }
+                    ]
+                }
+            },
+        }
+        message.reply = AsyncMock(
+            side_effect=errors.HTTPException(MagicMock(status=400), unknown_reference)
+        )
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(mr, "run_message_automod", AsyncMock(return_value=set()))
+        broadcast = AsyncMock()
+        monkeypatch.setattr(mr, "broadcast_user_report", broadcast)
+
+        await mr.report_message(ctx, message, "scam")
+
+        broadcast.assert_awaited_once()
+        doc = await mongo_db.scam_reports.find_one({"message_id": 100})
+        assert doc is not None and doc["warning_id"] is None
+
+    async def test_other_warning_reply_errors_propagate(
+        self, mongo_db: Db, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from discord import errors
+
+        ctx, message = self._ctx_message(mongo_db)
+        invalid_embed = {
+            "code": 50035,
+            "message": "Invalid Form Body",
+            "errors": {
+                "embeds": {
+                    "0": {
+                        "description": {
+                            "_errors": [
+                                {"code": "BASE_TYPE_MAX_LENGTH", "message": "Too long"}
+                            ]
+                        }
+                    }
+                }
+            },
+        }
+        message.reply = AsyncMock(
+            side_effect=errors.HTTPException(MagicMock(status=400), invalid_embed)
+        )
+        _report_channel(monkeypatch)
+        monkeypatch.setattr(mr, "run_message_automod", AsyncMock(return_value=set()))
+        monkeypatch.setattr(mr, "broadcast_user_report", AsyncMock())
+
+        with pytest.raises(errors.HTTPException):
+            await mr.report_message(ctx, message, "scam")
+
 
 class TestManualMessageReport:
     def _interaction(self) -> MagicMock:

@@ -273,6 +273,13 @@ async def run_message_automod(
     return actions
 
 
+def _is_tolerable_reply_error(e: errors.HTTPException) -> bool:
+    # a reply to a message deleted mid-report fails with 400, not 404
+    return isinstance(e, (errors.NotFound, errors.Forbidden)) or (
+        "message_reference" in e.text
+    )
+
+
 async def report_message(ctx: ReportContext, message: Message, reason: str) -> None:
     try:
         message = await message.channel.fetch_message(message.id)
@@ -308,7 +315,9 @@ async def report_message(ctx: ReportContext, message: Message, reason: str) -> N
                 embed=warning,
                 mention_author=False,
             )
-        except (errors.NotFound, errors.Forbidden):
+        except errors.HTTPException as e:
+            if not _is_tolerable_reply_error(e):
+                raise
             log.warning(f"Failed to send warning message in reply to {message.id}")
         else:
             await ctx.bot.db.scam_reports.update_one(
@@ -393,7 +402,9 @@ async def manual_message_report(
                     embed=warning,
                     mention_author=False,
                 )
-            except (errors.NotFound, errors.Forbidden):
+            except errors.HTTPException as e:
+                if not _is_tolerable_reply_error(e):
+                    raise
                 log.warning(f"Failed to send warning message in reply to {message.id}")
             else:
                 await ctx.bot.db.scam_reports.update_one(
