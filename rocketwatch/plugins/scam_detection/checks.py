@@ -67,7 +67,7 @@ class ScamChecks:
 
     @staticmethod
     def _get_message_content(message: Message) -> str:
-        text = ""
+        text: str = ""
         if message.content:
             content = message.content
             content = content.replace("\n> ", "")

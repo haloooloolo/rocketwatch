@@ -31,7 +31,7 @@ MulticallSpec = tuple[AsyncContractFunction, bool, Callable[[Any], Any] | None, 
 
 
 def is_true(v: Any) -> bool:
-    return v is True
+    return isinstance(v, bool) and v
 
 
 def safe_to_float(num: int) -> float | None:
@@ -47,7 +47,7 @@ def safe_to_hex(b: bytes) -> str | None:
 
 def safe_state_to_str(state: int) -> str | None:
     try:
-        return str(solidity.mp_state_to_str(state))
+        return solidity.mp_state_to_str(state)
     except Exception:
         return None
 
@@ -147,7 +147,7 @@ class _CachedCalls:
 
 
 class DBUpkeepTask(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.monitor = AsyncMonitor("db-task")
         self.beacon_batch_size = 250

@@ -41,7 +41,7 @@ async def minipool_distribution_raw(
 
 
 class MinipoolDistribution(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     async def get_minipool_counts_per_node(self) -> list[int]:

@@ -10,7 +10,7 @@ log = logging.getLogger("rocketwatch.rich_activity")
 
 
 class RichActivity(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.monitor = AsyncMonitor("update-activity")
         self.task.start()

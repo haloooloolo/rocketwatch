@@ -92,7 +92,7 @@ class DeleteMessageButton(
 
 
 class DeletableView(ui.View):
-    def __init__(self, user: User | Member):
+    def __init__(self, user: User | Member) -> None:
         super().__init__(timeout=None)
         self.add_item(DeleteMessageButton(user.id))
 
@@ -242,7 +242,7 @@ async def _use(
 
 
 class SupportGlobal(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @app_commands.command(name="use")
@@ -270,7 +270,7 @@ class SupportUtils(GroupCog, name="support"):
         guild_ids=[cfg.rocketpool.support.server_id],
     )
 
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @subgroup.command()

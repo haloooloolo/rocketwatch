@@ -32,8 +32,8 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
         with:
           cache-suffix: typecheck
-      - run: uv run --group dev mypy rocketwatch/
-      - run: uv run --project sentinel --group dev mypy sentinel/
+      - run: uv run --group dev pyrefly check
+      - run: uv run --project sentinel --group dev pyrefly check --config sentinel/pyproject.toml
 
   test:
     runs-on: ubuntu-latest

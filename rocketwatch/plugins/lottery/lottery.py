@@ -27,7 +27,7 @@ class SyncCommittee(TypedDict):
 
 
 class Lottery(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     COMMITTEE_SIZE = 512

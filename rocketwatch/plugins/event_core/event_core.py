@@ -33,7 +33,7 @@ class EventCore(commands.Cog):
         def __str__(self) -> str:
             return self.name
 
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.state = self.State.OK
         self.channels = cfg.discord.channels

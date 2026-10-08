@@ -49,7 +49,7 @@ def get_duration(d1: APRDatapoint, d2: APRDatapoint) -> float:
 
 
 class APR(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.task.start()
 

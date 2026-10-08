@@ -83,7 +83,7 @@ MILESTONES: list[Milestone] = [
 
 
 class Milestones(EventPlugin):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot)
         self.collection = self.bot.db.milestones
 

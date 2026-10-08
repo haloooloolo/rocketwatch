@@ -149,8 +149,8 @@ class LogEvent(ChainEvent[LogEventData]):
     # emitted by any contract (e.g. every minipool); matched by topic only
     is_global: ClassVar[bool] = False
 
-    class Args(LogEventContext):
-        """Default args type — override in subclasses."""
+    # default args type — override in subclasses
+    Args = LogEventContext
 
 
 class LogTemplate(TemplateEvent[LogEventData], LogEvent):
@@ -1085,7 +1085,7 @@ async def _enrich_pdao_proposal(
 
     dao = ProtocolDAO()
     proposal = await dao.fetch_proposal(proposal_id)
-    body = await dao.build_proposal_body(
+    return await dao.build_proposal_body(
         proposal,
         include_proposer=False,
         include_payload=("add" in event_name),
@@ -1093,7 +1093,6 @@ async def _enrich_pdao_proposal(
             kw not in event_name for kw in ("add", "challenge", "root", "destroy")
         ),
     )
-    return str(body) if body is not None else None
 
 
 class PDAOProposalAddEvent(LogEvent):

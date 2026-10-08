@@ -70,7 +70,7 @@ log = logging.getLogger("rocketwatch.wall")
 
 
 class Wall(commands.GroupCog, name="wall"):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__()
         self.bot = bot
         self.cex_rpl: set[CEX] = {
@@ -356,14 +356,13 @@ class Wall(commands.GroupCog, name="wall"):
         dex_data_aggr = Wall._label_exchange_data(dex_data, max_unique, "#777777")
 
         y_offset = 0.0
-        max_label_length: int = np.max(
-            [len(t[1]) for t in (cex_data_aggr + dex_data_aggr)]
-        )
+        max_label_length = max([len(t[1]) for t in (cex_data_aggr + dex_data_aggr)])
 
         def add_data(
             _data: list[tuple[np.ndarray, str, str]], _name: str | None
         ) -> None:
-            labels, handles = [], []
+            labels: list[str] = []
+            handles: list[Rectangle] = []
             for y_values, label, color in _data:
                 y.append(y_values)
                 labels.append(f"{label:\u00a0<{max_label_length}}")

@@ -16,7 +16,7 @@ log = logging.getLogger("rocketwatch.metrics")
 
 
 class Metrics(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.collection = self.bot.db.command_metrics
 

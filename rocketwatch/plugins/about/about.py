@@ -23,7 +23,7 @@ log = logging.getLogger("rocketwatch.about")
 
 
 class About(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.process = psutil.Process(os.getpid())
 

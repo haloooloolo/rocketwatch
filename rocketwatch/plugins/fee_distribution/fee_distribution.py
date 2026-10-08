@@ -17,7 +17,7 @@ log = logging.getLogger("rocketwatch.fee_distribution")
 
 
 class FeeDistribution(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     async def _get_minipools(self, bond: int) -> list[dict[str, Any]]:

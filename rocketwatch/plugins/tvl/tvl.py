@@ -56,7 +56,7 @@ def megapool_split_rewards(
 
 
 class TVL(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()

@@ -99,7 +99,7 @@ class Proposal:
         height += self._V_SPACE_SMALL + self._HEADER_SIZE + self._V_SPACE_SMALL
         height += self._BAR_SIZE + self._V_SPACE_LARGE
         height += self._TEXT_SIZE
-        return int(height)
+        return height
 
     def reached_quorum(self) -> bool:
         return self.scores_total >= self.quorum
@@ -504,7 +504,7 @@ class Vote:
 
 
 class Signaling(EventPlugin):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot, timedelta(minutes=2))
         self.proposal_db = bot.db.signaling_proposals
         self.vote_db = bot.db.signaling_votes

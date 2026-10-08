@@ -13,7 +13,7 @@ Color = tuple[int, int, int]
 
 
 class Image:
-    def __init__(self, image: PillowImage.Image):
+    def __init__(self, image: PillowImage.Image) -> None:
         self.__img = image
 
     def to_file(self, name: str) -> File:
@@ -34,7 +34,7 @@ class FontVariant(StrEnum):
 
 class ImageCanvas(ImageDraw):
     # default color matches Discord mobile dark mode Embed
-    def __init__(self, width: int, height: int, bg_color: Color = (57, 58, 64)):
+    def __init__(self, width: int, height: int, bg_color: Color = (57, 58, 64)) -> None:
         p_img = PillowImage.new("RGB", (width, height), color=bg_color)
         super().__init__(p_img)
         self.image = Image(p_img)

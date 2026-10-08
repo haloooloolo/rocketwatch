@@ -96,7 +96,7 @@ class CallModal(Modal):
 
 
 class Call(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.function_names: list[str] = []
 

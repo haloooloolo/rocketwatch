@@ -22,7 +22,7 @@ log = logging.getLogger("rocketwatch.rewards")
 
 
 class Rewards(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @dataclass(frozen=True, slots=True)

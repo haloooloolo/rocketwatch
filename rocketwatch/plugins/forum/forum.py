@@ -19,7 +19,7 @@ log = logging.getLogger("rocketwatch.forum")
 class Forum(commands.Cog):
     DOMAIN = "https://dao.rocketpool.net"
 
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @dataclass(frozen=True, slots=True)

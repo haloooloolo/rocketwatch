@@ -275,6 +275,7 @@ class TxEvents(EventPlugin):
                 resolved, args, block, txn
             )
 
+        embeds: list[Embed]
         try:
             embeds = await resolved.build_embeds(args, event, receipt)
         except KeyError as err:

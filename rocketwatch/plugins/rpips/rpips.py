@@ -15,7 +15,7 @@ log = logging.getLogger("rocketwatch.rpips")
 
 
 class RPIPs(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()
@@ -56,7 +56,7 @@ class RPIPs(Cog):
     class RPIP:
         __slots__ = ("number", "status", "title")
 
-        def __init__(self, title: str, number: int, status: str):
+        def __init__(self, title: str, number: int, status: str) -> None:
             self.title = title
             self.number = number
             self.status = status

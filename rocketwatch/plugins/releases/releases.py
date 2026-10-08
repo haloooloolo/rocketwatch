@@ -13,7 +13,7 @@ log = logging.getLogger("rocketwatch.releases")
 
 
 class Releases(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self._repo = "rocket-pool/smartnode"
 

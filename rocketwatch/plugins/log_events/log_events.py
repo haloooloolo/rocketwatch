@@ -71,7 +71,7 @@ def _context(
 
 
 class LogEvents(EventPlugin):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot)
         self._partial_filters: list[PartialFilter] = []
         # contract_name.SolidityEvent -> LogEvent handler

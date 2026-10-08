@@ -99,7 +99,7 @@ uv run --group dev pre-commit install
 uv run --group dev pre-commit install --hook-type pre-push
 ```
 
-This sets up ruff linting/formatting and pytest on commit, and mypy type checking on push.
+This sets up ruff linting/formatting and pytest on commit, and pyrefly type checking on push.
 
 ### Linting
 
@@ -112,7 +112,7 @@ Configured rules: `B` (bugbear), `E` (pycodestyle), `F` (pyflakes), `I` (isort),
 ### Type checking
 
 ```sh
-uv run --group dev mypy rocketwatch/
+uv run --group dev pyrefly check
 ```
 
 ### Testing
@@ -187,7 +187,7 @@ All checks live in a single [CI workflow](.github/workflows/ci.yaml):
 | Job | Trigger | Purpose |
 |---|---|---|
 | `lint` | Push & PR to main | Ruff lint/format check & `uv.lock` freshness |
-| `typecheck` | Push & PR to main | mypy type checking |
+| `typecheck` | Push & PR to main | pyrefly type checking |
 | `test` | Push & PR to main | pytest suite & coverage upload |
 | `docker` | Push to main (after the above pass) | Build & push image to GHCR |
 

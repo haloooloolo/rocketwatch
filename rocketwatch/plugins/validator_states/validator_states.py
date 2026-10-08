@@ -116,7 +116,7 @@ def _collapse_tree(data: dict[str, Any]) -> dict[str, Any]:
 
 
 class ValidatorStates(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     @command()

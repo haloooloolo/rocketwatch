@@ -32,7 +32,7 @@ log = logging.getLogger("rocketwatch.random")
 
 
 class Random(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
         self.contract_names: list[str] = []
 

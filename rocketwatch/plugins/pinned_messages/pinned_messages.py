@@ -15,7 +15,7 @@ log = logging.getLogger("rocketwatch.rich_activity")
 
 
 class PinnedMessages(commands.Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
         if not self.run_loop.is_running() and bot.is_ready():

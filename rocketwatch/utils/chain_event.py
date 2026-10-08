@@ -71,6 +71,7 @@ class ChainEvent[DataT](ABC):
     """
 
     event_name: str
+    Args: ClassVar[type]
     # contract addresses are re-resolved after this event (protocol upgrades)
     reloads_contracts: ClassVar[bool] = False
 
@@ -82,7 +83,7 @@ class ChainEvent[DataT](ABC):
 
     def args_type(self) -> type:
         """The TypedDict declaring this event's fields and formatting markers."""
-        return type(self).Args  # type: ignore[attr-defined, no-any-return]
+        return type(self).Args
 
     async def _fmt(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Auto-format *args* using this event's Args TypedDict."""
@@ -142,7 +143,8 @@ class TemplateEvent[DataT](ChainEvent[DataT]):
         before: tuple[str, ...] = (),
     ) -> None:
         self.event_name = event_name
-        self._args: type = TypedDict(f"{event_name}_args", fields or {})  # type: ignore[misc]
+        # pyrefly: ignore[not-callable]
+        self._args: type = TypedDict(f"{event_name}_args", fields or {})
         self._text = text
         self._title = title
         self._style = style
@@ -201,7 +203,7 @@ def preview_fields(handler: ChainEvent[Any], context: type) -> list[tuple[str, b
     args_type = handler.args_type()
     context_keys = set(context.__annotations__)
     return [
-        (name, name in args_type.__required_keys__)  # type: ignore[attr-defined]
+        (name, name in args_type.__required_keys__)
         for name in args_type.__annotations__
         if name not in context_keys
     ]

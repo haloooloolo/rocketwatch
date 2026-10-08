@@ -15,7 +15,7 @@ from rocketwatch.utils.config import cfg
 
 
 class Reloader(Cog):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         self.bot = bot
 
     async def _get_loaded_extensions(

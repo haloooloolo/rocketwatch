@@ -19,7 +19,7 @@ log = logging.getLogger("rocketwatch.dao")
 
 
 class DAO(ABC):
-    def __init__(self, contract_name: str, proposal_contract_name: str):
+    def __init__(self, contract_name: str, proposal_contract_name: str) -> None:
         self.contract_name = contract_name
         self._proposal_contract_name = proposal_contract_name
         self._contract: AsyncContract | None = None
@@ -106,7 +106,7 @@ class DefaultDAO(DAO):
     def __init__(
         self,
         contract_name: DAOContractName,
-    ):
+    ) -> None:
         if contract_name == "rocketDAONodeTrustedProposals":
             self.display_name = "oDAO"
         elif contract_name == "rocketDAOSecurityProposals":
@@ -433,4 +433,4 @@ def decode_setting_multi(args: Mapping[str, Any], values_list: list[bytes]) -> s
 
 
 async def wrap_member_address(address: ChecksumAddress, block: int) -> str:
-    return str(await el_explorer_url(address, block=block))
+    return await el_explorer_url(address, block=block)

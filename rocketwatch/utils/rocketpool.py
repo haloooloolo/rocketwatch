@@ -265,7 +265,7 @@ class RocketPool:
             )
         except ContractLogicError as err:
             log.debug(f"Transaction: {txn['hash']!r} ContractLogicError: {err}")
-            return ", ".join(err.args)
+            return ", ".join(str(a) for a in err.args)
         except ValueError as err:
             log.debug(f"Transaction: {txn['hash']!r} ValueError: {err}")
             match err.args[0]["code"]:
@@ -321,7 +321,7 @@ class RocketPool:
         compressed_string = await storage.functions.getString(sha3).call()
         if not compressed_string:
             raise Exception(f"No abi found for {name} contract")
-        return str(decode_abi(compressed_string))
+        return decode_abi(compressed_string)
 
     async def assemble_contract(
         self,

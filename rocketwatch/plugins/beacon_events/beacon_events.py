@@ -76,7 +76,7 @@ def _build_finality_embed(
 
 
 class BeaconEvents(EventPlugin):
-    def __init__(self, bot: RocketWatch):
+    def __init__(self, bot: RocketWatch) -> None:
         super().__init__(bot)
         self.finality_delay_threshold = 3
 

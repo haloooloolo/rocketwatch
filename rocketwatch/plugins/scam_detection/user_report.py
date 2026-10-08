@@ -140,7 +140,8 @@ class UserReportReasonModal(ui.Modal, title="Report User"):
         )
         self.add_item(self.reason_field)
 
-    async def on_submit(self, interaction: Interaction[RocketWatch]) -> None:  # type: ignore[override]
+    # pyrefly: ignore[bad-override]
+    async def on_submit(self, interaction: Interaction[RocketWatch]) -> None:
         await _execute_user_report(
             self._ctx, interaction, self._user, self.reason_field.value.strip()
         )

@@ -141,7 +141,7 @@ def _get_marker(
 async def _addr(address: ChecksumAddress) -> str:
     """Address link with sea creature + role prefixes."""
     sea = await get_sea_creature_for_address(address)
-    return str(await el_explorer_url(address, prefix=sea))
+    return await el_explorer_url(address, prefix=sea)
 
 
 # ---------------------------------------------------------------------------

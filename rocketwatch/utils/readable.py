@@ -200,10 +200,9 @@ def render_tree(data: dict[str, Any], name: str, max_depth: int = 0) -> str:
         Fore.BLACK,
         Fore.BLACK,
     ]
-    for i, (v, d) in enumerate(zip(values, depths, strict=False)):
-        _v = v
-        _v = f"{COLORS[d]}{v}{Style.RESET_ALL}"
-        lines[i] = (
-            f"{lines[i].ljust(max_left_len, ' ')}{' ' * (max_right_len - len(str(v)))}{_v}"
-        )
-    return "\n".join(lines)
+    rows = [
+        f"{line.ljust(max_left_len, ' ')}{' ' * (max_right_len - len(str(v)))}"
+        f"{COLORS[d]}{v}{Style.RESET_ALL}"
+        for line, v, d in zip(lines, values, depths, strict=False)
+    ]
+    return "\n".join(rows)
