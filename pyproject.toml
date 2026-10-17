@@ -26,7 +26,7 @@ dependencies = [
     "pillow==12.3.0",
     "psutil==7.2.2",
     "pydantic>=2.0.0,<3.0.0",
-    "pymongo==4.18.2",
+    "pymongo==4.19.0",
     # 18 rejects the list that web3's ENS normalizer passes to NFC
     "pyunormalize<18",
     "pytz==2026.4",
@@ -38,6 +38,11 @@ dependencies = [
     "uptime==3.0.1",
     "web3>=8.0.0,<8.1.0",
 ]
+
+
+[tool.uv.extra-build-dependencies]
+# no cp315 wheels yet, and the sdist only builds with Cython
+pyyaml = ["cython"]
 
 
 [tool.pytest.ini_options]

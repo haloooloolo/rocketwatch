@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.14-slim AS build
+FROM python:3.15-slim AS build
 
-# binutils provides `strip`; only needed in build stage.
-RUN apt-get update && apt-get install -y --no-install-recommends binutils && \
+# build-essential compiles deps without cp315 wheels and provides `strip`;
+# only needed in build stage.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
@@ -19,7 +20,7 @@ RUN find /opt/venv -type d \( -name tests -o -name test -o -name __pycache__ \) 
     find /opt/venv -name "*.so" -exec strip --strip-unneeded {} +
 
 
-FROM python:3.14-slim AS runtime
+FROM python:3.15-slim AS runtime
 
 # libopus0 is dlopen'd by discord.py for voice send/receive.
 RUN apt-get update && apt-get install -y --no-install-recommends libopus0 && \
