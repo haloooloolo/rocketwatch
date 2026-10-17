@@ -34,23 +34,20 @@ def wav(tmp_path: Path) -> Path:
 
 
 class TestTranscribeWav:
-    async def test_sends_configured_keywords(
+    async def test_sends_glossary_as_keywords(
         self, transcribe: AsyncMock, wav: Path
     ) -> None:
-        stt = STTConfig(
-            provider="openai", model="gpt-transcribe", keywords=["rETH", "minipool"]
-        )
+        stt = STTConfig(provider="openai", model="gpt-transcribe")
         text = await TranscriptionPipeline(stt, MagicMock()).transcribe_wav(wav)
 
         assert text == "hello rETH"
         kwargs = transcribe.call_args.kwargs
         assert kwargs["model"] == "gpt-transcribe"
-        assert list(kwargs["keywords"]) == ["rETH", "minipool"]
+        assert "rETH" in kwargs["keywords"]
 
-    async def test_omits_keywords_when_unset(
+    async def test_omits_keywords_for_models_without_support(
         self, transcribe: AsyncMock, wav: Path
     ) -> None:
-        # keywords are only documented as supported by gpt-transcribe
         stt = STTConfig(provider="openai", model="gpt-4o-transcribe")
         await TranscriptionPipeline(stt, MagicMock()).transcribe_wav(wav)
 
@@ -207,11 +204,10 @@ class TestSummarize:
         assert summary is not None
         assert summary.splitlines()[-1].startswith("- point")
 
-    async def test_stt_keywords_are_given_as_glossary(self) -> None:
+    async def test_prompt_includes_glossary(self) -> None:
         llm = _llm("fine")
-        stt = STTConfig(provider="openai", model="m", keywords=["megapool", "RPIP"])
 
-        await TranscriptionPipeline(stt, llm).summarize("t", USERS)
+        await TranscriptionPipeline(STT, llm).summarize("t", USERS)
 
         prompt = llm.complete_structured.call_args.args[1]
         assert "megapool" in prompt
@@ -227,13 +223,6 @@ class TestSummarize:
         assert (
             "Wednesday, October 14, 2026" in llm.complete_structured.call_args.args[1]
         )
-
-    async def test_no_glossary_without_keywords(self) -> None:
-        llm = _llm("fine")
-
-        await TranscriptionPipeline(STT, llm).summarize("t", USERS)
-
-        assert "Glossary" not in llm.complete_structured.call_args.args[1]
 
 
 class TestProcessUsers:

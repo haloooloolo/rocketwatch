@@ -17,6 +17,26 @@ SUMMARY_CHAR_LIMIT = 3800
 SUMMARY_MAX_TOKENS = 16384
 MAX_CONCURRENT_TRANSCRIPTIONS = 4
 
+GLOSSARY = (
+    # Rocket Pool
+    "Rocket Pool", "rETH", "RPL", "minipool", "megapool", "Smartnode", "node operator",
+    "oDAO", "pDAO", "Protocol DAO", "Security Council", "RPIP", "Smoothing Pool",
+    "Saturn", "Houston", "Atlas", "Redstone", "RocketDash", "Rocket Watch", "GMC", "IMC",
+    # Ethereum staking
+    "Ethereum", "ETH", "validator", "beacon chain", "consensus layer", "execution layer",
+    "attestation", "slashing", "withdrawal credentials", "0x01", "0x02", "MEV-Boost",
+    "Commit-Boost", "relay", "ePBS", "blobs", "EIP", "Lido", "stETH", "EigenLayer",
+    "restaking",
+    # upgrades and testnets
+    "Glamsterdam", "Fusaka", "Pectra", "Dencun", "Hegota", "Hoodi", "Sepolia", "Holesky",
+    "Ephemery", "devnet",
+    # tools and services
+    "Immunefi", "Kurtosis", "Forkcast",
+    # clients
+    "Geth", "Nethermind", "Besu", "Reth", "Erigon",
+    "Lighthouse", "Prysm", "Teku", "Nimbus", "Lodestar",
+)  # fmt: skip
+
 SUMMARIZE_SYSTEM_PROMPT = """\
 You are summarizing a Rocket Pool community call for Discord server members who missed it. \
 In under a minute of reading, they want to know what happened and whether any of it affects \
@@ -135,7 +155,10 @@ class TranscriptionPipeline:
                 language="en",
                 file=buf,
                 response_format="json",
-                keywords=self._stt.keywords or omit,
+                # other models reject the parameter
+                keywords=GLOSSARY
+                if self._stt.model.startswith("gpt-transcribe")
+                else omit,
             )
         return response.text.strip()
 
@@ -183,18 +206,13 @@ class TranscriptionPipeline:
         roster = "\n".join(
             f"- @{i} refers to {usernames[uid]}" for i, uid in handle_to_id.items()
         )
-        glossary = ""
-        if keywords := self._stt.keywords:
-            glossary = (
-                f"Glossary of terms used in these calls: {', '.join(keywords)}\n\n"
-            )
         call_date = call_date or datetime.now(UTC).date()
         user_message = (
             f"Call date: {call_date:%A, %B %-d, %Y}\n\n"
             "Participant roster — when referring to any of these people in the "
             "summary, write the handle token instead of their name:\n"
             f"{roster}\n\n"
-            f"{glossary}"
+            f"Glossary of terms used in these calls: {', '.join(GLOSSARY)}\n\n"
             f"Summarize this community call transcript:\n\n{transcript}"
         )
         result = await self._llm.complete_structured(

@@ -65,8 +65,6 @@ class STTConfig(BaseModel):
     provider: Literal["openai", ""] = ""
     api_key: str = ""
     model: str = ""
-    # vocabulary hints; only supported by gpt-transcribe
-    keywords: list[str] = []
 
 
 class PartnerGuild(BaseModel):
