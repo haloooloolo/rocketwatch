@@ -53,6 +53,20 @@ class TestParseProposal:
         assert out["consensus_client"] == "Lighthouse"
         assert out["version"] == "1.2.3"
 
+    def test_smartnode_graffiti_detects_erigon(self) -> None:
+        out = parse_proposal(
+            _beacon_block(slot=16, proposer_index=7, graffiti="RP-EN v1.2.3")
+        )
+        assert out["execution_client"] == "Erigon"
+        assert out["consensus_client"] == "Nimbus"
+
+    def test_freeform_graffiti_detects_erigon(self) -> None:
+        out = parse_proposal(
+            _beacon_block(slot=17, proposer_index=8, graffiti="Erigon/Teku")
+        )
+        assert out["execution_client"] == "Erigon"
+        assert out["consensus_client"] == "Teku"
+
     def test_smartnode_graffiti_with_comment(self) -> None:
         out = parse_proposal(
             _beacon_block(

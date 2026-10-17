@@ -42,6 +42,7 @@ LOOKUP = {
         "B": "Besu",
         "N": "Nethermind",
         "R": "Reth",
+        "E": "Erigon",
         "X": "External",
     },
 }
@@ -56,6 +57,7 @@ COLORS = {
     "Besu": "#55AA7A",
     "Nethermind": "#2688D9",
     "Reth": "#760910",
+    "Erigon": "#E0A030",
     "External": "#808080",
     "Smart Node": "#CC6E33",
     "Allnodes": "#4533cc",
