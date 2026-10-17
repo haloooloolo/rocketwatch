@@ -184,16 +184,47 @@ class TestOnMessage:
         llm.check.assert_awaited_once()
         _patch_pipeline.assert_not_awaited()
 
-    async def test_on_message_edit_reroutes_through_on_message(
+    async def test_edited_content_is_rechecked(
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
         _patch_pipeline: AsyncMock,
     ) -> None:
         checks = MagicMock(run_all=MagicMock(return_value="Edited into a scam"))
         cog = _make_cog(make_bot(db=mongo_db), checks=checks)
-        after = _msg()
+        after = _msg(content="DM me for support")
         await cog.on_message_edit(_msg(), after)
         _patch_pipeline.assert_awaited_once_with(cog._ctx, after, "Edited into a scam")
+
+    async def test_edit_with_new_embed_is_rechecked(
+        self, mongo_db: AsyncDatabase[dict[str, Any]]
+    ) -> None:
+        llm = MagicMock(check=AsyncMock(return_value=None))
+        cog = _make_cog(make_bot(db=mongo_db), llm=llm)
+        await cog.on_message_edit(_msg(), _msg(embeds=[MagicMock()]))
+        llm.check.assert_awaited_once()
+
+    async def test_edit_without_content_change_is_ignored(
+        self,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        _patch_pipeline: AsyncMock,
+    ) -> None:
+        checks = MagicMock(run_all=MagicMock(return_value="Scam"))
+        llm = MagicMock(check=AsyncMock(return_value=None))
+        cog = _make_cog(make_bot(db=mongo_db), checks=checks, llm=llm)
+        await cog.on_message_edit(_msg(), _msg())
+        checks.run_all.assert_not_called()
+        llm.check.assert_not_awaited()
+        _patch_pipeline.assert_not_awaited()
+
+    async def test_edit_does_not_count_as_new_message(
+        self, mongo_db: AsyncDatabase[dict[str, Any]]
+    ) -> None:
+        llm = MagicMock(check=AsyncMock(return_value=None))
+        cog = _make_cog(make_bot(db=mongo_db), llm=llm)
+        await cog.on_message(_msg(content="first"))
+        await cog.on_message_edit(_msg(content="first"), _msg(content="second"))
+        assert await cog._get_message_count(MagicMock(id=555)) == 1
+        assert llm.check.await_args_list[-1].kwargs["user_msg_count"] == 1
 
 
 class TestIncrementMessageCount:

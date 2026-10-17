@@ -89,6 +89,9 @@ class ScamDetection(Cog):
 
     @Cog.listener()
     async def on_message(self, message: Message) -> None:
+        await self._process_message(message, is_edit=False)
+
+    async def _process_message(self, message: Message, *, is_edit: bool) -> None:
         log.debug(
             f"Message(id={message.id}, author={message.author}, channel={message.channel},"
             f' content="{message.content}", embeds={message.embeds})'
@@ -107,7 +110,10 @@ class ScamDetection(Cog):
 
         flatten_forwarded_message(message)
 
-        user_msg_count = await self._increment_message_count(message.author)
+        if is_edit:
+            user_msg_count = await self._get_message_count(message.author)
+        else:
+            user_msg_count = await self._increment_message_count(message.author)
 
         if (message.type == MessageType.thread_created) and message.reference:
             thread_id = message.reference.channel_id
@@ -152,7 +158,14 @@ class ScamDetection(Cog):
 
     @Cog.listener()
     async def on_message_edit(self, before: Message, after: Message) -> None:
-        await self.on_message(after)
+        # also fires for pins, flag changes etc. that don't touch anything we check
+        if (before.content, before.embeds, before.attachments) == (
+            after.content,
+            after.embeds,
+            after.attachments,
+        ):
+            return
+        await self._process_message(after, is_edit=True)
 
     @Cog.listener()
     async def on_raw_message_delete(self, event: RawMessageDeleteEvent) -> None:
@@ -266,6 +279,10 @@ class ScamDetection(Cog):
         await manual_user_report(self._ctx, interaction, user)
 
     # --- Helpers ---
+
+    async def _get_message_count(self, user: User | Member) -> int:
+        result = await self.bot.db.message_counts.find_one({"_id": user.id})
+        return int(result["count"]) if result else 0
 
     async def _increment_message_count(self, user: User | Member) -> int:
         result = await self.bot.db.message_counts.find_one_and_update(
