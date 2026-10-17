@@ -12,7 +12,7 @@ from rocketwatch.utils.llm import ImageInput, LLMProvider, create_provider
 
 log = logging.getLogger("rocketwatch.scam_detection.llm")
 
-MAX_OUTPUT_TOKENS = 200
+MAX_OUTPUT_TOKENS = 2048
 MAX_IMAGES = 5
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
@@ -25,6 +25,13 @@ Focus on the author's INTENT. Flag messages that are trying to:
 - Build false trust by impersonating authority (staff, support, admins)
 - Create artificial urgency or fear to pressure users into action
 - Deceive users through any other social engineering technique
+
+Most scams have a hook that gets the reader to do something: reply to accept help, open a DM, \
+click a link, visit a profile, scan a code, connect a wallet, send funds. The hook can be \
+implicit, like a testimonial praising a "recovery expert" by name. A plain statement, opinion, \
+or result with no apparent hook is rarely a scam just because it is short, jargon-heavy, or \
+lacks context. You only see a single message, so terse remarks are usually replies to a \
+discussion you cannot see.
 
 Judge what the AUTHOR is doing, not what content appears in the message. Users often share scam \
 content to warn others, report a scammer, or ask whether something is legitimate. Quoting, \
@@ -63,6 +70,9 @@ Do NOT flag messages that:
 - Discuss problems, errors, or frustrations — even emotional ones
 - Contain links shared in good faith
 - Inquire about partnering, collaborating or integrating with the protocol
+- Discuss yields, APR, profits, losses, prices, or DeFi strategies (looping, leverage, lending, \
+LPing, restaking) - this is everyday conversation in a staking community. Returns only become \
+suspicious when paired with a hook (e.g. "DM me to join", "guaranteed daily profit, link in bio")
 - Request testnet tokens from a faucet (e.g. "can I get some RPL on Hoodi", posting their own \
 address to receive test funds) - testnet faucet requests are a normal developer workflow, not a scam
 
@@ -88,6 +98,12 @@ Examples:
 
 "Is rocket pool open for a partnership with an ICO Platform? I'm from Legion"
 -> is_scam=false, reason="Partnership proposal"
+
+"7% profit on reth loop"
+-> is_scam=false, reason="Discussing DeFi yield"
+
+"I've been making 3% daily with this staking bot, DM me and I'll show you how"
+-> is_scam=true, reason="Profit lure to DMs"
 
 "Hello I am testing a Rocket Pool on Hoodi and would like some RPL please. 0xafDEDDB54b72858718048d4A497ad97D10f514f6"
 -> is_scam=false, reason="Testnet faucet request"

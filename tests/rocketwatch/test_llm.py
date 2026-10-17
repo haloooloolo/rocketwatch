@@ -173,34 +173,46 @@ class TestAnthropicProvider:
         assert provider._get_client() is instance
         ctor.assert_called_once()
 
-    async def test_complete_returns_block_text(
+    async def test_complete_returns_text_after_thinking(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from anthropic.types import TextBlock
+        from anthropic.types import TextBlock, ThinkingBlock
 
-        block = MagicMock(spec=TextBlock)
-        block.text = "hello"
+        thinking = MagicMock(spec=ThinkingBlock)
+        text = MagicMock(spec=TextBlock)
+        text.text = "hello"
         client = MagicMock()
-        client.messages.create = AsyncMock(return_value=MagicMock(content=[block]))
+        client.messages.create = AsyncMock(
+            return_value=MagicMock(content=[thinking, text])
+        )
         provider = AnthropicProvider("k", "m")
         monkeypatch.setattr(provider, "_get_client", lambda: client)
 
         assert await provider.complete("sys", "msg") == "hello"
 
-    async def test_complete_structured_parses_tool_input(
+    async def test_complete_structured_returns_parsed_output(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from anthropic.types import ToolUseBlock
-
-        block = MagicMock(spec=ToolUseBlock)
-        block.input = {"verdict": "scam"}
+        parsed = _Verdict(verdict="scam")
         client = MagicMock()
-        client.messages.create = AsyncMock(return_value=MagicMock(content=[block]))
+        client.messages.parse = AsyncMock(return_value=MagicMock(parsed_output=parsed))
         provider = AnthropicProvider("k", "m")
         monkeypatch.setattr(provider, "_get_client", lambda: client)
 
-        result = await provider.complete_structured("sys", "msg", _Verdict)
-        assert result == _Verdict(verdict="scam")
+        assert await provider.complete_structured("sys", "msg", _Verdict) is parsed
+
+    async def test_complete_structured_raises_without_output(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        client = MagicMock()
+        client.messages.parse = AsyncMock(
+            return_value=MagicMock(parsed_output=None, stop_reason="max_tokens")
+        )
+        provider = AnthropicProvider("k", "m")
+        monkeypatch.setattr(provider, "_get_client", lambda: client)
+
+        with pytest.raises(ValueError, match="max_tokens"):
+            await provider.complete_structured("sys", "msg", _Verdict)
 
 
 class TestOpenAIProvider:

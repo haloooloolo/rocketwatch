@@ -89,7 +89,6 @@ class AnthropicProvider(LLMProvider):
         response = await self._get_client().messages.create(
             model=self._model,
             max_tokens=max_tokens,
-            thinking={"type": "disabled"},
             system=[
                 {
                     "type": "text",
@@ -104,9 +103,7 @@ class AnthropicProvider(LLMProvider):
                 }
             ],
         )
-        block = response.content[0]
-        assert isinstance(block, TextBlock)
-        return block.text
+        return next(b.text for b in response.content if isinstance(b, TextBlock))
 
     async def complete_structured(
         self,
@@ -117,13 +114,9 @@ class AnthropicProvider(LLMProvider):
         max_tokens: int = 1024,
         images: list[ImageInput] | None = None,
     ) -> T:
-        from anthropic.types import ToolUseBlock
-
-        tool_name = schema.__name__
-        response = await self._get_client().messages.create(
+        response = await self._get_client().messages.parse(
             model=self._model,
             max_tokens=max_tokens,
-            thinking={"type": "disabled"},
             system=[
                 {
                     "type": "text",
@@ -137,18 +130,13 @@ class AnthropicProvider(LLMProvider):
                     "content": self._build_user_content(user_message, images),
                 }
             ],
-            tools=[
-                {
-                    "name": tool_name,
-                    "description": f"Return the result as a {tool_name} object.",
-                    "input_schema": schema.model_json_schema(),
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            tool_choice={"type": "tool", "name": tool_name},
+            output_format=schema,
         )
-        block = next(b for b in response.content if isinstance(b, ToolUseBlock))
-        return schema.model_validate(block.input)
+        if response.parsed_output is None:
+            raise ValueError(
+                f"No structured output (stop_reason={response.stop_reason})"
+            )
+        return response.parsed_output
 
 
 class OpenAIProvider(LLMProvider):
