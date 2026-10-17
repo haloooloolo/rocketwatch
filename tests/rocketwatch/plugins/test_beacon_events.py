@@ -6,6 +6,7 @@ import pytest
 from aiohttp import ClientResponseError, RequestInfo
 from eth_typing import BlockNumber
 from pymongo.asynchronous.database import AsyncDatabase
+from web3.exceptions import BlockNotFound
 from yarl import URL
 
 from rocketwatch.plugins.beacon_events import beacon_events as be
@@ -14,16 +15,16 @@ from rocketwatch.plugins.beacon_events.beacon_events import (
     _build_finality_embed,
 )
 from rocketwatch.utils import shared_w3 as sw
-from rocketwatch.utils.config import cfg
+from rocketwatch.utils.embeds import format_value
 from rocketwatch.utils.solidity import beacon_block_to_date
 from tests.lib.beacon_script import ScriptedBeacon
-from tests.lib.cfg import make_cfg
 from tests.lib.discord_harness import make_bot
 from tests.lib.scripted_rocketpool import ScriptedRocketPool
 
 Db = AsyncDatabase[dict[str, Any]]
 SMOOTH = "0x" + "a" * 40
 OTHER = "0x" + "b" * 40
+BLOCK_HASH = "0x" + "c" * 64
 
 
 def _not_found_error() -> ClientResponseError:
@@ -110,6 +111,40 @@ def _make_block(
             },
         },
     }
+
+
+def _make_gloas_block(
+    *,
+    slot: int,
+    proposer_index: int,
+    value_gwei: int = 0,
+    execution_payment_gwei: int = 0,
+    fee_recipient: str = OTHER,
+    attester_slashings: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "slot": str(slot),
+        "proposer_index": str(proposer_index),
+        "body": {
+            "attester_slashings": attester_slashings or [],
+            "proposer_slashings": [],
+            "signed_execution_payload_bid": {
+                "message": {
+                    "block_hash": BLOCK_HASH,
+                    "fee_recipient": fee_recipient,
+                    "value": str(value_gwei),
+                    "execution_payment": str(execution_payment_gwei),
+                }
+            },
+        },
+    }
+
+
+@pytest.fixture
+def el_block(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    get_block = AsyncMock(return_value={"number": 20_000_123})
+    monkeypatch.setattr(sw.w3.eth, "get_block", get_block)
+    return get_block
 
 
 class TestBuildFinalityEmbed:
@@ -371,203 +406,153 @@ class TestGetEventsForSlot:
             await cog._get_events_for_slot(320, check_finality=False)
 
 
-class TestGetProposal:
-    async def test_returns_none_without_api_key(
-        self,
-        mongo_db: AsyncDatabase[dict[str, Any]],
-    ) -> None:
-        # Baseline cfg leaves beaconcha_secret = "" → short-circuit.
+class TestGetBlockNumber:
+    async def test_pre_gloas_block_reads_execution_payload(self) -> None:
         block = _make_block(
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        )
+        assert await BeaconEvents._get_block_number(block) == 20_000_000  # type: ignore[arg-type]
+
+    async def test_gloas_block_resolves_bid_block_hash(
+        self, el_block: AsyncMock
+    ) -> None:
+        block = _make_gloas_block(slot=100, proposer_index=7)
+        assert await BeaconEvents._get_block_number(block) == 20_000_123  # type: ignore[arg-type]
+        el_block.assert_awaited_once_with(BLOCK_HASH)
+
+    async def test_withheld_payload_falls_back_to_slot_time(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            sw.w3.eth, "get_block", AsyncMock(side_effect=BlockNotFound("gone"))
+        )
+        block = _make_gloas_block(slot=100, proposer_index=7)
+        # ts_to_block is stubbed to 20_000_000 by the autouse fixture
+        assert await BeaconEvents._get_block_number(block) == 20_000_000  # type: ignore[arg-type]
+
+    async def test_slashing_in_gloas_block_emits_event(
+        self, mongo_db: Db, el_block: AsyncMock
+    ) -> None:
+        block = _make_gloas_block(
             slot=100,
-            proposer_index=7,
-            block_number=20_000_000,
-            timestamp=1_700_000_000,
+            proposer_index=9,
+            attester_slashings=[
+                {
+                    "attestation_1": {"attesting_indices": ["7"]},
+                    "attestation_2": {"attesting_indices": ["7"]},
+                }
+            ],
         )
         await mongo_db.minipools.insert_one(
-            {"validator_index": 7, "node_operator": "0x" + "5" * 40}
+            {"validator_index": 7, "node_operator": "0x" + "1" * 40}
         )
         cog = _make_cog(make_bot(db=mongo_db))
-        # retry decorator wraps but the no-key branch returns None directly.
-        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
+        events = await cog._get_slashings(block)  # type: ignore[arg-type]
+        assert [e.block_number for e in events] == [20_000_123]
 
-    async def test_returns_none_for_non_rp_validator(
-        self,
-        mongo_db: AsyncDatabase[dict[str, Any]],
-    ) -> None:
+
+class TestGetProposal:
+    async def test_pre_gloas_block_returns_none(self, mongo_db: Db) -> None:
+        await mongo_db.minipools.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
+        )
         block = _make_block(
-            slot=100,
-            proposer_index=12345,
-            block_number=20_000_000,
-            timestamp=1_700_000_000,
+            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
         )
         cog = _make_cog(make_bot(db=mongo_db))
         assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
 
-
-# --- _get_proposal with an API key configured (exercises the beaconcha fetch) ---
-
-
-class _FakeResp:
-    def __init__(self, status: int, payload: dict[str, Any]) -> None:
-        self.status = status
-        self._payload = payload
-
-    async def __aenter__(self) -> "_FakeResp":
-        return self
-
-    async def __aexit__(self, *exc: object) -> bool:
-        return False
-
-    def raise_for_status(self) -> None:
-        return None
-
-    async def json(self) -> dict[str, Any]:
-        return self._payload
-
-
-class _FakeSession:
-    def __init__(self, resp: _FakeResp) -> None:
-        self._resp = resp
-
-    async def __aenter__(self) -> "_FakeSession":
-        return self
-
-    async def __aexit__(self, *exc: object) -> bool:
-        return False
-
-    def get(self, url: str, headers: dict[str, str] | None = None) -> _FakeResp:
-        return self._resp
-
-
-def _patch_session(monkeypatch: pytest.MonkeyPatch, resp: _FakeResp) -> None:
-    monkeypatch.setattr("aiohttp.ClientSession", lambda: _FakeSession(resp))
-
-
-def _proposal_payload(
-    producer_reward: int,
-    *,
-    relay_recipient: str | None = None,
-    fee_recipient: str = OTHER,
-) -> dict[str, Any]:
-    relay = {"producerFeeRecipient": relay_recipient} if relay_recipient else None
-    return {
-        "data": [
-            {
-                "producerReward": str(producer_reward),
-                "relay": relay,
-                "feeRecipient": fee_recipient,
-            }
-        ]
-    }
-
-
-@pytest.fixture
-def beaconcha_cfg(monkeypatch: pytest.MonkeyPatch) -> None:
-    c = make_cfg()
-    c.consensus_layer.beaconcha_secret = "KEY"
-    monkeypatch.setattr(cfg, "_instance", c)
-
-
-class TestGetProposalBody:
-    async def test_no_execution_payload_returns_none(
-        self, mongo_db: Db, beaconcha_cfg: None
+    async def test_non_rp_validator_returns_none(
+        self, mongo_db: Db, el_block: AsyncMock
     ) -> None:
-        block = {"slot": "100", "proposer_index": "7", "body": {}}
-        cog = _make_cog(make_bot(db=mongo_db))
-        assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
-
-    async def test_non_rp_validator_with_key_returns_none(
-        self, mongo_db: Db, beaconcha_cfg: None
-    ) -> None:
-        block = _make_block(
-            slot=100, proposer_index=999, block_number=20_000_000, timestamp=1_700_000
-        )
+        block = _make_gloas_block(slot=100, proposer_index=999, value_gwei=3 * 10**9)
         cog = _make_cog(make_bot(db=mongo_db))
         assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
 
     async def test_low_reward_returns_none(
-        self,
-        mongo_db: Db,
-        beaconcha_cfg: None,
-        scripted_rp: ScriptedRocketPool,
-        monkeypatch: pytest.MonkeyPatch,
+        self, mongo_db: Db, el_block: AsyncMock
     ) -> None:
         await mongo_db.minipools.insert_one(
             {"validator_index": 7, "node_operator": OTHER}
         )
-        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
-        _patch_session(monkeypatch, _FakeResp(200, _proposal_payload(5 * 10**17)))
-        block = _make_block(
-            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
-        )
+        block = _make_gloas_block(slot=100, proposer_index=7, value_gwei=5 * 10**8)
         cog = _make_cog(make_bot(db=mongo_db))
         assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
 
-    async def test_rate_limit_returns_none(
-        self,
-        mongo_db: Db,
-        beaconcha_cfg: None,
-        monkeypatch: pytest.MonkeyPatch,
+    async def test_self_build_returns_none(
+        self, mongo_db: Db, el_block: AsyncMock
     ) -> None:
         await mongo_db.minipools.insert_one(
             {"validator_index": 7, "node_operator": OTHER}
         )
-        _patch_session(monkeypatch, _FakeResp(429, {}))
-        block = _make_block(
-            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
-        )
+        block = _make_gloas_block(slot=100, proposer_index=7)
         cog = _make_cog(make_bot(db=mongo_db))
         assert await cog._get_proposal(block) is None  # type: ignore[arg-type]
 
     async def test_large_proposal_emits_event(
         self,
         mongo_db: Db,
-        beaconcha_cfg: None,
         scripted_rp: ScriptedRocketPool,
-        monkeypatch: pytest.MonkeyPatch,
+        el_block: AsyncMock,
     ) -> None:
         await mongo_db.minipools.insert_one(
             {"validator_index": 7, "node_operator": OTHER}
         )
         scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
-        _patch_session(
-            monkeypatch,
-            _FakeResp(200, _proposal_payload(3 * 10**18, fee_recipient=OTHER)),
-        )
-        block = _make_block(
-            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
-        )
+        block = _make_gloas_block(slot=100, proposer_index=7, value_gwei=3 * 10**9)
         cog = _make_cog(make_bot(db=mongo_db))
         event = await cog._get_proposal(block)  # type: ignore[arg-type]
         assert event is not None
         assert event.event_name == "mev_proposal_event"
+        assert event.block_number == 20_000_123
+        # same id format as before Gloas, so earlier announcements stay deduplicated
+        assert event.unique_id == f"mev_proposal:20000123:{beacon_block_to_date(100)}"
+        assert f"**{format_value(3.0)} ETH**" in (event.embed.description or "")
+        assert "Smoothing Pool Balance" not in {f.name for f in event.embed.fields}
 
-    async def test_smoothing_pool_proposal_includes_balance(
+    async def test_declared_execution_payment_counts_toward_reward(
         self,
         mongo_db: Db,
-        beaconcha_cfg: None,
         scripted_rp: ScriptedRocketPool,
-        monkeypatch: pytest.MonkeyPatch,
+        el_block: AsyncMock,
     ) -> None:
         await mongo_db.minipools.insert_one(
             {"validator_index": 7, "node_operator": OTHER}
         )
         scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
-        _patch_session(
-            monkeypatch,
-            _FakeResp(200, _proposal_payload(3 * 10**18, relay_recipient=SMOOTH)),
+        block = _make_gloas_block(
+            slot=100,
+            proposer_index=7,
+            value_gwei=6 * 10**8,
+            execution_payment_gwei=6 * 10**8,
         )
-        monkeypatch.setattr(
-            sw.w3.eth, "get_balance", AsyncMock(return_value=5 * 10**18)
+        cog = _make_cog(make_bot(db=mongo_db))
+        event = await cog._get_proposal(block)  # type: ignore[arg-type]
+        assert event is not None
+        assert f"**{format_value(1.2)} ETH**" in (event.embed.description or "")
+
+    async def test_smoothing_pool_proposal_includes_balance(
+        self,
+        mongo_db: Db,
+        scripted_rp: ScriptedRocketPool,
+        el_block: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        await mongo_db.megapool_validators.insert_one(
+            {"validator_index": 7, "node_operator": OTHER}
         )
-        block = _make_block(
-            slot=100, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
+        scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
+        get_balance = AsyncMock(return_value=5 * 10**18)
+        monkeypatch.setattr(sw.w3.eth, "get_balance", get_balance)
+        block = _make_gloas_block(
+            slot=100, proposer_index=7, value_gwei=3 * 10**9, fee_recipient=SMOOTH
         )
         cog = _make_cog(make_bot(db=mongo_db))
         event = await cog._get_proposal(block)  # type: ignore[arg-type]
         assert event is not None
         assert event.event_name == "mev_proposal_smoothie_event"
         assert "Smoothing Pool Balance" in {f.name for f in event.embed.fields}
+        get_balance.assert_awaited_once_with(SMOOTH, block_identifier=20_000_123)
 
 
 class TestGetPastEvents:
@@ -590,10 +575,17 @@ class TestGetPastEvents:
         scripted_bacon.set_block(
             "10",
             _make_block(
-                slot=10,
+                slot=10, proposer_index=1, block_number=20_000_010, timestamp=ts_from
+            ),
+        )
+        # the slot right before to_slot must not be skipped
+        scripted_bacon.set_block(
+            "11",
+            _make_block(
+                slot=11,
                 proposer_index=1,
-                block_number=20_000_010,
-                timestamp=ts_from,
+                block_number=20_000_011,
+                timestamp=beacon_block_to_date(11),
                 attester_slashings=[
                     {
                         "attestation_1": {"attesting_indices": ["7"]},
@@ -633,21 +625,17 @@ class TestGetPastEvents:
     async def test_slot_collects_proposal_and_finality(
         self,
         mongo_db: Db,
-        beaconcha_cfg: None,
         scripted_rp: ScriptedRocketPool,
         scripted_bacon: ScriptedBeacon,
-        monkeypatch: pytest.MonkeyPatch,
+        el_block: AsyncMock,
     ) -> None:
         await mongo_db.minipools.insert_one(
             {"validator_index": 7, "node_operator": OTHER}
         )
         scripted_rp.set_address("rocketSmoothingPool", SMOOTH)  # type: ignore[arg-type]
-        _patch_session(monkeypatch, _FakeResp(200, _proposal_payload(3 * 10**18)))
         scripted_bacon.set_block(
             "320",
-            _make_block(
-                slot=320, proposer_index=7, block_number=20_000_000, timestamp=1_700_000
-            ),
+            _make_gloas_block(slot=320, proposer_index=7, value_gwei=3 * 10**9),
         )
         # epoch 10, finalized 6 → delay 4 ≥ threshold 3
         scripted_bacon.set_finality_checkpoint("320", {"finalized": {"epoch": "6"}})

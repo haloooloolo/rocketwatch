@@ -37,7 +37,6 @@ def _get_test_cfg():
         consensus_layer=ConsensusLayerConfig(
             explorer="https://beaconcha.in",
             endpoint=["http://localhost:5052"],
-            beaconcha_secret="test",
         ),
         mongodb=MongoDBConfig(uri="mongodb://localhost:27017"),
         rocketpool=RocketPoolConfig(

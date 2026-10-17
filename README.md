@@ -68,7 +68,7 @@ Key configuration sections:
 |---|---|
 | `discord` | Bot token, owner/server IDs, channel mappings |
 | `execution_layer` | RPC endpoints (current, mainnet, archive) and Etherscan API key |
-| `consensus_layer` | Beacon API endpoint and beaconcha.in API key |
+| `consensus_layer` | Beacon API endpoint and block explorer |
 | `mongodb` | Database connection URI |
 | `rocketpool` | Chain, contract addresses, DAO multisigs, support settings |
 | `modules` | Plugin include/exclude lists |

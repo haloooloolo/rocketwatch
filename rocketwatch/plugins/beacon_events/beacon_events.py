@@ -1,20 +1,19 @@
 import logging
 from collections.abc import Mapping
 from http import HTTPStatus
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
 import aiohttp
 import eth_utils
-from eth_typing import BlockNumber
+from eth_typing import BlockNumber, HexStr
+from web3.exceptions import BlockNotFound
 
 from rocketwatch.bot import RocketWatch
-from rocketwatch.utils import solidity
 from rocketwatch.utils.block_time import ts_to_block
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed, el_explorer_url, format_value
 from rocketwatch.utils.event import Event, EventPlugin
 from rocketwatch.utils.readable import cl_explorer_url
-from rocketwatch.utils.retry import retry
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.sea_creatures import get_sea_creature_for_address
 from rocketwatch.utils.shared_w3 import bacon, w3
@@ -26,10 +25,24 @@ class ExecutionPayload(TypedDict):
     timestamp: str
 
 
+class ExecutionPayloadBid(TypedDict):
+    block_hash: str
+    fee_recipient: str
+    value: str
+    execution_payment: str
+
+
+class SignedExecutionPayloadBid(TypedDict):
+    message: ExecutionPayloadBid
+
+
 class BeaconBlockBody(TypedDict):
     attester_slashings: list[dict[str, Any]]
     proposer_slashings: list[dict[str, Any]]
-    execution_payload: ExecutionPayload
+    # removed in Gloas
+    execution_payload: NotRequired[ExecutionPayload]
+    # added in Gloas
+    signed_execution_payload_bid: NotRequired[SignedExecutionPayloadBid]
 
 
 class BeaconBlock(TypedDict):
@@ -39,6 +52,8 @@ class BeaconBlock(TypedDict):
 
 
 log = logging.getLogger("rocketwatch.beacon_events")
+
+MEV_EVENT_THRESHOLD_GWEI = 10**9
 
 
 def _build_finality_embed(
@@ -102,7 +117,7 @@ class BeaconEvents(EventPlugin):
         )
 
         events: list[Event] = []
-        for slot_number in range(from_slot, to_slot - 1):
+        for slot_number in range(from_slot, to_slot):
             events.extend(
                 await self._get_events_for_slot(slot_number, check_finality=False)
             )
@@ -201,12 +216,25 @@ class BeaconEvents(EventPlugin):
             block_number=await ts_to_block(timestamp),
         )
 
+    @staticmethod
+    async def _get_block_number(beacon_block: BeaconBlock) -> BlockNumber:
+        body = beacon_block["body"]
+        if payload := body.get("execution_payload"):
+            return BlockNumber(int(payload["block_number"]))
+
+        # Gloas moved the payload out of the beacon block
+        bid = body["signed_execution_payload_bid"]["message"]
+        try:
+            block = await w3.eth.get_block(HexStr(bid["block_hash"]))
+            return BlockNumber(block["number"])
+        except BlockNotFound:
+            # builder withheld the payload
+            return await ts_to_block(beacon_block_to_date(int(beacon_block["slot"])))
+
     async def _get_slashings(self, beacon_block: BeaconBlock) -> list[Event]:
         slot = int(beacon_block["slot"])
         timestamp = beacon_block_to_date(slot)
-        block_number = BlockNumber(
-            int(beacon_block["body"]["execution_payload"]["block_number"])
-        )
+        block_number = await self._get_block_number(beacon_block)
         slashings: list[dict[str, str | int]] = []
 
         for slash in beacon_block["body"]["attester_slashings"]:
@@ -289,14 +317,15 @@ class BeaconEvents(EventPlugin):
 
         return events
 
-    @retry(tries=5, delay=10, backoff=2, max_delay=30)
     async def _get_proposal(self, beacon_block: BeaconBlock) -> Event | None:
-        if not (payload := beacon_block["body"].get("execution_payload")):
-            # no proposed block
+        if not (signed_bid := beacon_block["body"].get("signed_execution_payload_bid")):
+            # proposer payments are only part of the beacon block since Gloas
             return None
 
-        if not (api_key := cfg.consensus_layer.beaconcha_secret):
-            log.warning("Missing beaconcha.in API key")
+        bid = signed_bid["message"]
+        # self-builds and undeclared out-of-protocol payments aren't covered
+        reward_gwei = int(bid["value"]) + int(bid["execution_payment"])
+        if reward_gwei <= MEV_EVENT_THRESHOLD_GWEI:
             return None
 
         validator_index = int(beacon_block["proposer_index"])
@@ -313,45 +342,20 @@ class BeaconEvents(EventPlugin):
             # not proposed by RP validator
             return None
 
-        log.info(f"Validator {validator_index} proposed a block")
-
-        timestamp = int(payload["timestamp"])
-        block_number = cast(BlockNumber, int(payload["block_number"]))
-
-        # fetch from beaconcha.in because beacon node is unaware of MEV bribes
-        endpoint = f"https://beaconcha.in/api/v1/execution/block/{block_number}"
-        async with (
-            aiohttp.ClientSession() as session,
-            session.get(endpoint, headers={"apikey": api_key}) as resp,
-        ):
-            if resp.status == HTTPStatus.TOO_MANY_REQUESTS:
-                log.warning("beaconcha.in API rate limit reached")
-                return None
-            resp.raise_for_status()
-            response_body = await resp.json()
-
-        log.debug(f"{response_body = }")
-        proposal_data = response_body["data"][0]
-        log.debug(f"{proposal_data = }")
-
-        block_reward_eth = solidity.to_float(proposal_data["producerReward"])
-        log.info(f"Found a proposal with an MEV bribe of {block_reward_eth} ETH")
-
-        if block_reward_eth <= 1:
-            # disregard if proposal reward is below 1 ETH
-            return None
-
-        if proposal_data["relay"]:
-            fee_recipient = proposal_data["relay"]["producerFeeRecipient"]
-        else:
-            fee_recipient = proposal_data["feeRecipient"]
+        slot = int(beacon_block["slot"])
+        timestamp = beacon_block_to_date(slot)
+        block_number = await self._get_block_number(beacon_block)
+        fee_recipient = bid["fee_recipient"]
+        block_reward_eth = reward_gwei / 10**9
+        log.info(
+            f"Validator {validator_index} proposed a block worth {block_reward_eth} ETH"
+        )
 
         sea = await get_sea_creature_for_address(
             w3.to_checksum_address(rp_pool["node_operator"])
         )
         node_op_link = await el_explorer_url(rp_pool["node_operator"], prefix=sea)
         validator_link = await cl_explorer_url(validator_index)
-        slot = int(beacon_block["slot"])
         reward_str = format_value(block_reward_eth)
 
         is_smoothie = eth_utils.address.is_same_address(
@@ -412,9 +416,7 @@ class BeaconEvents(EventPlugin):
         slot_number = int(beacon_block["slot"])
         epoch_number = slot_number // 32
         timestamp = beacon_block_to_date(slot_number)
-        block_number = BlockNumber(
-            int(beacon_block["body"]["execution_payload"]["block_number"])
-        )
+        block_number = await self._get_block_number(beacon_block)
 
         try:
             # calculate finality delay
