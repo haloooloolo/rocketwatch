@@ -85,14 +85,17 @@ keywords = [
     # Rocket Pool
     "Rocket Pool", "rETH", "RPL", "minipool", "megapool", "Smartnode", "node operator",
     "oDAO", "pDAO", "Protocol DAO", "Security Council", "RPIP", "Smoothing Pool",
-    "Saturn", "Houston", "Atlas", "Redstone",
+    "Saturn", "Houston", "Atlas", "Redstone", "RocketDash", "Rocket Watch", "GMC", "IMC",
     # Ethereum staking
     "Ethereum", "ETH", "validator", "beacon chain", "consensus layer", "execution layer",
     "attestation", "slashing", "withdrawal credentials", "0x01", "0x02", "MEV-Boost",
-    "relay", "ePBS", "blobs", "EIP", "Lido", "stETH", "EigenLayer", "restaking",
+    "Commit-Boost", "relay", "ePBS", "blobs", "EIP", "Lido", "stETH", "EigenLayer",
+    "restaking",
     # upgrades and testnets
     "Glamsterdam", "Fusaka", "Pectra", "Dencun", "Hegota", "Hoodi", "Sepolia", "Holesky",
     "Ephemery", "devnet",
+    # tools and services
+    "Immunefi", "Kurtosis", "Forkcast",
     # clients
     "Geth", "Nethermind", "Besu", "Reth", "Erigon",
     "Lighthouse", "Prysm", "Teku", "Nimbus", "Lodestar",

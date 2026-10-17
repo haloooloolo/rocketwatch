@@ -1,4 +1,6 @@
 import asyncio
+import re
+from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -161,8 +163,77 @@ class TestSummarize:
 
         summary = await TranscriptionPipeline(STT, llm).summarize("t", USERS)
 
-        assert summary == too_long
+        assert summary is not None
+        assert len(summary) <= SUMMARY_CHAR_LIMIT
         assert llm.complete.await_count == 2
+
+    async def test_length_limit_counts_expanded_mentions(self) -> None:
+        # fits as handles, but not once each @1 becomes <@111>
+        mentions = "@1 " * (SUMMARY_CHAR_LIMIT // 4)
+        llm = _llm(mentions)
+        llm.complete.return_value = "short @1"
+
+        summary = await TranscriptionPipeline(STT, llm).summarize("t", USERS)
+
+        assert summary == "short <@111>"
+        prompt = llm.complete.call_args.args[1]
+        match = re.search(r"under (\d+) characters", prompt)
+        assert match
+        assert int(match.group(1)) < SUMMARY_CHAR_LIMIT
+
+    async def test_truncation_never_splits_a_mention(self) -> None:
+        line = "- @1 and @2 agreed on the next steps\n"
+        too_long = line * (SUMMARY_CHAR_LIMIT // len(line) + 5)
+        llm = _llm(too_long)
+        llm.complete.return_value = too_long
+
+        summary = await TranscriptionPipeline(STT, llm).summarize("t", USERS)
+
+        assert summary is not None
+        assert len(summary) <= SUMMARY_CHAR_LIMIT
+        assert all(
+            line == "- <@111> and <@222> agreed on the next steps"
+            for line in summary.splitlines()
+        )
+
+    async def test_truncation_drops_heading_left_without_bullets(self) -> None:
+        bullets = "\n".join(f"- point {i}" for i in range(SUMMARY_CHAR_LIMIT // 10))
+        too_long = f"**First**\n{bullets}\n**Second** (12:00)\n- cut off"
+        llm = _llm(too_long)
+        llm.complete.return_value = too_long
+
+        summary = await TranscriptionPipeline(STT, llm).summarize("t", USERS)
+
+        assert summary is not None
+        assert summary.splitlines()[-1].startswith("- point")
+
+    async def test_stt_keywords_are_given_as_glossary(self) -> None:
+        llm = _llm("fine")
+        stt = STTConfig(provider="openai", model="m", keywords=["megapool", "RPIP"])
+
+        await TranscriptionPipeline(stt, llm).summarize("t", USERS)
+
+        prompt = llm.complete_structured.call_args.args[1]
+        assert "megapool" in prompt
+        assert "RPIP" in prompt
+
+    async def test_prompt_states_the_call_date(self) -> None:
+        llm = _llm("fine")
+
+        await TranscriptionPipeline(STT, llm).summarize(
+            "t", USERS, call_date=date(2026, 10, 14)
+        )
+
+        assert (
+            "Wednesday, October 14, 2026" in llm.complete_structured.call_args.args[1]
+        )
+
+    async def test_no_glossary_without_keywords(self) -> None:
+        llm = _llm("fine")
+
+        await TranscriptionPipeline(STT, llm).summarize("t", USERS)
+
+        assert "Glossary" not in llm.complete_structured.call_args.args[1]
 
 
 class TestProcessUsers:
