@@ -24,6 +24,7 @@ log = logging.getLogger("sentinel.server")
 
 bot_key: web.AppKey[Bot] = web.AppKey("bot", Bot)
 keys_key: web.AppKey[dict[str, KeyConfig]] = web.AppKey("keys", dict)
+auth_key: web.RequestKey[KeyConfig] = web.RequestKey("key", KeyConfig)
 
 
 def create_app(bot: Bot) -> web.Application:
@@ -47,14 +48,14 @@ def create_app(bot: Bot) -> web.Application:
 async def auth_middleware(request: web.Request, handler: Handler) -> web.StreamResponse:
     api_key = request.headers.get("X-Api-Key")
     if api_key and (key := request.app[keys_key].get(api_key)):
-        request["key"] = key
+        request[auth_key] = key
         return await handler(request)
     return web.json_response({"error": "unauthorized"}, status=HTTPStatus.UNAUTHORIZED)
 
 
 async def handle_delete_message(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -123,7 +124,7 @@ async def handle_delete_message(request: web.Request) -> web.Response:
 
 async def handle_lock_thread(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -192,7 +193,7 @@ async def handle_lock_thread(request: web.Request) -> web.Response:
 
 async def handle_unlock_thread(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -249,7 +250,7 @@ async def handle_unlock_thread(request: web.Request) -> web.Response:
 
 async def handle_delete_thread(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -311,7 +312,7 @@ async def handle_delete_thread(request: web.Request) -> web.Response:
 
 async def handle_timeout_member(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -391,7 +392,7 @@ async def handle_timeout_member(request: web.Request) -> web.Response:
 
 async def handle_remove_timeout(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -444,7 +445,7 @@ async def handle_remove_timeout(request: web.Request) -> web.Response:
 
 async def handle_kick_member(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -504,7 +505,7 @@ async def handle_kick_member(request: web.Request) -> web.Response:
 
 async def handle_ban_member(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -567,7 +568,7 @@ async def handle_ban_member(request: web.Request) -> web.Response:
 
 async def handle_unban_member(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
@@ -613,7 +614,7 @@ async def handle_unban_member(request: web.Request) -> web.Response:
 
 async def handle_is_banned(request: web.Request) -> web.Response:
     bot = request.app[bot_key]
-    key: KeyConfig = request["key"]
+    key = request[auth_key]
     data = await request.json()
 
     guild_id = data["guild_id"]
