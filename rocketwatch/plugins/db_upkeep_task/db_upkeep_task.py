@@ -86,9 +86,6 @@ def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
         "express_used": info.express_used,
-        "assignment_time": info.last_assignment_time,
-        "requested_bond": info.last_requested_bond / 1000,  # milliether to ETH
-        "deposit_value": info.deposit_value / 1000,  # milliether to ETH
         "exit_balance": solidity.to_float(info.exit_balance, 9),  # gwei to ETH
     }
 
@@ -96,9 +93,6 @@ def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
 def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
-        "assignment_time": info.last_assignment_time,
-        "requested_bond": info.last_requested_bond / 1000,
-        "deposit_value": info.deposit_value / 1000,
         "exit_balance": solidity.to_float(info.exit_balance, 9),
     }
 
@@ -177,7 +171,6 @@ class DBUpkeepTask(commands.Cog):
                 await self.update_dynamic_minipool_beacon_data()
                 # megapool validator tasks
                 await self.add_untracked_megapool_validators()
-                await self.add_static_megapool_deposit_data()
                 await self.update_dynamic_megapool_validator_data()
                 await self.update_dynamic_megapool_validator_beacon_data()
                 log.debug("finished db upkeep task")
@@ -491,6 +484,12 @@ class DBUpkeepTask(commands.Cog):
                     True,
                     safe_to_float,
                     "megapool.user_capital",
+                ),
+                (
+                    at_address(mp_calls.getNodeQueuedBond(), addr),
+                    True,
+                    safe_to_float,
+                    "megapool.node_queued_bond",
                 ),
                 (
                     at_address(mp_calls.getDebt(), addr),
@@ -879,59 +878,6 @@ class DBUpkeepTask(commands.Cog):
                     await self.bot.db.megapool_validators.insert_many(
                         docs, ordered=False
                     )
-
-    @timed
-    async def add_static_megapool_deposit_data(self) -> None:
-        validators = await self.bot.db.megapool_validators.find(
-            {"deposit_time": {"$exists": False}},
-            {"megapool": 1, "validator_id": 1},
-        ).to_list()
-        if not validators:
-            return
-
-        dp = await rp.get_contract_by_name("rocketDepositPool")
-        saturn_upgrade_block = BlockNumber(24_479_994)
-        to_block = await w3.eth.get_block_number()
-
-        by_megapool = defaultdict(list)
-        for v in validators:
-            by_megapool[v["megapool"]].append(v)
-
-        for megapool_addr, megapool_validators in by_megapool.items():
-            min_vid = min(v["validator_id"] for v in megapool_validators)
-            if min_vid > 0:
-                prev = await self.bot.db.megapool_validators.find_one(
-                    {"megapool": megapool_addr, "validator_id": min_vid - 1},
-                    {"deposit_time": 1},
-                )
-                from_block = (
-                    await ts_to_block(prev["deposit_time"])
-                    if prev and prev.get("deposit_time")
-                    else saturn_upgrade_block
-                )
-            else:
-                from_block = saturn_upgrade_block
-
-            events = await get_logs(
-                dp.events.FundsRequested,
-                from_block,
-                to_block,
-                arg_filters={"receiver": megapool_addr},
-            )
-            events_by_vid = {e["args"]["validatorId"]: e for e in events}
-
-            ops = []
-            for v in megapool_validators:
-                if not (event := events_by_vid.get(v["validator_id"])):
-                    continue
-                ops.append(
-                    UpdateOne(
-                        {"_id": v["_id"]},
-                        {"$set": {"deposit_time": event["args"]["time"]}},
-                    )
-                )
-            if ops:
-                await self.bot.db.megapool_validators.bulk_write(ops, ordered=False)
 
     @timed
     async def update_dynamic_megapool_validator_data(self) -> None:

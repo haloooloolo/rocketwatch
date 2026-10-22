@@ -1,4 +1,5 @@
 import logging
+from collections import defaultdict
 from typing import Any
 
 import humanize
@@ -10,6 +11,7 @@ from discord.ext.commands import Cog
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import solidity
 from rocketwatch.utils.embeds import Embed
+from rocketwatch.utils.megapool import BondCurve
 from rocketwatch.utils.readable import render_tree
 from rocketwatch.utils.rocketpool import rp
 from rocketwatch.utils.shared_w3 import w3
@@ -53,6 +55,27 @@ def megapool_split_rewards(
     dao = borrowed_portion * dao_share
     node = rewards - reth - voter - dao
     return {"node": node, "reth": reth, "voter": voter, "dao": dao}
+
+
+def megapool_exit_node_shares(
+    curve: BondCurve,
+    node_bond: float,
+    node_queued_bond: float,
+    active_validators: int,
+    exits: int,
+) -> list[float]:
+    """Node's share of each of the next `exits` validators to exit, mirroring
+    RocketMegapoolDelegate._calculateCapitalDispersal."""
+    effective_bond = node_bond + node_queued_bond
+    shares = []
+    for _ in range(exits):
+        active_validators -= 1
+        excess = effective_bond - curve.requirement(active_validators)
+        share = min(max(excess, 0), 32, node_bond)
+        shares.append(share)
+        effective_bond -= share
+        node_bond -= share
+    return shares
 
 
 class TVL(Cog):
@@ -259,7 +282,7 @@ class TVL(Cog):
             await network_settings.functions.getProtocolDAOShare().call()
         )
 
-        # Pending Megapool Validators: prestaked validators have deposit_value locked
+        # Pending Megapool Validators: prestaked validators have 32 ETH locked
         # (1 ETH on beacon + 31 ETH in contract as assignedValue)
         # in_queue validators are skipped — their ETH is in the Deposit Pool (already counted)
         tmp = await (
@@ -291,50 +314,74 @@ class TVL(Cog):
                 "_val"
             ] = tmp[0]["beacon_balance"]
 
-        # Staking, Locked & Exiting Megapool Validators: beacon balance split by capital ratio
+        # Staking, Locked & Exiting Megapool Validators: base stake split by the bond
+        # each would return on exit, rewards by the megapool capital ratio
         # locked = exit requested but not yet confirmed on beacon chain, treated as exiting
+        megapools = {
+            no["megapool"]["address"]: no["megapool"]
+            async for no in self.bot.db.node_operators.find(
+                {"megapool.deployed": True}, {"megapool": 1}
+            )
+        }
         megapool_validators = await self.bot.db.megapool_validators.find(
             {"status": {"$in": ["staking", "locked", "exiting"]}}
         ).to_list(None)
+        # exiting validators get their bond back first
+        megapool_validators.sort(key=lambda v: v["status"] == "staking")
+        validators_by_megapool: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for v in megapool_validators:
-            capital_ratio = v["requested_bond"] / 32
-            beacon_balance = v.get("beacon", {}).get("balance", 32)
-            status = v["status"]
-            # base stake (up to 32 ETH)
-            base = min(beacon_balance, 32)
-            node_base = v["requested_bond"]
-            # handle penalties (beacon < 32): node absorbs losses first
-            if base < 32:
-                shortfall = 32 - base
-                node_base = max(0, node_base - shortfall)
-            reth_base = base - node_base
-            target = (
-                "Staking Validators" if (status == "staking") else "Exiting Validators"
+            validators_by_megapool[v["megapool"]].append(v)
+        bond_curve = await BondCurve.fetch()
+        for addr, validators in validators_by_megapool.items():
+            mp = megapools.get(addr, {})
+            node_bond = mp.get("node_bond", 0)
+            total_capital = node_bond + mp.get("user_capital", 0)
+            capital_ratio = node_bond / total_capital if total_capital > 0 else 0
+            node_bases = megapool_exit_node_shares(
+                bond_curve,
+                node_bond,
+                mp.get("node_queued_bond", 0),
+                max(mp.get("active_validator_count", 0), len(validators)),
+                len(validators),
             )
-            data["Total ETH Locked"]["Megapool Stake"][target]["rETH Share"][
-                "_val"
-            ] += reth_base
-            data["Total ETH Locked"]["Megapool Stake"][target]["Node Share"][
-                "_val"
-            ] += node_base
-            # beacon chain rewards (anything over 32)
-            if beacon_balance > 32:
-                rewards = beacon_balance - 32
-                split = megapool_split_rewards(
-                    rewards, capital_ratio, node_share, voter_share, dao_share
+            for v, node_base in zip(validators, node_bases, strict=True):
+                beacon_balance = v.get("beacon", {}).get("balance", 32)
+                # base stake (up to 32 ETH)
+                base = min(beacon_balance, 32)
+                # handle penalties (beacon < 32): node absorbs losses first
+                if base < 32:
+                    shortfall = 32 - base
+                    node_base = max(0, node_base - shortfall)
+                reth_base = base - node_base
+                target = (
+                    "Staking Validators"
+                    if v["status"] == "staking"
+                    else "Exiting Validators"
                 )
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Beacon Chain Rewards"
-                ]["Node Share"]["_val"] += split["node"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Beacon Chain Rewards"
-                ]["rETH Share"]["_val"] += split["reth"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Beacon Chain Rewards"
-                ]["Voter Share"]["_val"] += split["voter"]
-                data["Total ETH Locked"]["Undistributed Balances"][
-                    "Beacon Chain Rewards"
-                ]["DAO Share"]["_val"] += split["dao"]
+                data["Total ETH Locked"]["Megapool Stake"][target]["rETH Share"][
+                    "_val"
+                ] += reth_base
+                data["Total ETH Locked"]["Megapool Stake"][target]["Node Share"][
+                    "_val"
+                ] += node_base
+                # beacon chain rewards (anything over 32)
+                if beacon_balance > 32:
+                    rewards = beacon_balance - 32
+                    split = megapool_split_rewards(
+                        rewards, capital_ratio, node_share, voter_share, dao_share
+                    )
+                    data["Total ETH Locked"]["Undistributed Balances"][
+                        "Beacon Chain Rewards"
+                    ]["Node Share"]["_val"] += split["node"]
+                    data["Total ETH Locked"]["Undistributed Balances"][
+                        "Beacon Chain Rewards"
+                    ]["rETH Share"]["_val"] += split["reth"]
+                    data["Total ETH Locked"]["Undistributed Balances"][
+                        "Beacon Chain Rewards"
+                    ]["Voter Share"]["_val"] += split["voter"]
+                    data["Total ETH Locked"]["Undistributed Balances"][
+                        "Beacon Chain Rewards"
+                    ]["DAO Share"]["_val"] += split["dao"]
 
         # Megapool Contract Balances: eth_balance = assignedValue + refundValue + pendingRewards
         # assignedValue already counted in Queued Validators, so we split the rest:

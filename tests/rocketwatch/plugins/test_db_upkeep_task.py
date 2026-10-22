@@ -23,7 +23,7 @@ from tests.lib.discord_harness import make_bot
 from tests.lib.scripted_rocketpool import ScriptedRocketPool
 
 # A staking ValidatorInfo tuple (on-chain field order), reused across megapool
-# validator tests. Milliether bond/deposit, gwei exit balance.
+# validator tests. Gwei exit balance.
 _STAKING_INFO = (
     1700,  # last_assignment_time
     0,  # last_requested_value
@@ -124,7 +124,6 @@ class TestPureHelpers:
         info = ValidatorInfo(
             last_assignment_time=1700,
             last_requested_value=0,
-            # On-chain unit for these is milliether.
             last_requested_bond=4_000,
             deposit_value=8_000,
             staked=True,
@@ -142,9 +141,6 @@ class TestPureHelpers:
         assert _unpack_validator_info(info) == {
             "status": "staking",
             "express_used": True,
-            "assignment_time": 1700,
-            "requested_bond": 4.0,
-            "deposit_value": 8.0,
             "exit_balance": pytest.approx(32.0),
         }
 
@@ -167,7 +163,7 @@ class TestPureHelpers:
         )
         out = _unpack_validator_info_dynamic(info)
         assert "express_used" not in out
-        assert out["assignment_time"] == 42
+        assert out["status"] == "staking"
 
 
 class TestUpdateMinipoolBeaconData:
@@ -496,7 +492,6 @@ class TestAddUntrackedMegapoolValidators:
         assert docs[1]["pubkey"] == "0x02"
         assert docs[0]["node_operator"] == "0xN"
         assert docs[0]["status"] == "staking"
-        assert docs[0]["requested_bond"] == pytest.approx(4.0)
 
     async def test_skips_when_db_already_complete(
         self,
@@ -542,6 +537,7 @@ class TestUpdateDynamicMegapoolData:
             "getLockedValidatorCount",
             "getNodeBond",
             "getUserCapital",
+            "getNodeQueuedBond",
             "getDebt",
             "getRefundValue",
             "getPendingRewards",
@@ -666,8 +662,6 @@ class TestUpdateDynamicMegapoolValidatorData:
         doc = await mongo_db.megapool_validators.find_one({"_id": 1})
         assert doc is not None
         assert doc["status"] == "staking"
-        assert doc["requested_bond"] == pytest.approx(4.0)
-        assert doc["deposit_value"] == pytest.approx(8.0)
         assert doc["exit_balance"] == pytest.approx(32.0)
         # _unpack_validator_info_dynamic drops express_used.
         assert "express_used" not in doc
@@ -755,80 +749,6 @@ class TestAddStaticMinipoolDepositData:
         await (
             cog.add_static_minipool_deposit_data()
         )  # no get_logs patched → must not call
-
-
-class TestAddStaticMegapoolDepositData:
-    async def test_writes_deposit_time(
-        self,
-        mongo_db: AsyncDatabase[dict[str, Any]],
-        scripted_rp: ScriptedRocketPool,
-        scripted_w3: MagicMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        await mongo_db.megapool_validators.insert_one(
-            {"_id": 1, "megapool": "0xMP", "validator_id": 0}
-        )
-        scripted_w3.eth.get_block_number = AsyncMock(return_value=25_000_000)
-        event = _log(
-            "FundsRequested",
-            block=24_500_000,
-            tx="0xtx",
-            idx=0,
-            args={"validatorId": 0, "time": 1234},
-        )
-
-        async def fake_get_logs(*_: Any, **__: Any) -> list[dict[str, Any]]:
-            return [event]
-
-        monkeypatch.setattr(dut, "get_logs", fake_get_logs)
-        monkeypatch.setattr(dut, "ts_to_block", AsyncMock(return_value=24_400_000))
-
-        cog = _make_cog(make_bot(db=mongo_db))
-        await cog.add_static_megapool_deposit_data()
-
-        doc = await mongo_db.megapool_validators.find_one({"_id": 1})
-        assert doc is not None
-        assert doc["deposit_time"] == 1234
-
-    async def test_derives_from_block_for_later_validators(
-        self,
-        mongo_db: AsyncDatabase[dict[str, Any]],
-        scripted_rp: ScriptedRocketPool,
-        scripted_w3: MagicMock,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        # validator_id 1 has no deposit_time; its predecessor (0) does, so the
-        # search window starts from ts_to_block(prev deposit_time).
-        await mongo_db.megapool_validators.insert_many(
-            [
-                {"_id": 0, "megapool": "0xMP", "validator_id": 0, "deposit_time": 1000},
-                {"_id": 1, "megapool": "0xMP", "validator_id": 1},
-            ]
-        )
-        scripted_w3.eth.get_block_number = AsyncMock(return_value=25_000_000)
-        ts_to_block = AsyncMock(return_value=24_600_000)
-        monkeypatch.setattr(dut, "ts_to_block", ts_to_block)
-
-        async def fake_get_logs(*_: Any, **__: Any) -> list[dict[str, Any]]:
-            return [
-                _log(
-                    "FundsRequested",
-                    block=24_700_000,
-                    tx="0xtx",
-                    idx=0,
-                    args={"validatorId": 1, "time": 5678},
-                )
-            ]
-
-        monkeypatch.setattr(dut, "get_logs", fake_get_logs)
-
-        cog = _make_cog(make_bot(db=mongo_db))
-        await cog.add_static_megapool_deposit_data()
-
-        doc = await mongo_db.megapool_validators.find_one({"_id": 1})
-        assert doc is not None
-        assert doc["deposit_time"] == 5678
-        ts_to_block.assert_awaited_once_with(1000)
 
 
 class TestForEachBatch:

@@ -6,12 +6,16 @@ from unittest.mock import AsyncMock
 import pytest
 from pymongo.asynchronous.database import AsyncDatabase
 
+from rocketwatch.plugins.tvl import tvl as tvl_module
 from rocketwatch.plugins.tvl.tvl import (
     TVL,
+    megapool_exit_node_shares,
     megapool_split_rewards,
     minipool_split_rewards_logic,
 )
 from rocketwatch.utils import shared_w3
+from rocketwatch.utils.megapool import BondCurve
+from rocketwatch.utils.readable import render_tree
 from tests.lib.discord_harness import make_bot, make_interaction
 from tests.lib.scripted_rocketpool import ScriptedRocketPool, addr
 
@@ -74,6 +78,27 @@ class TestMegapoolSplitRewards:
         assert sum(out.values()) == pytest.approx(10.0)
 
 
+# base bond array [4, 8], reduced bond 2
+_CURVE = BondCurve(base_bonds=(4.0, 8.0), reduced_bond=2.0)
+
+
+class TestMegapoolExitNodeShares:
+    def test_bonded_at_requirement_returns_each_step(self) -> None:
+        shares = megapool_exit_node_shares(_CURVE, 10.0, 0.0, 3, 3)
+        assert shares == pytest.approx([2.0, 4.0, 4.0])
+
+    def test_excess_bond_goes_to_first_exit(self) -> None:
+        # bonded at 4 each under an older curve; requirement for 3 is now 10
+        shares = megapool_exit_node_shares(_CURVE, 16.0, 0.0, 4, 4)
+        assert shares == pytest.approx([6.0, 2.0, 4.0, 4.0])
+        assert sum(shares) == pytest.approx(16.0)
+
+    def test_queued_bond_counts_toward_requirement(self) -> None:
+        # one staking + one queued validator, 4 ETH each
+        shares = megapool_exit_node_shares(_CURVE, 4.0, 4.0, 2, 1)
+        assert shares == pytest.approx([4.0])
+
+
 @pytest.fixture
 def _stub_tvl_externals(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     # rp.get_eth_usdc_price isn't part of ScriptedRocketPool; w3.eth.get_balance
@@ -101,6 +126,10 @@ def _seed_tvl_calls(scripted_rp: ScriptedRocketPool) -> None:
     }
     for k, v in calls.items():
         scripted_rp.set_call(k, v)
+    scripted_rp.set_call(
+        "rocketDAOProtocolSettingsNode.getBaseBondArray", [4 * ETH, 8 * ETH]
+    )
+    scripted_rp.set_call("rocketDAOProtocolSettingsNode.getReducedBond", 4 * ETH)
     # rocketVault.balanceOf / balanceOfToken are called with various args;
     # return a flat value for any.
     scripted_rp.set_call("rocketVault.balanceOf", lambda *_: 10 * ETH)
@@ -172,8 +201,8 @@ class TestTvlCommand:
         # A staking megapool validator with rewards.
         await mongo_db.megapool_validators.insert_one(
             {
+                "megapool": "0xMP",
                 "status": "staking",
-                "requested_bond": 8.0,
                 "beacon": {"balance": 34.0},
             }
         )
@@ -186,6 +215,43 @@ class TestTvlCommand:
         assert embed.title == "Protocol TVL"
         # Tree should show non-zero ETH somewhere.
         assert "ETH" in (embed.description or "")
+
+    async def test_staking_megapool_validator_split_by_megapool_bond(
+        self,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        scripted_rp: ScriptedRocketPool,
+        _stub_tvl_externals: None,
+        _stub_eth_usdc: None,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _seed_tvl_calls(scripted_rp)
+        await mongo_db.node_operators.insert_one(
+            {
+                "megapool": {
+                    "address": "0xMP",
+                    "deployed": True,
+                    "node_bond": 8.0,
+                    "user_capital": 24.0,
+                }
+            }
+        )
+        await mongo_db.megapool_validators.insert_one(
+            {"megapool": "0xMP", "status": "staking", "beacon": {"balance": 32.0}}
+        )
+        trees: list[dict[str, Any]] = []
+
+        def capture(data: dict[str, Any], *args: Any, **kwargs: Any) -> str:
+            trees.append(data)
+            return render_tree(data, *args, **kwargs)
+
+        monkeypatch.setattr(tvl_module, "render_tree", capture)
+
+        cog = TVL(make_bot(db=mongo_db))
+        await cog.tvl.callback(cog, make_interaction())
+
+        staking = trees[0]["Total ETH Locked"]["Megapool Stake"]["Staking Validators"]
+        assert staking["Node Share"]["_val"] == pytest.approx(8.0)
+        assert staking["rETH Share"]["_val"] == pytest.approx(24.0)
 
     async def test_refund_and_megapool_balance_branches(
         self,
@@ -214,8 +280,8 @@ class TestTvlCommand:
                 {"status": "dissolved", "beacon": {"balance": 1.0}},
                 # Exiting validator penalised below 32 (lines 308-309).
                 {
+                    "megapool": "0xMP",
                     "status": "exiting",
-                    "requested_bond": 8.0,
                     "beacon": {"balance": 30.0},
                 },
             ]
@@ -225,6 +291,7 @@ class TestTvlCommand:
         await mongo_db.node_operators.insert_one(
             {
                 "megapool": {
+                    "address": "0xMP",
                     "deployed": True,
                     "eth_balance": 3.0,
                     "refund_value": 1.0,
