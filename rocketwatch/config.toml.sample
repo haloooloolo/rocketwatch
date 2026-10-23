@@ -87,6 +87,11 @@ provider = ""  # "anthropic", "openai", or "google"
 api_key = ""
 model = ""
 
+[ask.llm]
+provider = ""  # only "anthropic" supports tool use
+api_key = ""
+model = "claude-opus-5-5"
+
 [sentinel]
 api_url = ""
 api_key = ""
@@ -109,3 +114,4 @@ fields = [{name = "Example", value = "https://example.com"}]
 [secrets]
 cronitor = ""
 openlabels = ""
+github = ""

@@ -85,6 +85,10 @@ class TranscriptionConfig(BaseModel):
     leave_grace_seconds: int = 120
 
 
+class AskConfig(BaseModel):
+    llm: LLMConfig = LLMConfig()
+
+
 class SentinelConfig(BaseModel):
     api_url: str = ""
     api_key: str = ""
@@ -118,6 +122,7 @@ class EventsConfig(BaseModel):
 class SecretsConfig(BaseModel):
     cronitor: str = ""
     openlabels: str = ""
+    github: str = ""
 
 
 class Config(BaseModel):
@@ -132,6 +137,7 @@ class Config(BaseModel):
     sentinel: SentinelConfig = SentinelConfig()
     scam_detection: ScamDetectionConfig = ScamDetectionConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
+    ask: AskConfig = AskConfig()
     secrets: SecretsConfig = SecretsConfig()
 
 
