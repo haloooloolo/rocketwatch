@@ -117,9 +117,12 @@ def _build_messages(turns: list[Turn]) -> list[BetaMessageParam]:
 
 
 CODE_EXECUTION = "code_execution_20260120"
-# tool calls a running script makes still cost a request each, so they get a
-# separate, larger budget than the model's own turns
-MAX_REQUESTS = 200
+# requests allowed past the budget for a script to stop and the model to answer
+WIND_DOWN_REQUESTS = 10
+STOP_SCRIPT = (
+    "Out of time for tool calls, so this one didn't run. Stop the script and "
+    "answer with the data you have."
+)
 
 
 def _tool_param(tool: AgentTool, from_code: bool) -> BetaToolParam:
@@ -143,16 +146,22 @@ def _from_code(block: BetaContentBlock) -> bool:
     )
 
 
+def _tool_result(
+    block: BetaToolUseBlock, content: str, is_error: bool = False
+) -> BetaToolResultBlockParam:
+    return {
+        "type": "tool_result",
+        "tool_use_id": block.id,
+        "content": content,
+        "is_error": is_error,
+    }
+
+
 async def _run_tool(
     tools: dict[str, AgentTool], block: BetaToolUseBlock
 ) -> BetaToolResultBlockParam:
     def result(content: str, is_error: bool = False) -> BetaToolResultBlockParam:
-        return {
-            "type": "tool_result",
-            "tool_use_id": block.id,
-            "content": content,
-            "is_error": is_error,
-        }
+        return _tool_result(block, content, is_error)
 
     if (tool := tools.get(block.name)) is None:
         return result(f"Unknown tool {block.name!r}", is_error=True)
@@ -181,6 +190,8 @@ async def run_agent[T: BaseModel](
     server_tools: Sequence[BetaToolUnionParam] = (),
     code_execution: bool = False,
     max_iterations: int = 25,
+    max_requests: int = 200,
+    time_limit: float | None = None,
     effort: Effort = "high",
     max_tokens: int = 16000,
 ) -> AgentResult[T]:
@@ -189,6 +200,11 @@ async def run_agent[T: BaseModel](
     server_tools are tools Anthropic runs itself, such as web search. With
     code_execution, the model can also run Python in Anthropic's sandbox and
     call the tools from there.
+
+    max_iterations counts the model's own turns. Each tool call round trip from
+    a running script is a request too, so max_requests and time_limit (seconds)
+    bound those: past either, scripts get an error instead of tool results and
+    the model has to answer.
     """
     from anthropic import omit, transform_schema
 
@@ -211,9 +227,14 @@ async def run_agent[T: BaseModel](
     model_turns = 0
     container: str | None = None
     script_waiting = False
+    loop = asyncio.get_running_loop()
+    deadline = None if time_limit is None else loop.time() + time_limit
 
-    for request in range(MAX_REQUESTS):
-        forced = model_turns >= max_iterations and not script_waiting
+    for request in range(max_requests + WIND_DOWN_REQUESTS):
+        exhausted = request >= max_requests or (
+            deadline is not None and loop.time() >= deadline
+        )
+        forced = (model_turns >= max_iterations or exhausted) and not script_waiting
         response = await provider.client.beta.messages.create(
             model=provider.model,
             max_tokens=max_tokens,
@@ -267,9 +288,15 @@ async def run_agent[T: BaseModel](
                     )
                 calls = [b for b in response.content if b.type == "tool_use"]
                 script_waiting = any(_from_code(b) for b in calls)
-                results: list[BetaContentBlockParam] = list(
-                    await asyncio.gather(*(_run_tool(tools_by_name, b) for b in calls))
-                )
+                results: list[BetaContentBlockParam]
+                if script_waiting and exhausted:
+                    results = [_tool_result(b, STOP_SCRIPT, True) for b in calls]
+                else:
+                    results = list(
+                        await asyncio.gather(
+                            *(_run_tool(tools_by_name, b) for b in calls)
+                        )
+                    )
                 messages.append({"role": "user", "content": results})
             case "pause_turn":
                 continue

@@ -32,6 +32,8 @@ MAX_MESSAGE_TEXT = 4000
 MAX_BLOCKS = 20
 MAX_GALLERY = 10
 FULL_ANSWER_FILE = "answer.md"
+# past the time limit the agent wraps up; the timeout is a backstop for that
+ANSWER_TIME_LIMIT = 4 * 60
 ANSWER_TIMEOUT = 5 * 60
 SHRUG = "\N{SHRUG}"
 
@@ -191,6 +193,7 @@ class Ask(commands.Cog):
                         Answer,
                         server_tools=WEB_TOOLS,
                         code_execution=True,
+                        time_limit=ANSWER_TIME_LIMIT,
                     )
                 view, files = render_answer(
                     result.output, tools.files, usage_footer(result, self.llm.model)

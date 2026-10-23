@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -455,6 +456,93 @@ async def test_forced_answer_waits_for_script(
     choices = [c.kwargs["tool_choice"] for c in create.call_args_list]
     assert choices[:2] == [omit, omit]
     assert choices[2] == {"type": "none"}
+
+
+async def test_script_is_stopped_when_requests_run_out(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    start = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="code_execution", input={"code": "..."}
+    )
+    model_turn = _tool_use(("d", "echo", {"value": 9}))
+    model_turn.content.insert(0, BetaTextBlock(type="text", text="script failed"))
+    create.side_effect = [
+        _response("tool_use", start, _script_call("t0", 0)),
+        _response("tool_use", _script_call("t1", 1)),
+        _response("tool_use", _script_call("t2", 2)),
+        model_turn,
+        _answer("partial"),
+    ]
+    run = AsyncMock(return_value="echoed")
+
+    result = await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "q")],
+        [_echo_tool(run)],
+        Reply,
+        code_execution=True,
+        max_requests=2,
+    )
+
+    assert result.output.answer == "partial"
+    assert [c.args[0].value for c in run.await_args_list] == [0, 1, 9]
+    stopped = _tool_results(create)[2][0]
+    assert stopped["is_error"]
+    assert "Stop the script" in stopped["content"]
+    assert create.call_args.kwargs["tool_choice"] == {"type": "none"}
+
+
+async def test_script_is_stopped_after_time_limit(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    async def slow(args: EchoInput) -> str:
+        await asyncio.sleep(0.1)
+        return "echoed"
+
+    start = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="code_execution", input={"code": "..."}
+    )
+    create.side_effect = [
+        _response("tool_use", start, _script_call("t0", 0)),
+        _response("tool_use", _script_call("t1", 1)),
+        _answer("partial"),
+    ]
+    run = AsyncMock(side_effect=slow)
+
+    result = await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "q")],
+        [_echo_tool(run)],
+        Reply,
+        code_execution=True,
+        time_limit=0.05,
+    )
+
+    assert result.output.answer == "partial"
+    run.assert_awaited_once()
+    assert _tool_results(create)[1][0]["is_error"]
+
+
+async def test_script_that_ignores_stop_gives_up(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    create.return_value = _response("tool_use", _script_call("t", 0))
+    run = AsyncMock(return_value="echoed")
+
+    with pytest.raises(AgentError, match="No answer"):
+        await run_agent(
+            provider,
+            "sys",
+            [Turn("user", "q")],
+            [_echo_tool(run)],
+            Reply,
+            code_execution=True,
+            max_requests=1,
+        )
+
+    run.assert_awaited_once()
 
 
 async def test_tool_calls_after_forced_answer_fail(

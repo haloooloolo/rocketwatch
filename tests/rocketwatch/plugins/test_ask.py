@@ -345,6 +345,8 @@ class TestOnMessage:
         web_tools = {t["name"] for t in run_agent.call_args.kwargs["server_tools"]}
         assert web_tools == {"web_search", "web_fetch"}
         assert run_agent.call_args.kwargs["code_execution"] is True
+        # the agent wraps up before the hard timeout cuts it off
+        assert run_agent.call_args.kwargs["time_limit"] < ask_module.ANSWER_TIMEOUT
         kwargs = message.reply.call_args.kwargs
         assert "There are **4,000** nodes." in _texts(kwargs["view"])
         assert [f.filename for f in kwargs["files"]] == ["nodes.csv"]
