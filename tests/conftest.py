@@ -42,7 +42,16 @@ def mongo_url() -> Iterator[str]:
     # this fixture, so we don't want to require the testcontainers dep there.
     from testcontainers.mongodb import MongoDbContainer
 
-    with MongoDbContainer("mongo:8") as container:
+    # mongod refuses to start on kernel 6.19+ (SERVER-121912); report an old
+    # kernel version to it, as compose.yaml does
+    container = (
+        MongoDbContainer("mongo:9.0.2")
+        .with_kwargs(
+            entrypoint=["setarch", "x86_64", "--uname-2.6", "docker-entrypoint.sh"]
+        )
+        .with_command("mongod")
+    )
+    with container:
         yield container.get_connection_url()
 
 
