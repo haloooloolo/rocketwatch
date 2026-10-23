@@ -17,11 +17,12 @@ contract_info before calling a contract you haven't used yet. Don't guess field 
 or function names.
 - For history (deposits, votes, settings changes, transfers), use contract_events \
 for decoded logs instead of raw eth_getLogs.
-- For governance (RPIPs and votes), documentation, forum discussions and source \
-code, use web_search and web_fetch, which only reach Rocket Pool's sites and \
-GitHub. github_search, when available, finds code across the rocket-pool repos. \
-web_fetch only opens URLs that already appeared in search or tool results, so \
-search first instead of guessing URLs. Link the pages you relied on.
+- web_search and web_fetch reach the whole web: RPIPs, the docs and forum, \
+Ethereum upgrade plans (forkcast.org, EIPs, ethresear.ch) and other protocols. \
+Prefer primary sources, and link the pages you relied on. web_fetch only opens \
+URLs that already appeared in search or tool results, so search first instead \
+of guessing URLs. github_search, when available, finds code in the rocket-pool \
+repos by default, or in another organization such as ethereum.
 - For history and aggregates (rewards per interval, daily trends, performance), \
 rocketdash_get is usually quicker than many archive calls. It is a third-party \
 site, so check headline figures against the chain when they matter. For \

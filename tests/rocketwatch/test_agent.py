@@ -19,6 +19,7 @@ from rocketwatch.utils.agent import (
     AgentTool,
     ToolError,
     Turn,
+    called_from_code,
     estimate_cost,
     run_agent,
 )
@@ -337,6 +338,40 @@ async def test_tools_are_direct_only_without_code_execution(
     await run_agent(provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply)
     [tool] = create.call_args.kwargs["tools"]
     assert "allowed_callers" not in tool
+
+
+async def test_tools_know_who_called_them(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    seen: dict[int, bool] = {}
+
+    async def record(args: EchoInput) -> str:
+        seen[args.value] = called_from_code()
+        return "ok"
+
+    start = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="code_execution", input={"code": "..."}
+    )
+    create.side_effect = [
+        _response(
+            "tool_use",
+            start,
+            BetaToolUseBlock(type="tool_use", id="d", name="echo", input={"value": 1}),
+            _script_call("s", 2),
+        ),
+        _answer("done"),
+    ]
+
+    await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "q")],
+        [_echo_tool(AsyncMock(side_effect=record))],
+        Reply,
+        code_execution=True,
+    )
+
+    assert seen == {1: False, 2: True}
 
 
 async def test_container_is_reused(

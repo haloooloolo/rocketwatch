@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -24,6 +25,15 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger("rocketwatch.agent")
+
+_called_from_code: ContextVar[bool] = ContextVar("called_from_code", default=False)
+
+
+def called_from_code() -> bool:
+    """Whether the running tool was called by a script in code execution, whose
+    result goes back to the script rather than into the model's context."""
+    return _called_from_code.get()
+
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
@@ -146,6 +156,8 @@ async def _run_tool(
 
     if (tool := tools.get(block.name)) is None:
         return result(f"Unknown tool {block.name!r}", is_error=True)
+    # each call runs in its own task, so this doesn't leak between calls
+    _called_from_code.set(_from_code(block))
     try:
         args = tool.input_model.model_validate(block.input)
     except ValidationError as err:

@@ -22,7 +22,7 @@ from rocketwatch.plugins.collateral.collateral import get_node_collateral_data
 from rocketwatch.plugins.signaling.signaling import Proposal, Signaling
 from rocketwatch.utils import solidity
 from rocketwatch.utils.address_labels import get_address_name
-from rocketwatch.utils.agent import AgentTool, ToolError
+from rocketwatch.utils.agent import AgentTool, ToolError, called_from_code
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
 from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.config import cfg
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from anthropic.types.beta import BetaToolUnionParam
 
 MAX_RESULT_CHARS = 30_000
+MAX_SCRIPT_RESULT_CHARS = 5_000_000
 MAX_DOCS = 200
 MAX_TIME_MS = 30_000
 MAX_LOG_BLOCK_RANGE = 100_000
@@ -84,34 +85,26 @@ sync-committee/summary
 trends/{history,summary}
 validators/{activity,detail,filtered-distribution,history,list,live-attestations,pressure,summary,transitions}"""
 
-ROCKET_POOL_SITES = [
-    "rocketpool.net",
-    "docs.rocketpool.net",
-    "rpips.rocketpool.net",
-    "dao.rocketpool.net",
-]
-# run by Anthropic, limited to Rocket Pool's sites and GitHub. The basic
-# versions: the newer ones bring a code sandbox of their own, which would sit
-# next to the code execution tool
+# run by Anthropic. The basic versions: the newer ones bring a code sandbox
+# of their own, which would sit next to the code execution tool
 WEB_TOOLS: "list[BetaToolUnionParam]" = [
-    {
-        "type": "web_search_20250305",
-        "name": "web_search",
-        "allowed_domains": ROCKET_POOL_SITES,
-        "max_uses": 8,
-    },
+    {"type": "web_search_20250305", "name": "web_search", "max_uses": 8},
     {
         "type": "web_fetch_20250910",
         "name": "web_fetch",
-        "allowed_domains": [
-            *ROCKET_POOL_SITES,
-            "github.com",
-            "raw.githubusercontent.com",
-        ],
         "max_uses": 10,
         "max_content_tokens": 30_000,
     },
 ]
+
+DEFILLAMA_HOSTS = {
+    "api": "https://api.llama.fi/",
+    "yields": "https://yields.llama.fi/",
+    "coins": "https://coins.llama.fi/",
+    "stablecoins": "https://stablecoins.llama.fi/",
+}
+DEFILLAMA_TIMEOUT = aiohttp.ClientTimeout(total=60)
+_DEFILLAMA_PATH = re.compile(r"^[A-Za-z0-9_.,:/-]+$")
 SAMPLE_SIZE = 50
 
 _WRITE_STAGES = {"$out", "$merge"}
@@ -152,6 +145,14 @@ def _jsonable(value: Any) -> Any:
 
 
 def _truncate(text: str) -> str:
+    if called_from_code():
+        # a script needs whole JSON, and its results don't fill the context
+        if len(text) > MAX_SCRIPT_RESULT_CHARS:
+            raise ToolError(
+                f"Result is {len(text):,} chars, over the {MAX_SCRIPT_RESULT_CHARS:,} "
+                "limit for scripts; narrow the query"
+            )
+        return text
     if len(text) <= MAX_RESULT_CHARS:
         return text
     cut = len(text) - MAX_RESULT_CHARS
@@ -464,11 +465,46 @@ def _proposal_summary(proposal: Proposal) -> dict[str, Any]:
     }
 
 
+class DefiLlamaInput(BaseModel):
+    host: Literal["api", "yields", "coins", "stablecoins"]
+    path: str = Field(
+        description="e.g. protocol/rocket-pool, pools, prices/current/..."
+    )
+    params: dict[str, str] = Field(default_factory=dict)
+    where: dict[str, str] = Field(
+        default_factory=dict,
+        description="Keep only list items whose fields equal these values "
+        "(case-insensitive), e.g. {'project': 'lido', 'chain': 'Ethereum'}",
+    )
+
+
 class GithubSearchInput(BaseModel):
     query: str = Field(
         description="GitHub code search terms; qualifiers like repo:rocket-pool/smartnode, path:, filename: and language: work"
     )
+    org: str | None = Field(
+        GITHUB_ORG,
+        description="Organization to search, e.g. rocket-pool or ethereum (EIPs, "
+        "specs, clients); null searches all of GitHub",
+    )
     limit: int = Field(10, ge=1, le=MAX_GITHUB_RESULTS)
+
+
+def _where(data: Any, conditions: dict[str, str]) -> Any:
+    """Filter the list in a response (top level or under "data") by field values."""
+    if not conditions:
+        return data
+
+    def keep(item: Any) -> bool:
+        return isinstance(item, dict) and all(
+            str(item.get(k, "")).lower() == v.lower() for k, v in conditions.items()
+        )
+
+    if isinstance(data, list):
+        return [item for item in data if keep(item)]
+    if isinstance(data, dict) and isinstance(data.get("data"), list):
+        return {**data, "data": [item for item in data["data"] if keep(item)]}
+    raise ToolError("where only applies to responses that are a list of objects")
 
 
 def _raw_url(html_url: str) -> str:
@@ -614,6 +650,18 @@ class AskTools:
                 self.rocketdash_get,
             ),
             AgentTool(
+                "defillama_get",
+                "GET the DefiLlama API: TVL, yields and prices for any protocol, "
+                "e.g. to compare Rocket Pool with Lido, ether.fi or other liquid "
+                "staking. api: protocols, protocol/<slug>, tvl/<slug>, v2/chains, "
+                "v2/historicalChainTvl/<chain>. yields: pools (all pools, large), "
+                "chart/<pool id>. coins: prices/current/<chain:address,...>, "
+                "prices/historical/<unix>/<coins>, chart/<coins>. Many responses "
+                "are megabytes: filter lists with where, or call it from code.",
+                DefiLlamaInput,
+                self.defillama_get,
+            ),
+            AgentTool(
                 "signaling_proposals",
                 "pDAO signaling (off-chain snapshot) votes from rocketdash.net, newest "
                 "first: choices with voting power and share, quorum and state. For "
@@ -636,9 +684,10 @@ class AskTools:
             tools.append(
                 AgentTool(
                     "github_search",
-                    f"Search code in the {GITHUB_ORG} GitHub organization (contracts, "
-                    "smartnode, RPIPs, docs, ...). Returns matching files with snippets "
-                    "and raw URLs to read in full with web_fetch.",
+                    f"Search code on GitHub, by default in the {GITHUB_ORG} "
+                    "organization (contracts, smartnode, RPIPs, docs). Returns "
+                    "matching files with snippets and raw URLs to read in full with "
+                    "web_fetch.",
                     GithubSearchInput,
                     self.github_search,
                 )
@@ -712,6 +761,20 @@ class AskTools:
             data = await resp.json(content_type=None)
         return _dump(data)
 
+    async def defillama_get(self, args: DefiLlamaInput) -> str:
+        path = args.path.strip("/")
+        if not _DEFILLAMA_PATH.match(path) or ".." in path or "//" in path:
+            raise ToolError(f"{args.path!r} is not a valid path")
+        async with (
+            aiohttp.ClientSession(timeout=DEFILLAMA_TIMEOUT) as session,
+            session.get(DEFILLAMA_HOSTS[args.host] + path, params=args.params) as resp,
+        ):
+            if resp.status != 200:
+                detail = " ".join((await resp.text()).split())[:300]
+                raise ToolError(f"DefiLlama returned {resp.status}: {detail}")
+            data = await resp.json(content_type=None)
+        return _dump(_where(data, args.where))
+
     async def signaling_proposals(self, args: SignalingProposalsInput) -> str:
         proposals = await Signaling.fetch_proposals()
         if args.title:
@@ -759,7 +822,8 @@ class AskTools:
             "Authorization": f"Bearer {self.github_token}",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        params = {"q": f"{args.query} org:{GITHUB_ORG}", "per_page": str(args.limit)}
+        query = f"{args.query} org:{args.org}" if args.org else args.query
+        params = {"q": query, "per_page": str(args.limit)}
         async with (
             aiohttp.ClientSession(timeout=GITHUB_TIMEOUT) as session,
             session.get(GITHUB_SEARCH_URL, params=params, headers=headers) as resp,

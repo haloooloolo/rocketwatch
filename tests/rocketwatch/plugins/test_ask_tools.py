@@ -13,6 +13,8 @@ from rocketwatch.plugins.ask.tools import (
     MAX_DOCS,
     MAX_FILES,
     MAX_LOG_BLOCK_RANGE,
+    MAX_RESULT_CHARS,
+    MAX_SCRIPT_RESULT_CHARS,
     AddressInfoInput,
     AskTools,
     BeaconGetInput,
@@ -22,6 +24,7 @@ from rocketwatch.plugins.ask.tools import (
     ContractCallInput,
     ContractEventsInput,
     ContractInput,
+    DefiLlamaInput,
     EthRpcInput,
     FileInput,
     GithubSearchInput,
@@ -34,7 +37,7 @@ from rocketwatch.plugins.ask.tools import (
     SignalingVotesInput,
 )
 from rocketwatch.plugins.signaling.signaling import Proposal, Signaling, Vote
-from rocketwatch.utils import rocketpool, shared_w3
+from rocketwatch.utils import agent, rocketpool, shared_w3
 from rocketwatch.utils.agent import ToolError
 
 NODE = "0x" + "11" * 20
@@ -594,6 +597,22 @@ class TestGithubSearch:
             ],
         }
 
+    @pytest.mark.parametrize(
+        ("org", "query"),
+        [
+            ("ethereum", "SECONDS_PER_SLOT org:ethereum"),
+            (None, "SECONDS_PER_SLOT"),
+        ],
+    )
+    async def test_other_orgs(
+        self, monkeypatch: pytest.MonkeyPatch, org: str | None, query: str
+    ) -> None:
+        session = _http(monkeypatch, 200, {"total_count": 0, "items": []})
+        await AskTools(MagicMock(), "token").github_search(
+            GithubSearchInput(query="SECONDS_PER_SLOT", org=org)
+        )
+        assert session.requests[0]["params"]["q"] == query
+
     async def test_api_error_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _http(monkeypatch, 403, {"message": "rate limit exceeded"})
         with pytest.raises(ToolError, match="rate limit"):
@@ -727,6 +746,124 @@ class TestAddressInfo:
     async def test_unknown_name(self, tools: AskTools) -> None:
         with pytest.raises(ToolError, match="not an address"):
             await tools.address_info(AddressInfoInput(address="nobody.eth"))
+
+
+@pytest.fixture
+def from_script() -> Any:
+    token = agent._called_from_code.set(True)
+    yield
+    agent._called_from_code.reset(token)
+
+
+class TestResultSize:
+    async def test_direct_results_are_truncated(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _http(monkeypatch, 200, ["x" * 100] * 1000)
+        result = await tools.defillama_get(DefiLlamaInput(host="api", path="protocols"))
+        assert len(result) < MAX_RESULT_CHARS + 100
+        assert "truncated" in result
+
+    async def test_scripts_get_whole_results(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch, from_script: None
+    ) -> None:
+        _http(monkeypatch, 200, ["x" * 100] * 1000)
+        result = await tools.defillama_get(DefiLlamaInput(host="api", path="protocols"))
+        assert len(json.loads(result)) == 1000
+
+    async def test_scripts_get_an_error_past_their_limit(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch, from_script: None
+    ) -> None:
+        _http(monkeypatch, 200, "x" * (MAX_SCRIPT_RESULT_CHARS + 1))
+        with pytest.raises(ToolError, match="limit for scripts"):
+            await tools.defillama_get(DefiLlamaInput(host="yields", path="pools"))
+
+
+class TestDefiLlama:
+    POOLS: ClassVar[dict[str, Any]] = {
+        "status": "success",
+        "data": [
+            {"project": "lido", "chain": "Ethereum", "symbol": "STETH", "apy": 2.3},
+            {
+                "project": "rocket-pool",
+                "chain": "Ethereum",
+                "symbol": "RETH",
+                "apy": 2.1,
+            },
+            {"project": "lido", "chain": "Arbitrum", "symbol": "WSTETH", "apy": 0.1},
+        ],
+    }
+
+    async def test_requests_host_and_path(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session = _http(monkeypatch, 200, {"tvl": 1})
+        await tools.defillama_get(
+            DefiLlamaInput(
+                host="coins",
+                path="/prices/current/ethereum:0xae78736cd615f374d3085123a210448e74fc6393",
+                params={"searchWidth": "4h"},
+            )
+        )
+        [request] = session.requests
+        assert request["url"] == (
+            "https://coins.llama.fi/prices/current/"
+            "ethereum:0xae78736cd615f374d3085123a210448e74fc6393"
+        )
+        assert request["params"] == {"searchWidth": "4h"}
+
+    async def test_where_filters_data_list(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _http(monkeypatch, 200, self.POOLS)
+        result = json.loads(
+            await tools.defillama_get(
+                DefiLlamaInput(
+                    host="yields",
+                    path="pools",
+                    where={"project": "LIDO", "chain": "ethereum"},
+                )
+            )
+        )
+        assert [p["symbol"] for p in result["data"]] == ["STETH"]
+
+    async def test_where_filters_top_level_list(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _http(monkeypatch, 200, self.POOLS["data"])
+        result = json.loads(
+            await tools.defillama_get(
+                DefiLlamaInput(
+                    host="api", path="protocols", where={"chain": "Arbitrum"}
+                )
+            )
+        )
+        assert [p["symbol"] for p in result] == ["WSTETH"]
+
+    async def test_where_needs_a_list(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _http(monkeypatch, 200, {"tvl": 1})
+        with pytest.raises(ToolError, match="list of objects"):
+            await tools.defillama_get(
+                DefiLlamaInput(host="api", path="tvl/rocket-pool", where={"a": "b"})
+            )
+
+    @pytest.mark.parametrize("path", ["../secret", "pools?x=1", "https://evil"])
+    async def test_rejects_bad_paths(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch, path: str
+    ) -> None:
+        session = _http(monkeypatch, 200, {})
+        with pytest.raises(ToolError, match="not a valid path"):
+            await tools.defillama_get(DefiLlamaInput(host="api", path=path))
+        assert session.requests == []
+
+    async def test_error_status(
+        self, tools: AskTools, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _http(monkeypatch, 404, "Not Found")
+        with pytest.raises(ToolError, match="404: Not Found"):
+            await tools.defillama_get(DefiLlamaInput(host="api", path="protocol/nope"))
 
 
 class TestMakeChart:
