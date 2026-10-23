@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
-from rocketwatch.utils.agent import AgentResult, Turn, run_agent
+from rocketwatch.utils.agent import AgentResult, Turn, estimate_cost, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.llm import AnthropicProvider, ImageInput, create_provider
@@ -58,7 +58,7 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def usage_footer(result: AgentResult[Answer]) -> str:
+def usage_footer(result: AgentResult[Answer], model: str) -> str:
     def thousands(n: int) -> str:
         return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
 
@@ -68,6 +68,8 @@ def usage_footer(result: AgentResult[Answer]) -> str:
     ]
     if result.input_tokens:
         parts.append(f"{result.cached_tokens / result.input_tokens:.0%} cached")
+    if (cost := estimate_cost(result, model)) is not None:
+        parts.append(f"≈${cost:.2f}" if cost >= 0.01 else "<$0.01")
     return " · ".join(parts)
 
 
@@ -191,7 +193,7 @@ class Ask(commands.Cog):
                         code_execution=True,
                     )
                 view, files = render_answer(
-                    result.output, tools.files, usage_footer(result)
+                    result.output, tools.files, usage_footer(result, self.llm.model)
                 )
                 reply = await message.reply(
                     view=view, files=files, mention_author=False

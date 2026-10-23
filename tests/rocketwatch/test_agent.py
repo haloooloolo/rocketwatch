@@ -6,6 +6,7 @@ from anthropic import omit
 from anthropic.types.beta import (
     BetaContainer,
     BetaServerToolCaller20260120,
+    BetaServerToolUsage,
     BetaServerToolUseBlock,
     BetaTextBlock,
     BetaToolUseBlock,
@@ -14,9 +15,11 @@ from pydantic import BaseModel
 
 from rocketwatch.utils.agent import (
     AgentError,
+    AgentResult,
     AgentTool,
     ToolError,
     Turn,
+    estimate_cost,
     run_agent,
 )
 from rocketwatch.utils.llm import AnthropicProvider, ImageInput
@@ -38,6 +41,7 @@ def _response(stop_reason: str, *blocks: Any) -> MagicMock:
     response.usage.cache_read_input_tokens = 0
     response.usage.output_tokens = 5
     response.usage.cache_creation_input_tokens = 0
+    response.usage.server_tool_use = None
     response.container = None
     return response
 
@@ -116,7 +120,42 @@ async def test_usage_is_summed_over_requests(
     # input counts uncached, cache writes and cache reads alike
     assert result.input_tokens == (10 + 100) + (10 + 90)
     assert result.cached_tokens == 90
+    assert result.cache_write_tokens == 100
     assert result.output_tokens == 10
+
+
+async def test_web_searches_are_counted(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    answer = _answer("done")
+    answer.usage.server_tool_use = BetaServerToolUsage(
+        web_search_requests=3, web_fetch_requests=2
+    )
+    create.return_value = answer
+    result = await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
+    assert result.web_searches == 3
+
+
+def test_estimate_cost() -> None:
+    result = AgentResult(
+        Reply(answer="x"),
+        tool_calls=5,
+        input_tokens=1_100_000,
+        cached_tokens=800_000,
+        cache_write_tokens=200_000,
+        output_tokens=50_000,
+        web_searches=4,
+    )
+    # Opus 5.5: 100k uncached at $4, 800k reads at $0.20, 200k writes at $5,
+    # 50k output at $20 per million, plus 4 searches at a cent
+    assert estimate_cost(result, "claude-opus-5-5") == pytest.approx(
+        0.4 + 0.16 + 1.0 + 1.0 + 0.04
+    )
+
+
+def test_estimate_cost_unknown_model() -> None:
+    result = AgentResult(Reply(answer="x"), tool_calls=0, input_tokens=10)
+    assert estimate_cost(result, "some-other-model") is None
 
 
 async def test_request_uses_model_system_and_turns(

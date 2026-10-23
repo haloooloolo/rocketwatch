@@ -51,10 +51,45 @@ class AgentTool:
 class AgentResult[R: BaseModel]:
     output: R
     tool_calls: int
-    # input_tokens includes cached_tokens
+    # input_tokens includes cache reads and writes
     input_tokens: int = 0
     cached_tokens: int = 0
+    cache_write_tokens: int = 0
     output_tokens: int = 0
+    web_searches: int = 0
+
+
+@dataclass(frozen=True)
+class ModelPrice:
+    """USD per million tokens."""
+
+    input: float
+    output: float
+    cache_read: float
+    cache_write: float  # 5-minute cache, 1.25x input
+
+
+# Anthropic's list prices as of October 2026; update when they change
+PRICES = {
+    "claude-opus-5-5": ModelPrice(4.00, 20.00, 0.20, 5.00),
+    "claude-sonnet-5-5": ModelPrice(2.00, 10.00, 0.20, 2.50),
+    "claude-fable-5-1": ModelPrice(10.00, 50.00, 0.25, 12.50),
+}
+WEB_SEARCH_PRICE = 0.01
+
+
+def estimate_cost(result: AgentResult[Any], model: str) -> float | None:
+    """Approximate USD cost of a run, or None for a model without known prices."""
+    if (price := PRICES.get(model)) is None:
+        return None
+    uncached = result.input_tokens - result.cached_tokens - result.cache_write_tokens
+    tokens = (
+        uncached * price.input
+        + result.cached_tokens * price.cache_read
+        + result.cache_write_tokens * price.cache_write
+        + result.output_tokens * price.output
+    )
+    return tokens / 1_000_000 + result.web_searches * WEB_SEARCH_PRICE
 
 
 class AgentError(Exception):
@@ -160,7 +195,7 @@ async def run_agent[T: BaseModel](
     answer_now: BetaToolChoiceParam = {"type": "none"}
     messages = _build_messages(turns)
     tool_calls = 0
-    usage = {"input": 0, "cached": 0, "output": 0}
+    usage = {"input": 0, "cached": 0, "written": 0, "output": 0, "searches": 0}
     model_turns = 0
     container: str | None = None
     script_waiting = False
@@ -196,13 +231,13 @@ async def run_agent[T: BaseModel](
         )
         messages.append({"role": "assistant", "content": response.content})
         cached = response.usage.cache_read_input_tokens or 0
+        written = response.usage.cache_creation_input_tokens or 0
         usage["cached"] += cached
-        usage["input"] += (
-            response.usage.input_tokens
-            + cached
-            + (response.usage.cache_creation_input_tokens or 0)
-        )
+        usage["written"] += written
+        usage["input"] += response.usage.input_tokens + cached + written
         usage["output"] += response.usage.output_tokens
+        if (server := response.usage.server_tool_use) is not None:
+            usage["searches"] += server.web_search_requests
         tool_calls += sum(
             b.type in ("tool_use", "server_tool_use") for b in response.content
         )
@@ -233,7 +268,9 @@ async def run_agent[T: BaseModel](
                     tool_calls,
                     input_tokens=usage["input"],
                     cached_tokens=usage["cached"],
+                    cache_write_tokens=usage["written"],
                     output_tokens=usage["output"],
+                    web_searches=usage["searches"],
                 )
             case _:
                 raise AgentError(f"Model stopped early ({response.stop_reason})")
