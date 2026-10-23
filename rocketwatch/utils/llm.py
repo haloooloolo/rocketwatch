@@ -58,6 +58,14 @@ class AnthropicProvider(LLMProvider):
             self._client = AsyncAnthropic(api_key=self._api_key)
         return self._client
 
+    @property
+    def client(self) -> AsyncAnthropic:
+        return self._get_client()
+
+    @property
+    def model(self) -> str:
+        return self._model
+
     @staticmethod
     def _build_user_content(user_message: str, images: list[ImageInput] | None) -> Any:
         if not images:
