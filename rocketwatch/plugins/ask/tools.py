@@ -40,6 +40,7 @@ MAX_DOCS = 200
 MAX_TIME_MS = 30_000
 MAX_LOG_BLOCK_RANGE = 100_000
 MAX_EVENT_BLOCK_RANGE = 1_000_000
+MAX_MULTICALL = 500
 MAX_FILES = 10
 MAX_GITHUB_RESULTS = 30
 GITHUB_ORG = "rocket-pool"
@@ -93,7 +94,7 @@ WEB_TOOLS: "list[BetaToolUnionParam]" = [
         "type": "web_fetch_20250910",
         "name": "web_fetch",
         "max_uses": 10,
-        "max_content_tokens": 30_000,
+        "max_content_tokens": 10_000,
     },
 ]
 
@@ -331,12 +332,22 @@ class ContractInput(BaseModel):
     )
 
 
-class ContractCallInput(ContractInput):
+class ContractCallSpec(ContractInput):
     function: str
     args: list[Any] = Field(
         default_factory=list,
         description="Positional arguments; pass large integers as decimal strings",
     )
+
+
+class ContractCallInput(ContractCallSpec):
+    block: int | str = Field(
+        "latest", description="Block number or tag (latest, finalized, ...)"
+    )
+
+
+class ContractCallManyInput(BaseModel):
+    calls: list[ContractCallSpec] = Field(min_length=1, max_length=MAX_MULTICALL)
     block: int | str = Field(
         "latest", description="Block number or tag (latest, finalized, ...)"
     )
@@ -574,6 +585,15 @@ class AskTools:
                 "Any function can be simulated; nothing is ever sent on-chain.",
                 ContractCallInput,
                 self.contract_call,
+            ),
+            AgentTool(
+                "contract_call_many",
+                f"Make up to {MAX_MULTICALL} contract calls in one multicall, all "
+                "at the same block, e.g. one function across many nodes or "
+                "megapools. Results are in call order, null where a call reverted. "
+                "Use this rather than many separate contract_calls.",
+                ContractCallManyInput,
+                self.contract_call_many,
             ),
             AgentTool(
                 "contract_events",
@@ -941,36 +961,58 @@ class AskTools:
             }
         )
 
-    async def contract_call(self, args: ContractCallInput) -> str:
-        contract = await self._contract(args)
+    async def _prepare_call(
+        self, call: ContractCallSpec
+    ) -> tuple[Any, list[dict[str, str]]]:
+        """The bound contract function and its output names and types."""
+        contract = await self._contract(call)
         candidates = [
             dict(e)
             for e in contract.abi
             if e.get("type") == "function"
-            and e.get("name") == args.function
-            and len(e.get("inputs", [])) == len(args.args)
+            and e.get("name") == call.function
+            and len(e.get("inputs", [])) == len(call.args)
         ]
         if not candidates:
             raise ToolError(
-                f"{args.contract} has no function {args.function} taking "
-                f"{len(args.args)} arguments; check contract_info"
+                f"{call.contract} has no function {call.function} taking "
+                f"{len(call.args)} arguments; check contract_info"
             )
         entry = candidates[0]
         call_args = [
             _coerce_arg(RocketPool._abi_type_str(dict(i)), a)
-            for i, a in zip(entry["inputs"], args.args, strict=True)
+            for i, a in zip(entry["inputs"], call.args, strict=True)
         ]
-        try:
-            result = await contract.functions[args.function](*call_args).call(
-                block_identifier=_block_id(args.block)
-            )
-        except ContractLogicError as err:
-            raise ToolError(f"Call reverted: {err}") from None
         outputs = [
             {"name": o.get("name", ""), "type": RocketPool._abi_type_str(dict(o))}
             for o in entry.get("outputs", [])
         ]
+        return contract.functions[call.function](*call_args), outputs
+
+    async def contract_call(self, args: ContractCallInput) -> str:
+        fn, outputs = await self._prepare_call(args)
+        try:
+            result = await fn.call(block_identifier=_block_id(args.block))
+        except ContractLogicError as err:
+            raise ToolError(f"Call reverted: {err}") from None
         return _dump({"result": result, "outputs": outputs})
+
+    async def contract_call_many(self, args: ContractCallManyInput) -> str:
+        fns = []
+        outputs: dict[str, list[dict[str, str]]] = {}
+        for i, call in enumerate(args.calls):
+            try:
+                (
+                    fn,
+                    outputs[f"{call.contract}.{call.function}"],
+                ) = await self._prepare_call(call)
+            except ToolError as err:
+                raise ToolError(f"Call {i}: {err}") from None
+            fns.append(fn)
+        results = await rp.multicall(
+            fns, require_success=False, block=_block_id(args.block)
+        )
+        return _dump({"results": results, "outputs": outputs})
 
     async def contract_events(self, args: ContractEventsInput) -> str:
         contract = await self._contract(args)

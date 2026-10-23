@@ -22,6 +22,7 @@ from rocketwatch.plugins.ask.tools import (
     ChartInput,
     CollectionInput,
     ContractCallInput,
+    ContractCallManyInput,
     ContractEventsInput,
     ContractInput,
     DefiLlamaInput,
@@ -252,6 +253,52 @@ class TestContracts:
                     args=[NODE, 1],
                 )
             )
+
+    async def test_call_many_is_one_multicall(
+        self, tools: AskTools, function: MagicMock
+    ) -> None:
+        rocketpool.rp.multicall = AsyncMock(return_value=[5, None])
+        call = {"contract": "rocketNodeManager", "function": "getNodeFee"}
+        result = await tools.contract_call_many(
+            ContractCallManyInput.model_validate(
+                {
+                    "calls": [{**call, "args": [NODE, 1]}, {**call, "args": [NODE, 2]}],
+                    "block": 123,
+                }
+            )
+        )
+        rocketpool.rp.multicall.assert_awaited_once()
+        fns = rocketpool.rp.multicall.await_args.args[0]
+        assert len(fns) == 2
+        assert rocketpool.rp.multicall.await_args.kwargs["block"] == 123
+        assert [c.args for c in function.call_args_list] == [
+            (NODE.lower(), 1),
+            (NODE.lower(), 2),
+        ]
+        assert json.loads(result) == {
+            "results": [5, None],
+            "outputs": {
+                "rocketNodeManager.getNodeFee": [{"name": "fee", "type": "uint256"}]
+            },
+        }
+
+    async def test_call_many_names_the_bad_call(
+        self, tools: AskTools, function: MagicMock
+    ) -> None:
+        rocketpool.rp.multicall = AsyncMock()
+        calls = [
+            {
+                "contract": "rocketNodeManager",
+                "function": "getNodeFee",
+                "args": [NODE, 1],
+            },
+            {"contract": "rocketNodeManager", "function": "nope"},
+        ]
+        with pytest.raises(ToolError, match="Call 1"):
+            await tools.contract_call_many(
+                ContractCallManyInput.model_validate({"calls": calls})
+            )
+        rocketpool.rp.multicall.assert_not_awaited()
 
     async def test_unregistered_contract(
         self, tools: AskTools, function: MagicMock
