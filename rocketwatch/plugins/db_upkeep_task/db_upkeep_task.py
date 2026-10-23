@@ -79,7 +79,7 @@ def _derive_validator_status(info: ValidatorInfo) -> str:
         return "exiting"
     if info.staked:
         return "staking"
-    return "unknown"
+    return "dequeued"
 
 
 def _unpack_validator_info(info: ValidatorInfo) -> dict[str, Any]:
@@ -885,7 +885,7 @@ class DBUpkeepTask(commands.Cog):
         mp_calls = _CachedCalls(mp)
 
         validators = await self.bot.db.megapool_validators.find(
-            {"status": {"$nin": ["exited", "dissolved"]}},
+            {"status": {"$nin": ["exited", "dissolved", "dequeued"]}},
             {"megapool": 1, "validator_id": 1},
         ).to_list()
         if not validators:
@@ -916,8 +916,13 @@ class DBUpkeepTask(commands.Cog):
 
     @timed
     async def update_dynamic_megapool_validator_beacon_data(self) -> None:
+        # dequeued validators never reach the beacon chain
         pubkeys = await self.bot.db.megapool_validators.distinct(
-            "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
+            "pubkey",
+            {
+                "beacon.status": {"$ne": "withdrawal_done"},
+                "status": {"$ne": "dequeued"},
+            },
         )
         pubkeys = [pk for pk in pubkeys if pk is not None]
         if not pubkeys:

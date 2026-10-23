@@ -117,7 +117,7 @@ class TestPureHelpers:
         )
         assert (
             _derive_validator_status(base._replace(staked=False, exiting=False))
-            == "unknown"
+            == "dequeued"
         )
 
     def test_unpack_validator_info_scales_units(self) -> None:
@@ -250,7 +250,10 @@ class TestUpdateMegapoolValidatorBeaconData:
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
         scripted_bacon: ScriptedBeacon,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        lookup = AsyncMock(wraps=scripted_bacon.get_validators_by_ids)
+        monkeypatch.setattr(scripted_bacon, "get_validators_by_ids", lookup)
         await mongo_db.megapool_validators.insert_many(
             [
                 {
@@ -265,6 +268,13 @@ class TestUpdateMegapoolValidatorBeaconData:
                     "validator_id": 1,
                     "pubkey": "0xa2",
                     "beacon": {"status": "withdrawal_done"},  # filtered out
+                },
+                {
+                    "_id": 3,
+                    "megapool": "0xMP",
+                    "validator_id": 2,
+                    "pubkey": "0xa3",
+                    "status": "dequeued",
                 },
             ]
         )
@@ -288,6 +298,9 @@ class TestUpdateMegapoolValidatorBeaconData:
         v2 = await mongo_db.megapool_validators.find_one({"_id": 2})
         assert v2 is not None
         assert "validator_index" not in v2
+
+        requested = [pk for call in lookup.call_args_list for pk in call.kwargs["ids"]]
+        assert requested == ["0xa1"]
 
     async def test_empty_db_is_noop(
         self,
@@ -666,20 +679,22 @@ class TestUpdateDynamicMegapoolValidatorData:
         # _unpack_validator_info_dynamic drops express_used.
         assert "express_used" not in doc
 
-    async def test_skips_exited_validators(
+    @pytest.mark.parametrize("status", ["exited", "dissolved", "dequeued"])
+    async def test_skips_final_validators(
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
         scripted_rp: ScriptedRocketPool,
         scripted_w3: MagicMock,
+        status: str,
     ) -> None:
         await mongo_db.megapool_validators.insert_one(
-            {"_id": 1, "megapool": "0xMP", "validator_id": 0, "status": "exited"}
+            {"_id": 1, "megapool": "0xMP", "validator_id": 0, "status": status}
         )
         cog = _make_cog(make_bot(db=mongo_db))
         await cog.update_dynamic_megapool_validator_data()  # filtered out → no fetch
         doc = await mongo_db.megapool_validators.find_one({"_id": 1})
         assert doc is not None
-        assert doc["status"] == "exited"
+        assert doc["status"] == status
 
 
 def _log(
