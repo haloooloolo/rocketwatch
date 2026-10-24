@@ -74,7 +74,7 @@ def _message(
     attachments: list[MagicMock] | None = None,
     embeds: list[discord.Embed] | None = None,
 ) -> MagicMock:
-    message = MagicMock()
+    message = MagicMock(spec=discord.Message)
     message.id = message_id
     message.content = content
     message.author.id = author_id
@@ -108,6 +108,41 @@ def _attachment(content_type: str, data: bytes, filename: str = "f") -> MagicMoc
     return att
 
 
+def _answer_message(
+    message_id: int,
+    text: str = "4,000 nodes",
+    *,
+    parent: MagicMock | None = None,
+    attachments: list[MagicMock] | None = None,
+) -> MagicMock:
+    """One of the bot's answers, as Discord hands it back."""
+    message = _message(
+        message_id=message_id,
+        author_id=BOT_ID,
+        parent=parent,
+        attachments=attachments,
+    )
+    message.components = [
+        discord.components._component_factory(
+            {
+                "type": 17,
+                "components": [
+                    {"type": 10, "content": text},
+                    {"type": 10, "content": "-# 3 tool calls · 20k tokens · ≈$0.12"},
+                ],
+            }
+        )
+    ]
+    return message
+
+
+def _reply_to(parent: MagicMock, content: str, message_id: int = 200) -> MagicMock:
+    """A reply as it arrives from the gateway, with the parent resolved."""
+    message = _message(content, message_id=message_id, parent=parent)
+    message.reference.resolved = parent
+    return message
+
+
 class TestIsQuestion:
     def test_owner_mention(self, cog: Ask) -> None:
         assert cog._is_question(_message(f"<@{BOT_ID}> how many nodes?"))
@@ -123,13 +158,17 @@ class TestIsQuestion:
         assert cog._is_question(_message("how many nodes?", in_guild=False))
 
     def test_reply_to_answer_continues(self, cog: Ask) -> None:
-        answer = _message(message_id=50, author_id=BOT_ID)
-        cog._answers[answer.id] = True
-        assert cog._is_question(_message("and megapools?", parent=answer))
+        # recognized from the message itself, so it works after a restart
+        assert cog._is_question(_reply_to(_answer_message(50), "and megapools?"))
 
     def test_reply_to_other_bot_message(self, cog: Ask) -> None:
         event = _message(message_id=50, author_id=BOT_ID)
-        assert not cog._is_question(_message("what's this?", parent=event))
+        assert not cog._is_question(_reply_to(event, "what's this?"))
+
+    def test_reply_to_someone_quoting_the_usage_line(self, cog: Ask) -> None:
+        copy = _answer_message(50)
+        copy.author.id = STRANGER_ID
+        assert not cog._is_question(_reply_to(copy, "huh?"))
 
 
 class TestBuildTurns:
@@ -166,22 +205,7 @@ class TestBuildTurns:
 
     async def test_follow_up_includes_previous_answer(self, cog: Ask) -> None:
         first = _message(f"<@{BOT_ID}> how many nodes?", message_id=10)
-        answer = _message(message_id=11, author_id=BOT_ID, parent=first)
-        answer.components = [
-            discord.components._component_factory(
-                {
-                    "type": 17,
-                    "components": [
-                        {"type": 10, "content": "4,000 nodes"},
-                        {
-                            "type": 10,
-                            "content": "-# 3 tool calls · 20k tokens · ≈$0.12",
-                        },
-                    ],
-                }
-            )
-        ]
-        cog._answers[answer.id] = True
+        answer = _answer_message(11, parent=first)
         follow_up = _message("and last year?", message_id=12, parent=answer)
 
         turns = await cog._build_turns(follow_up)
@@ -190,6 +214,28 @@ class TestBuildTurns:
         # without the usage line, which the model would otherwise copy
         assert turns[1].text == "4,000 nodes"
         assert turns[2].text.endswith("and last year?")
+
+    async def test_previous_answer_brings_its_files(self, cog: Ask) -> None:
+        first = _message(f"<@{BOT_ID}> top nodes?", message_id=10)
+        answer = _answer_message(
+            11,
+            "cut short…",
+            parent=first,
+            attachments=[
+                _attachment("text/csv", b"node,stake\n0x1,5", "nodes.csv"),
+                _attachment("text/markdown", b"the full answer", "answer.md"),
+                _attachment("image/png", b"\x89PNG", "chart.png"),
+            ],
+        )
+        follow_up = _message("sort by stake", message_id=12, parent=answer)
+
+        _, previous, _ = await cog._build_turns(follow_up)
+
+        # the full text replaces the clipped one; charts stay out
+        assert previous.text == (
+            "the full answer\n\n[Attachment nodes.csv]\nnode,stake\n0x1,5"
+        )
+        assert previous.images == []
 
     async def test_quoted_bot_embed_is_context(self, cog: Ask) -> None:
         event = _message(
@@ -357,11 +403,9 @@ class TestOnMessage:
     ) -> None:
         message = _message(f"<@{BOT_ID}> list nodes")
         await cog.on_message(message)
-        answer = _message(message_id=message.reply.return_value.id, author_id=BOT_ID)
+        answer = _answer_message(message.reply.return_value.id, parent=message)
 
-        await cog.on_message(
-            _message("only active ones", message_id=200, parent=answer)
-        )
+        await cog.on_message(_reply_to(answer, "only active ones"))
 
         assert run_agent.await_count == 2
 
@@ -428,7 +472,6 @@ class TestOnMessage:
         # what the abandoned run used is still shown
         assert embed.footer.text.startswith("3 tool calls")
         cog.bot.report_error.assert_not_awaited()
-        assert message.reply.return_value.id not in cog._answers
 
     async def test_failure_is_reported(self, cog: Ask, run_agent: AsyncMock) -> None:
         async def fail(*_a: Any, usage: Usage, **_k: Any) -> None:
@@ -444,7 +487,8 @@ class TestOnMessage:
         embed = message.reply.call_args.kwargs["embed"]
         assert "node down" in embed.description
         assert embed.footer.text.startswith("4 tool calls")
-        assert message.reply.return_value.id not in cog._answers
+        # replying to an error doesn't continue a conversation
+        assert not cog._is_answer(_message(author_id=BOT_ID, embeds=[embed]))
 
     async def test_rejected_reply_falls_back_to_error(
         self, cog: Ask, run_agent: AsyncMock
@@ -459,7 +503,6 @@ class TestOnMessage:
 
         cog.bot.report_error.assert_awaited_once()
         assert "invalid layout" in message.reply.call_args.kwargs["embed"].description
-        assert 5000 not in cog._answers
 
 
 class TestSetup:

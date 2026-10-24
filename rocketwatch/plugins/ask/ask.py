@@ -7,7 +7,6 @@ from io import BytesIO
 from typing import Any
 
 import discord
-from cachetools import LRUCache
 from discord import File, Message, ui
 from discord.ext import commands
 from pydantic import BaseModel, Field
@@ -36,7 +35,8 @@ FULL_ANSWER_FILE = "answer.md"
 ANSWER_TIME_LIMIT = 10 * 60
 ANSWER_TIMEOUT = 12 * 60
 SHRUG = "\N{SHRUG}"
-# the usage line under an answer, kept out of the history so it isn't imitated
+# the usage line under every answer: it marks a message as one, and is kept out
+# of the history so the model doesn't imitate it
 USAGE_LINE = re.compile(r"^-# \d+ tool calls? · .*$\n?", re.M)
 
 
@@ -133,6 +133,11 @@ def _component_texts(components: list[Any]) -> list[str]:
     return texts
 
 
+def _is_text(att: discord.Attachment) -> bool:
+    content_type = (att.content_type or "").split(";")[0]
+    return content_type.startswith(TEXT_TYPES) and att.size <= MAX_TEXT_BYTES
+
+
 def message_text(message: Message) -> str:
     parts: list[str] = [message.content] if message.content else []
     for e in message.embeds:
@@ -141,7 +146,7 @@ def message_text(message: Message) -> str:
         if e.description:
             parts.append(e.description)
         parts += [f"{f.name}: {f.value}" for f in e.fields]
-    parts += _component_texts(list(message.components))
+    parts += _component_texts(message.components)
     return "\n".join(parts)
 
 
@@ -150,8 +155,13 @@ class Ask(commands.Cog):
         self.bot = bot
         self.llm = llm
         self.system_prompt = build_system_prompt()
-        # ids of our answers, so replying to one continues the conversation
-        self._answers: LRUCache[int, bool] = LRUCache(maxsize=1024)
+
+    def _is_answer(self, message: Message) -> bool:
+        # recognized by the usage line under it, so this survives restarts
+        assert self.bot.user is not None
+        return message.author.id == self.bot.user.id and any(
+            USAGE_LINE.match(text) for text in _component_texts(message.components)
+        )
 
     def _is_question(self, message: Message) -> bool:
         if message.author.id != cfg.discord.owner.user_id:
@@ -160,7 +170,11 @@ class Ask(commands.Cog):
         if message.guild is None or self.bot.user.id in message.raw_mentions:
             return True
         ref = message.reference
-        return ref is not None and ref.message_id in self._answers
+        return (
+            ref is not None
+            and isinstance(ref.resolved, Message)
+            and self._is_answer(ref.resolved)
+        )
 
     def _is_stranger_mention(self, message: Message) -> bool:
         assert self.bot.user is not None
@@ -199,9 +213,7 @@ class Ask(commands.Cog):
                     tools.files,
                     usage_footer(result.usage, self.llm.model),
                 )
-                reply = await message.reply(
-                    view=view, files=files, mention_author=False
-                )
+                await message.reply(view=view, files=files, mention_author=False)
             except TimeoutError:
                 log.warning("Gave up on a question after %ds", ANSWER_TIMEOUT)
                 timeout = Embed(
@@ -224,8 +236,6 @@ class Ask(commands.Cog):
                 error.set_footer(text=usage_footer(usage, self.llm.model))
                 await message.reply(embed=error, mention_author=False)
                 return
-
-        self._answers[reply.id] = True
 
     @staticmethod
     async def _parent(message: Message) -> Message | None:
@@ -250,9 +260,8 @@ class Ask(commands.Cog):
         images_left = MAX_IMAGES
         for m in reversed(chain):
             # the conversation has to open with a user turn
-            if m.id in self._answers and turns:
-                text = USAGE_LINE.sub("", message_text(m)).strip()
-                turns.append(Turn("assistant", text))
+            if turns and self._is_answer(m):
+                turns.append(Turn("assistant", await self._read_answer(m)))
                 continue
             text, images = await self._read_message(m, images_left)
             images_left -= len(images)
@@ -281,10 +290,25 @@ class Ask(commands.Cog):
             if content_type in IMAGE_TYPES:
                 if len(images) < images_left and att.size <= MAX_IMAGE_BYTES:
                     images.append(ImageInput(await att.read(), content_type))
-            elif content_type.startswith(TEXT_TYPES) and att.size <= MAX_TEXT_BYTES:
+            elif _is_text(att):
                 content = (await att.read()).decode(errors="replace")
                 text += f"\n\n[Attachment {att.filename}]\n{content}"
         return text, images
+
+    @staticmethod
+    async def _read_answer(message: Message) -> str:
+        full: str | None = None
+        extras: list[str] = []
+        for att in message.attachments:
+            if not _is_text(att):
+                continue
+            content = (await att.read()).decode(errors="replace")
+            if att.filename == FULL_ANSWER_FILE:
+                full = content
+            else:
+                extras.append(f"[Attachment {att.filename}]\n{content}")
+        text = full or USAGE_LINE.sub("", message_text(message)).strip()
+        return "\n\n".join([text, *extras])
 
 
 async def setup(bot: RocketWatch) -> None:
