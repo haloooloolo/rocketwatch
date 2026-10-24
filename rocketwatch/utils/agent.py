@@ -111,14 +111,12 @@ class AgentError(Exception):
     pass
 
 
-def _build_messages(turns: list[Turn]) -> list[BetaMessageParam]:
-    return [
-        {
-            "role": turn.role,
-            "content": AnthropicProvider._build_user_content(turn.text, turn.images),
-        }
-        for turn in turns
-    ]
+def _build_message(turn: Turn) -> BetaMessageParam:
+    content = AnthropicProvider._build_user_content(turn.text, turn.images)
+    # each role has its own message type, so the role can't be a variable
+    if turn.role == "user":
+        return {"role": "user", "content": content}
+    return {"role": "assistant", "content": content}
 
 
 CODE_EXECUTION = "code_execution_20260120"
@@ -260,7 +258,7 @@ async def run_agent[T: BaseModel](
     }
     # out of iterations: make the model answer with what it has
     answer_now: BetaToolChoiceParam = {"type": "none"}
-    messages = _build_messages(turns)
+    messages = [_build_message(turn) for turn in turns]
     if usage is None:
         usage = Usage()
     model_turns = 0
