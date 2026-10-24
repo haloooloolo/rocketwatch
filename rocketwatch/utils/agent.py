@@ -57,16 +57,21 @@ class AgentTool:
     run: Callable[[Any], Awaitable[str]]
 
 
-@dataclass(frozen=True)
-class AgentResult[R: BaseModel]:
-    output: R
-    tool_calls: int
+@dataclass
+class Usage:
+    tool_calls: int = 0
     # input_tokens includes cache reads and writes
     input_tokens: int = 0
     cached_tokens: int = 0
     cache_write_tokens: int = 0
     output_tokens: int = 0
     web_searches: int = 0
+
+
+@dataclass(frozen=True)
+class AgentResult[R: BaseModel]:
+    output: R
+    usage: Usage
 
 
 @dataclass(frozen=True)
@@ -88,18 +93,18 @@ PRICES = {
 WEB_SEARCH_PRICE = 0.01
 
 
-def estimate_cost(result: AgentResult[Any], model: str) -> float | None:
+def estimate_cost(usage: Usage, model: str) -> float | None:
     """Approximate USD cost of a run, or None for a model without known prices."""
     if (price := PRICES.get(model)) is None:
         return None
-    uncached = result.input_tokens - result.cached_tokens - result.cache_write_tokens
+    uncached = usage.input_tokens - usage.cached_tokens - usage.cache_write_tokens
     tokens = (
         uncached * price.input
-        + result.cached_tokens * price.cache_read
-        + result.cache_write_tokens * price.cache_write
-        + result.output_tokens * price.output
+        + usage.cached_tokens * price.cache_read
+        + usage.cache_write_tokens * price.cache_write
+        + usage.output_tokens * price.output
     )
-    return tokens / 1_000_000 + result.web_searches * WEB_SEARCH_PRICE
+    return tokens / 1_000_000 + usage.web_searches * WEB_SEARCH_PRICE
 
 
 class AgentError(Exception):
@@ -122,6 +127,10 @@ WIND_DOWN_REQUESTS = 10
 STOP_SCRIPT = (
     "Out of time for tool calls, so this one didn't run. Stop the script and "
     "answer with the data you have."
+)
+OUT_OF_TOOLS = (
+    "No more tool calls are available. Answer now with the data you have, and "
+    "say what you couldn't check."
 )
 
 
@@ -194,6 +203,7 @@ async def run_agent[T: BaseModel](
     time_limit: float | None = None,
     effort: Effort = "high",
     max_tokens: int = 16000,
+    usage: Usage | None = None,
 ) -> AgentResult[T]:
     """Let the model call tools until it produces an answer matching schema.
 
@@ -205,6 +215,9 @@ async def run_agent[T: BaseModel](
     a running script is a request too, so max_requests and time_limit (seconds)
     bound those: past either, scripts get an error instead of tool results and
     the model has to answer.
+
+    Totals are added to usage as the run goes, so a caller that passes one in
+    can still see what a failed or cancelled run used.
     """
     from anthropic import omit, transform_schema
 
@@ -222,11 +235,12 @@ async def run_agent[T: BaseModel](
     # out of iterations: make the model answer with what it has
     answer_now: BetaToolChoiceParam = {"type": "none"}
     messages = _build_messages(turns)
-    tool_calls = 0
-    usage = {"input": 0, "cached": 0, "written": 0, "output": 0, "searches": 0}
+    if usage is None:
+        usage = Usage()
     model_turns = 0
     container: str | None = None
     script_waiting = False
+    told = False
     loop = asyncio.get_running_loop()
     deadline = None if time_limit is None else loop.time() + time_limit
 
@@ -235,6 +249,16 @@ async def run_agent[T: BaseModel](
             deadline is not None and loop.time() >= deadline
         )
         forced = (model_turns >= max_iterations or exhausted) and not script_waiting
+        # tell the model why it can't call tools, so a cut-short answer says so
+        last = messages[-1]
+        if (
+            forced
+            and not told
+            and last["role"] == "user"
+            and isinstance(last["content"], list)
+        ):
+            last["content"].append({"type": "text", "text": OUT_OF_TOOLS})
+            told = True
         response = await provider.client.beta.messages.create(
             model=provider.model,
             max_tokens=max_tokens,
@@ -265,13 +289,13 @@ async def run_agent[T: BaseModel](
         messages.append({"role": "assistant", "content": response.content})
         cached = response.usage.cache_read_input_tokens or 0
         written = response.usage.cache_creation_input_tokens or 0
-        usage["cached"] += cached
-        usage["written"] += written
-        usage["input"] += response.usage.input_tokens + cached + written
-        usage["output"] += response.usage.output_tokens
+        usage.cached_tokens += cached
+        usage.cache_write_tokens += written
+        usage.input_tokens += response.usage.input_tokens + cached + written
+        usage.output_tokens += response.usage.output_tokens
         if (server := response.usage.server_tool_use) is not None:
-            usage["searches"] += server.web_search_requests
-        tool_calls += sum(
+            usage.web_searches += server.web_search_requests
+        usage.tool_calls += sum(
             b.type in ("tool_use", "server_tool_use") for b in response.content
         )
         if response.container is not None:
@@ -302,15 +326,7 @@ async def run_agent[T: BaseModel](
                 continue
             case "end_turn" | "stop_sequence":
                 text = "".join(b.text for b in response.content if b.type == "text")
-                return AgentResult(
-                    schema.model_validate_json(text),
-                    tool_calls,
-                    input_tokens=usage["input"],
-                    cached_tokens=usage["cached"],
-                    cache_write_tokens=usage["written"],
-                    output_tokens=usage["output"],
-                    web_searches=usage["searches"],
-                )
+                return AgentResult(schema.model_validate_json(text), usage)
             case _:
                 raise AgentError(f"Model stopped early ({response.stop_reason})")
 

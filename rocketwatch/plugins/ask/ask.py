@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
-from rocketwatch.utils.agent import AgentResult, Turn, estimate_cost, run_agent
+from rocketwatch.utils.agent import Turn, Usage, estimate_cost, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.llm import AnthropicProvider, ImageInput, create_provider
@@ -33,9 +33,11 @@ MAX_BLOCKS = 20
 MAX_GALLERY = 10
 FULL_ANSWER_FILE = "answer.md"
 # past the time limit the agent wraps up; the timeout is a backstop for that
-ANSWER_TIME_LIMIT = 4 * 60
-ANSWER_TIMEOUT = 5 * 60
+ANSWER_TIME_LIMIT = 10 * 60
+ANSWER_TIMEOUT = 12 * 60
 SHRUG = "\N{SHRUG}"
+# the usage line under an answer, kept out of the history so it isn't imitated
+USAGE_LINE = re.compile(r"^-# \d+ tool calls? · .*$\n?", re.M)
 
 
 class TextBlock(BaseModel):
@@ -60,17 +62,17 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def usage_footer(result: AgentResult[Answer], model: str) -> str:
+def usage_footer(usage: Usage, model: str) -> str:
     def thousands(n: int) -> str:
         return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
 
     parts = [
-        f"{result.tool_calls} tool call{'' if result.tool_calls == 1 else 's'}",
-        f"{thousands(result.input_tokens + result.output_tokens)} tokens",
+        f"{usage.tool_calls} tool call{'' if usage.tool_calls == 1 else 's'}",
+        f"{thousands(usage.input_tokens + usage.output_tokens)} tokens",
     ]
-    if result.input_tokens:
-        parts.append(f"{result.cached_tokens / result.input_tokens:.0%} cached")
-    if (cost := estimate_cost(result, model)) is not None:
+    if usage.input_tokens:
+        parts.append(f"{usage.cached_tokens / usage.input_tokens:.0%} cached")
+    if (cost := estimate_cost(usage, model)) is not None:
         parts.append(f"≈${cost:.2f}" if cost >= 0.01 else "<$0.01")
     return " · ".join(parts)
 
@@ -181,6 +183,7 @@ class Ask(commands.Cog):
                     await message.add_reaction(SHRUG)
             return
 
+        usage = Usage()
         async with message.channel.typing():
             try:
                 tools = AskTools(self.bot.db, cfg.secrets.github)
@@ -194,9 +197,12 @@ class Ask(commands.Cog):
                         server_tools=WEB_TOOLS,
                         code_execution=True,
                         time_limit=ANSWER_TIME_LIMIT,
+                        usage=usage,
                     )
                 view, files = render_answer(
-                    result.output, tools.files, usage_footer(result, self.llm.model)
+                    result.output,
+                    tools.files,
+                    usage_footer(result.usage, self.llm.model),
                 )
                 reply = await message.reply(
                     view=view, files=files, mention_author=False
@@ -209,6 +215,7 @@ class Ask(commands.Cog):
                     "A narrower question may work.",
                     color=CustomColors.RED,
                 )
+                timeout.set_footer_parts([usage_footer(usage, self.llm.model)])
                 await message.reply(embed=timeout, mention_author=False)
                 return
             except Exception as err:
@@ -219,6 +226,7 @@ class Ask(commands.Cog):
                     description=f"`{err!r}`"[:4096],
                     color=CustomColors.RED,
                 )
+                error.set_footer_parts([usage_footer(usage, self.llm.model)])
                 await message.reply(embed=error, mention_author=False)
                 return
 
@@ -248,7 +256,8 @@ class Ask(commands.Cog):
         for m in reversed(chain):
             # the conversation has to open with a user turn
             if m.id in self._answers and turns:
-                turns.append(Turn("assistant", message_text(m)))
+                text = USAGE_LINE.sub("", message_text(m)).strip()
+                turns.append(Turn("assistant", text))
                 continue
             text, images = await self._read_message(m, images_left)
             images_left -= len(images)

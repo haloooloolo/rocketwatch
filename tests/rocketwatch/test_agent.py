@@ -16,10 +16,10 @@ from pydantic import BaseModel
 
 from rocketwatch.utils.agent import (
     AgentError,
-    AgentResult,
     AgentTool,
     ToolError,
     Turn,
+    Usage,
     called_from_code,
     estimate_cost,
     run_agent,
@@ -88,12 +88,23 @@ def _echo_tool(run: AsyncMock | None = None) -> AgentTool:
 def _tool_results(create: AsyncMock) -> list[list[dict[str, Any]]]:
     """Tool results sent back to the model, grouped by message."""
     messages = create.call_args.kwargs["messages"]
-    return [
-        list(m["content"])
+    groups = [
+        [b for b in m["content"] if b.get("type") == "tool_result"]
         for m in messages
-        if m["role"] == "user"
-        and isinstance(m["content"], list)
-        and all(block.get("type") == "tool_result" for block in m["content"])
+        if m["role"] == "user" and isinstance(m["content"], list)
+    ]
+    return [group for group in groups if group]
+
+
+def _notes(create: AsyncMock) -> list[str]:
+    """Text the loop added next to tool results."""
+    messages = create.call_args.kwargs["messages"]
+    return [
+        b["text"]
+        for m in messages
+        if m["role"] == "user" and isinstance(m["content"], list)
+        for b in m["content"]
+        if isinstance(b, dict) and b.get("type") == "text"
     ]
 
 
@@ -103,7 +114,7 @@ async def test_returns_parsed_answer(
     create.return_value = _answer("42")
     result = await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
     assert result.output == Reply(answer="42")
-    assert result.tool_calls == 0
+    assert result.usage.tool_calls == 0
 
 
 async def test_usage_is_summed_over_requests(
@@ -120,10 +131,10 @@ async def test_usage_is_summed_over_requests(
     )
 
     # input counts uncached, cache writes and cache reads alike
-    assert result.input_tokens == (10 + 100) + (10 + 90)
-    assert result.cached_tokens == 90
-    assert result.cache_write_tokens == 100
-    assert result.output_tokens == 10
+    assert result.usage.input_tokens == (10 + 100) + (10 + 90)
+    assert result.usage.cached_tokens == 90
+    assert result.usage.cache_write_tokens == 100
+    assert result.usage.output_tokens == 10
 
 
 async def test_web_searches_are_counted(
@@ -135,12 +146,24 @@ async def test_web_searches_are_counted(
     )
     create.return_value = answer
     result = await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
-    assert result.web_searches == 3
+    assert result.usage.web_searches == 3
+
+
+async def test_usage_survives_a_failed_run(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    create.side_effect = [_tool_use(("t1", "echo", {"value": 1})), RuntimeError()]
+    usage = Usage()
+    with pytest.raises(RuntimeError):
+        await run_agent(
+            provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply, usage=usage
+        )
+    assert usage.tool_calls == 1
+    assert usage.output_tokens == 5
 
 
 def test_estimate_cost() -> None:
-    result = AgentResult(
-        Reply(answer="x"),
+    usage = Usage(
         tool_calls=5,
         input_tokens=1_100_000,
         cached_tokens=800_000,
@@ -150,14 +173,13 @@ def test_estimate_cost() -> None:
     )
     # Opus 5.5: 100k uncached at $4, 800k reads at $0.20, 200k writes at $5,
     # 50k output at $20 per million, plus 4 searches at a cent
-    assert estimate_cost(result, "claude-opus-5-5") == pytest.approx(
+    assert estimate_cost(usage, "claude-opus-5-5") == pytest.approx(
         0.4 + 0.16 + 1.0 + 1.0 + 0.04
     )
 
 
 def test_estimate_cost_unknown_model() -> None:
-    result = AgentResult(Reply(answer="x"), tool_calls=0, input_tokens=10)
-    assert estimate_cost(result, "some-other-model") is None
+    assert estimate_cost(Usage(input_tokens=10), "some-other-model") is None
 
 
 async def test_request_uses_model_system_and_turns(
@@ -193,7 +215,7 @@ async def test_runs_tool_and_returns_result_to_model(
     )
 
     assert result.output.answer == "done"
-    assert result.tool_calls == 1
+    assert result.usage.tool_calls == 1
     run.assert_awaited_once_with(EchoInput(value=7))
     [[tool_result]] = _tool_results(create)
     assert tool_result["tool_use_id"] == "t1"
@@ -212,7 +234,7 @@ async def test_parallel_calls_answered_in_one_message(
         provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply
     )
 
-    assert result.tool_calls == 2
+    assert result.usage.tool_calls == 2
     [results] = _tool_results(create)
     assert [r["tool_use_id"] for r in results] == ["a", "b"]
 
@@ -260,6 +282,9 @@ async def test_forces_answer_after_max_iterations(
     first, last = create.call_args_list
     assert first.kwargs["tool_choice"] != {"type": "none"}
     assert last.kwargs["tool_choice"] == {"type": "none"}
+    # the model learns why, so a cut-short answer can say what's missing
+    [note] = _notes(create)
+    assert "say what you couldn't check" in note
 
 
 async def test_pause_turn_continues(
@@ -291,7 +316,7 @@ async def test_server_tools_are_sent_and_counted(
     )
 
     assert result.output.answer == "found it"
-    assert result.tool_calls == 1
+    assert result.usage.tool_calls == 1
     assert create.call_args.kwargs["tools"][-1] == search
 
 
@@ -491,6 +516,7 @@ async def test_script_is_stopped_when_requests_run_out(
     assert stopped["is_error"]
     assert "Stop the script" in stopped["content"]
     assert create.call_args.kwargs["tool_choice"] == {"type": "none"}
+    assert len(_notes(create)) == 1
 
 
 async def test_script_is_stopped_after_time_limit(

@@ -20,7 +20,7 @@ from rocketwatch.plugins.ask.ask import (
     usage_footer,
 )
 from rocketwatch.plugins.ask.tools import FileInput
-from rocketwatch.utils.agent import AgentResult, AgentTool, Turn
+from rocketwatch.utils.agent import AgentResult, AgentTool, Turn, Usage
 from rocketwatch.utils.config import LLMConfig, cfg
 from rocketwatch.utils.llm import AnthropicProvider
 from tests.lib.discord_harness import make_bot
@@ -170,7 +170,16 @@ class TestBuildTurns:
         answer = _message(message_id=11, author_id=BOT_ID, parent=first)
         answer.components = [
             discord.components._component_factory(
-                {"type": 17, "components": [{"type": 10, "content": "4,000 nodes"}]}
+                {
+                    "type": 17,
+                    "components": [
+                        {"type": 10, "content": "4,000 nodes"},
+                        {
+                            "type": 10,
+                            "content": "-# 3 tool calls · 20k tokens · ≈$0.12",
+                        },
+                    ],
+                }
             )
         ]
         cog._answers[answer.id] = True
@@ -179,6 +188,7 @@ class TestBuildTurns:
         turns = await cog._build_turns(follow_up)
 
         assert [t.role for t in turns] == ["user", "assistant", "user"]
+        # without the usage line, which the model would otherwise copy
         assert turns[1].text == "4,000 nodes"
         assert turns[2].text.endswith("and last year?")
 
@@ -279,41 +289,37 @@ class TestRenderAnswer:
 
 class TestUsageFooter:
     def test_tokens_and_cache_share(self) -> None:
-        result = AgentResult(
-            _answer(),
+        usage = Usage(
             tool_calls=26,
             input_tokens=40_000,
             cached_tokens=30_000,
             output_tokens=2_000,
         )
-        assert usage_footer(result, "unpriced-model") == (
+        assert usage_footer(usage, "unpriced-model") == (
             "26 tool calls · 42k tokens · 75% cached"
         )
 
     def test_cost_for_priced_model(self) -> None:
-        result = AgentResult(
-            _answer(),
+        usage = Usage(
             tool_calls=26,
             input_tokens=40_000,
             cached_tokens=30_000,
             output_tokens=2_000,
         )
         # 10k uncached at $4/M, 30k cached at $0.20/M, 2k out at $20/M
-        assert usage_footer(result, "claude-opus-5-5").endswith(" · ≈$0.09")
+        assert usage_footer(usage, "claude-opus-5-5").endswith(" · ≈$0.09")
 
     def test_tiny_cost(self) -> None:
-        result = AgentResult(_answer(), tool_calls=0, input_tokens=100)
-        assert usage_footer(result, "claude-opus-5-5").endswith(" · <$0.01")
+        assert usage_footer(Usage(input_tokens=100), "claude-opus-5-5").endswith(
+            " · <$0.01"
+        )
 
     def test_single_tool_call(self) -> None:
-        footer = usage_footer(AgentResult(_answer(), tool_calls=1), "unpriced-model")
+        footer = usage_footer(Usage(tool_calls=1), "unpriced-model")
         assert footer.startswith("1 tool call ·")
 
     def test_without_usage(self) -> None:
-        assert (
-            usage_footer(AgentResult(_answer(), tool_calls=0), "unpriced-model")
-            == "0 tool calls · 0 tokens"
-        )
+        assert usage_footer(Usage(), "unpriced-model") == "0 tool calls · 0 tokens"
 
 
 class TestOnMessage:
@@ -329,7 +335,7 @@ class TestOnMessage:
         ) -> AgentResult[Answer]:
             save = next(t for t in tools if t.name == "save_file")
             await save.run(FileInput(filename="nodes.csv", content="a,b"))
-            return AgentResult(_answer(attachments=["nodes.csv"]), tool_calls=2)
+            return AgentResult(_answer(attachments=["nodes.csv"]), Usage(tool_calls=2))
 
         run_agent = AsyncMock(side_effect=answer)
         monkeypatch.setattr(ask_module, "run_agent", run_agent)
@@ -413,7 +419,8 @@ class TestOnMessage:
     async def test_slow_answer_times_out(
         self, cog: Ask, run_agent: AsyncMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        async def stuck(*_a: Any, **_k: Any) -> None:
+        async def stuck(*_a: Any, usage: Usage, **_k: Any) -> None:
+            usage.tool_calls = 3
             await asyncio.sleep(60)
 
         run_agent.side_effect = stuck
@@ -424,11 +431,17 @@ class TestOnMessage:
 
         embed = message.reply.call_args.kwargs["embed"]
         assert embed.title == "That took too long"
+        # what the abandoned run used is still shown
+        assert "3 tool calls" in embed.footer.text
         cog.bot.report_error.assert_not_awaited()
         assert message.reply.return_value.id not in cog._answers
 
     async def test_failure_is_reported(self, cog: Ask, run_agent: AsyncMock) -> None:
-        run_agent.side_effect = RuntimeError("node down")
+        async def fail(*_a: Any, usage: Usage, **_k: Any) -> None:
+            usage.tool_calls = 4
+            raise RuntimeError("node down")
+
+        run_agent.side_effect = fail
         message = _message(f"<@{BOT_ID}> list nodes")
 
         await cog.on_message(message)
@@ -436,6 +449,7 @@ class TestOnMessage:
         cog.bot.report_error.assert_awaited_once()
         embed = message.reply.call_args.kwargs["embed"]
         assert "node down" in embed.description
+        assert "4 tool calls" in embed.footer.text
         assert message.reply.return_value.id not in cog._answers
 
     async def test_rejected_reply_falls_back_to_error(
