@@ -167,30 +167,21 @@ class Ask(commands.Cog):
             USAGE_LINE.match(text) for text in _component_texts(message.components)
         )
 
-    @staticmethod
-    def _replied_to(message: Message) -> Message | None:
-        ref = message.reference
-        if ref is not None and isinstance(ref.resolved, Message):
-            return ref.resolved
-        return None
+    def _pings_bot(self, message: Message) -> bool:
+        # mentions include replies that ping the bot, so turning the ping off opts out
+        assert self.bot.user is not None
+        return any(user.id == self.bot.user.id for user in message.mentions)
 
     def _is_question(self, message: Message) -> bool:
         if message.author.id != cfg.discord.owner.user_id:
             return False
-        assert self.bot.user is not None
-        if message.guild is None or self.bot.user.id in message.raw_mentions:
-            return True
-        parent = self._replied_to(message)
-        return parent is not None and parent.author.id == self.bot.user.id
+        return message.guild is None or self._pings_bot(message)
 
     def _is_stranger_question(self, message: Message) -> bool:
-        assert self.bot.user is not None
-        if message.author.bot or message.author.id == cfg.discord.owner.user_id:
-            return False
-        # a reply's ping isn't in raw_mentions, so replies to answers count too
-        parent = self._replied_to(message)
-        return self.bot.user.id in message.raw_mentions or (
-            parent is not None and self._is_answer(parent)
+        return (
+            not message.author.bot
+            and message.author.id != cfg.discord.owner.user_id
+            and self._pings_bot(message)
         )
 
     @commands.Cog.listener()

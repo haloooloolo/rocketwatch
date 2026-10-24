@@ -81,6 +81,7 @@ def _message(
     message.author.display_name = author_name
     message.author.bot = is_bot
     message.raw_mentions = [BOT_ID] if f"<@{BOT_ID}>" in content else []
+    message.mentions = [MagicMock(id=BOT_ID)] if message.raw_mentions else []
     message.guild = MagicMock() if in_guild else None
     message.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     message.attachments = attachments or []
@@ -136,10 +137,14 @@ def _answer_message(
     return message
 
 
-def _reply_to(parent: MagicMock, content: str, message_id: int = 200) -> MagicMock:
+def _reply_to(
+    parent: MagicMock, content: str, message_id: int = 200, *, ping: bool = True
+) -> MagicMock:
     """A reply as it arrives from the gateway, with the parent resolved."""
     message = _message(content, message_id=message_id, parent=parent)
     message.reference.resolved = parent
+    if ping:
+        message.mentions = [*message.mentions, parent.author]
     return message
 
 
@@ -164,6 +169,10 @@ class TestIsQuestion:
     def test_reply_to_any_bot_message(self, cog: Ask) -> None:
         event = _message(message_id=50, author_id=BOT_ID)
         assert cog._is_question(_reply_to(event, "what's this?"))
+
+    def test_reply_without_ping_is_ignored(self, cog: Ask) -> None:
+        event = _message(message_id=50, author_id=BOT_ID)
+        assert not cog._is_question(_reply_to(event, "nice", ping=False))
 
     def test_reply_to_someone_else(self, cog: Ask) -> None:
         other = _message(message_id=50, author_id=STRANGER_ID)
@@ -457,10 +466,18 @@ class TestOnMessage:
         run_agent.assert_not_awaited()
         message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
 
-    async def test_no_shrug_for_replies_to_event_posts(
+    async def test_shrugs_at_strangers_pinging_on_event_posts(
         self, cog: Ask, run_agent: AsyncMock
     ) -> None:
         message = _reply_to(_message(message_id=50, author_id=BOT_ID), "nice")
+        message.author.id = STRANGER_ID
+        await cog.on_message(message)
+        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
+
+    async def test_no_shrug_for_replies_without_ping(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        message = _reply_to(_answer_message(50), "interesting", ping=False)
         message.author.id = STRANGER_ID
         await cog.on_message(message)
         message.add_reaction.assert_not_awaited()
