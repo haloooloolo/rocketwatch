@@ -210,7 +210,7 @@ class Ask(commands.Cog):
                     "A narrower question may work.",
                     color=CustomColors.RED,
                 )
-                timeout.set_footer_parts([usage_footer(usage, self.llm.model)])
+                timeout.set_footer(text=usage_footer(usage, self.llm.model))
                 await message.reply(embed=timeout, mention_author=False)
                 return
             except Exception as err:
@@ -221,7 +221,7 @@ class Ask(commands.Cog):
                     description=f"`{err!r}`"[:4096],
                     color=CustomColors.RED,
                 )
-                error.set_footer_parts([usage_footer(usage, self.llm.model)])
+                error.set_footer(text=usage_footer(usage, self.llm.model))
                 await message.reply(embed=error, mention_author=False)
                 return
 

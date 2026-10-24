@@ -426,7 +426,7 @@ class TestOnMessage:
         embed = message.reply.call_args.kwargs["embed"]
         assert embed.title == "That took too long"
         # what the abandoned run used is still shown
-        assert "3 tool calls" in embed.footer.text
+        assert embed.footer.text.startswith("3 tool calls")
         cog.bot.report_error.assert_not_awaited()
         assert message.reply.return_value.id not in cog._answers
 
@@ -443,7 +443,7 @@ class TestOnMessage:
         cog.bot.report_error.assert_awaited_once()
         embed = message.reply.call_args.kwargs["embed"]
         assert "node down" in embed.description
-        assert "4 tool calls" in embed.footer.text
+        assert embed.footer.text.startswith("4 tool calls")
         assert message.reply.return_value.id not in cog._answers
 
     async def test_rejected_reply_falls_back_to_error(
