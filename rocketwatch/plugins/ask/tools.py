@@ -104,7 +104,7 @@ DEFILLAMA_HOSTS = {
     "coins": "https://coins.llama.fi/",
     "stablecoins": "https://stablecoins.llama.fi/",
 }
-DEFILLAMA_TIMEOUT = aiohttp.ClientTimeout(total=60)
+DEFILLAMA_TIMEOUT = aiohttp.ClientTimeout(total=30)
 _DEFILLAMA_PATH = re.compile(r"^[A-Za-z0-9_.,:/-]+$")
 SAMPLE_SIZE = 50
 

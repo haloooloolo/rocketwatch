@@ -155,6 +155,14 @@ def _from_code(block: BetaContentBlock) -> bool:
     )
 
 
+def _awaits_server_tool(content: list[BetaContentBlock]) -> bool:
+    """Whether a server tool call has no result yet. Called alongside client
+    tools, it runs once their results are sent, and only if nothing else is."""
+    called = {b.id for b in content if b.type in ("server_tool_use", "mcp_tool_use")}
+    answered = {getattr(b, "tool_use_id", None) for b in content}
+    return bool(called - answered)
+
+
 def _tool_result(
     block: BetaToolUseBlock, content: str, is_error: bool = False
 ) -> BetaToolResultBlockParam:
@@ -167,7 +175,7 @@ def _tool_result(
 
 
 async def _run_tool(
-    tools: dict[str, AgentTool], block: BetaToolUseBlock
+    tools: dict[str, AgentTool], block: BetaToolUseBlock, timeout: float
 ) -> BetaToolResultBlockParam:
     def result(content: str, is_error: bool = False) -> BetaToolResultBlockParam:
         return _tool_result(block, content, is_error)
@@ -175,18 +183,34 @@ async def _run_tool(
     if (tool := tools.get(block.name)) is None:
         return result(f"Unknown tool {block.name!r}", is_error=True)
     # each call runs in its own task, so this doesn't leak between calls
-    _called_from_code.set(_from_code(block))
+    _called_from_code.set(from_code := _from_code(block))
     try:
         args = tool.input_model.model_validate(block.input)
     except ValidationError as err:
         return result(f"Invalid input: {err}", is_error=True)
+    loop = asyncio.get_running_loop()
+    start = loop.time()
     try:
-        return result(await tool.run(args))
+        async with asyncio.timeout(timeout):
+            return result(await tool.run(args))
+    except TimeoutError:
+        return result(
+            f"Stopped after {timeout:.0f}s. Ask for less, e.g. a smaller block "
+            "range or fewer items.",
+            is_error=True,
+        )
     except ToolError as err:
         return result(str(err), is_error=True)
     except Exception as err:
         log.warning("Tool %s failed", block.name, exc_info=True)
         return result(f"{type(err).__name__}: {err}", is_error=True)
+    finally:
+        log.log(
+            logging.DEBUG if from_code else logging.INFO,
+            "Tool %s took %.1fs",
+            block.name,
+            loop.time() - start,
+        )
 
 
 async def run_agent[T: BaseModel](
@@ -201,6 +225,7 @@ async def run_agent[T: BaseModel](
     max_iterations: int = 25,
     max_requests: int = 200,
     time_limit: float | None = None,
+    tool_timeout: float = 30,
     effort: Effort = "high",
     max_tokens: int = 16000,
     usage: Usage | None = None,
@@ -214,7 +239,8 @@ async def run_agent[T: BaseModel](
     max_iterations counts the model's own turns. Each tool call round trip from
     a running script is a request too, so max_requests and time_limit (seconds)
     bound those: past either, scripts get an error instead of tool results and
-    the model has to answer.
+    the model has to answer. A tool call running past tool_timeout (seconds)
+    is stopped and reported to the model as an error.
 
     Totals are added to usage as the run goes, so a caller that passes one in
     can still see what a failed or cancelled run used.
@@ -240,6 +266,9 @@ async def run_agent[T: BaseModel](
     model_turns = 0
     container: str | None = None
     script_waiting = False
+    # the model's turn is still running (a paused turn, a script waiting on tool
+    # results or a deferred server tool), so it can't be made to answer yet
+    turn_open = False
     told = False
     loop = asyncio.get_running_loop()
     deadline = None if time_limit is None else loop.time() + time_limit
@@ -248,7 +277,7 @@ async def run_agent[T: BaseModel](
         exhausted = request >= max_requests or (
             deadline is not None and loop.time() >= deadline
         )
-        forced = (model_turns >= max_iterations or exhausted) and not script_waiting
+        forced = (model_turns >= max_iterations or exhausted) and not turn_open
         # tell the model why it can't call tools, so a cut-short answer says so
         last = messages[-1]
         if (
@@ -312,18 +341,19 @@ async def run_agent[T: BaseModel](
                     )
                 calls = [b for b in response.content if b.type == "tool_use"]
                 script_waiting = any(_from_code(b) for b in calls)
+                turn_open = script_waiting or _awaits_server_tool(response.content)
                 results: list[BetaContentBlockParam]
                 if script_waiting and exhausted:
                     results = [_tool_result(b, STOP_SCRIPT, True) for b in calls]
                 else:
                     results = list(
                         await asyncio.gather(
-                            *(_run_tool(tools_by_name, b) for b in calls)
+                            *(_run_tool(tools_by_name, b, tool_timeout) for b in calls)
                         )
                     )
                 messages.append({"role": "user", "content": results})
             case "pause_turn":
-                continue
+                turn_open = True
             case "end_turn" | "stop_sequence":
                 text = "".join(b.text for b in response.content if b.type == "text")
                 return AgentResult(schema.model_validate_json(text), usage)

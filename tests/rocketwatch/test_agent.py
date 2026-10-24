@@ -11,6 +11,7 @@ from anthropic.types.beta import (
     BetaServerToolUseBlock,
     BetaTextBlock,
     BetaToolUseBlock,
+    BetaWebFetchToolResultBlock,
 )
 from pydantic import BaseModel
 
@@ -269,6 +270,30 @@ async def test_tool_failures_are_reported_to_model(
     assert expected in tool_result["content"]
 
 
+async def test_slow_tool_is_stopped(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    async def hang(args: EchoInput) -> str:
+        await asyncio.sleep(60)
+        return "never"
+
+    create.side_effect = [_tool_use(("t1", "echo", {"value": 1})), _answer("narrowed")]
+
+    result = await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "q")],
+        [_echo_tool(AsyncMock(side_effect=hang))],
+        Reply,
+        tool_timeout=0.05,
+    )
+
+    assert result.output.answer == "narrowed"
+    [[tool_result]] = _tool_results(create)
+    assert tool_result["is_error"]
+    assert "Stopped after" in tool_result["content"]
+
+
 async def test_forces_answer_after_max_iterations(
     provider: AnthropicProvider, create: AsyncMock
 ) -> None:
@@ -481,6 +506,51 @@ async def test_forced_answer_waits_for_script(
     choices = [c.kwargs["tool_choice"] for c in create.call_args_list]
     assert choices[:2] == [omit, omit]
     assert choices[2] == {"type": "none"}
+
+
+async def test_forced_answer_waits_for_deferred_server_tool(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    # a web fetch called next to a client tool only runs once the tool results
+    # come back alone; anything added to them fails the request
+    fetch = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="web_fetch", input={"url": "x"}
+    )
+    fetched = BetaWebFetchToolResultBlock.model_construct(
+        type="web_fetch_tool_result", tool_use_id="srv1", content=None
+    )
+    both = _tool_use(("t1", "echo", {"value": 1}))
+    both.content.insert(0, fetch)
+    after_fetch = _tool_use(("t2", "echo", {"value": 2}))
+    after_fetch.content.insert(0, fetched)
+    create.side_effect = [both, after_fetch, _answer("final")]
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply, max_iterations=1
+    )
+
+    assert result.output.answer == "final"
+    choices = [c.kwargs["tool_choice"] for c in create.call_args_list]
+    assert choices == [omit, omit, {"type": "none"}]
+    messages = create.call_args.kwargs["messages"]
+    assert all(b["type"] == "tool_result" for b in messages[2]["content"])
+    assert len(_notes(create)) == 1
+
+
+async def test_paused_turn_is_resumed_before_forcing(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    search = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="web_search", input={"query": "x"}
+    )
+    create.side_effect = [_response("pause_turn", search), _answer("resumed")]
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [], Reply, max_iterations=1
+    )
+
+    assert result.output.answer == "resumed"
+    assert all(c.kwargs["tool_choice"] is omit for c in create.call_args_list)
 
 
 async def test_script_is_stopped_when_requests_run_out(
