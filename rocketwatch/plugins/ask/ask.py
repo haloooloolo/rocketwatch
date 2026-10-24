@@ -51,7 +51,6 @@ class ImagesBlock(BaseModel):
 
 
 class Answer(BaseModel):
-    card: bool = Field(description="Wrap the reply in a colored card")
     blocks: list[TextBlock | ImagesBlock]
     attachments: list[str] = Field(
         description="Filenames from save_file or make_chart offered as downloads"
@@ -120,11 +119,7 @@ def render_answer(
     items.append(ui.TextDisplay(footer))
 
     view = ui.LayoutView(timeout=None)
-    if answer.card:
-        view.add_item(ui.Container(*items, accent_colour=CustomColors.ORANGE))
-    else:
-        for item in items:
-            view.add_item(item)
+    view.add_item(ui.Container(*items, accent_colour=CustomColors.ORANGE))
     return view, [File(BytesIO(attached[n]), n) for n in shown]
 
 

@@ -86,8 +86,6 @@ Your final reply is a Discord message in the given JSON schema, made of blocks:
 [label](url), code blocks and -# for small print. Discord has no markdown tables, \
 so put tabular data in a code block or a CSV file.
 - An images block shows charts from make_chart as a gallery.
-- card wraps the reply in a colored box. Use it for structured reports with \
-several figures; leave it off for short conversational answers.
 - Text across all blocks is limited to about 3900 characters. Fit the length to \
 the question: a one-line question deserves a one-line answer.
 - Lead with the direct answer, then the supporting figures. Briefly name the \

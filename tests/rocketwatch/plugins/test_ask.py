@@ -1,5 +1,4 @@
 import asyncio
-import json
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -22,6 +21,7 @@ from rocketwatch.plugins.ask.ask import (
 from rocketwatch.plugins.ask.tools import FileInput
 from rocketwatch.utils.agent import AgentResult, AgentTool, Turn, Usage
 from rocketwatch.utils.config import LLMConfig, cfg
+from rocketwatch.utils.embeds import CustomColors
 from rocketwatch.utils.llm import AnthropicProvider
 from tests.lib.discord_harness import make_bot
 
@@ -32,7 +32,6 @@ STRANGER_ID = 7
 
 def _answer(*blocks: TextBlock | ImagesBlock, **overrides: Any) -> Answer:
     values: dict[str, Any] = {
-        "card": False,
         "blocks": list(blocks) or [TextBlock(text="There are **4,000** nodes.")],
         "attachments": [],
     }
@@ -222,18 +221,13 @@ class TestBuildTurns:
 
 
 class TestRenderAnswer:
-    def test_plain_text_reply(self) -> None:
+    def test_reply_is_one_card(self) -> None:
         view, files = render_answer(_answer(), {}, footer_text="3 tool calls")
-        types = [c["type"] for c in view.to_components()]
-        assert discord.ComponentType.container.value not in types
+        [card] = view.to_components()
+        assert card["type"] == discord.ComponentType.container.value
+        assert card["accent_color"] == CustomColors.ORANGE.value
         assert _texts(view) == ["There are **4,000** nodes.", "-# 3 tool calls"]
         assert files == []
-
-    def test_card_wraps_everything(self) -> None:
-        view, _ = render_answer(_answer(card=True), {}, footer_text="1 tool calls")
-        [container] = view.to_components()
-        assert container["type"] == discord.ComponentType.container.value
-        assert "There are **4,000** nodes." in json.dumps(container)
 
     def test_gallery_and_downloads(self) -> None:
         files = {"a.png": b"\x89PNG", "b.png": b"\x89PNG", "nodes.csv": b"x"}
