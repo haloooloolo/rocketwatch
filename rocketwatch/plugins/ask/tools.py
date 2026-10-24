@@ -491,12 +491,13 @@ class DefiLlamaInput(BaseModel):
 
 class GithubSearchInput(BaseModel):
     query: str = Field(
-        description="GitHub code search terms; qualifiers like repo:rocket-pool/smartnode, path:, filename: and language: work"
+        description="GitHub code search terms; qualifiers like repo:rocket-pool/smartnode, user:, path:, filename: and language: work"
     )
     org: str | None = Field(
         GITHUB_ORG,
         description="Organization to search, e.g. rocket-pool or ethereum (EIPs, "
-        "specs, clients); null searches all of GitHub",
+        "specs, clients); null searches all of GitHub. Ignored when the query "
+        "has its own repo:, user: or org: qualifier.",
     )
     limit: int = Field(10, ge=1, le=MAX_GITHUB_RESULTS)
 
@@ -523,6 +524,12 @@ def _raw_url(html_url: str) -> str:
     return html_url.replace(
         "https://github.com/", "https://raw.githubusercontent.com/", 1
     ).replace("/blob/", "/", 1)
+
+
+def _scopes(query: str) -> set[str]:
+    return {
+        s.lower() for s in re.findall(r"(?:^|\s)(repo|user|org|fork):", query, re.I)
+    }
 
 
 class AskTools:
@@ -836,23 +843,38 @@ class AskTools:
             }
         )
 
-    async def github_search(self, args: GithubSearchInput) -> str:
+    async def _github_code_search(self, query: str, limit: int) -> dict[str, Any]:
         headers = {
             "Accept": "application/vnd.github.text-match+json",
             "Authorization": f"Bearer {self.github_token}",
             "X-GitHub-Api-Version": "2022-11-28",
         }
-        query = f"{args.query} org:{args.org}" if args.org else args.query
-        params = {"q": query, "per_page": str(args.limit)}
+        params = {"q": query, "per_page": str(limit)}
         async with (
             aiohttp.ClientSession(timeout=GITHUB_TIMEOUT) as session,
             session.get(GITHUB_SEARCH_URL, params=params, headers=headers) as resp,
         ):
-            data = await resp.json()
+            data: dict[str, Any] = await resp.json()
             if resp.status != 200:
                 raise ToolError(
                     f"GitHub search failed ({resp.status}): {data.get('message')}"
                 )
+        return data
+
+    async def github_search(self, args: GithubSearchInput) -> str:
+        query, scopes = args.query, _scopes(args.query)
+        # GitHub can't parse a query scoped to a repo and a different org
+        if args.org and not scopes & {"repo", "user", "org"}:
+            query += f" org:{args.org}"
+        data = await self._github_code_search(query, args.limit)
+        # forks, like this bot's own repo, are only found with fork:true, which
+        # in turn finds nothing but forks
+        if (
+            not data["total_count"]
+            and scopes & {"repo", "user"}
+            and "fork" not in scopes
+        ):
+            data = await self._github_code_search(f"{query} fork:true", args.limit)
         return _dump(
             {
                 "total": data["total_count"],

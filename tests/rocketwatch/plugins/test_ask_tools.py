@@ -621,15 +621,12 @@ class TestGithubSearch:
         session = _http(monkeypatch, 200, {"total_count": 1, "items": [self.HIT]})
         result = json.loads(
             await AskTools(MagicMock(), "token").github_search(
-                GithubSearchInput(query="dequeue repo:rocket-pool/rocketpool", limit=5)
+                GithubSearchInput(query="dequeue", limit=5)
             )
         )
 
         [request] = session.requests
-        assert (
-            request["params"]["q"]
-            == "dequeue repo:rocket-pool/rocketpool org:rocket-pool"
-        )
+        assert request["params"]["q"] == "dequeue org:rocket-pool"
         assert request["params"]["per_page"] == "5"
         assert request["headers"]["Authorization"] == "Bearer token"
         assert result == {
@@ -659,6 +656,46 @@ class TestGithubSearch:
             GithubSearchInput(query="SECONDS_PER_SLOT", org=org)
         )
         assert session.requests[0]["params"]["q"] == query
+
+    @pytest.mark.parametrize(
+        ("query", "sent"),
+        [
+            # nothing found in a named repo or user: it may be a fork, which
+            # GitHub only searches with fork:true
+            (
+                "run_agent repo:haloooloolo/rocketwatch",
+                [
+                    "run_agent repo:haloooloolo/rocketwatch",
+                    "run_agent repo:haloooloolo/rocketwatch fork:true",
+                ],
+            ),
+            (
+                "run_agent user:haloooloolo",
+                ["run_agent user:haloooloolo", "run_agent user:haloooloolo fork:true"],
+            ),
+            ("x repo:a/b fork:false", ["x repo:a/b fork:false"]),
+            ("SECONDS_PER_SLOT org:ethereum", ["SECONDS_PER_SLOT org:ethereum"]),
+        ],
+    )
+    async def test_own_scope_replaces_default_org(
+        self, monkeypatch: pytest.MonkeyPatch, query: str, sent: list[str]
+    ) -> None:
+        session = _http(monkeypatch, 200, {"total_count": 0, "items": []})
+        await AskTools(MagicMock(), "token").github_search(
+            GithubSearchInput(query=query)
+        )
+        assert [r["params"]["q"] for r in session.requests] == sent
+
+    async def test_scoped_hits_skip_fork_retry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        session = _http(monkeypatch, 200, {"total_count": 1, "items": [self.HIT]})
+        await AskTools(MagicMock(), "token").github_search(
+            GithubSearchInput(query="dequeue repo:rocket-pool/rocketpool")
+        )
+        assert [r["params"]["q"] for r in session.requests] == [
+            "dequeue repo:rocket-pool/rocketpool"
+        ]
 
     async def test_api_error_is_reported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _http(monkeypatch, 403, {"message": "rate limit exceeded"})
