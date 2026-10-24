@@ -38,6 +38,10 @@ SHRUG = "\N{SHRUG}"
 # the usage line under every answer: it marks a message as one, and is kept out
 # of the history so the model doesn't imitate it
 USAGE_LINE = re.compile(r"^-# \d+ tool calls? · .*$\n?", re.M)
+MESSAGE_LINK = re.compile(
+    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/(?:@me|\d+)/(\d+)/(\d+)"
+)
+MAX_LINKS = 3
 
 
 class TextBlock(BaseModel):
@@ -163,31 +167,36 @@ class Ask(commands.Cog):
             USAGE_LINE.match(text) for text in _component_texts(message.components)
         )
 
+    @staticmethod
+    def _replied_to(message: Message) -> Message | None:
+        ref = message.reference
+        if ref is not None and isinstance(ref.resolved, Message):
+            return ref.resolved
+        return None
+
     def _is_question(self, message: Message) -> bool:
         if message.author.id != cfg.discord.owner.user_id:
             return False
         assert self.bot.user is not None
         if message.guild is None or self.bot.user.id in message.raw_mentions:
             return True
-        ref = message.reference
-        return (
-            ref is not None
-            and isinstance(ref.resolved, Message)
-            and self._is_answer(ref.resolved)
-        )
+        parent = self._replied_to(message)
+        return parent is not None and parent.author.id == self.bot.user.id
 
-    def _is_stranger_mention(self, message: Message) -> bool:
+    def _is_stranger_question(self, message: Message) -> bool:
         assert self.bot.user is not None
-        return (
-            not message.author.bot
-            and message.author.id != cfg.discord.owner.user_id
-            and self.bot.user.id in message.raw_mentions
+        if message.author.bot or message.author.id == cfg.discord.owner.user_id:
+            return False
+        # a reply's ping isn't in raw_mentions, so replies to answers count too
+        parent = self._replied_to(message)
+        return self.bot.user.id in message.raw_mentions or (
+            parent is not None and self._is_answer(parent)
         )
 
     @commands.Cog.listener()
     async def on_message(self, message: Message) -> None:
         if not self._is_question(message):
-            if self._is_stranger_mention(message):
+            if self._is_stranger_question(message):
                 with contextlib.suppress(discord.HTTPException):
                     await message.add_reaction(SHRUG)
             return
@@ -258,30 +267,58 @@ class Ask(commands.Cog):
 
         turns: list[Turn] = []
         images_left = MAX_IMAGES
-        for m in reversed(chain):
+        for m in reversed(chain[1:]):
             # the conversation has to open with a user turn
             if turns and self._is_answer(m):
                 turns.append(Turn("assistant", await self._read_answer(m)))
                 continue
             text, images = await self._read_message(m, images_left)
             images_left -= len(images)
-            if m is message:
-                now = datetime.now(UTC)
-                text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{text}"
             turns.append(Turn("user", text, images))
+
+        for linked in await self._linked_messages(message):
+            if isinstance(linked, str):
+                turns.append(Turn("user", linked))
+                continue
+            text, images = await self._read_message(linked, images_left, quote=True)
+            images_left -= len(images)
+            turns.append(Turn("user", text, images))
+
+        text, images = await self._read_message(message, images_left)
+        now = datetime.now(UTC)
+        text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{text}"
+        turns.append(Turn("user", text, images))
         return turns
 
+    async def _linked_messages(self, message: Message) -> list[Message | str]:
+        """Messages linked in the question, or a note for each that can't be read."""
+        links = list(dict.fromkeys(MESSAGE_LINK.findall(message.content)))
+        linked: list[Message | str] = []
+        for channel_id, message_id in links[:MAX_LINKS]:
+            try:
+                channel = self.bot.get_channel(
+                    int(channel_id)
+                ) or await self.bot.fetch_channel(int(channel_id))
+                if isinstance(channel, discord.abc.Messageable):
+                    linked.append(await channel.fetch_message(int(message_id)))
+                    continue
+            except discord.HTTPException:
+                pass
+            linked.append(f"[Linked message {message_id} couldn't be opened]")
+        return linked
+
     async def _read_message(
-        self, message: Message, images_left: int
+        self, message: Message, images_left: int, *, quote: bool = False
     ) -> tuple[str, list[ImageInput]]:
         assert self.bot.user is not None
-        if message.author.id == cfg.discord.owner.user_id:
+        if message.author.id == cfg.discord.owner.user_id and not quote:
             text = re.sub(rf"<@!?{self.bot.user.id}>", "", message.content).strip()
         else:
             ts = int(message.created_at.timestamp())
+            quoted = USAGE_LINE.sub("", message_text(message)).strip()
             text = (
                 f"[Quoted message from {message.author.display_name} at <t:{ts}>]\n"
-                f"{message_text(message)}"
+                f"{quoted}"
             )
 
         images: list[ImageInput] = []

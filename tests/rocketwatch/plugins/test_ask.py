@@ -161,9 +161,13 @@ class TestIsQuestion:
         # recognized from the message itself, so it works after a restart
         assert cog._is_question(_reply_to(_answer_message(50), "and megapools?"))
 
-    def test_reply_to_other_bot_message(self, cog: Ask) -> None:
+    def test_reply_to_any_bot_message(self, cog: Ask) -> None:
         event = _message(message_id=50, author_id=BOT_ID)
-        assert not cog._is_question(_reply_to(event, "what's this?"))
+        assert cog._is_question(_reply_to(event, "what's this?"))
+
+    def test_reply_to_someone_else(self, cog: Ask) -> None:
+        other = _message(message_id=50, author_id=STRANGER_ID)
+        assert not cog._is_question(_reply_to(other, "true?"))
 
     def test_reply_to_someone_quoting_the_usage_line(self, cog: Ask) -> None:
         copy = _answer_message(50)
@@ -236,6 +240,35 @@ class TestBuildTurns:
             "the full answer\n\n[Attachment nodes.csv]\nnode,stake\n0x1,5"
         )
         assert previous.images == []
+
+    async def test_linked_messages_are_context(self, cog: Ask) -> None:
+        linked = _message("my earlier take", message_id=70, author_id=OWNER_ID)
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.fetch_message = AsyncMock(return_value=linked)
+        cog.bot.get_channel = MagicMock(return_value=channel)
+        link = "https://discord.com/channels/1/2/70"
+
+        turns = await cog._build_turns(
+            _message(f"<@{BOT_ID}> is {link} still right? {link}")
+        )
+
+        # quoted even when it's the owner's own message, and each link once
+        assert [t.role for t in turns] == ["user", "user"]
+        assert turns[0].text.startswith("[Quoted message from owner")
+        assert turns[0].text.endswith("my earlier take")
+        cog.bot.get_channel.assert_called_once_with(2)
+        channel.fetch_message.assert_awaited_once_with(70)
+        assert turns[1].text.endswith(f"is {link} still right? {link}")
+
+    async def test_unreadable_link_is_noted(self, cog: Ask) -> None:
+        cog.bot.get_channel = MagicMock(return_value=None)
+        cog.bot.fetch_channel = AsyncMock(
+            side_effect=discord.Forbidden(MagicMock(status=403), "no access")
+        )
+        turns = await cog._build_turns(
+            _message(f"<@{BOT_ID}> what about https://ptb.discord.com/channels/1/2/70")
+        )
+        assert turns[0].text == "[Linked message 70 couldn't be opened]"
 
     async def test_quoted_bot_embed_is_context(self, cog: Ask) -> None:
         event = _message(
@@ -413,6 +446,23 @@ class TestOnMessage:
         message = _message("just chatting")
         await cog.on_message(message)
         run_agent.assert_not_awaited()
+        message.add_reaction.assert_not_awaited()
+
+    async def test_shrugs_at_strangers_replying_to_answers(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        message = _reply_to(_answer_message(50), "can you check mine?")
+        message.author.id = STRANGER_ID
+        await cog.on_message(message)
+        run_agent.assert_not_awaited()
+        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
+
+    async def test_no_shrug_for_replies_to_event_posts(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        message = _reply_to(_message(message_id=50, author_id=BOT_ID), "nice")
+        message.author.id = STRANGER_ID
+        await cog.on_message(message)
         message.add_reaction.assert_not_awaited()
 
     async def test_shrugs_at_strangers(self, cog: Ask, run_agent: AsyncMock) -> None:
