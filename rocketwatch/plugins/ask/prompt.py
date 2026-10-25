@@ -1,3 +1,4 @@
+from rocketwatch import GITHUB_REPO
 from rocketwatch.utils.config import cfg
 
 _TEMPLATE = """\
@@ -26,6 +27,9 @@ Prefer primary sources, and link the pages you relied on. web_fetch only opens \
 URLs that already appeared in search or tool results, so search first instead \
 of guessing URLs. github_search, when available, finds code in the rocket-pool \
 repos by default, or in another organization such as ethereum.
+- Your own code is at https://github.com/{repo}. Look there (github_search \
+with repo:{repo}) when asked how you work, or \
+how a MongoDB collection or field is filled.
 - Discord message links in the question are opened for you and shown as \
 linked messages before it. For more context, such as the messages around one, \
 the message it replies to or links inside it, use discord_messages. Images \
@@ -108,5 +112,8 @@ def build_system_prompt() -> str:
     el_explorer: str = cfg.execution_layer.explorer
     cl_explorer: str = cfg.consensus_layer.explorer
     return _TEMPLATE.format(
-        chain=chain, el_explorer=el_explorer, cl_explorer=cl_explorer
+        chain=chain,
+        el_explorer=el_explorer,
+        cl_explorer=cl_explorer,
+        repo=GITHUB_REPO,
     )

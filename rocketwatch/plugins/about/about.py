@@ -10,6 +10,7 @@ from discord import Interaction
 from discord.app_commands import command
 from discord.ext import commands
 
+from rocketwatch import GITHUB_REPO
 from rocketwatch.bot import RocketWatch
 from rocketwatch.utils import readable
 from rocketwatch.utils.config import cfg
@@ -73,14 +74,12 @@ class About(commands.Cog):
         bot_uptime = time.time() - BOOT_TIME
         e.add_field(name="Bot Uptime", value=f"{readable.pretty_time(bot_uptime)}")
 
-        repo_name = "haloooloolo/rocketwatch"
-
         # show credits
         try:
             async with (
                 aiohttp.ClientSession() as session,
                 session.get(
-                    f"https://api.github.com/repos/{repo_name}/contributors"
+                    f"https://api.github.com/repos/{GITHUB_REPO}/contributors"
                 ) as resp,
             ):
                 contributors_data = await resp.json()
