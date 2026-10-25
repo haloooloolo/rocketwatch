@@ -21,6 +21,7 @@ from rocketwatch.plugins.ask.messages import (
     is_text,
     message_text,
     read_message,
+    take_image,
 )
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
@@ -178,17 +179,18 @@ class Ask(commands.Cog):
             try:
                 tools = AskTools(self.bot.db, cfg.secrets.github, self.bot)
                 async with asyncio.timeout(ANSWER_TIMEOUT):
+                    turns, answer_files = await self._build_turns(message)
                     result = await run_agent(
                         self.llm,
                         self.system_prompt,
-                        await self._build_turns(message),
+                        turns,
                         tools.definitions(),
                         Answer,
                         server_tools=WEB_TOOLS,
                         code_execution=True,
                         time_limit=ANSWER_TIME_LIMIT,
                         usage=usage,
-                        container_files=self.container_files,
+                        container_files=[*self.container_files, *answer_files.items()],
                     )
                 view, files = render_answer(
                     result.output,
@@ -233,7 +235,11 @@ class Ask(commands.Cog):
         except discord.HTTPException:
             return None
 
-    async def _build_turns(self, message: Message) -> list[Turn]:
+    async def _build_turns(
+        self, message: Message
+    ) -> tuple[list[Turn], dict[str, bytes]]:
+        """The conversation for the model, and the files attached to earlier
+        answers in it, for the sandbox."""
         chain = [message]
         while len(chain) < MAX_CHAIN and (parent := await self._parent(chain[-1])):
             chain.append(parent)
@@ -241,16 +247,14 @@ class Ask(commands.Cog):
         def user_turn(content: MessageContent) -> Turn:
             return Turn("user", content.text, content.images, content.documents)
 
-        turns: list[Turn] = []
+        # built newest first, so the question's own media gets the budget first
         budget = MediaBudget(MAX_IMAGES, MAX_DOCUMENTS)
-        for m in reversed(chain[1:]):
-            # the conversation has to open with a user turn
-            if turns and self._is_answer(m):
-                turns.append(Turn("assistant", await self._read_answer(m)))
-                continue
-            turns.append(user_turn(await self._read_message(m, budget)))
+        question = await self._read_message(message, budget)
+        now = datetime.now(UTC)
+        question.text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{question.text}"
+        turns = [user_turn(question)]
 
-        for link, linked in await self._linked_messages(message):
+        for link, linked in reversed(await self._linked_messages(message)):
             if linked is None:
                 turns.append(
                     Turn("user", f"[Linked message {link} couldn't be opened]")
@@ -258,11 +262,20 @@ class Ask(commands.Cog):
                 continue
             turns.append(user_turn(await self._read_message(linked, budget, link=link)))
 
-        question = await self._read_message(message, budget)
-        now = datetime.now(UTC)
-        question.text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{question.text}"
-        turns.append(user_turn(question))
-        return turns
+        files: dict[str, bytes] = {}
+        for m in chain[1:]:
+            # the conversation has to open with a user turn
+            if m is not chain[-1] and self._is_answer(m):
+                text, images, attached = await self._read_answer(m, budget)
+                # a newer answer's file wins a shared name
+                files = attached | files
+                if images.images:
+                    turns.append(user_turn(images))
+                turns.append(Turn("assistant", text))
+                continue
+            turns.append(user_turn(await self._read_message(m, budget)))
+        turns.reverse()
+        return turns, files
 
     async def _linked_messages(
         self, message: Message
@@ -299,19 +312,32 @@ class Ask(commands.Cog):
         return content
 
     @staticmethod
-    async def _read_answer(message: Message) -> str:
+    async def _read_answer(
+        message: Message, budget: MediaBudget
+    ) -> tuple[str, MessageContent, dict[str, bytes]]:
+        """An answer's text, its images for a user turn after it (assistant turns
+        can't hold images), and its files for the sandbox."""
         full: str | None = None
         extras: list[str] = []
+        images = MessageContent("")
+        files: dict[str, bytes] = {}
         for att in message.attachments:
-            if not is_text(att):
-                continue
-            content = (await att.read()).decode(errors="replace")
+            data = await att.read()
             if att.filename == FULL_ANSWER_FILE:
-                full = content
-            else:
-                extras.append(f"[Attachment {att.filename}]\n{content}")
+                full = data.decode(errors="replace")
+                continue
+            files[att.filename] = data
+            label = f"[Attachment {att.filename}]"
+            if is_text(att):
+                label += "\n" + data.decode(errors="replace")
+            extras.append(label)
+            if image := take_image(att, data, budget):
+                images.images.append(image)
+                images.text += f"\n[Image {att.filename}]"
+        if images.images:
+            images.text = "[Images in your previous answer]" + images.text
         text = full or USAGE_LINE.sub("", message_text(message)).strip()
-        return "\n\n".join([text, *extras])
+        return "\n\n".join([text, *extras]), images, files
 
 
 async def setup(bot: RocketWatch) -> None:

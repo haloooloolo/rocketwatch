@@ -56,6 +56,17 @@ def is_text(att: discord.Attachment) -> bool:
     return _content_type(att).startswith(TEXT_TYPES) and att.size <= MAX_TEXT_BYTES
 
 
+def take_image(
+    att: discord.Attachment, data: bytes, budget: MediaBudget
+) -> ImageInput | None:
+    """An attachment's data as an image for the model, while the budget lasts."""
+    kind = _content_type(att)
+    if kind not in IMAGE_TYPES or len(data) > MAX_IMAGE_BYTES or budget.images < 1:
+        return None
+    budget.images -= 1
+    return ImageInput(data, kind)
+
+
 def _size(n: int) -> str:
     return f"{n / 1024 / 1024:.1f} MB" if n >= 1024 * 1024 else f"{n / 1024:.0f} KB"
 

@@ -51,7 +51,8 @@ before scripts are stopped, so make calls concurrently (asyncio.gather), batch \
 contract calls with contract_call_many, and check how many items a loop covers \
 before running it. Files a script saves to the directory in the OUTPUT_DIR \
 environment variable can be shown and attached by name, like those from \
-save_file; other sandbox files can't.
+save_file; other sandbox files can't. Files attached to your earlier answers \
+are in the INPUT_DIR directory.
 - Draw charts with matplotlib in code_execution and save them as PNGs to \
 OUTPUT_DIR. Start with plt.style.use(os.environ["INPUT_DIR"] + \
 "/rocketwatch.mplstyle") for the bot's chart style.

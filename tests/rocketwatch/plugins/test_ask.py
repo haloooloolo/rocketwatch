@@ -194,9 +194,14 @@ class TestIsQuestion:
         assert not cog._is_question(_reply_to(copy, "huh?"))
 
 
+async def _turns(cog: Ask, message: MagicMock) -> list[Turn]:
+    turns, _ = await cog._build_turns(message)
+    return turns
+
+
 class TestBuildTurns:
     async def test_question_strips_mention_and_has_time(self, cog: Ask) -> None:
-        turns = await cog._build_turns(_message(f"<@{BOT_ID}> how many nodes?"))
+        turns = await _turns(cog, _message(f"<@{BOT_ID}> how many nodes?"))
         [turn] = turns
         assert turn.role == "user"
         assert turn.text.startswith("Current time: ")
@@ -217,7 +222,7 @@ class TestBuildTurns:
         )
         question = _message(f"<@{BOT_ID}> is this true?", parent=quoted)
 
-        context, asked = await cog._build_turns(question)
+        context, asked = await _turns(cog, question)
 
         assert context.role == "user"
         assert "alice" in context.text
@@ -231,7 +236,7 @@ class TestBuildTurns:
         answer = _answer_message(11, parent=first)
         follow_up = _message("and last year?", message_id=12, parent=answer)
 
-        turns = await cog._build_turns(follow_up)
+        turns = await _turns(cog, follow_up)
 
         assert [t.role for t in turns] == ["user", "assistant", "user"]
         # without the usage line, which the model would otherwise copy
@@ -252,13 +257,52 @@ class TestBuildTurns:
         )
         follow_up = _message("sort by stake", message_id=12, parent=answer)
 
-        _, previous, _ = await cog._build_turns(follow_up)
+        (_, previous, charts, _), files = await cog._build_turns(follow_up)
 
-        # the full text replaces the clipped one; charts stay out
+        # the full text replaces the clipped one
         assert previous.text == (
             "the full answer\n\n[Attachment nodes.csv]\nnode,stake\n0x1,5"
+            "\n\n[Attachment chart.png]"
         )
-        assert previous.images == []
+        # assistant turns can't hold images, so the chart follows in a user turn
+        assert charts.role == "user"
+        assert "chart.png" in charts.text
+        assert [i.data for i in charts.images] == [b"\x89PNG"]
+        assert files == {"nodes.csv": b"node,stake\n0x1,5", "chart.png": b"\x89PNG"}
+
+    async def test_question_images_come_before_older_ones(self, cog: Ask) -> None:
+        first = _message(f"<@{BOT_ID}> chart it", message_id=10)
+        charts = [
+            _attachment("image/png", b"\x89PNG", f"c{i}.png")
+            for i in range(ask_module.MAX_IMAGES)
+        ]
+        answer = _answer_message(11, parent=first, attachments=charts)
+        photo = _attachment("image/jpeg", b"\xff\xd8", "photo.jpg")
+        follow_up = _message(
+            "like this one", message_id=12, parent=answer, attachments=[photo]
+        )
+
+        turns, files = await cog._build_turns(follow_up)
+
+        assert [i.data for i in turns[-1].images] == [b"\xff\xd8"]
+        assert sum(len(t.images) for t in turns) == ask_module.MAX_IMAGES
+        # charts past the budget still reach the sandbox
+        assert len(files) == ask_module.MAX_IMAGES
+
+    async def test_newer_answer_files_win_a_shared_name(self, cog: Ask) -> None:
+        first = _message(f"<@{BOT_ID}> chart it", message_id=10)
+        old = _answer_message(
+            11, parent=first, attachments=[_attachment("image/png", b"old", "c.png")]
+        )
+        again = _message("redo it", message_id=12, parent=old)
+        new = _answer_message(
+            13, parent=again, attachments=[_attachment("image/png", b"new", "c.png")]
+        )
+        follow_up = _message("thanks", message_id=14, parent=new)
+
+        _, files = await cog._build_turns(follow_up)
+
+        assert files == {"c.png": b"new"}
 
     async def test_linked_messages_are_context(self, cog: Ask) -> None:
         linked = _message("my earlier take", message_id=70, author_id=OWNER_ID)
@@ -267,8 +311,8 @@ class TestBuildTurns:
         cog.bot.get_channel = MagicMock(return_value=channel)
         link = "https://discord.com/channels/1/2/70"
 
-        turns = await cog._build_turns(
-            _message(f"<@{BOT_ID}> is {link} still right? {link}")
+        turns = await _turns(
+            cog, _message(f"<@{BOT_ID}> is {link} still right? {link}")
         )
 
         # quoted even when it's the owner's own message, and each link once
@@ -285,8 +329,9 @@ class TestBuildTurns:
         cog.bot.fetch_channel = AsyncMock(
             side_effect=discord.Forbidden(MagicMock(status=403), "no access")
         )
-        turns = await cog._build_turns(
-            _message(f"<@{BOT_ID}> what about https://ptb.discord.com/channels/1/2/70")
+        turns = await _turns(
+            cog,
+            _message(f"<@{BOT_ID}> what about https://ptb.discord.com/channels/1/2/70"),
         )
         assert turns[0].text == (
             "[Linked message https://ptb.discord.com/channels/1/2/70 couldn't be opened]"
@@ -299,17 +344,13 @@ class TestBuildTurns:
             author_name="Rocket Watch",
             embeds=[discord.Embed(title="Megapool deployed", description="node 0x1")],
         )
-        [context, _] = await cog._build_turns(
-            _message(f"<@{BOT_ID}> who?", parent=event)
-        )
+        [context, _] = await _turns(cog, _message(f"<@{BOT_ID}> who?", parent=event))
         assert context.role == "user"
         assert "**Megapool deployed**\nnode 0x1" in context.text
 
     async def test_images_are_capped(self, cog: Ask) -> None:
         images = [_attachment("image/jpeg", b"\xff\xd8") for _ in range(6)]
-        turns = await cog._build_turns(
-            _message(f"<@{BOT_ID}> compare", attachments=images)
-        )
+        turns = await _turns(cog, _message(f"<@{BOT_ID}> compare", attachments=images))
         assert len(turns[0].images) == ask_module.MAX_IMAGES
 
     async def test_deleted_parent_ends_chain(self, cog: Ask) -> None:
@@ -318,7 +359,7 @@ class TestBuildTurns:
         question.channel.fetch_message.side_effect = discord.NotFound(
             MagicMock(status=404), "gone"
         )
-        assert len(await cog._build_turns(question)) == 1
+        assert len(await _turns(cog, question)) == 1
 
 
 class TestRenderAnswer:
@@ -495,11 +536,18 @@ class TestOnMessage:
     ) -> None:
         message = _message(f"<@{BOT_ID}> list nodes")
         await cog.on_message(message)
-        answer = _answer_message(message.reply.return_value.id, parent=message)
+        answer = _answer_message(
+            message.reply.return_value.id,
+            parent=message,
+            attachments=[_attachment("image/png", b"\x89PNG", "pie.png")],
+        )
 
         await cog.on_message(_reply_to(answer, "only active ones"))
 
         assert run_agent.await_count == 2
+        # the earlier chart goes to the sandbox next to the style file
+        names = [n for n, _ in run_agent.call_args.kwargs["container_files"]]
+        assert names == [ask_module.CHART_STYLE.name, "pie.png"]
 
     async def test_ignores_non_questions(self, cog: Ask, run_agent: AsyncMock) -> None:
         message = _message("just chatting")
