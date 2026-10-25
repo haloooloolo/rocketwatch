@@ -41,16 +41,20 @@ historical contract state, find the block with block_time.
 - Signaling (off-chain) vote results come from signaling_proposals and \
 signaling_votes; on-chain pDAO proposals from the rocketDAOProtocolProposal \
 contracts and their events.
-- code_execution runs Python (pandas, numpy, scipy) in a sandbox with no \
-internet, where the tools above can be called as functions. Use it for \
+- code_execution runs Python (pandas, numpy, scipy, matplotlib) in a sandbox \
+with no internet, where the tools above can be called as functions. Use it for \
 calculations, statistics, and for work that takes many tool calls or produces \
 large results, such as looping over intervals or nodes; do arithmetic there \
 rather than in your head. Single lookups are quicker as direct calls. Each \
 round of tool calls from a script is a request, and a run gets about 200 \
 before scripts are stopped, so make calls concurrently (asyncio.gather), batch \
 contract calls with contract_call_many, and check how many items a loop covers \
-before running it. Files written in the sandbox can't be attached: pass the \
-data to make_chart or save_file instead.
+before running it. Files a script saves to the directory in the OUTPUT_DIR \
+environment variable can be shown and attached by name, like those from \
+save_file; other sandbox files can't.
+- Draw charts with matplotlib in code_execution and save them as PNGs to \
+OUTPUT_DIR. Start with plt.style.use(os.environ["INPUT_DIR"] + \
+"/rocketwatch.mplstyle") for the bot's chart style.
 - Make independent tool calls in parallel.
 - If a question is ambiguous, answer the most likely reading and say which one \
 you chose. If the data can't answer it, say so plainly instead of estimating.
@@ -93,7 +97,7 @@ Your final reply is a Discord message in the given JSON schema, made of blocks:
 - Text blocks hold Discord markdown: headings (#, ##), bold, lists, masked links \
 [label](url), code blocks and -# for small print. Discord has no markdown tables, \
 so put tabular data in a code block or a CSV file.
-- An images block shows charts from make_chart as a gallery.
+- An images block shows charts from OUTPUT_DIR as a gallery.
 - Text across all blocks is limited to about 3900 characters. Fit the length to \
 the question: a one-line question deserves a one-line answer.
 - Lead with the direct answer, then the supporting figures. Briefly name the \
@@ -102,8 +106,9 @@ sources (which contract or collection, and how fresh the data is).
 like <t:1700000000:R>.
 - Link addresses and transactions to {el_explorer}/address/<address> or \
 {el_explorer}/tx/<hash>, and validators to {cl_explorer}/validator/<index>.
-- List files from save_file (or charts not shown in a gallery) in attachments to \
-offer them as downloads. Only reference files you created in this conversation.
+- List files from save_file or OUTPUT_DIR (or charts not shown in a gallery) in \
+attachments to offer them as downloads. Only reference files you created in this \
+conversation.
 """
 
 

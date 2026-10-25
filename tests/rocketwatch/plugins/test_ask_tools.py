@@ -20,7 +20,6 @@ from rocketwatch.plugins.ask.tools import (
     AskTools,
     BeaconGetInput,
     BlockTimeInput,
-    ChartInput,
     CollectionInput,
     ContractCallInput,
     ContractCallManyInput,
@@ -1050,87 +1049,6 @@ class TestDefiLlama:
         _http(monkeypatch, 404, "Not Found")
         with pytest.raises(ToolError, match="404: Not Found"):
             await tools.defillama_get(DefiLlamaInput(host="api", path="protocol/nope"))
-
-
-class TestMakeChart:
-    @pytest.mark.parametrize(
-        ("kind", "x_type", "stacked"),
-        [
-            ("line", "time", False),
-            ("scatter", "number", False),
-            ("area", "number", True),
-            ("area", "category", False),
-            ("bar", "category", False),
-            ("bar", "time", True),
-        ],
-    )
-    async def test_renders_png(
-        self, tools: AskTools, kind: str, x_type: str, stacked: bool
-    ) -> None:
-        x: list[float | str] = (
-            ["a", "b", "c"] if x_type == "category" else [1.7e9, 1.71e9, 1.72e9]
-        )
-        result = await tools.make_chart(
-            ChartInput.model_validate(
-                {
-                    "filename": "chart",
-                    "kind": kind,
-                    "title": "Title",
-                    "x_type": x_type,
-                    "stacked": stacked,
-                    "log_y": kind == "scatter",
-                    "series": [
-                        {"label": "one", "x": x, "y": [1, 2, 3]},
-                        {"label": "two", "x": x, "y": [3, 2, 1]},
-                    ],
-                }
-            )
-        )
-        assert result == "Saved chart.png"
-        assert tools.files["chart.png"].startswith(b"\x89PNG")
-
-    async def test_iso_dates_on_time_axis(self, tools: AskTools) -> None:
-        await tools.make_chart(
-            ChartInput.model_validate(
-                {
-                    "filename": "dates",
-                    "kind": "line",
-                    "title": "t",
-                    "x_type": "time",
-                    "series": [
-                        {"label": "s", "x": ["2025-01-01", "2025-02-01"], "y": [1, 2]}
-                    ],
-                }
-            )
-        )
-        assert "dates.png" in tools.files
-
-    async def test_mismatched_series(self, tools: AskTools) -> None:
-        with pytest.raises(ToolError):
-            await tools.make_chart(
-                ChartInput.model_validate(
-                    {
-                        "filename": "c",
-                        "kind": "line",
-                        "title": "t",
-                        "series": [{"label": "s", "x": [1, 2], "y": [1]}],
-                    }
-                )
-            )
-        assert tools.files == {}
-
-    async def test_non_numeric_x(self, tools: AskTools) -> None:
-        with pytest.raises(ToolError):
-            await tools.make_chart(
-                ChartInput.model_validate(
-                    {
-                        "filename": "c",
-                        "kind": "line",
-                        "title": "t",
-                        "series": [{"label": "s", "x": ["a"], "y": [1]}],
-                    }
-                )
-            )
 
 
 class TestReadOnly:

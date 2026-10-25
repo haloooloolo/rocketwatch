@@ -84,6 +84,8 @@ class Usage:
 class AgentResult[R: BaseModel]:
     output: R
     usage: Usage
+    # files scripts saved to $OUTPUT_DIR, by name
+    files: dict[str, bytes] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -153,6 +155,8 @@ def _build_message(turn: Turn) -> BetaMessageParam:
 
 
 CODE_EXECUTION = "code_execution_20260120"
+FILES_BETA = "files-api-2025-04-14"
+MAX_EXPORT_BYTES = 8 * 1024 * 1024
 # requests allowed past the budget for a script to stop and the model to answer
 WIND_DOWN_REQUESTS = 10
 STOP_SCRIPT = (
@@ -192,6 +196,82 @@ def _awaits_server_tool(content: list[BetaContentBlock]) -> bool:
     called = {b.id for b in content if b.type in ("server_tool_use", "mcp_tool_use")}
     answered = {getattr(b, "tool_use_id", None) for b in content}
     return bool(called - answered)
+
+
+def _exported_files(content: list[BetaContentBlock]) -> list[str]:
+    """Ids of the files a sandbox run saved to $OUTPUT_DIR."""
+    from anthropic.types.beta import (
+        BetaBashCodeExecutionResultBlock,
+        BetaBashCodeExecutionToolResultBlock,
+        BetaCodeExecutionResultBlock,
+        BetaCodeExecutionToolResultBlock,
+        BetaEncryptedCodeExecutionResultBlock,
+    )
+
+    ids: list[str] = []
+    for block in content:
+        if not isinstance(
+            block,
+            (BetaCodeExecutionToolResultBlock, BetaBashCodeExecutionToolResultBlock),
+        ):
+            continue
+        result = block.content
+        if isinstance(
+            result,
+            (
+                BetaCodeExecutionResultBlock,
+                BetaEncryptedCodeExecutionResultBlock,
+                BetaBashCodeExecutionResultBlock,
+            ),
+        ):
+            ids += [output.file_id for output in result.content]
+    return ids
+
+
+async def _download_files(
+    provider: AnthropicProvider, file_ids: list[str]
+) -> dict[str, bytes]:
+    """The newest file under each name, skipping oversized ones. A failed
+    download only loses its files."""
+    files = provider.client.beta.files
+    try:
+        metadata = await asyncio.gather(
+            *(files.retrieve_metadata(i, betas=[FILES_BETA]) for i in file_ids)
+        )
+        # a script rerun exports a file again under the same name
+        latest = {m.filename: m for m in metadata}
+        wanted = [m for m in latest.values() if m.size_bytes <= MAX_EXPORT_BYTES]
+        responses = await asyncio.gather(
+            *(files.download(m.id, betas=[FILES_BETA]) for m in wanted)
+        )
+        return {
+            m.filename: await response.read()
+            for m, response in zip(wanted, responses, strict=True)
+        }
+    except Exception:
+        log.warning("Couldn't download exported files", exc_info=True)
+        return {}
+
+
+def _with_uploads(message: BetaMessageParam, file_ids: list[str]) -> BetaMessageParam:
+    content = message["content"]
+    blocks: list[Any] = [{"type": "container_upload", "file_id": i} for i in file_ids]
+    if isinstance(content, str):
+        blocks.append({"type": "text", "text": content})
+    else:
+        blocks += content
+    # the conversation opens with a user turn
+    return {"role": "user", "content": blocks}
+
+
+async def _delete_files(provider: AnthropicProvider, file_ids: list[str]) -> None:
+    # uploads and exports are kept until deleted
+    results = await asyncio.gather(
+        *(provider.client.beta.files.delete(i, betas=[FILES_BETA]) for i in file_ids),
+        return_exceptions=True,
+    )
+    if failed := sum(isinstance(r, BaseException) for r in results):
+        log.warning("Couldn't delete %d files", failed)
 
 
 def _tool_result(
@@ -275,6 +355,7 @@ async def run_agent[T: BaseModel](
     effort: Effort = "high",
     max_tokens: int = 16000,
     usage: Usage | None = None,
+    container_files: Sequence[tuple[str, bytes]] = (),
 ) -> AgentResult[T]:
     """Let the model call tools until it produces an answer matching schema.
 
@@ -290,6 +371,9 @@ async def run_agent[T: BaseModel](
 
     Totals are added to usage as the run goes, so a caller that passes one in
     can still see what a failed or cancelled run used.
+
+    container_files, as (name, content), are placed in the sandbox's $INPUT_DIR.
+    Files that scripts save to $OUTPUT_DIR come back in the result's files.
     """
     from anthropic import omit, transform_schema
 
@@ -319,102 +403,122 @@ async def run_agent[T: BaseModel](
     loop = asyncio.get_running_loop()
     deadline = None if time_limit is None else loop.time() + time_limit
 
-    for request in range(max_requests + WIND_DOWN_REQUESTS):
-        exhausted = request >= max_requests or (
-            deadline is not None and loop.time() >= deadline
-        )
-        forced = (model_turns >= max_iterations or exhausted) and not turn_open
-        # tell the model why it can't call tools, so a cut-short answer says so
-        last = messages[-1]
-        if (
-            forced
-            and not told
-            and last["role"] == "user"
-            and isinstance(last["content"], list)
-        ):
-            last["content"].append({"type": "text", "text": OUT_OF_TOOLS})
-            told = True
-        response = await provider.client.beta.messages.create(
-            model=provider.model,
-            max_tokens=max_tokens,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            cache_control={"type": "ephemeral"},
-            system=[
-                {
-                    "type": "text",
-                    "text": system,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=messages,
-            tools=tool_params,
-            tool_choice=answer_now if forced else omit,
-            output_config=output_config,
-            container=container or omit,
-        )
-        log.info(
-            "Agent step %d: stop=%s in=%d cached=%d out=%d",
-            request,
-            response.stop_reason,
-            response.usage.input_tokens,
-            response.usage.cache_read_input_tokens or 0,
-            response.usage.output_tokens,
-        )
-        messages.append({"role": "assistant", "content": response.content})
-        cached = response.usage.cache_read_input_tokens or 0
-        written = response.usage.cache_creation_input_tokens or 0
-        usage.cached_tokens += cached
-        usage.cache_write_tokens += written
-        usage.input_tokens += response.usage.input_tokens + cached + written
-        usage.output_tokens += response.usage.output_tokens
-        server = response.usage.server_tool_use
-        searches = server.web_search_requests if server is not None else 0
-        usage.web_searches += searches
-        # priced by the model that answered, which a fallback can change
-        cost = request_cost(
-            response.model,
-            response.usage.input_tokens,
-            cached,
-            written,
-            response.usage.output_tokens,
-            searches,
-        )
-        usage.cost = None if usage.cost is None or cost is None else usage.cost + cost
-        usage.tool_calls += sum(
-            b.type in ("tool_use", "server_tool_use") for b in response.content
-        )
-        if response.container is not None:
-            container = response.container.id
-        # responses that only carry a running script's tool calls aren't model turns
-        if not all(_from_code(b) for b in response.content):
-            model_turns += 1
+    uploads: list[str] = []
+    exports: list[str] = []
+    try:
+        for name, data in container_files:
+            uploaded = await provider.client.beta.files.upload(
+                file=(name, data), betas=[FILES_BETA]
+            )
+            uploads.append(uploaded.id)
+        if uploads:
+            messages[0] = _with_uploads(messages[0], uploads)
+        for request in range(max_requests + WIND_DOWN_REQUESTS):
+            exhausted = request >= max_requests or (
+                deadline is not None and loop.time() >= deadline
+            )
+            forced = (model_turns >= max_iterations or exhausted) and not turn_open
+            # tell the model why it can't call tools, so a cut-short answer says so
+            last = messages[-1]
+            if (
+                forced
+                and not told
+                and last["role"] == "user"
+                and isinstance(last["content"], list)
+            ):
+                last["content"].append({"type": "text", "text": OUT_OF_TOOLS})
+                told = True
+            response = await provider.client.beta.messages.create(
+                model=provider.model,
+                max_tokens=max_tokens,
+                betas=["server-side-fallback-2026-07-01", FILES_BETA],
+                fallbacks="default",
+                cache_control={"type": "ephemeral"},
+                system=[
+                    {
+                        "type": "text",
+                        "text": system,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
+                messages=messages,
+                tools=tool_params,
+                tool_choice=answer_now if forced else omit,
+                output_config=output_config,
+                container=container or omit,
+            )
+            log.info(
+                "Agent step %d: stop=%s in=%d cached=%d out=%d",
+                request,
+                response.stop_reason,
+                response.usage.input_tokens,
+                response.usage.cache_read_input_tokens or 0,
+                response.usage.output_tokens,
+            )
+            messages.append({"role": "assistant", "content": response.content})
+            cached = response.usage.cache_read_input_tokens or 0
+            written = response.usage.cache_creation_input_tokens or 0
+            usage.cached_tokens += cached
+            usage.cache_write_tokens += written
+            usage.input_tokens += response.usage.input_tokens + cached + written
+            usage.output_tokens += response.usage.output_tokens
+            server = response.usage.server_tool_use
+            searches = server.web_search_requests if server is not None else 0
+            usage.web_searches += searches
+            # priced by the model that answered, which a fallback can change
+            cost = request_cost(
+                response.model,
+                response.usage.input_tokens,
+                cached,
+                written,
+                response.usage.output_tokens,
+                searches,
+            )
+            usage.cost = (
+                None if usage.cost is None or cost is None else usage.cost + cost
+            )
+            exports += _exported_files(response.content)
+            usage.tool_calls += sum(
+                b.type in ("tool_use", "server_tool_use") for b in response.content
+            )
+            if response.container is not None:
+                container = response.container.id
+            # responses that only carry a running script's tool calls aren't model turns
+            if not all(_from_code(b) for b in response.content):
+                model_turns += 1
 
-        match response.stop_reason:
-            case "tool_use":
-                if forced:
-                    raise AgentError(
-                        "Model kept calling tools after being told to answer"
-                    )
-                calls = [b for b in response.content if b.type == "tool_use"]
-                script_waiting = any(_from_code(b) for b in calls)
-                turn_open = script_waiting or _awaits_server_tool(response.content)
-                results: list[BetaContentBlockParam]
-                if script_waiting and exhausted:
-                    results = [_tool_result(b, STOP_SCRIPT, True) for b in calls]
-                else:
-                    results = list(
-                        await asyncio.gather(
-                            *(_run_tool(tools_by_name, b, tool_timeout) for b in calls)
+            match response.stop_reason:
+                case "tool_use":
+                    if forced:
+                        raise AgentError(
+                            "Model kept calling tools after being told to answer"
                         )
-                    )
-                messages.append({"role": "user", "content": results})
-            case "pause_turn":
-                turn_open = True
-            case "end_turn" | "stop_sequence":
-                text = "".join(b.text for b in response.content if b.type == "text")
-                return AgentResult(schema.model_validate_json(text), usage)
-            case _:
-                raise AgentError(f"Model stopped early ({response.stop_reason})")
+                    calls = [b for b in response.content if b.type == "tool_use"]
+                    script_waiting = any(_from_code(b) for b in calls)
+                    turn_open = script_waiting or _awaits_server_tool(response.content)
+                    results: list[BetaContentBlockParam]
+                    if script_waiting and exhausted:
+                        results = [_tool_result(b, STOP_SCRIPT, True) for b in calls]
+                    else:
+                        results = list(
+                            await asyncio.gather(
+                                *(
+                                    _run_tool(tools_by_name, b, tool_timeout)
+                                    for b in calls
+                                )
+                            )
+                        )
+                    messages.append({"role": "user", "content": results})
+                case "pause_turn":
+                    turn_open = True
+                case "end_turn" | "stop_sequence":
+                    text = "".join(b.text for b in response.content if b.type == "text")
+                    output = schema.model_validate_json(text)
+                    files = await _download_files(provider, exports)
+                    return AgentResult(output, usage, files)
+                case _:
+                    raise AgentError(f"Model stopped early ({response.stop_reason})")
 
-    raise AgentError(f"No answer after {request + 1} requests")
+        raise AgentError(f"No answer after {request + 1} requests")
+    finally:
+        await _delete_files(provider, uploads + exports)

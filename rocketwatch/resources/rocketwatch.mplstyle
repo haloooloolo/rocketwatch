@@ -1,0 +1,31 @@
+# Rocket Watch chart style, uploaded to the ask agent's sandbox
+
+axes.prop_cycle: cycler('color', ['2a78d6', 'eb6834', '1baf7a', 'eda100', 'e87ba4', '008300', '6250d6', 'e34948'])
+figure.facecolor: fcfcfb
+axes.facecolor: fcfcfb
+savefig.facecolor: fcfcfb
+
+axes.titlelocation: left
+axes.titlesize: 13
+axes.titlepad: 12
+axes.titlecolor: 0b0b0b
+axes.labelcolor: 898781
+xtick.color: 898781
+ytick.color: 898781
+axes.edgecolor: c3c2b7
+axes.spines.top: False
+axes.spines.right: False
+
+axes.grid: True
+axes.grid.axis: y
+axes.axisbelow: True
+grid.color: e1e0d9
+grid.linewidth: 0.8
+
+lines.linewidth: 2
+legend.frameon: False
+legend.labelcolor: 0b0b0b
+
+figure.figsize: 10, 5.5
+savefig.dpi: 150
+savefig.bbox: tight

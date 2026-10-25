@@ -4,6 +4,7 @@ import logging
 import re
 from datetime import UTC, datetime
 from io import BytesIO
+from pathlib import Path
 
 import discord
 from discord import File, Message, ui
@@ -36,7 +37,11 @@ MAX_DOCUMENTS = 1
 MAX_MESSAGE_TEXT = 4000
 MAX_BLOCKS = 20
 MAX_GALLERY = 10
+# Discord's limit per message
+MAX_ATTACHMENTS = 10
+GALLERY_TYPES = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 FULL_ANSWER_FILE = "answer.md"
+CHART_STYLE = Path(__file__).parents[2] / "resources" / "rocketwatch.mplstyle"
 # past the time limit the agent wraps up; the timeout is a backstop for that
 ANSWER_TIME_LIMIT = 10 * 60
 ANSWER_TIMEOUT = 12 * 60
@@ -50,14 +55,14 @@ class TextBlock(BaseModel):
 
 class ImagesBlock(BaseModel):
     images: list[str] = Field(
-        description="Chart filenames from make_chart, shown as a gallery"
+        description="Image filenames from OUTPUT_DIR, shown as a gallery"
     )
 
 
 class Answer(BaseModel):
     blocks: list[TextBlock | ImagesBlock]
     attachments: list[str] = Field(
-        description="Filenames from save_file or make_chart offered as downloads"
+        description="Filenames from save_file or OUTPUT_DIR offered as downloads"
     )
 
 
@@ -103,8 +108,8 @@ def render_answer(
         names = [
             n
             for n in dict.fromkeys(block.images)
-            if n.endswith(".png") and n in files and n not in shown
-        ][:MAX_GALLERY]
+            if n.lower().endswith(GALLERY_TYPES) and n in files and n not in shown
+        ][: min(MAX_GALLERY, MAX_ATTACHMENTS - 1 - len(shown))]
         if names:
             shown += names
             gallery = (discord.MediaGalleryItem(f"attachment://{n}") for n in names)
@@ -117,7 +122,9 @@ def render_answer(
         attached[FULL_ANSWER_FILE] = "\n\n".join(texts).encode()
         downloads.append(FULL_ANSWER_FILE)
     for name in dict.fromkeys(downloads):
-        if name in attached and name not in shown:
+        # the last slot is kept for the full answer
+        full = len(shown) >= MAX_ATTACHMENTS - 1 and name != FULL_ANSWER_FILE
+        if name in attached and name not in shown and not full:
             shown.append(name)
             items.append(ui.File(f"attachment://{name}"))
     items.append(ui.TextDisplay(footer))
@@ -132,6 +139,7 @@ class Ask(commands.Cog):
         self.bot = bot
         self.llm = llm
         self.system_prompt = build_system_prompt()
+        self.container_files = [(CHART_STYLE.name, CHART_STYLE.read_bytes())]
 
     def _is_answer(self, message: Message) -> bool:
         # recognized by the usage line under it, so this survives restarts
@@ -180,10 +188,11 @@ class Ask(commands.Cog):
                         code_execution=True,
                         time_limit=ANSWER_TIME_LIMIT,
                         usage=usage,
+                        container_files=self.container_files,
                     )
                 view, files = render_answer(
                     result.output,
-                    tools.files,
+                    {**result.files, **tools.files},
                     usage_footer(result.usage),
                 )
                 await message.reply(view=view, files=files, mention_author=False)

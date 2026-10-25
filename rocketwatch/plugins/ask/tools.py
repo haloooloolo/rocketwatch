@@ -12,7 +12,6 @@ import numpy as np
 from bson import json_util
 from eth_typing import BlockIdentifier, BlockNumber
 from hexbytes import HexBytes
-from matplotlib.figure import Figure
 from pydantic import BaseModel, Field
 from pymongo.asynchronous.collection import AsyncCollection
 from pymongo.asynchronous.database import AsyncDatabase
@@ -32,7 +31,6 @@ from rocketwatch.utils import solidity
 from rocketwatch.utils.address_labels import get_address_name
 from rocketwatch.utils.agent import AgentTool, ToolError, ToolOutput, called_from_code
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
-from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.ens import get_name, resolve_name
 from rocketwatch.utils.event_logs import get_logs
@@ -127,23 +125,6 @@ _UNFILTERED_VALIDATORS = re.compile(
     r"^/eth/v\d+/beacon/states/[^/]+/(validators|validator_balances)/?$"
 )
 _FILE_EXTENSIONS = {"csv", "txt", "md", "json"}
-
-# categorical slots in fixed order, chart chrome for a light surface
-PALETTE = [
-    "#2a78d6",
-    "#eb6834",
-    "#1baf7a",
-    "#eda100",
-    "#e87ba4",
-    "#008300",
-    "#6250d6",
-    "#e34948",
-]
-SURFACE = "#fcfcfb"
-INK = "#0b0b0b"
-MUTED = "#898781"
-GRID = "#e1e0d9"
-AXIS = "#c3c2b7"
 
 
 def _jsonable(value: Any) -> Any:
@@ -409,27 +390,6 @@ class NodeCollateralInput(BaseModel):
     )
 
 
-class ChartSeries(BaseModel):
-    label: str
-    x: list[float | str]
-    y: list[float]
-
-
-class ChartInput(BaseModel):
-    filename: str = Field(description="Base name without extension")
-    kind: Literal["line", "bar", "scatter", "area"]
-    title: str
-    x_label: str = ""
-    y_label: str = ""
-    x_type: Literal["number", "category", "time"] = Field(
-        "number",
-        description="time: unix timestamps in seconds or ISO dates. Bars always treat x as categories",
-    )
-    series: list[ChartSeries] = Field(min_length=1, max_length=len(PALETTE))
-    stacked: bool = Field(False, description="Stack bar or area series")
-    log_y: bool = False
-
-
 class FileInput(BaseModel):
     filename: str = Field(description="Name with extension: .csv, .txt, .md or .json")
     content: str
@@ -677,13 +637,6 @@ class AskTools:
                 "For one node, or a network summary with percentiles.",
                 NodeCollateralInput,
                 self.node_collateral,
-            ),
-            AgentTool(
-                "make_chart",
-                "Render a PNG chart that can be attached to the answer. Returns its "
-                "filename.",
-                ChartInput,
-                self.make_chart,
             ),
             AgentTool(
                 "save_file",
@@ -1305,148 +1258,3 @@ class AskTools:
         name = self._file_name(stem, extension.lower())
         self.files[name] = args.content.encode()
         return f"Saved {name}"
-
-    async def make_chart(self, args: ChartInput) -> str:
-        for s in args.series:
-            if len(s.x) != len(s.y):
-                raise ToolError(f"Series {s.label!r} has {len(s.x)} x and {len(s.y)} y")
-        if (
-            args.kind == "area"
-            and args.stacked
-            and len({len(s.x) for s in args.series}) > 1
-        ):
-            raise ToolError("Stacked area series must share the same x values")
-
-        categorical = args.kind == "bar" or args.x_type == "category"
-        categories: list[str] = []
-        if categorical:
-            for s in args.series:
-                for x in s.x:
-                    label = self._category_label(x, args.x_type)
-                    if label not in categories:
-                        categories.append(label)
-
-        def xs_for(s: ChartSeries) -> list[Any]:
-            if categorical:
-                return [
-                    categories.index(self._category_label(x, args.x_type)) for x in s.x
-                ]
-            if args.x_type == "time":
-                return [_to_datetime(x) for x in s.x]
-            return [_to_number(x) for x in s.x]
-
-        series_xs = [xs_for(s) for s in args.series]
-        name = self._file_name(args.filename, "png")
-
-        def draw(fig: Figure) -> None:
-            fig.set_facecolor(SURFACE)
-            ax = fig.add_subplot()
-            ax.set_facecolor(SURFACE)
-            match args.kind:
-                case "bar":
-                    self._draw_bars(ax, args, series_xs, len(categories))
-                case "area" if args.stacked:
-                    ax.stackplot(
-                        series_xs[0],
-                        [s.y for s in args.series],
-                        labels=[s.label for s in args.series],
-                        colors=PALETTE,
-                        edgecolor=SURFACE,
-                        linewidth=1,
-                    )
-                case _:
-                    for i, (s, xs) in enumerate(
-                        zip(args.series, series_xs, strict=True)
-                    ):
-                        color = PALETTE[i]
-                        if args.kind == "scatter":
-                            ax.scatter(
-                                xs,
-                                s.y,
-                                s=40,
-                                color=color,
-                                label=s.label,
-                                edgecolors=SURFACE,
-                                linewidths=1,
-                            )
-                            continue
-                        ax.plot(xs, s.y, color=color, linewidth=2, label=s.label)
-                        if args.kind == "area":
-                            ax.fill_between(
-                                xs, s.y, color=color, alpha=0.2, linewidth=0
-                            )
-            self._style_axes(fig, ax, args, categories)
-
-        self.files[name] = (
-            await render_png(draw, figsize=(10, 5.5), dpi=150, bbox_inches="tight")
-        ).getvalue()
-        return f"Saved {name}"
-
-    @staticmethod
-    def _category_label(x: float | str, x_type: str) -> str:
-        if x_type == "time":
-            return _to_datetime(x).strftime("%Y-%m-%d")
-        if isinstance(x, float) and x.is_integer():
-            return str(int(x))
-        return str(x)
-
-    @staticmethod
-    def _draw_bars(
-        ax: Any, args: ChartInput, series_xs: list[list[Any]], n_categories: int
-    ) -> None:
-        bottoms = np.zeros(n_categories)
-        group = len(args.series)
-        width = 0.8 if args.stacked else 0.8 / group
-        for i, (s, xs) in enumerate(zip(args.series, series_xs, strict=True)):
-            positions = np.array(xs, dtype=float)
-            heights = np.array(s.y, dtype=float)
-            if args.stacked:
-                ax.bar(
-                    positions,
-                    heights,
-                    width,
-                    bottom=bottoms[positions.astype(int)],
-                    color=PALETTE[i],
-                    label=s.label,
-                    edgecolor=SURFACE,
-                    linewidth=1,
-                )
-                np.add.at(bottoms, positions.astype(int), heights)
-            else:
-                offset = (i - (group - 1) / 2) * width
-                ax.bar(
-                    positions + offset,
-                    heights,
-                    width,
-                    color=PALETTE[i],
-                    label=s.label,
-                    edgecolor=SURFACE,
-                    linewidth=1,
-                )
-
-    @staticmethod
-    def _style_axes(
-        fig: Figure, ax: Any, args: ChartInput, categories: list[str]
-    ) -> None:
-        ax.set_title(args.title, color=INK, loc="left", fontsize=13, pad=12)
-        ax.set_xlabel(args.x_label, color=MUTED)
-        ax.set_ylabel(args.y_label, color=MUTED)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-        for side in ("left", "bottom"):
-            ax.spines[side].set_color(AXIS)
-        ax.tick_params(colors=MUTED)
-        ax.grid(axis="y", color=GRID, linewidth=0.8)
-        ax.set_axisbelow(True)
-        if args.log_y:
-            ax.set_yscale("log")
-        if categories:
-            ax.set_xticks(range(len(categories)))
-            many = len(categories) > 8
-            ax.set_xticklabels(
-                categories, rotation=45 if many else 0, ha="right" if many else "center"
-            )
-        elif args.x_type == "time":
-            fig.autofmt_xdate()
-        if len(args.series) > 1:
-            ax.legend(frameon=False, labelcolor=INK)

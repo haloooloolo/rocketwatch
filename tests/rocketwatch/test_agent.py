@@ -1,11 +1,20 @@
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from anthropic import omit
 from anthropic.types.beta import (
+    BetaBashCodeExecutionOutputBlock,
+    BetaBashCodeExecutionResultBlock,
+    BetaBashCodeExecutionToolResultBlock,
+    BetaCodeExecutionOutputBlock,
+    BetaCodeExecutionResultBlock,
+    BetaCodeExecutionToolResultBlock,
+    BetaCodeExecutionToolResultError,
     BetaContainer,
+    BetaFileMetadata,
     BetaServerToolCaller20260120,
     BetaServerToolUsage,
     BetaServerToolUseBlock,
@@ -15,6 +24,7 @@ from anthropic.types.beta import (
 )
 from pydantic import BaseModel
 
+from rocketwatch.utils import agent
 from rocketwatch.utils.agent import (
     AgentError,
     AgentTool,
@@ -69,12 +79,53 @@ def _tool_use(*calls: tuple[str, str, dict[str, Any]]) -> MagicMock:
 
 
 @pytest.fixture
-def create(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
-    create = AsyncMock()
+def client(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     client = MagicMock()
-    client.beta.messages.create = create
     monkeypatch.setattr(AnthropicProvider, "_get_client", lambda self: client)
+    return client
+
+
+@pytest.fixture
+def create(client: MagicMock) -> AsyncMock:
+    client.beta.messages.create = create = AsyncMock()
     return create
+
+
+@pytest.fixture
+def stored(client: MagicMock) -> dict[str, tuple[str, bytes]]:
+    """Files the Files API holds, by id, as (filename, content)."""
+    stored: dict[str, tuple[str, bytes]] = {}
+
+    async def metadata(file_id: str, **_: Any) -> BetaFileMetadata:
+        name, data = stored[file_id]
+        return BetaFileMetadata(
+            id=file_id,
+            filename=name,
+            mime_type="application/octet-stream",
+            size_bytes=len(data),
+            created_at=datetime(2026, 10, 25, tzinfo=UTC),
+            type="file",
+        )
+
+    async def download(file_id: str, **_: Any) -> MagicMock:
+        response = MagicMock()
+        response.read = AsyncMock(return_value=stored[file_id][1])
+        return response
+
+    async def delete(file_id: str, **_: Any) -> None:
+        del stored[file_id]
+
+    async def upload(file: tuple[str, bytes], **_: Any) -> MagicMock:
+        uploaded = MagicMock()
+        uploaded.id = f"up{len(stored)}"
+        stored[uploaded.id] = file
+        return uploaded
+
+    client.beta.files.retrieve_metadata = AsyncMock(side_effect=metadata)
+    client.beta.files.download = AsyncMock(side_effect=download)
+    client.beta.files.delete = AsyncMock(side_effect=delete)
+    client.beta.files.upload = AsyncMock(side_effect=upload)
+    return stored
 
 
 @pytest.fixture
@@ -731,3 +782,201 @@ async def test_early_stop_raises(
     create.return_value = _response(stop_reason)
     with pytest.raises(AgentError, match=stop_reason):
         await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
+
+
+def _script_run(*file_ids: str) -> BetaCodeExecutionToolResultBlock:
+    """A finished script that saved files to $OUTPUT_DIR."""
+    return BetaCodeExecutionToolResultBlock(
+        type="code_execution_tool_result",
+        tool_use_id="srv1",
+        content=BetaCodeExecutionResultBlock(
+            type="code_execution_result",
+            content=[
+                BetaCodeExecutionOutputBlock(type="code_execution_output", file_id=i)
+                for i in file_ids
+            ],
+            return_code=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+
+def _bash_run(*file_ids: str) -> BetaBashCodeExecutionToolResultBlock:
+    return BetaBashCodeExecutionToolResultBlock(
+        type="bash_code_execution_tool_result",
+        tool_use_id="srv2",
+        content=BetaBashCodeExecutionResultBlock(
+            type="bash_code_execution_result",
+            content=[
+                BetaBashCodeExecutionOutputBlock(
+                    type="bash_code_execution_output", file_id=i
+                )
+                for i in file_ids
+            ],
+            return_code=0,
+            stdout="",
+            stderr="",
+        ),
+    )
+
+
+def _with_blocks(response: MagicMock, *blocks: Any) -> MagicMock:
+    response.content[:0] = blocks
+    return response
+
+
+async def test_exported_files_are_returned_and_deleted(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    stored.update(
+        {
+            "f1": ("pie.png", b"old"),
+            "f2": ("nodes.csv", b"a,b"),
+            "f3": ("pie.png", b"new"),
+            "f4": ("hist.png", b"png"),
+        }
+    )
+    create.side_effect = [
+        _with_blocks(_response("pause_turn"), _script_run("f1", "f2")),
+        _with_blocks(_answer("done"), _script_run("f3"), _bash_run("f4")),
+    ]
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [], Reply, code_execution=True
+    )
+
+    # a rerun's export replaces the earlier one under the same name
+    assert result.files == {"pie.png": b"new", "nodes.csv": b"a,b", "hist.png": b"png"}
+    assert stored == {}
+
+
+async def test_oversized_exports_are_left_out(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(agent, "MAX_EXPORT_BYTES", 4)
+    stored.update({"f1": ("big.png", b"12345"), "f2": ("small.png", b"1234")})
+    create.return_value = _with_blocks(_answer("done"), _script_run("f1", "f2"))
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [], Reply, code_execution=True
+    )
+
+    assert result.files == {"small.png": b"1234"}
+    assert stored == {}
+
+
+async def test_failed_script_exports_nothing(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    failed = BetaCodeExecutionToolResultBlock(
+        type="code_execution_tool_result",
+        tool_use_id="srv1",
+        content=BetaCodeExecutionToolResultError(
+            type="code_execution_tool_result_error", error_code="unavailable"
+        ),
+    )
+    create.return_value = _with_blocks(_answer("done"), failed)
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [], Reply, code_execution=True
+    )
+
+    assert result.output.answer == "done"
+    assert result.files == {}
+
+
+async def test_exports_are_deleted_when_the_run_fails(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    stored["f1"] = ("pie.png", b"png")
+    create.side_effect = [
+        _with_blocks(_response("pause_turn"), _script_run("f1")),
+        _response("refusal"),
+    ]
+
+    with pytest.raises(AgentError):
+        await run_agent(
+            provider, "sys", [Turn("user", "q")], [], Reply, code_execution=True
+        )
+
+    assert stored == {}
+
+
+async def test_failed_download_still_answers(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    client: MagicMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    stored["f1"] = ("pie.png", b"png")
+    client.beta.files.download.side_effect = RuntimeError("files api down")
+    create.return_value = _with_blocks(_answer("done"), _script_run("f1"))
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [], Reply, code_execution=True
+    )
+
+    assert result.output.answer == "done"
+    assert result.files == {}
+    assert stored == {}
+
+
+async def test_container_files_reach_the_sandbox_and_are_deleted(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    seen: list[dict[str, Any]] = []
+
+    async def answer(**kwargs: Any) -> MagicMock:
+        seen.append(kwargs["messages"][0])
+        assert set(stored) == {"up0"}
+        return _answer("done")
+
+    create.side_effect = answer
+
+    await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "first"), Turn("assistant", "a"), Turn("user", "q")],
+        [],
+        Reply,
+        code_execution=True,
+        container_files=[("style.mplstyle", b"axes.grid: True")],
+    )
+
+    [first] = seen
+    assert first["content"] == [
+        {"type": "container_upload", "file_id": "up0"},
+        {"type": "text", "text": "first"},
+    ]
+    assert stored == {}
+
+
+async def test_container_files_are_deleted_when_the_run_fails(
+    provider: AnthropicProvider,
+    create: AsyncMock,
+    stored: dict[str, tuple[str, bytes]],
+) -> None:
+    create.return_value = _response("refusal")
+    with pytest.raises(AgentError):
+        await run_agent(
+            provider,
+            "sys",
+            [Turn("user", "q")],
+            [],
+            Reply,
+            code_execution=True,
+            container_files=[("style.mplstyle", b"")],
+        )
+    assert stored == {}

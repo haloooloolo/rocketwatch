@@ -377,6 +377,38 @@ class TestRenderAnswer:
         assert full.filename == FULL_ANSWER_FILE
         assert full.fp.read().decode() == "x" * 3000 + "\n\n" + "y" * 3000
 
+    def test_attachments_fit_discords_limit_and_keep_the_full_text(self) -> None:
+        charts = {f"c{i}.png": b"\x89PNG" for i in range(12)}
+        csvs = {f"d{i}.csv": b"x" for i in range(3)}
+        blocks = [
+            TextBlock(text="x" * 5000),
+            ImagesBlock(images=list(charts)[:6]),
+            ImagesBlock(images=list(charts)[6:]),
+        ]
+        _, attached = render_answer(
+            _answer(*blocks, attachments=list(csvs)),
+            charts | csvs,
+            footer_text="1 tool calls",
+        )
+
+        names = [f.filename for f in attached]
+        assert len(names) == 10
+        assert FULL_ANSWER_FILE in names
+
+    def test_gallery_takes_other_image_types(self) -> None:
+        files = {"photo.JPG": b"jpg", "chart.svg": b"<svg/>"}
+        view, _ = render_answer(
+            _answer(ImagesBlock(images=list(files))), files, footer_text="1 tool calls"
+        )
+        [gallery] = [
+            c
+            for c in _components(view)
+            if c["type"] == discord.ComponentType.media_gallery.value
+        ]
+        assert [i["media"]["url"] for i in gallery["items"]] == [
+            "attachment://photo.JPG"
+        ]
+
     def test_short_answer_has_no_full_text_file(self) -> None:
         _, attached = render_answer(_answer(), {}, footer_text="1 tool calls")
         assert attached == []
@@ -424,7 +456,15 @@ class TestOnMessage:
         ) -> AgentResult[Answer]:
             save = next(t for t in tools if t.name == "save_file")
             await save.run(FileInput(filename="nodes.csv", content="a,b"))
-            return AgentResult(_answer(attachments=["nodes.csv"]), Usage(tool_calls=2))
+            return AgentResult(
+                _answer(
+                    TextBlock(text="There are **4,000** nodes."),
+                    ImagesBlock(images=["pie.png"]),
+                    attachments=["nodes.csv"],
+                ),
+                Usage(tool_calls=2),
+                files={"pie.png": b"\x89PNG"},
+            )
 
         run_agent = AsyncMock(side_effect=answer)
         monkeypatch.setattr(ask_module, "run_agent", run_agent)
@@ -440,11 +480,14 @@ class TestOnMessage:
         web_tools = {t["name"] for t in run_agent.call_args.kwargs["server_tools"]}
         assert web_tools == {"web_search", "web_fetch"}
         assert run_agent.call_args.kwargs["code_execution"] is True
+        [(style, _)] = run_agent.call_args.kwargs["container_files"]
+        assert style.endswith(".mplstyle")
         # the agent wraps up before the hard timeout cuts it off
         assert run_agent.call_args.kwargs["time_limit"] < ask_module.ANSWER_TIMEOUT
         kwargs = message.reply.call_args.kwargs
         assert "There are **4,000** nodes." in _texts(kwargs["view"])
-        assert [f.filename for f in kwargs["files"]] == ["nodes.csv"]
+        # pie.png was drawn in the sandbox, nodes.csv by save_file
+        assert [f.filename for f in kwargs["files"]] == ["pie.png", "nodes.csv"]
         assert kwargs["mention_author"] is False
 
     async def test_reply_to_answer_is_a_follow_up(
