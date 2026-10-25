@@ -22,7 +22,7 @@ from rocketwatch.utils.agent import (
     Turn,
     Usage,
     called_from_code,
-    estimate_cost,
+    request_cost,
     run_agent,
 )
 from rocketwatch.utils.llm import AnthropicProvider, ImageInput
@@ -46,6 +46,7 @@ def _response(stop_reason: str, *blocks: Any) -> MagicMock:
     response.usage.cache_creation_input_tokens = 0
     response.usage.server_tool_use = None
     response.container = None
+    response.model = "claude-test"
     return response
 
 
@@ -163,24 +164,45 @@ async def test_usage_survives_a_failed_run(
     assert usage.output_tokens == 5
 
 
-def test_estimate_cost() -> None:
-    usage = Usage(
-        tool_calls=5,
-        input_tokens=1_100_000,
-        cached_tokens=800_000,
-        cache_write_tokens=200_000,
-        output_tokens=50_000,
-        web_searches=4,
-    )
+def test_request_cost() -> None:
     # Opus 5.5: 100k uncached at $4, 800k reads at $0.20, 200k writes at $5,
     # 50k output at $20 per million, plus 4 searches at a cent
-    assert estimate_cost(usage, "claude-opus-5-5") == pytest.approx(
-        0.4 + 0.16 + 1.0 + 1.0 + 0.04
+    cost = request_cost("claude-opus-5-5", 100_000, 800_000, 200_000, 50_000, 4)
+    assert cost == pytest.approx(0.4 + 0.16 + 1.0 + 1.0 + 0.04)
+
+
+def test_haiku_charges_more_for_long_prompts() -> None:
+    # up to 100k prompt tokens: $0.10 in, $0.01 cached, $0.50 out per million
+    short = request_cost("claude-haiku-5-5", 10_000, 80_000, 0, 1_000)
+    assert short == pytest.approx((1_000 + 800 + 500) / 1e6)
+    # beyond: $0.50 in, $0.05 cached, $2.50 out
+    long = request_cost("claude-haiku-5-5", 10_000, 100_000, 0, 1_000)
+    assert long == pytest.approx((5_000 + 5_000 + 2_500) / 1e6)
+
+
+def test_request_cost_unknown_model() -> None:
+    assert request_cost("some-other-model", 10, 0, 0, 0) is None
+
+
+async def test_cost_adds_up_per_request(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    first, second = _tool_use(("t1", "echo", {"value": 1})), _answer("done")
+    first.model = second.model = "claude-opus-5-5"
+    create.side_effect = [first, second]
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply
     )
+    # each: 10 input at $4 and 5 output at $20 per million
+    assert result.usage.cost == pytest.approx(2 * (10 * 4 + 5 * 20) / 1e6)
 
 
-def test_estimate_cost_unknown_model() -> None:
-    assert estimate_cost(Usage(input_tokens=10), "some-other-model") is None
+async def test_cost_unknown_for_unpriced_model(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    create.return_value = _answer("done")
+    result = await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
+    assert result.usage.cost is None
 
 
 async def test_request_uses_model_system_and_turns(

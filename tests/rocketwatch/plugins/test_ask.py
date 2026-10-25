@@ -377,31 +377,25 @@ class TestUsageFooter:
             cached_tokens=30_000,
             output_tokens=2_000,
         )
-        assert usage_footer(usage, "unpriced-model") == (
-            "26 tool calls · 42k tokens · 75% cached"
-        )
+        assert usage_footer(usage).startswith("26 tool calls · 42k tokens · 75% cached")
 
-    def test_cost_for_priced_model(self) -> None:
-        usage = Usage(
-            tool_calls=26,
-            input_tokens=40_000,
-            cached_tokens=30_000,
-            output_tokens=2_000,
-        )
-        # 10k uncached at $4/M, 30k cached at $0.20/M, 2k out at $20/M
-        assert usage_footer(usage, "claude-opus-5-5").endswith(" · ≈$0.09")
+    def test_cost(self) -> None:
+        assert usage_footer(Usage(cost=0.0912)).endswith(" · ≈$0.09")
 
     def test_tiny_cost(self) -> None:
-        assert usage_footer(Usage(input_tokens=100), "claude-opus-5-5").endswith(
-            " · <$0.01"
+        assert usage_footer(Usage(cost=0.003)).endswith(" · <$0.01")
+
+    def test_unknown_cost_is_left_out(self) -> None:
+        assert usage_footer(Usage(input_tokens=100, cost=None)) == (
+            "0 tool calls · 100 tokens · 0% cached"
         )
 
     def test_single_tool_call(self) -> None:
-        footer = usage_footer(Usage(tool_calls=1), "unpriced-model")
+        footer = usage_footer(Usage(tool_calls=1))
         assert footer.startswith("1 tool call ·")
 
     def test_without_usage(self) -> None:
-        assert usage_footer(Usage(), "unpriced-model") == "0 tool calls · 0 tokens"
+        assert usage_footer(Usage(cost=None)) == "0 tool calls · 0 tokens"
 
 
 class TestOnMessage:

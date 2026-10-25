@@ -66,6 +66,8 @@ class Usage:
     cache_write_tokens: int = 0
     output_tokens: int = 0
     web_searches: int = 0
+    # USD; None once a request came from a model without known prices
+    cost: float | None = 0.0
 
 
 @dataclass(frozen=True)
@@ -82,29 +84,48 @@ class ModelPrice:
     output: float
     cache_read: float
     cache_write: float  # 5-minute cache, 1.25x input
+    # requests whose prompt is longer than long_prompt tokens cost long_rates
+    long_prompt: int | None = None
+    long_rates: ModelPrice | None = None
 
 
 # Anthropic's list prices as of October 2026; update when they change
 PRICES = {
     "claude-opus-5-5": ModelPrice(4.00, 20.00, 0.20, 5.00),
     "claude-sonnet-5-5": ModelPrice(2.00, 10.00, 0.20, 2.50),
+    "claude-haiku-5-5": ModelPrice(
+        0.10, 0.50, 0.01, 0.125, 100_000, ModelPrice(0.50, 2.50, 0.05, 0.625)
+    ),
     "claude-fable-5-1": ModelPrice(10.00, 50.00, 0.25, 12.50),
 }
 WEB_SEARCH_PRICE = 0.01
 
 
-def estimate_cost(usage: Usage, model: str) -> float | None:
-    """Approximate USD cost of a run, or None for a model without known prices."""
+def request_cost(
+    model: str,
+    uncached: int,
+    cached: int,
+    written: int,
+    output: int,
+    web_searches: int = 0,
+) -> float | None:
+    """Approximate USD cost of one request, or None for a model without known
+    prices."""
     if (price := PRICES.get(model)) is None:
         return None
-    uncached = usage.input_tokens - usage.cached_tokens - usage.cache_write_tokens
+    long = (
+        price.long_prompt is not None
+        and uncached + cached + written > price.long_prompt
+    )
+    if long and price.long_rates is not None:
+        price = price.long_rates
     tokens = (
         uncached * price.input
-        + usage.cached_tokens * price.cache_read
-        + usage.cache_write_tokens * price.cache_write
-        + usage.output_tokens * price.output
+        + cached * price.cache_read
+        + written * price.cache_write
+        + output * price.output
     )
-    return tokens / 1_000_000 + usage.web_searches * WEB_SEARCH_PRICE
+    return tokens / 1_000_000 + web_searches * WEB_SEARCH_PRICE
 
 
 class AgentError(Exception):
@@ -320,8 +341,19 @@ async def run_agent[T: BaseModel](
         usage.cache_write_tokens += written
         usage.input_tokens += response.usage.input_tokens + cached + written
         usage.output_tokens += response.usage.output_tokens
-        if (server := response.usage.server_tool_use) is not None:
-            usage.web_searches += server.web_search_requests
+        server = response.usage.server_tool_use
+        searches = server.web_search_requests if server is not None else 0
+        usage.web_searches += searches
+        # priced by the model that answered, which a fallback can change
+        cost = request_cost(
+            response.model,
+            response.usage.input_tokens,
+            cached,
+            written,
+            response.usage.output_tokens,
+            searches,
+        )
+        usage.cost = None if usage.cost is None or cost is None else usage.cost + cost
         usage.tool_calls += sum(
             b.type in ("tool_use", "server_tool_use") for b in response.content
         )

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
-from rocketwatch.utils.agent import Turn, Usage, estimate_cost, run_agent
+from rocketwatch.utils.agent import Turn, Usage, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.llm import AnthropicProvider, ImageInput, create_provider
@@ -65,7 +65,7 @@ def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def usage_footer(usage: Usage, model: str) -> str:
+def usage_footer(usage: Usage) -> str:
     def thousands(n: int) -> str:
         return f"{n / 1000:.0f}k" if n >= 1000 else str(n)
 
@@ -75,8 +75,8 @@ def usage_footer(usage: Usage, model: str) -> str:
     ]
     if usage.input_tokens:
         parts.append(f"{usage.cached_tokens / usage.input_tokens:.0%} cached")
-    if (cost := estimate_cost(usage, model)) is not None:
-        parts.append(f"≈${cost:.2f}" if cost >= 0.01 else "<$0.01")
+    if usage.cost is not None:
+        parts.append(f"≈${usage.cost:.2f}" if usage.cost >= 0.01 else "<$0.01")
     return " · ".join(parts)
 
 
@@ -211,7 +211,7 @@ class Ask(commands.Cog):
                 view, files = render_answer(
                     result.output,
                     tools.files,
-                    usage_footer(result.usage, self.llm.model),
+                    usage_footer(result.usage),
                 )
                 await message.reply(view=view, files=files, mention_author=False)
             except TimeoutError:
@@ -222,7 +222,7 @@ class Ask(commands.Cog):
                     "A narrower question may work.",
                     color=CustomColors.RED,
                 )
-                timeout.set_footer(text=usage_footer(usage, self.llm.model))
+                timeout.set_footer(text=usage_footer(usage))
                 await message.reply(embed=timeout, mention_author=False)
                 return
             except Exception as err:
@@ -233,7 +233,7 @@ class Ask(commands.Cog):
                     description=f"`{err!r}`"[:4096],
                     color=CustomColors.RED,
                 )
-                error.set_footer(text=usage_footer(usage, self.llm.model))
+                error.set_footer(text=usage_footer(usage))
                 await message.reply(embed=error, mention_author=False)
                 return
 
