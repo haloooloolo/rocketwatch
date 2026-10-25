@@ -77,6 +77,11 @@ def _message(
     message = MagicMock(spec=discord.Message)
     message.id = message_id
     message.content = content
+    message.clean_content = content
+    message.poll = None
+    message.reactions = []
+    message.stickers = []
+    message.message_snapshots = []
     message.author.id = author_id
     message.author.display_name = author_name
     message.author.bot = is_bot
@@ -105,6 +110,11 @@ def _attachment(content_type: str, data: bytes, filename: str = "f") -> MagicMoc
     att.content_type = content_type
     att.size = len(data)
     att.filename = filename
+    att.description = None
+    att.url = f"https://cdn.discordapp.com/attachments/1/2/{filename}"
+    att.proxy_url = f"https://media.discordapp.net/attachments/1/2/{filename}"
+    att.is_spoiler = MagicMock(return_value=False)
+    att.is_voice_message = MagicMock(return_value=False)
     att.read = AsyncMock(return_value=data)
     return att
 
@@ -263,7 +273,8 @@ class TestBuildTurns:
 
         # quoted even when it's the owner's own message, and each link once
         assert [t.role for t in turns] == ["user", "user"]
-        assert turns[0].text.startswith("[Quoted message from owner")
+        # names the link, so the model knows this is the message it points to
+        assert turns[0].text.startswith(f"[Linked message {link} from owner")
         assert turns[0].text.endswith("my earlier take")
         cog.bot.get_channel.assert_called_once_with(2)
         channel.fetch_message.assert_awaited_once_with(70)
@@ -277,7 +288,9 @@ class TestBuildTurns:
         turns = await cog._build_turns(
             _message(f"<@{BOT_ID}> what about https://ptb.discord.com/channels/1/2/70")
         )
-        assert turns[0].text == "[Linked message 70 couldn't be opened]"
+        assert turns[0].text == (
+            "[Linked message https://ptb.discord.com/channels/1/2/70 couldn't be opened]"
+        )
 
     async def test_quoted_bot_embed_is_context(self, cog: Ask) -> None:
         event = _message(

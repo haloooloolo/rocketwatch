@@ -4,6 +4,7 @@ from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock
 
 import aiohttp
+import discord
 import pytest
 from pymongo.asynchronous.database import AsyncDatabase
 from web3.exceptions import ContractLogicError
@@ -26,6 +27,7 @@ from rocketwatch.plugins.ask.tools import (
     ContractEventsInput,
     ContractInput,
     DefiLlamaInput,
+    DiscordMessagesInput,
     EthRpcInput,
     FileInput,
     GithubSearchInput,
@@ -599,6 +601,106 @@ def _http(monkeypatch: pytest.MonkeyPatch, status: int, data: Any) -> _HttpSessi
     session = _HttpSession(_HttpResponse(status, data))
     monkeypatch.setattr(aiohttp, "ClientSession", lambda *a, **k: session)
     return session
+
+
+def _discord_message(
+    message_id: int, content: str, reply_to: int | None = None
+) -> MagicMock:
+    message = MagicMock(spec=discord.Message)
+    message.id = message_id
+    message.jump_url = f"https://discord.com/channels/1/2/{message_id}"
+    message.author.display_name = f"user{message_id}"
+    message.author.bot = False
+    message.created_at = datetime(2026, 10, 24, 21, message_id % 60, tzinfo=UTC)
+    message.content = content
+    message.clean_content = content
+    message.poll = None
+    message.reactions = []
+    message.stickers = []
+    message.message_snapshots = []
+    message.embeds = []
+    message.components = []
+    message.attachments = []
+    if reply_to is None:
+        message.reference = None
+    else:
+        message.reference.message_id = reply_to
+        message.reference.jump_url = f"https://discord.com/channels/1/2/{reply_to}"
+    return message
+
+
+class TestDiscordMessages:
+    LINK = "https://discord.com/channels/1/2/20"
+
+    @pytest.fixture
+    def channel(self) -> MagicMock:
+        history = {
+            "before": [_discord_message(19, "second"), _discord_message(18, "first")],
+            "after": [_discord_message(21, "reply", reply_to=20)],
+        }
+
+        def read(limit: int, **kwargs: Any) -> Any:
+            async def gen() -> Any:
+                for m in history["before" if "before" in kwargs else "after"][:limit]:
+                    yield m
+
+            return gen()
+
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.fetch_message = AsyncMock(return_value=_discord_message(20, "linked"))
+        channel.history = MagicMock(side_effect=read)
+        return channel
+
+    @pytest.fixture
+    def tools(self, channel: MagicMock) -> AskTools:
+        client = MagicMock()
+        client.get_channel = MagicMock(return_value=channel)
+        return AskTools(MagicMock(), discord_client=client)
+
+    def test_only_offered_with_a_client(self) -> None:
+        assert "discord_messages" not in {
+            t.name for t in AskTools(MagicMock()).definitions()
+        }
+
+    async def test_message_with_context_in_order(self, tools: AskTools) -> None:
+        result = json.loads(
+            (
+                await tools.discord_messages(
+                    DiscordMessagesInput(link=self.LINK, before=2, after=1)
+                )
+            ).text
+        )
+        assert result["linked"] == self.LINK
+        assert [m["text"] for m in result["messages"]] == [
+            "first",
+            "second",
+            "linked",
+            "reply",
+        ]
+        # replies point back, so the model can follow a chain
+        assert result["messages"][3]["reply_to"] == self.LINK
+
+    async def test_just_the_message(self, tools: AskTools, channel: MagicMock) -> None:
+        result = json.loads(
+            (await tools.discord_messages(DiscordMessagesInput(link=self.LINK))).text
+        )
+        assert [m["text"] for m in result["messages"]] == ["linked"]
+        channel.history.assert_not_called()
+
+    async def test_unreadable_channel(
+        self, tools: AskTools, channel: MagicMock
+    ) -> None:
+        channel.fetch_message.side_effect = discord.Forbidden(
+            MagicMock(status=403), "no access"
+        )
+        with pytest.raises(ToolError, match="can't read"):
+            await tools.discord_messages(DiscordMessagesInput(link=self.LINK))
+
+    async def test_not_a_link(self, tools: AskTools) -> None:
+        with pytest.raises(ToolError, match="Not a Discord message link"):
+            await tools.discord_messages(
+                DiscordMessagesInput(link="https://example.com/channels/1/2/3")
+            )
 
 
 class TestGithubSearch:

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from rocketwatch.utils.config import LLMConfig
 from rocketwatch.utils.llm import (
     AnthropicProvider,
+    DocumentInput,
     GoogleProvider,
     ImageInput,
     OpenAIProvider,
@@ -88,6 +89,15 @@ class TestAnthropicBuildUserContent:
         assert result[0]["type"] == "image"
         assert result[-1]["type"] == "text"
         assert result[-1]["text"] == "describe this"
+
+    def test_pdf_becomes_a_document_block(self) -> None:
+        result = AnthropicProvider._build_user_content(
+            "summarize", None, [DocumentInput(data=b"%PDF-1.7")]
+        )
+        assert result[0]["type"] == "document"
+        assert result[0]["source"]["media_type"] == "application/pdf"
+        assert base64.b64decode(result[0]["source"]["data"]) == b"%PDF-1.7"
+        assert result[-1] == {"type": "text", "text": "summarize"}
 
     def test_image_payload_is_base64(self) -> None:
         result = AnthropicProvider._build_user_content(

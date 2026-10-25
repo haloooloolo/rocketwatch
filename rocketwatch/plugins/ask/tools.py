@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 import aiohttp
+import discord
 import numpy as np
 from bson import json_util
 from eth_typing import BlockIdentifier, BlockNumber
@@ -18,11 +19,18 @@ from pymongo.asynchronous.database import AsyncDatabase
 from web3.exceptions import ContractLogicError
 from web3.types import RPCEndpoint
 
+from rocketwatch.plugins.ask.messages import (
+    MESSAGE_LINK,
+    USAGE_LINE,
+    MediaBudget,
+    MessageContent,
+    read_message,
+)
 from rocketwatch.plugins.collateral.collateral import get_node_collateral_data
 from rocketwatch.plugins.signaling.signaling import Proposal, Signaling
 from rocketwatch.utils import solidity
 from rocketwatch.utils.address_labels import get_address_name
-from rocketwatch.utils.agent import AgentTool, ToolError, called_from_code
+from rocketwatch.utils.agent import AgentTool, ToolError, ToolOutput, called_from_code
 from rocketwatch.utils.block_time import block_to_ts, ts_to_block
 from rocketwatch.utils.charts import render_png
 from rocketwatch.utils.config import cfg
@@ -41,6 +49,9 @@ MAX_TIME_MS = 30_000
 MAX_LOG_BLOCK_RANGE = 100_000
 MAX_EVENT_BLOCK_RANGE = 1_000_000
 MAX_MULTICALL = 500
+MAX_DISCORD_MESSAGES = 25
+MAX_DISCORD_IMAGES = 4
+MAX_DISCORD_DOCUMENTS = 1
 MAX_FILES = 10
 MAX_GITHUB_RESULTS = 30
 GITHUB_ORG = "rocket-pool"
@@ -366,6 +377,22 @@ class ContractEventsInput(ContractInput):
     )
 
 
+class DiscordMessagesInput(BaseModel):
+    link: str = Field(description="Discord message link")
+    before: int = Field(
+        0,
+        ge=0,
+        le=MAX_DISCORD_MESSAGES,
+        description="Also return up to this many earlier messages in the channel",
+    )
+    after: int = Field(
+        0,
+        ge=0,
+        le=MAX_DISCORD_MESSAGES,
+        description="Also return up to this many later messages in the channel",
+    )
+
+
 class EthRpcInput(BaseModel):
     method: str = Field(description="JSON-RPC method, e.g. eth_getLogs")
     params: list[Any] = Field(default_factory=list)
@@ -532,14 +559,32 @@ def _scopes(query: str) -> set[str]:
     }
 
 
+def _discord_message(
+    message: discord.Message, content: MessageContent
+) -> dict[str, Any]:
+    ref = message.reference
+    return {
+        "link": message.jump_url,
+        "author": message.author.display_name,
+        "bot": message.author.bot,
+        "sent": message.created_at.isoformat(),
+        "text": USAGE_LINE.sub("", content.text).strip(),
+        "reply_to": ref.jump_url if ref is not None and ref.message_id else None,
+    }
+
+
 class AskTools:
     """The read-only tools for one question, and the files it produces."""
 
     def __init__(
-        self, db: AsyncDatabase[dict[str, Any]], github_token: str = ""
+        self,
+        db: AsyncDatabase[dict[str, Any]],
+        github_token: str = "",
+        discord_client: discord.Client | None = None,
     ) -> None:
         self.db = db
         self.github_token = github_token
+        self.discord_client = discord_client
         self.files: dict[str, bytes] = {}
 
     def definitions(self) -> list[AgentTool]:
@@ -707,6 +752,22 @@ class AskTools:
                 self.signaling_votes,
             ),
         ]
+        if self.discord_client is not None:
+            tools.append(
+                AgentTool(
+                    "discord_messages",
+                    "Read a Discord message by its link, optionally with up to "
+                    f"{MAX_DISCORD_MESSAGES} messages before or after it in the same "
+                    "channel: text, embeds, polls, forwarded messages and "
+                    f"attachments, with up to {MAX_DISCORD_IMAGES} images and "
+                    f"{MAX_DISCORD_DOCUMENTS} PDF shown. Each message comes with its "
+                    "own link and the link of the message it replies to, so reply "
+                    "chains and links found in messages can be followed with further "
+                    "calls. Only works for channels the bot can read.",
+                    DiscordMessagesInput,
+                    self.discord_messages,
+                )
+            )
         if self.github_token:
             tools.append(
                 AgentTool(
@@ -841,6 +902,57 @@ class AskTools:
                     for v in votes[: args.limit]
                 ],
             }
+        )
+
+    async def discord_messages(self, args: DiscordMessagesInput) -> ToolOutput:
+        assert self.discord_client is not None
+        if (match := MESSAGE_LINK.fullmatch(args.link.strip())) is None:
+            raise ToolError("Not a Discord message link")
+        channel_id, message_id = int(match[1]), int(match[2])
+        client = self.discord_client
+        try:
+            channel = client.get_channel(channel_id) or await client.fetch_channel(
+                channel_id
+            )
+            if not isinstance(channel, discord.abc.Messageable):
+                raise ToolError("That channel has no messages")
+            target = await channel.fetch_message(message_id)
+            earlier = (
+                [m async for m in channel.history(limit=args.before, before=target)]
+                if args.before
+                else []
+            )
+            later = (
+                [
+                    m
+                    async for m in channel.history(
+                        limit=args.after, after=target, oldest_first=True
+                    )
+                ]
+                if args.after
+                else []
+            )
+        except discord.Forbidden:
+            raise ToolError("The bot can't read that channel") from None
+        except discord.NotFound:
+            raise ToolError("No such message") from None
+        messages = [*reversed(earlier), target, *later]
+        budget = MediaBudget(MAX_DISCORD_IMAGES, MAX_DISCORD_DOCUMENTS)
+        # the linked message gets the first pick of images and PDFs
+        read = {target.id: await read_message(target, budget)}
+        for m in messages:
+            if m.id not in read:
+                read[m.id] = await read_message(m, budget)
+        text = _dump(
+            {
+                "linked": target.jump_url,
+                "messages": [_discord_message(m, read[m.id]) for m in messages],
+            }
+        )
+        return ToolOutput(
+            text,
+            [img for m in messages for img in read[m.id].images],
+            [doc for m in messages for doc in read[m.id].documents],
         )
 
     async def _github_code_search(self, query: str, limit: int) -> dict[str, Any]:

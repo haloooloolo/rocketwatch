@@ -23,6 +23,13 @@ class ImageInput:
     media_type: str
 
 
+@dataclass(frozen=True)
+class DocumentInput:
+    """A PDF, which only the Anthropic provider reads."""
+
+    data: bytes
+
+
 class LLMProvider(ABC):
     def __init__(self, api_key: str, model: str) -> None:
         self._api_key = api_key
@@ -67,20 +74,35 @@ class AnthropicProvider(LLMProvider):
         return self._model
 
     @staticmethod
-    def _build_user_content(user_message: str, images: list[ImageInput] | None) -> Any:
-        if not images:
-            return user_message
-        blocks: list[dict[str, Any]] = [
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": img.media_type,
-                    "data": base64.b64encode(img.data).decode("ascii"),
-                },
+    def media_blocks(
+        images: list[ImageInput], documents: list[DocumentInput] | None = None
+    ) -> list[dict[str, Any]]:
+        def source(data: bytes, media_type: str) -> dict[str, str]:
+            return {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64.b64encode(data).decode("ascii"),
             }
+
+        blocks = [
+            {"type": "document", "source": source(doc.data, "application/pdf")}
+            for doc in documents or []
+        ]
+        blocks += [
+            {"type": "image", "source": source(img.data, img.media_type)}
             for img in images
         ]
+        return blocks
+
+    @staticmethod
+    def _build_user_content(
+        user_message: str,
+        images: list[ImageInput] | None,
+        documents: list[DocumentInput] | None = None,
+    ) -> Any:
+        if not images and not documents:
+            return user_message
+        blocks = AnthropicProvider.media_blocks(images or [], documents)
         blocks.append({"type": "text", "text": user_message})
         return blocks
 

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
-from rocketwatch.utils.llm import AnthropicProvider, ImageInput
+from rocketwatch.utils.llm import AnthropicProvider, DocumentInput, ImageInput
 
 if TYPE_CHECKING:
     from anthropic.types.beta import (
@@ -43,6 +43,16 @@ class Turn:
     role: Literal["user", "assistant"]
     text: str
     images: list[ImageInput] = field(default_factory=list)
+    documents: list[DocumentInput] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ToolOutput:
+    """A tool result with images or PDFs next to its text."""
+
+    text: str
+    images: list[ImageInput] = field(default_factory=list)
+    documents: list[DocumentInput] = field(default_factory=list)
 
 
 class ToolError(Exception):
@@ -54,7 +64,7 @@ class AgentTool:
     name: str
     description: str
     input_model: type[BaseModel]
-    run: Callable[[Any], Awaitable[str]]
+    run: Callable[[Any], Awaitable[str | ToolOutput]]
 
 
 @dataclass
@@ -133,7 +143,9 @@ class AgentError(Exception):
 
 
 def _build_message(turn: Turn) -> BetaMessageParam:
-    content = AnthropicProvider._build_user_content(turn.text, turn.images)
+    content = AnthropicProvider._build_user_content(
+        turn.text, turn.images, turn.documents
+    )
     # each role has its own message type, so the role can't be a variable
     if turn.role == "user":
         return {"role": "user", "content": content}
@@ -183,7 +195,7 @@ def _awaits_server_tool(content: list[BetaContentBlock]) -> bool:
 
 
 def _tool_result(
-    block: BetaToolUseBlock, content: str, is_error: bool = False
+    block: BetaToolUseBlock, content: str | list[Any], is_error: bool = False
 ) -> BetaToolResultBlockParam:
     return {
         "type": "tool_result",
@@ -191,6 +203,20 @@ def _tool_result(
         "content": content,
         "is_error": is_error,
     }
+
+
+def _output_result(
+    block: BetaToolUseBlock, output: str | ToolOutput, from_code: bool
+) -> BetaToolResultBlockParam:
+    if isinstance(output, str):
+        return _tool_result(block, output)
+    media = len(output.images) + len(output.documents)
+    if from_code or not media:
+        # results going back to a script can only be text
+        note = f"\n({media} images or PDFs left out for the script)" if media else ""
+        return _tool_result(block, output.text + note)
+    blocks = AnthropicProvider.media_blocks(output.images, output.documents)
+    return _tool_result(block, [{"type": "text", "text": output.text}, *blocks])
 
 
 async def _run_tool(
@@ -211,7 +237,7 @@ async def _run_tool(
     start = loop.time()
     try:
         async with asyncio.timeout(timeout):
-            return result(await tool.run(args))
+            output = await tool.run(args)
     except TimeoutError:
         return result(
             f"Stopped after {timeout:.0f}s. Ask for less, e.g. a smaller block "
@@ -230,6 +256,7 @@ async def _run_tool(
             block.name,
             loop.time() - start,
         )
+    return _output_result(block, output, from_code)
 
 
 async def run_agent[T: BaseModel](

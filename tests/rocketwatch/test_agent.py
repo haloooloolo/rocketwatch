@@ -19,6 +19,7 @@ from rocketwatch.utils.agent import (
     AgentError,
     AgentTool,
     ToolError,
+    ToolOutput,
     Turn,
     Usage,
     called_from_code,
@@ -290,6 +291,48 @@ async def test_tool_failures_are_reported_to_model(
     [[tool_result]] = _tool_results(create)
     assert tool_result["is_error"]
     assert expected in tool_result["content"]
+
+
+async def test_tool_images_reach_the_model(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    image = ImageInput(b"\x89PNG", "image/png")
+    run = AsyncMock(return_value=ToolOutput("a chart", [image]))
+    create.side_effect = [_tool_use(("t1", "echo", {"value": 1})), _answer("seen")]
+
+    await run_agent(provider, "sys", [Turn("user", "q")], [_echo_tool(run)], Reply)
+
+    [[tool_result]] = _tool_results(create)
+    text, picture = tool_result["content"]
+    assert text == {"type": "text", "text": "a chart"}
+    assert picture["type"] == "image"
+
+
+async def test_scripts_get_only_text(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    image = ImageInput(b"\x89PNG", "image/png")
+    run = AsyncMock(return_value=ToolOutput("a chart", [image]))
+    start = BetaServerToolUseBlock(
+        type="server_tool_use", id="srv1", name="code_execution", input={"code": "..."}
+    )
+    create.side_effect = [
+        _response("tool_use", start, _script_call("t0", 0)),
+        _answer("done"),
+    ]
+
+    await run_agent(
+        provider,
+        "sys",
+        [Turn("user", "q")],
+        [_echo_tool(run)],
+        Reply,
+        code_execution=True,
+    )
+
+    [[tool_result]] = _tool_results(create)
+    assert tool_result["content"].startswith("a chart")
+    assert "left out" in tool_result["content"]
 
 
 async def test_slow_tool_is_stopped(

@@ -26,6 +26,10 @@ Prefer primary sources, and link the pages you relied on. web_fetch only opens \
 URLs that already appeared in search or tool results, so search first instead \
 of guessing URLs. github_search, when available, finds code in the rocket-pool \
 repos by default, or in another organization such as ethereum.
+- Discord message links in the question are opened for you and shown as \
+linked messages before it. For more context, such as the messages around one, \
+the message it replies to or links inside it, use discord_messages. Images \
+and PDFs in Discord messages are shown to you, and other files are described.
 - For history and aggregates (rewards per interval, daily trends, performance), \
 rocketdash_get is usually quicker than many archive calls. It is a third-party \
 site, so check headline figures against the chain when they matter. For \

@@ -4,7 +4,6 @@ import logging
 import re
 from datetime import UTC, datetime
 from io import BytesIO
-from typing import Any
 
 import discord
 from discord import File, Message, ui
@@ -12,21 +11,28 @@ from discord.ext import commands
 from pydantic import BaseModel, Field
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.plugins.ask.messages import (
+    MESSAGE_LINK,
+    USAGE_LINE,
+    MediaBudget,
+    MessageContent,
+    component_texts,
+    is_text,
+    message_text,
+    read_message,
+)
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
 from rocketwatch.utils.agent import Turn, Usage, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
-from rocketwatch.utils.llm import AnthropicProvider, ImageInput, create_provider
+from rocketwatch.utils.llm import AnthropicProvider, create_provider
 
 log = logging.getLogger("rocketwatch.ask")
 
 MAX_CHAIN = 10
 MAX_IMAGES = 4
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
-MAX_TEXT_BYTES = 100_000
-IMAGE_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
-TEXT_TYPES = ("text/", "application/json")
+MAX_DOCUMENTS = 1
 MAX_MESSAGE_TEXT = 4000
 MAX_BLOCKS = 20
 MAX_GALLERY = 10
@@ -35,12 +41,6 @@ FULL_ANSWER_FILE = "answer.md"
 ANSWER_TIME_LIMIT = 10 * 60
 ANSWER_TIMEOUT = 12 * 60
 SHRUG = "\N{SHRUG}"
-# the usage line under every answer: it marks a message as one, and is kept out
-# of the history so the model doesn't imitate it
-USAGE_LINE = re.compile(r"^-# \d+ tool calls? · .*$\n?", re.M)
-MESSAGE_LINK = re.compile(
-    r"https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/(?:@me|\d+)/(\d+)/(\d+)"
-)
 MAX_LINKS = 3
 
 
@@ -127,33 +127,6 @@ def render_answer(
     return view, [File(BytesIO(attached[n]), n) for n in shown]
 
 
-def _component_texts(components: list[Any]) -> list[str]:
-    texts: list[str] = []
-    for component in components:
-        if isinstance(component, discord.components.TextDisplay):
-            texts.append(component.content)
-        else:
-            texts += _component_texts(getattr(component, "children", []))
-    return texts
-
-
-def _is_text(att: discord.Attachment) -> bool:
-    content_type = (att.content_type or "").split(";")[0]
-    return content_type.startswith(TEXT_TYPES) and att.size <= MAX_TEXT_BYTES
-
-
-def message_text(message: Message) -> str:
-    parts: list[str] = [message.content] if message.content else []
-    for e in message.embeds:
-        if e.title:
-            parts.append(f"**{e.title}**")
-        if e.description:
-            parts.append(e.description)
-        parts += [f"{f.name}: {f.value}" for f in e.fields]
-    parts += _component_texts(message.components)
-    return "\n".join(parts)
-
-
 class Ask(commands.Cog):
     def __init__(self, bot: RocketWatch, llm: AnthropicProvider) -> None:
         self.bot = bot
@@ -164,7 +137,7 @@ class Ask(commands.Cog):
         # recognized by the usage line under it, so this survives restarts
         assert self.bot.user is not None
         return message.author.id == self.bot.user.id and any(
-            USAGE_LINE.match(text) for text in _component_texts(message.components)
+            USAGE_LINE.match(text) for text in component_texts(message.components)
         )
 
     def _pings_bot(self, message: Message) -> bool:
@@ -195,7 +168,7 @@ class Ask(commands.Cog):
         usage = Usage()
         async with message.channel.typing():
             try:
-                tools = AskTools(self.bot.db, cfg.secrets.github)
+                tools = AskTools(self.bot.db, cfg.secrets.github, self.bot)
                 async with asyncio.timeout(ANSWER_TIMEOUT):
                     result = await run_agent(
                         self.llm,
@@ -256,79 +229,72 @@ class Ask(commands.Cog):
         while len(chain) < MAX_CHAIN and (parent := await self._parent(chain[-1])):
             chain.append(parent)
 
+        def user_turn(content: MessageContent) -> Turn:
+            return Turn("user", content.text, content.images, content.documents)
+
         turns: list[Turn] = []
-        images_left = MAX_IMAGES
+        budget = MediaBudget(MAX_IMAGES, MAX_DOCUMENTS)
         for m in reversed(chain[1:]):
             # the conversation has to open with a user turn
             if turns and self._is_answer(m):
                 turns.append(Turn("assistant", await self._read_answer(m)))
                 continue
-            text, images = await self._read_message(m, images_left)
-            images_left -= len(images)
-            turns.append(Turn("user", text, images))
+            turns.append(user_turn(await self._read_message(m, budget)))
 
-        for linked in await self._linked_messages(message):
-            if isinstance(linked, str):
-                turns.append(Turn("user", linked))
+        for link, linked in await self._linked_messages(message):
+            if linked is None:
+                turns.append(
+                    Turn("user", f"[Linked message {link} couldn't be opened]")
+                )
                 continue
-            text, images = await self._read_message(linked, images_left, quote=True)
-            images_left -= len(images)
-            turns.append(Turn("user", text, images))
+            turns.append(user_turn(await self._read_message(linked, budget, link=link)))
 
-        text, images = await self._read_message(message, images_left)
+        question = await self._read_message(message, budget)
         now = datetime.now(UTC)
-        text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{text}"
-        turns.append(Turn("user", text, images))
+        question.text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{question.text}"
+        turns.append(user_turn(question))
         return turns
 
-    async def _linked_messages(self, message: Message) -> list[Message | str]:
-        """Messages linked in the question, or a note for each that can't be read."""
-        links = list(dict.fromkeys(MESSAGE_LINK.findall(message.content)))
-        linked: list[Message | str] = []
-        for channel_id, message_id in links[:MAX_LINKS]:
+    async def _linked_messages(
+        self, message: Message
+    ) -> list[tuple[str, Message | None]]:
+        """Each message linked in the question, or None where it can't be read."""
+        links = {m[0]: m.groups() for m in MESSAGE_LINK.finditer(message.content)}
+        linked: list[tuple[str, Message | None]] = []
+        for link, (channel_id, message_id) in list(links.items())[:MAX_LINKS]:
             try:
                 channel = self.bot.get_channel(
                     int(channel_id)
                 ) or await self.bot.fetch_channel(int(channel_id))
                 if isinstance(channel, discord.abc.Messageable):
-                    linked.append(await channel.fetch_message(int(message_id)))
+                    linked.append((link, await channel.fetch_message(int(message_id))))
                     continue
             except discord.HTTPException:
                 pass
-            linked.append(f"[Linked message {message_id} couldn't be opened]")
+            linked.append((link, None))
         return linked
 
     async def _read_message(
-        self, message: Message, images_left: int, *, quote: bool = False
-    ) -> tuple[str, list[ImageInput]]:
+        self, message: Message, budget: MediaBudget, *, link: str | None = None
+    ) -> MessageContent:
         assert self.bot.user is not None
-        if message.author.id == cfg.discord.owner.user_id and not quote:
+        if message.author.id == cfg.discord.owner.user_id and link is None:
             text = re.sub(rf"<@!?{self.bot.user.id}>", "", message.content).strip()
-        else:
-            ts = int(message.created_at.timestamp())
-            quoted = USAGE_LINE.sub("", message_text(message)).strip()
-            text = (
-                f"[Quoted message from {message.author.display_name} at <t:{ts}>]\n"
-                f"{quoted}"
-            )
-
-        images: list[ImageInput] = []
-        for att in message.attachments:
-            content_type = (att.content_type or "").split(";")[0]
-            if content_type in IMAGE_TYPES:
-                if len(images) < images_left and att.size <= MAX_IMAGE_BYTES:
-                    images.append(ImageInput(await att.read(), content_type))
-            elif _is_text(att):
-                content = (await att.read()).decode(errors="replace")
-                text += f"\n\n[Attachment {att.filename}]\n{content}"
-        return text, images
+            return await read_message(message, budget, text=text)
+        content = await read_message(message, budget)
+        ts = int(message.created_at.timestamp())
+        source = f"Linked message {link}" if link else "Quoted message"
+        quoted = USAGE_LINE.sub("", content.text).strip()
+        name = message.author.display_name
+        content.text = f"[{source} from {name} at <t:{ts}>]\n{quoted}"
+        return content
 
     @staticmethod
     async def _read_answer(message: Message) -> str:
         full: str | None = None
         extras: list[str] = []
         for att in message.attachments:
-            if not _is_text(att):
+            if not is_text(att):
                 continue
             content = (await att.read()).decode(errors="replace")
             if att.filename == FULL_ANSWER_FILE:
