@@ -708,6 +708,18 @@ class TestElExplorerUrlNode:
         out = await el_explorer_url("0xabc", name="Node")
         assert "rocketdash.net/megapool/0xMEGA" in out
 
+    async def test_node_without_megapool_redirects_to_rocketdash(
+        self, mainnet_cfg, explorer_mocks
+    ):
+        from web3.constants import ADDRESS_ZERO
+
+        embeds.rp.is_node = AsyncMock(return_value=True)
+        explorer_mocks.rp_call.side_effect = _rp_call_responder(
+            {"rocketNodeManager.getMegapoolAddress": ADDRESS_ZERO}
+        )
+        out = await el_explorer_url("0xabc", name="Node")
+        assert "rocketdash.net/node/0xabc" in out
+
 
 class TestElExplorerUrlMegapoolAndMinipool:
     async def test_megapool_redirects_to_rocketdash(self, mainnet_cfg, explorer_mocks):
