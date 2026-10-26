@@ -181,6 +181,16 @@ class TestProposalFromApi:
         p = _proposal(proposal_id="0xabc", vote_type="weighted", quorum=50)
         assert Proposal.from_api(_proposal_json(p)) == p
 
+    def test_proposal_without_votes_renders_as_zero(self) -> None:
+        data = _proposal_json(_proposal(choices=["A", "B"], quorum=50))
+        data |= {"scores": None, "scores_total": None}
+
+        p = Proposal.from_api(data)
+
+        assert p.scores == [0.0, 0.0]
+        assert not p.reached_quorum()
+        assert p.create_image(include_title=True) is not None
+
 
 class TestProposalIsActive:
     def test_active_and_ready_before_end(self) -> None:

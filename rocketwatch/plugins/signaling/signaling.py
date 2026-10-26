@@ -74,8 +74,8 @@ class Proposal:
             end=data["end_time"],
             state=data["state"],
             lifecycle=data["lifecycle"],
-            scores=data["scores"],
-            scores_total=data["scores_total"],
+            scores=data["scores"] or [0.0] * len(data["choices"]),
+            scores_total=data["scores_total"] or 0.0,
             quorum=data["quorum"],
         )
 
