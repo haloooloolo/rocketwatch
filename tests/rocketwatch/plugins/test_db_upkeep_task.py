@@ -42,6 +42,14 @@ _STAKING_INFO = (
 )
 
 
+def _addr(n: int) -> str:
+    return f"0x{n:040x}"
+
+
+def _creds(address: str) -> str:
+    return "0x01" + "00" * 11 + address[2:]
+
+
 def _make_cog(bot: Any) -> DBUpkeepTask:
     # Sidestep __init__: it calls cronitor + schedules a real loop coroutine.
     # Both are irrelevant to the per-method tests below.
@@ -171,15 +179,31 @@ class TestUpdateMinipoolBeaconData:
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
         scripted_bacon: ScriptedBeacon,
+        scripted_w3: MagicMock,
     ) -> None:
         await mongo_db.minipools.insert_many(
             [
-                {"_id": 1, "pubkey": "0xaa", "beacon": {"status": "active_ongoing"}},
-                {"_id": 2, "pubkey": "0xbb", "beacon": {"status": "active_ongoing"}},
+                {
+                    "_id": 1,
+                    "address": _addr(1),
+                    "pubkey": "0xaa",
+                    "beacon": {"status": "active_ongoing"},
+                },
+                {
+                    "_id": 2,
+                    "address": _addr(2),
+                    "pubkey": "0xbb",
+                    "beacon": {"status": "active_ongoing"},
+                },
                 # withdrawal_done is excluded by the query — should not be touched.
-                {"_id": 3, "pubkey": "0xcc", "beacon": {"status": "withdrawal_done"}},
+                {
+                    "_id": 3,
+                    "address": _addr(3),
+                    "pubkey": "0xcc",
+                    "beacon": {"status": "withdrawal_done"},
+                },
                 # null pubkey is filtered out before the beacon call.
-                {"_id": 4, "pubkey": None},
+                {"_id": 4, "address": _addr(4), "pubkey": None},
             ]
         )
         scripted_bacon.register_validators(
@@ -192,6 +216,7 @@ class TestUpdateMinipoolBeaconData:
                     effective_balance_gwei=32_000_000_000,
                     activation_epoch=10,
                     exit_epoch=2**40,  # far-future → stored as None
+                    withdrawal_credentials=_creds(_addr(1)),
                 ),
                 make_validator_record(
                     pubkey="0xbb",
@@ -199,6 +224,7 @@ class TestUpdateMinipoolBeaconData:
                     status="active_exiting",
                     slashed=True,
                     exit_epoch=50,
+                    withdrawal_credentials=_creds(_addr(2)),
                 ),
             ]
         )
@@ -230,6 +256,38 @@ class TestUpdateMinipoolBeaconData:
         assert mp4 is not None
         assert "validator_index" not in mp4
 
+    async def test_reused_pubkey_only_counts_for_credentialed_minipool(
+        self,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        scripted_bacon: ScriptedBeacon,
+        scripted_w3: MagicMock,
+    ) -> None:
+        # A dissolved minipool shares its pubkey with the staking minipool the
+        # validator's withdrawal credentials point to.
+        await mongo_db.minipools.insert_many(
+            [
+                {
+                    "_id": 1,
+                    "address": _addr(1),
+                    "pubkey": "0xaa",
+                    "status": "dissolved",
+                },
+                {"_id": 2, "address": _addr(2), "pubkey": "0xaa", "status": "staking"},
+            ]
+        )
+        scripted_bacon.register_validator(
+            make_validator_record(
+                pubkey="0xaa", index=1001, withdrawal_credentials=_creds(_addr(2))
+            )
+        )
+
+        cog = _make_cog(make_bot(db=mongo_db))
+        await cog.update_dynamic_minipool_beacon_data()
+
+        active = await mongo_db.minipools.find({"validator_index": 1001}).to_list()
+        assert [mp["address"] for mp in active] == [_addr(2)]
+        assert active[0]["beacon"]["status"] == "active_ongoing"
+
     async def test_no_eligible_minipools_is_noop(
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
@@ -250,6 +308,7 @@ class TestUpdateMegapoolValidatorBeaconData:
         self,
         mongo_db: AsyncDatabase[dict[str, Any]],
         scripted_bacon: ScriptedBeacon,
+        scripted_w3: MagicMock,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         lookup = AsyncMock(wraps=scripted_bacon.get_validators_by_ids)
@@ -258,20 +317,20 @@ class TestUpdateMegapoolValidatorBeaconData:
             [
                 {
                     "_id": 1,
-                    "megapool": "0xMP",
+                    "megapool": _addr(9),
                     "validator_id": 0,
                     "pubkey": "0xa1",
                 },
                 {
                     "_id": 2,
-                    "megapool": "0xMP",
+                    "megapool": _addr(9),
                     "validator_id": 1,
                     "pubkey": "0xa2",
                     "beacon": {"status": "withdrawal_done"},  # filtered out
                 },
                 {
                     "_id": 3,
-                    "megapool": "0xMP",
+                    "megapool": _addr(9),
                     "validator_id": 2,
                     "pubkey": "0xa3",
                     "status": "dequeued",
@@ -284,6 +343,7 @@ class TestUpdateMegapoolValidatorBeaconData:
                 index=42,
                 status="pending_queued",
                 balance_gwei=1_000_000_000,
+                withdrawal_credentials=_creds(_addr(9)),
             )
         )
 
@@ -301,6 +361,32 @@ class TestUpdateMegapoolValidatorBeaconData:
 
         requested = [pk for call in lookup.call_args_list for pk in call.kwargs["ids"]]
         assert requested == ["0xa1"]
+
+    async def test_reused_pubkey_only_counts_for_credentialed_megapool(
+        self,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        scripted_bacon: ScriptedBeacon,
+        scripted_w3: MagicMock,
+    ) -> None:
+        await mongo_db.megapool_validators.insert_many(
+            [
+                {"_id": 1, "megapool": _addr(1), "pubkey": "0xa1", "status": "staking"},
+                {"_id": 2, "megapool": _addr(2), "pubkey": "0xa1", "status": "staking"},
+            ]
+        )
+        scripted_bacon.register_validator(
+            make_validator_record(
+                pubkey="0xa1", index=7, withdrawal_credentials=_creds(_addr(1))
+            )
+        )
+
+        cog = _make_cog(make_bot(db=mongo_db))
+        await cog.update_dynamic_megapool_validator_beacon_data()
+
+        active = await mongo_db.megapool_validators.find(
+            {"beacon.status": "active_ongoing"}
+        ).to_list()
+        assert [v["megapool"] for v in active] == [_addr(1)]
 
     async def test_empty_db_is_noop(
         self,
@@ -466,6 +552,23 @@ class TestAddUntrackedMinipools:
 
         ids = {d["_id"]: d["address"] async for d in mongo_db.minipools.find()}
         assert ids == {0: "0xMP0", 1: "0xMP1", 2: "0xMP2"}
+
+    async def test_empty_db_starts_at_first_minipool(
+        self,
+        mongo_db: AsyncDatabase[dict[str, Any]],
+        scripted_rp: ScriptedRocketPool,
+        scripted_w3: MagicMock,
+    ) -> None:
+        scripted_rp.set_call("rocketMinipoolManager.getMinipoolCount", 2)
+        scripted_rp.set_call(
+            "rocketMinipoolManager.getMinipoolAt", lambda i: f"0xMP{i}"
+        )
+
+        cog = _make_cog(make_bot(db=mongo_db))
+        await cog.add_untracked_minipools()
+
+        ids = {d["_id"]: d["address"] async for d in mongo_db.minipools.find()}
+        assert ids == {0: "0xMP0", 1: "0xMP1"}
 
 
 class TestAddUntrackedMegapoolValidators:

@@ -9,9 +9,10 @@ from typing import Any
 import pymongo
 from discord.ext import commands
 from discord.utils import as_chunks
-from eth_typing import BlockNumber
-from pymongo import UpdateMany, UpdateOne
+from eth_typing import BlockNumber, ChecksumAddress
+from pymongo import UpdateOne
 from pymongo.asynchronous.collection import AsyncCollection
+from web3 import Web3
 from web3.contract import AsyncContract
 from web3.contract.async_contract import AsyncContractFunction
 
@@ -94,6 +95,30 @@ def _unpack_validator_info_dynamic(info: ValidatorInfo) -> dict[str, Any]:
     return {
         "status": _derive_validator_status(info),
         "exit_balance": solidity.to_float(info.exit_balance, 9),
+    }
+
+
+def _withdrawal_address(record: dict[str, Any]) -> ChecksumAddress:
+    credentials = record["validator"]["withdrawal_credentials"]
+    return Web3.to_checksum_address(f"0x{credentials[-40:]}")
+
+
+def _unpack_beacon_record(record: dict[str, Any]) -> dict[str, Any]:
+    v = record["validator"]
+    return {
+        "validator_index": int(record["index"]),
+        "beacon": {
+            "status": record["status"],
+            "balance": solidity.to_float(record["balance"], 9),
+            "effective_balance": solidity.to_float(v["effective_balance"], 9),
+            "slashed": v["slashed"],
+            "activation_eligibility_epoch": _parse_epoch(
+                v["activation_eligibility_epoch"]
+            ),
+            "activation_epoch": _parse_epoch(v["activation_epoch"]),
+            "exit_epoch": _parse_epoch(v["exit_epoch"]),
+            "withdrawable_epoch": _parse_epoch(v["withdrawable_epoch"]),
+        },
     }
 
 
@@ -240,13 +265,51 @@ class DBUpkeepTask(commands.Cog):
                 ordered=False,
             )
 
+    async def _update_beacon_data(
+        self,
+        collection: AsyncCollection[dict[str, Any]],
+        query: dict[str, Any],
+        owner_field: str,
+        label: str,
+    ) -> None:
+        docs = await collection.find(
+            {**query, "pubkey": {"$ne": None}}, {"pubkey": 1, owner_field: 1}
+        ).to_list()
+        if not docs:
+            return
+        total = len(docs)
+
+        async def process(i: int, doc_batch: list[dict[str, Any]]) -> None:
+            start = i * self.beacon_batch_size + 1
+            end = min((i + 1) * self.beacon_batch_size, total)
+            log.debug(f"Updating beacon data for {label} [{start}, {end}]/{total}")
+            pubkeys = list({doc["pubkey"] for doc in doc_batch})
+            response = await bacon.get_validators_by_ids("head", ids=pubkeys)
+
+            # pubkeys get reused, so only the withdrawal credentials identify the owner
+            records = {
+                (r["validator"]["pubkey"], _withdrawal_address(r)): r
+                for r in response["data"]
+            }
+            updates = []
+            for doc in doc_batch:
+                record = records.get((doc["pubkey"], doc[owner_field]))
+                if record is not None:
+                    data = _unpack_beacon_record(record)
+                    updates.append(UpdateOne({"_id": doc["_id"]}, {"$set": data}))
+
+            if updates:
+                await collection.bulk_write(updates, ordered=False)
+
+        await _for_each_batch(as_chunks(docs, self.beacon_batch_size), process)
+
     # -- Node operator tasks --
 
     @timed
     async def add_untracked_node_operators(self) -> None:
         nm = await rp.get_contract_by_name("rocketNodeManager")
         latest_rp = await rp.call("rocketNodeManager.getNodeCount") - 1
-        latest_db = 0
+        latest_db = -1
         if res := await self.bot.db.node_operators.find_one(
             sort=[("_id", pymongo.DESCENDING)]
         ):
@@ -549,7 +612,7 @@ class DBUpkeepTask(commands.Cog):
     async def add_untracked_minipools(self) -> None:
         mm = await rp.get_contract_by_name("rocketMinipoolManager")
         latest_rp = await rp.call("rocketMinipoolManager.getMinipoolCount") - 1
-        latest_db = 0
+        latest_db = -1
         if res := await self.bot.db.minipools.find_one(
             sort=[("_id", pymongo.DESCENDING)]
         ):
@@ -775,48 +838,12 @@ class DBUpkeepTask(commands.Cog):
 
     @timed
     async def update_dynamic_minipool_beacon_data(self) -> None:
-        pubkeys = await self.bot.db.minipools.distinct(
-            "pubkey", {"beacon.status": {"$ne": "withdrawal_done"}}
+        await self._update_beacon_data(
+            self.bot.db.minipools,
+            {"beacon.status": {"$ne": "withdrawal_done"}},
+            owner_field="address",
+            label="minipools",
         )
-        pubkeys = [pk for pk in pubkeys if pk is not None]
-        total = len(pubkeys)
-
-        async def process(i: int, pubkey_batch: list[Any]) -> None:
-            start = i * self.beacon_batch_size + 1
-            end = min((i + 1) * self.beacon_batch_size, total)
-            log.info(
-                f"Updating beacon chain data for minipools [{start}, {end}]/{total}"
-            )
-            beacon_data = (await bacon.get_validators_by_ids("head", ids=pubkey_batch))[
-                "data"
-            ]
-            data = {}
-            for d in beacon_data:
-                v = d["validator"]
-                data[v["pubkey"]] = {
-                    "validator_index": int(d["index"]),
-                    "beacon": {
-                        "status": d["status"],
-                        "balance": solidity.to_float(d["balance"], 9),
-                        "effective_balance": solidity.to_float(
-                            v["effective_balance"], 9
-                        ),
-                        "slashed": v["slashed"],
-                        "activation_eligibility_epoch": _parse_epoch(
-                            v["activation_eligibility_epoch"]
-                        ),
-                        "activation_epoch": _parse_epoch(v["activation_epoch"]),
-                        "exit_epoch": _parse_epoch(v["exit_epoch"]),
-                        "withdrawable_epoch": _parse_epoch(v["withdrawable_epoch"]),
-                    },
-                }
-            if data:
-                await self.bot.db.minipools.bulk_write(
-                    [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
-                    ordered=False,
-                )
-
-        await _for_each_batch(as_chunks(pubkeys, self.beacon_batch_size), process)
 
     # -- Megapool validator tasks --
 
@@ -916,55 +943,16 @@ class DBUpkeepTask(commands.Cog):
 
     @timed
     async def update_dynamic_megapool_validator_beacon_data(self) -> None:
-        # dequeued validators never reach the beacon chain
-        pubkeys = await self.bot.db.megapool_validators.distinct(
-            "pubkey",
+        await self._update_beacon_data(
+            self.bot.db.megapool_validators,
+            # dequeued validators never reach the beacon chain
             {
                 "beacon.status": {"$ne": "withdrawal_done"},
                 "status": {"$ne": "dequeued"},
             },
+            owner_field="megapool",
+            label="megapool validators",
         )
-        pubkeys = [pk for pk in pubkeys if pk is not None]
-        if not pubkeys:
-            return
-        total = len(pubkeys)
-
-        async def process(i: int, pubkey_batch: list[Any]) -> None:
-            start = i * self.beacon_batch_size + 1
-            end = min((i + 1) * self.beacon_batch_size, total)
-            log.debug(
-                f"Updating beacon data for megapool validators [{start}, {end}]/{total}"
-            )
-            beacon_data = (await bacon.get_validators_by_ids("head", ids=pubkey_batch))[
-                "data"
-            ]
-            data = {}
-            for d in beacon_data:
-                v = d["validator"]
-                data[v["pubkey"]] = {
-                    "validator_index": int(d["index"]),
-                    "beacon": {
-                        "status": d["status"],
-                        "balance": solidity.to_float(d["balance"], 9),
-                        "effective_balance": solidity.to_float(
-                            v["effective_balance"], 9
-                        ),
-                        "slashed": v["slashed"],
-                        "activation_eligibility_epoch": _parse_epoch(
-                            v["activation_eligibility_epoch"]
-                        ),
-                        "activation_epoch": _parse_epoch(v["activation_epoch"]),
-                        "exit_epoch": _parse_epoch(v["exit_epoch"]),
-                        "withdrawable_epoch": _parse_epoch(v["withdrawable_epoch"]),
-                    },
-                }
-            if data:
-                await self.bot.db.megapool_validators.bulk_write(
-                    [UpdateMany({"pubkey": pk}, {"$set": d}) for pk, d in data.items()],
-                    ordered=False,
-                )
-
-        await _for_each_batch(as_chunks(pubkeys, self.beacon_batch_size), process)
 
 
 async def setup(self: RocketWatch) -> None:

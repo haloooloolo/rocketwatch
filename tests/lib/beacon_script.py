@@ -27,6 +27,7 @@ def make_validator_record(
     activation_epoch: int = 0,
     exit_epoch: int = 2**32 - 1,
     withdrawable_epoch: int = 2**32 - 1,
+    withdrawal_credentials: str = "0x01" + "00" * 31,
 ) -> dict[str, Any]:
     """Build the per-validator record returned by `get_validators_by_ids`.
 
@@ -38,6 +39,7 @@ def make_validator_record(
         "status": status,
         "validator": {
             "pubkey": pubkey,
+            "withdrawal_credentials": withdrawal_credentials,
             "effective_balance": str(effective_balance_gwei),
             "slashed": slashed,
             "activation_eligibility_epoch": str(activation_eligibility_epoch),
