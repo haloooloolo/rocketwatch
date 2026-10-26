@@ -266,6 +266,9 @@ async def el_explorer_url(
             )
             if megapool_address != ADDRESS_ZERO:
                 url = rocketdash_url(f"megapool/{megapool_address}")
+            else:
+                url = rocketdash_url(f"node/{target}")
+
             if await rp.call(
                 "rocketNodeManager.getSmoothingPoolRegistrationState",
                 target,
