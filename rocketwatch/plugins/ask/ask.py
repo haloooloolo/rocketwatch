@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -12,6 +13,7 @@ from discord.ext import commands
 from pydantic import BaseModel, Field
 
 from rocketwatch.bot import RocketWatch
+from rocketwatch.plugins.ask.budget import DailyBudget
 from rocketwatch.plugins.ask.messages import (
     MESSAGE_LINK,
     USAGE_LINE,
@@ -21,11 +23,12 @@ from rocketwatch.plugins.ask.messages import (
     is_text,
     message_text,
     read_message,
+    readable_channel,
     take_image,
 )
 from rocketwatch.plugins.ask.prompt import build_system_prompt
-from rocketwatch.plugins.ask.tools import WEB_TOOLS, AskTools
-from rocketwatch.utils.agent import Turn, Usage, run_agent
+from rocketwatch.plugins.ask.tools import PUBLIC_COLLECTIONS, WEB_TOOLS, AskTools
+from rocketwatch.utils.agent import PRICES, Turn, Usage, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.llm import AnthropicProvider, create_provider
@@ -47,7 +50,11 @@ CHART_STYLE = Path(__file__).parents[2] / "resources" / "rocketwatch.mplstyle"
 ANSWER_TIME_LIMIT = 10 * 60
 ANSWER_TIMEOUT = 12 * 60
 SHRUG = "\N{SHRUG}"
+BUSY = "\N{HOURGLASS WITH FLOWING SAND}"
 MAX_LINKS = 3
+MAX_RUN_COST = 1.0
+MIN_RUN_COST = 0.25
+CONFIRM_TIMEOUT = 10 * 60
 
 
 class TextBlock(BaseModel):
@@ -81,8 +88,7 @@ def usage_footer(usage: Usage) -> str:
     ]
     if usage.input_tokens:
         parts.append(f"{usage.cached_tokens / usage.input_tokens:.0%} cached")
-    if usage.cost is not None:
-        parts.append(f"≈${usage.cost:.2f}" if usage.cost >= 0.01 else "<$0.01")
+    parts.append(f"≈${usage.cost:.2f}" if usage.cost >= 0.01 else "<$0.01")
     return " · ".join(parts)
 
 
@@ -135,12 +141,63 @@ def render_answer(
     return view, [File(BytesIO(attached[n]), n) for n in shown]
 
 
+class ConfirmView(ui.View):
+    """Asks whether a reply was meant as a question, since replying to the bot
+    pings it by default."""
+
+    def __init__(self, asker_id: int, on_yes: Callable[[], Awaitable[None]]) -> None:
+        super().__init__(timeout=CONFIRM_TIMEOUT)
+        self.asker_id = asker_id
+        self.on_yes = on_yes
+        self.message: Message | None = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id == self.asker_id:
+            return True
+        await interaction.response.send_message(
+            "Only the person who replied can choose.", ephemeral=True
+        )
+        return False
+
+    async def _close(self, interaction: discord.Interaction) -> None:
+        self.stop()
+        await interaction.response.defer()
+        if interaction.message is not None:
+            with contextlib.suppress(discord.HTTPException):
+                await interaction.message.delete()
+
+    @ui.button(label="Yes", style=discord.ButtonStyle.success)
+    async def yes(
+        self, interaction: discord.Interaction, _: ui.Button["ConfirmView"]
+    ) -> None:
+        await self._close(interaction)
+        await self.on_yes()
+
+    @ui.button(label="Shut Up", style=discord.ButtonStyle.danger)
+    async def shut_up(
+        self, interaction: discord.Interaction, _: ui.Button["ConfirmView"]
+    ) -> None:
+        await self._close(interaction)
+
+    async def on_timeout(self) -> None:
+        if self.message is not None:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.delete()
+
+
 class Ask(commands.Cog):
     def __init__(self, bot: RocketWatch, llm: AnthropicProvider) -> None:
         self.bot = bot
         self.llm = llm
         self.system_prompt = build_system_prompt()
         self.container_files = [(CHART_STYLE.name, CHART_STYLE.read_bytes())]
+        self.budget = DailyBudget(
+            bot.db["ask_budget"],
+            cfg.ask.daily_budget_cents / 100,
+            per_run=MAX_RUN_COST,
+            min_run=MIN_RUN_COST,
+        )
+        self.running: set[int] = set()
 
     def _is_answer(self, message: Message) -> bool:
         # recognized by the usage line under it, so this survives restarts
@@ -154,30 +211,71 @@ class Ask(commands.Cog):
         assert self.bot.user is not None
         return any(user.id == self.bot.user.id for user in message.mentions)
 
-    def _is_question(self, message: Message) -> bool:
-        if message.author.id != cfg.discord.owner.user_id:
-            return False
-        return message.guild is None or self._pings_bot(message)
+    def _names_bot(self, message: Message) -> bool:
+        # raw mentions come from the text only, not from the reply ping
+        assert self.bot.user is not None
+        return self.bot.user.id in message.raw_mentions
 
-    def _is_stranger_question(self, message: Message) -> bool:
+    @staticmethod
+    def _in_server(message: Message) -> bool:
         return (
-            not message.author.bot
-            and message.author.id != cfg.discord.owner.user_id
-            and self._pings_bot(message)
+            message.guild is not None
+            and message.guild.id == cfg.rocketpool.support.server_id
         )
 
     @commands.Cog.listener()
     async def on_message(self, message: Message) -> None:
-        if not self._is_question(message):
-            if self._is_stranger_question(message):
-                with contextlib.suppress(discord.HTTPException):
-                    await message.add_reaction(SHRUG)
+        if message.author.bot or not self._pings_bot(message):
+            return
+        if not self._in_server(message):
+            with contextlib.suppress(discord.HTTPException):
+                await message.add_reaction(SHRUG)
+            return
+        if self._names_bot(message):
+            await self._answer(message)
+            return
+        view = ConfirmView(message.author.id, lambda: self._answer(message))
+        view.message = await message.reply(
+            "Do you want me to respond?", view=view, mention_author=False
+        )
+
+    async def _answer(self, message: Message) -> None:
+        if message.author.id in self.running:
+            with contextlib.suppress(discord.HTTPException):
+                await message.add_reaction(BUSY)
+            return
+        key = object()
+        max_cost = await self.budget.hold(key)
+        if max_cost is None:
+            spent = Embed(
+                title="Out of budget for today",
+                description="Today's budget for questions is used up, or held by "
+                "questions still running. It resets "
+                f"<t:{int(self.budget.resets_at().timestamp())}:R>.",
+                color=CustomColors.RED,
+            )
+            await message.reply(embed=spent, mention_author=False)
             return
 
+        self.running.add(message.author.id)
         usage = Usage()
+        try:
+            await self._run(message, usage, max_cost)
+        finally:
+            self.running.discard(message.author.id)
+            await self.budget.settle(key, usage.cost)
+
+    async def _run(self, message: Message, usage: Usage, max_cost: float) -> None:
+        owner = message.author.id == cfg.discord.owner.user_id
         async with message.channel.typing():
             try:
-                tools = AskTools(self.bot.db, cfg.secrets.github, self.bot)
+                tools = AskTools(
+                    self.bot.db,
+                    cfg.secrets.github,
+                    self.bot,
+                    reader=message.author,
+                    collections=None if owner else PUBLIC_COLLECTIONS,
+                )
                 async with asyncio.timeout(ANSWER_TIMEOUT):
                     turns, answer_files = await self._build_turns(message)
                     result = await run_agent(
@@ -189,6 +287,7 @@ class Ask(commands.Cog):
                         server_tools=WEB_TOOLS,
                         code_execution=True,
                         time_limit=ANSWER_TIME_LIMIT,
+                        max_cost=max_cost,
                         usage=usage,
                         container_files=[*self.container_files, *answer_files.items()],
                     )
@@ -197,7 +296,13 @@ class Ask(commands.Cog):
                     {**result.files, **tools.files},
                     usage_footer(result.usage),
                 )
-                await message.reply(view=view, files=files, mention_author=False)
+                # the model writes what others ask for, so it mustn't ping anyone
+                await message.reply(
+                    view=view,
+                    files=files,
+                    mention_author=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
             except TimeoutError:
                 log.warning("Gave up on a question after %ds", ANSWER_TIMEOUT)
                 timeout = Embed(
@@ -212,9 +317,10 @@ class Ask(commands.Cog):
             except Exception as err:
                 log.exception("Failed to answer question")
                 await self.bot.report_error(err)
+                # errors can hold endpoint URLs with keys, so they go to the owner only
                 error = Embed(
                     title="Couldn't answer that",
-                    description=f"`{err!r}`"[:4096],
+                    description="Something went wrong. It has been reported.",
                     color=CustomColors.RED,
                 )
                 error.set_footer(text=usage_footer(usage))
@@ -249,7 +355,8 @@ class Ask(commands.Cog):
 
         # built newest first, so the question's own media gets the budget first
         budget = MediaBudget(MAX_IMAGES, MAX_DOCUMENTS)
-        question = await self._read_message(message, budget)
+        asker = message.author.id
+        question = await self._read_message(message, budget, asker=asker)
         now = datetime.now(UTC)
         question.text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{question.text}"
         turns = [user_turn(question)]
@@ -260,7 +367,10 @@ class Ask(commands.Cog):
                     Turn("user", f"[Linked message {link} couldn't be opened]")
                 )
                 continue
-            turns.append(user_turn(await self._read_message(linked, budget, link=link)))
+            linked_content = await self._read_message(
+                linked, budget, asker=asker, link=link
+            )
+            turns.append(user_turn(linked_content))
 
         files: dict[str, bytes] = {}
         for m in chain[1:]:
@@ -273,34 +383,36 @@ class Ask(commands.Cog):
                     turns.append(user_turn(images))
                 turns.append(Turn("assistant", text))
                 continue
-            turns.append(user_turn(await self._read_message(m, budget)))
+            turns.append(user_turn(await self._read_message(m, budget, asker=asker)))
         turns.reverse()
         return turns, files
 
     async def _linked_messages(
         self, message: Message
     ) -> list[tuple[str, Message | None]]:
-        """Each message linked in the question, or None where it can't be read."""
+        """Each message linked in the question, or None where the asker can't
+        read it."""
         links = {m[0]: m.groups() for m in MESSAGE_LINK.finditer(message.content)}
         linked: list[tuple[str, Message | None]] = []
         for link, (channel_id, message_id) in list(links.items())[:MAX_LINKS]:
-            try:
-                channel = self.bot.get_channel(
-                    int(channel_id)
-                ) or await self.bot.fetch_channel(int(channel_id))
-                if isinstance(channel, discord.abc.Messageable):
-                    linked.append((link, await channel.fetch_message(int(message_id))))
-                    continue
-            except discord.HTTPException:
-                pass
-            linked.append((link, None))
+            channel = await readable_channel(self.bot, message.author, int(channel_id))
+            found: Message | None = None
+            if channel is not None:
+                with contextlib.suppress(discord.HTTPException):
+                    found = await channel.fetch_message(int(message_id))
+            linked.append((link, found))
         return linked
 
     async def _read_message(
-        self, message: Message, budget: MediaBudget, *, link: str | None = None
+        self,
+        message: Message,
+        budget: MediaBudget,
+        *,
+        asker: int,
+        link: str | None = None,
     ) -> MessageContent:
         assert self.bot.user is not None
-        if message.author.id == cfg.discord.owner.user_id and link is None:
+        if message.author.id == asker and link is None:
             text = re.sub(rf"<@!?{self.bot.user.id}>", "", message.content).strip()
             return await read_message(message, budget, text=text)
         content = await read_message(message, budget)
@@ -345,4 +457,6 @@ async def setup(bot: RocketWatch) -> None:
     if not isinstance(llm, AnthropicProvider):
         log.warning("Not loading: ask.llm must be an Anthropic provider")
         return
+    if llm.model not in PRICES:
+        log.warning("No prices for %s, so it's charged at the top rate", llm.model)
     await bot.add_cog(Ask(bot, llm))

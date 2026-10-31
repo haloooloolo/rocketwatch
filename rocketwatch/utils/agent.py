@@ -76,8 +76,8 @@ class Usage:
     cache_write_tokens: int = 0
     output_tokens: int = 0
     web_searches: int = 0
-    # USD; None once a request came from a model without known prices
-    cost: float | None = 0.0
+    # USD, at list prices
+    cost: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -110,7 +110,10 @@ PRICES = {
     ),
     "claude-fable-5-1": ModelPrice(10.00, 50.00, 0.25, 12.50),
 }
+# for models missing above, so limits on cost still hold
+UNKNOWN_PRICE = max(PRICES.values(), key=lambda price: price.output)
 WEB_SEARCH_PRICE = 0.01
+_unpriced: set[str] = set()
 
 
 def request_cost(
@@ -120,11 +123,16 @@ def request_cost(
     written: int,
     output: int,
     web_searches: int = 0,
-) -> float | None:
-    """Approximate USD cost of one request, or None for a model without known
-    prices."""
+) -> float:
+    """Approximate USD cost of one request. A model without known prices is
+    priced like the most expensive one."""
     if (price := PRICES.get(model)) is None:
-        return None
+        if model not in _unpriced:
+            _unpriced.add(model)
+            log.warning(
+                "No prices for %s, so it's priced like the dearest model", model
+            )
+        price = UNKNOWN_PRICE
     long = (
         price.long_prompt is not None
         and uncached + cached + written > price.long_prompt
@@ -351,6 +359,7 @@ async def run_agent[T: BaseModel](
     max_iterations: int = 25,
     max_requests: int = 200,
     time_limit: float | None = None,
+    max_cost: float | None = None,
     tool_timeout: float = 30,
     effort: Effort = "high",
     max_tokens: int = 16000,
@@ -364,10 +373,12 @@ async def run_agent[T: BaseModel](
     call the tools from there.
 
     max_iterations counts the model's own turns. Each tool call round trip from
-    a running script is a request too, so max_requests and time_limit (seconds)
-    bound those: past either, scripts get an error instead of tool results and
-    the model has to answer. A tool call running past tool_timeout (seconds)
-    is stopped and reported to the model as an error.
+    a running script is a request too, so max_requests, time_limit (seconds)
+    and max_cost (USD) bound those: past any of them, scripts get an error
+    instead of tool results and the model has to answer. Wrapping up takes a
+    few more requests, so the cost can end up slightly above max_cost. A tool
+    call running past tool_timeout (seconds) is stopped and reported to the
+    model as an error.
 
     Totals are added to usage as the run goes, so a caller that passes one in
     can still see what a failed or cancelled run used.
@@ -414,8 +425,10 @@ async def run_agent[T: BaseModel](
         if uploads:
             messages[0] = _with_uploads(messages[0], uploads)
         for request in range(max_requests + WIND_DOWN_REQUESTS):
-            exhausted = request >= max_requests or (
-                deadline is not None and loop.time() >= deadline
+            exhausted = (
+                request >= max_requests
+                or (deadline is not None and loop.time() >= deadline)
+                or (max_cost is not None and usage.cost >= max_cost)
             )
             forced = (model_turns >= max_iterations or exhausted) and not turn_open
             # tell the model why it can't call tools, so a cut-short answer says so
@@ -466,16 +479,13 @@ async def run_agent[T: BaseModel](
             searches = server.web_search_requests if server is not None else 0
             usage.web_searches += searches
             # priced by the model that answered, which a fallback can change
-            cost = request_cost(
+            usage.cost += request_cost(
                 response.model,
                 response.usage.input_tokens,
                 cached,
                 written,
                 response.usage.output_tokens,
                 searches,
-            )
-            usage.cost = (
-                None if usage.cost is None or cost is None else usage.cost + cost
             )
             exports += _exported_files(response.content)
             usage.tool_calls += sum(

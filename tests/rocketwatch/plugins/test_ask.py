@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
+from discord import ui
 
 from rocketwatch.plugins.ask import ask as ask_module
 from rocketwatch.plugins.ask.ask import (
@@ -12,13 +13,14 @@ from rocketwatch.plugins.ask.ask import (
     MAX_MESSAGE_TEXT,
     Answer,
     Ask,
+    ConfirmView,
     ImagesBlock,
     TextBlock,
     render_answer,
     setup,
     usage_footer,
 )
-from rocketwatch.plugins.ask.tools import FileInput
+from rocketwatch.plugins.ask.tools import PUBLIC_COLLECTIONS, FileInput
 from rocketwatch.utils.agent import AgentResult, AgentTool, Turn, Usage
 from rocketwatch.utils.config import LLMConfig, cfg
 from rocketwatch.utils.embeds import CustomColors
@@ -28,6 +30,7 @@ from tests.lib.discord_harness import make_bot
 BOT_ID = 999
 OWNER_ID = 1  # make_cfg's owner
 STRANGER_ID = 7
+SERVER_ID = 1  # make_cfg's Rocket Pool server
 
 
 def _answer(*blocks: TextBlock | ImagesBlock, **overrides: Any) -> Answer:
@@ -59,7 +62,11 @@ def _texts(view: discord.ui.LayoutView) -> list[str]:
 def cog() -> Ask:
     bot = make_bot()
     bot.user.id = BOT_ID
-    return Ask(bot, AnthropicProvider(api_key="k", model="m"))
+    cog = Ask(bot, AnthropicProvider(api_key="k", model="m"))
+    cog.budget.collection = MagicMock()
+    cog.budget.collection.find_one = AsyncMock(return_value=None)
+    cog.budget.collection.update_one = AsyncMock()
+    return cog
 
 
 def _message(
@@ -87,13 +94,15 @@ def _message(
     message.author.bot = is_bot
     message.raw_mentions = [BOT_ID] if f"<@{BOT_ID}>" in content else []
     message.mentions = [MagicMock(id=BOT_ID)] if message.raw_mentions else []
-    message.guild = MagicMock() if in_guild else None
+    message.guild = MagicMock(id=SERVER_ID) if in_guild else None
     message.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     message.attachments = attachments or []
     message.embeds = embeds or []
     message.components = []
     message.channel.id = 5
-    message.reply = AsyncMock(return_value=MagicMock(id=message_id + 1000))
+    message.reply = AsyncMock(
+        return_value=MagicMock(id=message_id + 1000, delete=AsyncMock())
+    )
     message.add_reaction = AsyncMock()
     if parent is None:
         message.reference = None
@@ -158,40 +167,13 @@ def _reply_to(
     return message
 
 
-class TestIsQuestion:
-    def test_owner_mention(self, cog: Ask) -> None:
-        assert cog._is_question(_message(f"<@{BOT_ID}> how many nodes?"))
-
-    def test_owner_without_mention(self, cog: Ask) -> None:
-        assert not cog._is_question(_message("how many nodes?"))
-
-    def test_stranger_mention(self, cog: Ask) -> None:
-        message = _message(f"<@{BOT_ID}> how many nodes?", author_id=STRANGER_ID)
-        assert not cog._is_question(message)
-
-    def test_owner_dm(self, cog: Ask) -> None:
-        assert cog._is_question(_message("how many nodes?", in_guild=False))
-
-    def test_reply_to_answer_continues(self, cog: Ask) -> None:
-        # recognized from the message itself, so it works after a restart
-        assert cog._is_question(_reply_to(_answer_message(50), "and megapools?"))
-
-    def test_reply_to_any_bot_message(self, cog: Ask) -> None:
-        event = _message(message_id=50, author_id=BOT_ID)
-        assert cog._is_question(_reply_to(event, "what's this?"))
-
-    def test_reply_without_ping_is_ignored(self, cog: Ask) -> None:
-        event = _message(message_id=50, author_id=BOT_ID)
-        assert not cog._is_question(_reply_to(event, "nice", ping=False))
-
-    def test_reply_to_someone_else(self, cog: Ask) -> None:
-        other = _message(message_id=50, author_id=STRANGER_ID)
-        assert not cog._is_question(_reply_to(other, "true?"))
-
-    def test_reply_to_someone_quoting_the_usage_line(self, cog: Ask) -> None:
-        copy = _answer_message(50)
-        copy.author.id = STRANGER_ID
-        assert not cog._is_question(_reply_to(copy, "huh?"))
+def _interaction(user_id: int) -> MagicMock:
+    interaction = MagicMock()
+    interaction.user.id = user_id
+    interaction.response.defer = AsyncMock()
+    interaction.response.send_message = AsyncMock()
+    interaction.message.delete = AsyncMock()
+    return interaction
 
 
 async def _turns(cog: Ask, message: MagicMock) -> list[Turn]:
@@ -323,6 +305,18 @@ class TestBuildTurns:
         cog.bot.get_channel.assert_called_once_with(2)
         channel.fetch_message.assert_awaited_once_with(70)
         assert turns[1].text.endswith(f"is {link} still right? {link}")
+
+    async def test_link_the_asker_cant_read_is_not_opened(self, cog: Ask) -> None:
+        channel = MagicMock(spec=discord.TextChannel)
+        channel.permissions_for.return_value = discord.Permissions.none()
+        channel.fetch_message = AsyncMock()
+        cog.bot.get_channel = MagicMock(return_value=channel)
+        link = "https://discord.com/channels/1/2/70"
+
+        turns = await _turns(cog, _message(f"<@{BOT_ID}> what about {link}"))
+
+        assert turns[0].text == f"[Linked message {link} couldn't be opened]"
+        channel.fetch_message.assert_not_awaited()
 
     async def test_unreadable_link_is_noted(self, cog: Ask) -> None:
         cog.bot.get_channel = MagicMock(return_value=None)
@@ -471,17 +465,12 @@ class TestUsageFooter:
     def test_tiny_cost(self) -> None:
         assert usage_footer(Usage(cost=0.003)).endswith(" · <$0.01")
 
-    def test_unknown_cost_is_left_out(self) -> None:
-        assert usage_footer(Usage(input_tokens=100, cost=None)) == (
-            "0 tool calls · 100 tokens · 0% cached"
-        )
-
     def test_single_tool_call(self) -> None:
         footer = usage_footer(Usage(tool_calls=1))
         assert footer.startswith("1 tool call ·")
 
     def test_without_usage(self) -> None:
-        assert usage_footer(Usage(cost=None)) == "0 tool calls · 0 tokens"
+        assert usage_footer(Usage()) == "0 tool calls · 0 tokens · <$0.01"
 
 
 class TestOnMessage:
@@ -542,82 +531,199 @@ class TestOnMessage:
             attachments=[_attachment("image/png", b"\x89PNG", "pie.png")],
         )
 
-        await cog.on_message(_reply_to(answer, "only active ones"))
+        follow_up = _reply_to(answer, "only active ones")
+        await cog.on_message(follow_up)
+        await follow_up.reply.call_args.kwargs["view"].yes.callback(
+            _interaction(OWNER_ID)
+        )
 
         assert run_agent.await_count == 2
         # the earlier chart goes to the sandbox next to the style file
         names = [n for n, _ in run_agent.call_args.kwargs["container_files"]]
         assert names == [ask_module.CHART_STYLE.name, "pie.png"]
 
-    async def test_ignores_non_questions(self, cog: Ask, run_agent: AsyncMock) -> None:
-        message = _message("just chatting")
-        await cog.on_message(message)
-        run_agent.assert_not_awaited()
-        message.add_reaction.assert_not_awaited()
-
-    async def test_shrugs_at_strangers_replying_to_answers(
+    async def test_anyone_in_the_server_can_ask(
         self, cog: Ask, run_agent: AsyncMock
     ) -> None:
-        message = _reply_to(_answer_message(50), "can you check mine?")
-        message.author.id = STRANGER_ID
-        await cog.on_message(message)
-        run_agent.assert_not_awaited()
-        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
-
-    async def test_shrugs_at_strangers_pinging_on_event_posts(
-        self, cog: Ask, run_agent: AsyncMock
-    ) -> None:
-        message = _reply_to(_message(message_id=50, author_id=BOT_ID), "nice")
-        message.author.id = STRANGER_ID
-        await cog.on_message(message)
-        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
-
-    async def test_no_shrug_for_replies_without_ping(
-        self, cog: Ask, run_agent: AsyncMock
-    ) -> None:
-        message = _reply_to(_answer_message(50), "interesting", ping=False)
-        message.author.id = STRANGER_ID
-        await cog.on_message(message)
-        message.add_reaction.assert_not_awaited()
-
-    async def test_shrugs_at_strangers(self, cog: Ask, run_agent: AsyncMock) -> None:
         message = _message(f"<@{BOT_ID}> how many nodes?", author_id=STRANGER_ID)
+        await cog.on_message(message)
+        run_agent.assert_awaited_once()
+
+    async def test_mention_in_a_reply_answers_right_away(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        event = _message(message_id=50, author_id=BOT_ID)
+        await cog.on_message(_reply_to(event, f"<@{BOT_ID}> what's this?"))
+        run_agent.assert_awaited_once()
+
+    async def test_reply_ping_asks_first(self, cog: Ask, run_agent: AsyncMock) -> None:
+        event = _message(message_id=50, author_id=BOT_ID)
+        message = _reply_to(event, "what's this?")
+
+        await cog.on_message(message)
+
+        run_agent.assert_not_awaited()
+        assert message.reply.call_args.args == ("Do you want me to respond?",)
+        view = message.reply.call_args.kwargs["view"]
+        assert isinstance(view, ConfirmView)
+        styles = {b.label: b.style for b in view.children if isinstance(b, ui.Button)}
+        assert styles == {
+            "Yes": discord.ButtonStyle.success,
+            "Shut Up": discord.ButtonStyle.danger,
+        }
+
+    async def test_yes_answers_and_removes_the_prompt(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        message = _reply_to(_answer_message(50), "and megapools?")
+        await cog.on_message(message)
+        view = message.reply.call_args.kwargs["view"]
+        interaction = _interaction(OWNER_ID)
+
+        await view.yes.callback(interaction)
+
+        interaction.message.delete.assert_awaited_once()
+        run_agent.assert_awaited_once()
+
+    async def test_shut_up_removes_the_prompt(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        message = _reply_to(_answer_message(50), "lol")
+        await cog.on_message(message)
+        view = message.reply.call_args.kwargs["view"]
+        interaction = _interaction(OWNER_ID)
+
+        await view.shut_up.callback(interaction)
+
+        interaction.message.delete.assert_awaited_once()
+        run_agent.assert_not_awaited()
+
+    async def test_only_the_replier_can_choose(self, cog: Ask) -> None:
+        message = _reply_to(_answer_message(50), "and megapools?")
+        await cog.on_message(message)
+        view = message.reply.call_args.kwargs["view"]
+        other = _interaction(STRANGER_ID)
+
+        assert not await view.interaction_check(other)
+        other.response.send_message.assert_awaited_once()
+        assert await view.interaction_check(_interaction(OWNER_ID))
+
+    async def test_unanswered_prompt_goes_away(self, cog: Ask) -> None:
+        message = _reply_to(_answer_message(50), "and megapools?")
+        await cog.on_message(message)
+        view = message.reply.call_args.kwargs["view"]
+
+        await view.on_timeout()
+
+        message.reply.return_value.delete.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            _message("just chatting"),
+            _reply_to(_message(message_id=50, author_id=BOT_ID), "nice", ping=False),
+            _reply_to(_message(message_id=50, author_id=STRANGER_ID), "true?"),
+            _message(f"<@{BOT_ID}> hi", is_bot=True),
+        ],
+        ids=["no mention", "reply without ping", "reply to a person", "a bot"],
+    )
+    async def test_ignored(
+        self, cog: Ask, run_agent: AsyncMock, message: MagicMock
+    ) -> None:
         await cog.on_message(message)
         run_agent.assert_not_awaited()
         message.reply.assert_not_awaited()
-        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
-
-    @pytest.mark.parametrize(
-        ("content", "is_bot", "in_guild"),
-        [
-            (f"<@{BOT_ID}> hi", True, True),  # other bots
-            ("hi", False, False),  # stranger DMs
-            ("hi", False, True),  # no mention
-        ],
-    )
-    async def test_no_shrug_without_a_human_mention(
-        self,
-        cog: Ask,
-        run_agent: AsyncMock,
-        content: str,
-        is_bot: bool,
-        in_guild: bool,
-    ) -> None:
-        message = _message(
-            content, author_id=STRANGER_ID, is_bot=is_bot, in_guild=in_guild
-        )
-        await cog.on_message(message)
         message.add_reaction.assert_not_awaited()
+
+    @pytest.mark.parametrize("in_guild", [True, False], ids=["other server", "DM"])
+    async def test_shrugs_outside_the_server(
+        self, cog: Ask, run_agent: AsyncMock, in_guild: bool
+    ) -> None:
+        message = _message(f"<@{BOT_ID}> how many nodes?", in_guild=in_guild)
+        if in_guild:
+            message.guild.id = SERVER_ID + 1
+        await cog.on_message(message)
+        run_agent.assert_not_awaited()
+        message.add_reaction.assert_awaited_once_with("\N{SHRUG}")
 
     async def test_failed_shrug_is_ignored(
         self, cog: Ask, run_agent: AsyncMock
     ) -> None:
-        message = _message(f"<@{BOT_ID}> hi", author_id=STRANGER_ID)
+        message = _message(f"<@{BOT_ID}> hi", in_guild=False)
         message.add_reaction.side_effect = discord.Forbidden(
             MagicMock(status=403), "no reactions"
         )
         await cog.on_message(message)
         cog.bot.report_error.assert_not_awaited()
+
+    async def test_answers_ping_no_one(self, cog: Ask, run_agent: AsyncMock) -> None:
+        message = _message(f"<@{BOT_ID}> list nodes")
+        await cog.on_message(message)
+        allowed = message.reply.call_args.kwargs["allowed_mentions"]
+        assert allowed.to_dict()["parse"] == []
+
+    async def test_strangers_get_public_collections_only(
+        self, cog: Ask, run_agent: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        tools = MagicMock(side_effect=ask_module.AskTools)
+        monkeypatch.setattr(ask_module, "AskTools", tools)
+        await cog.on_message(_message(f"<@{BOT_ID}> hi", author_id=STRANGER_ID))
+        await cog.on_message(_message(f"<@{BOT_ID}> hi"))
+        stranger, owner = (c.kwargs for c in tools.call_args_list)
+        assert stranger["collections"] == PUBLIC_COLLECTIONS
+        assert stranger["reader"].id == STRANGER_ID
+        assert owner["collections"] is None
+
+    async def test_cost_is_capped_and_recorded(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        async def costly(*_a: Any, usage: Usage, **_k: Any) -> AgentResult[Answer]:
+            usage.cost = 0.4
+            return AgentResult(_answer(), usage)
+
+        run_agent.side_effect = costly
+        await cog.on_message(_message(f"<@{BOT_ID}> list nodes"))
+
+        assert run_agent.call_args.kwargs["max_cost"] == ask_module.MAX_RUN_COST
+        [(_, update)] = [
+            c.args for c in cog.budget.collection.update_one.call_args_list
+        ]
+        assert update == {"$inc": {"spent": 0.4}}
+
+    async def test_refuses_once_the_budget_is_spent(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        cog.budget.collection.find_one.return_value = {"spent": 2.4}
+        message = _message(f"<@{BOT_ID}> list nodes")
+
+        await cog.on_message(message)
+
+        run_agent.assert_not_awaited()
+        embed = message.reply.call_args.kwargs["embed"]
+        assert embed.title == "Out of budget for today"
+
+    async def test_one_question_at_a_time_per_person(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow(*_a: Any, **_k: Any) -> AgentResult[Answer]:
+            started.set()
+            await release.wait()
+            return AgentResult(_answer(), Usage())
+
+        run_agent.side_effect = slow
+        first = asyncio.create_task(cog.on_message(_message(f"<@{BOT_ID}> a")))
+        await started.wait()
+        second = _message(f"<@{BOT_ID}> b", message_id=101)
+
+        await cog.on_message(second)
+        release.set()
+        await first
+
+        assert run_agent.await_count == 1
+        second.add_reaction.assert_awaited_once_with(ask_module.BUSY)
 
     async def test_slow_answer_times_out(
         self, cog: Ask, run_agent: AsyncMock, monkeypatch: pytest.MonkeyPatch
@@ -650,7 +756,8 @@ class TestOnMessage:
 
         cog.bot.report_error.assert_awaited_once()
         embed = message.reply.call_args.kwargs["embed"]
-        assert "node down" in embed.description
+        # details stay with the owner, since they can hold endpoint URLs
+        assert "node down" not in embed.description
         assert embed.footer.text.startswith("4 tool calls")
         # replying to an error doesn't continue a conversation
         assert not cog._is_answer(_message(author_id=BOT_ID, embeds=[embed]))
@@ -667,7 +774,7 @@ class TestOnMessage:
         await cog.on_message(message)
 
         cog.bot.report_error.assert_awaited_once()
-        assert "invalid layout" in message.reply.call_args.kwargs["embed"].description
+        assert message.reply.call_args.kwargs["embed"].title == "Couldn't answer that"
 
 
 class TestSetup:

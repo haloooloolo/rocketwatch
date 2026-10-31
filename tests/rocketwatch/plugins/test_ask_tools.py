@@ -16,6 +16,7 @@ from rocketwatch.plugins.ask.tools import (
     MAX_LOG_BLOCK_RANGE,
     MAX_RESULT_CHARS,
     MAX_SCRIPT_RESULT_CHARS,
+    PUBLIC_COLLECTIONS,
     AddressInfoInput,
     AskTools,
     BeaconGetInput,
@@ -654,11 +655,15 @@ class TestDiscordMessages:
     def tools(self, channel: MagicMock) -> AskTools:
         client = MagicMock()
         client.get_channel = MagicMock(return_value=channel)
-        return AskTools(MagicMock(), discord_client=client)
+        return AskTools(MagicMock(), discord_client=client, reader=MagicMock(id=7))
 
-    def test_only_offered_with_a_client(self) -> None:
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"discord_client": MagicMock()}, {"reader": MagicMock(id=7)}],
+    )
+    def test_only_offered_with_a_client_and_asker(self, kwargs: dict[str, Any]) -> None:
         assert "discord_messages" not in {
-            t.name for t in AskTools(MagicMock()).definitions()
+            t.name for t in AskTools(MagicMock(), **kwargs).definitions()
         }
 
     async def test_message_with_context_in_order(self, tools: AskTools) -> None:
@@ -694,6 +699,14 @@ class TestDiscordMessages:
         )
         with pytest.raises(ToolError, match="can't read"):
             await tools.discord_messages(DiscordMessagesInput(link=self.LINK))
+
+    async def test_channel_the_asker_cant_read(
+        self, tools: AskTools, channel: MagicMock
+    ) -> None:
+        channel.permissions_for.return_value = discord.Permissions.none()
+        with pytest.raises(ToolError, match="asker can't read"):
+            await tools.discord_messages(DiscordMessagesInput(link=self.LINK))
+        channel.fetch_message.assert_not_awaited()
 
     async def test_not_a_link(self, tools: AskTools) -> None:
         with pytest.raises(ToolError, match="Not a Discord message link"):
@@ -1069,6 +1082,25 @@ class TestReadOnly:
                 MongoAggregateInput(collection="node_operators", pipeline=pipeline)
             )
 
+    @pytest.mark.parametrize(
+        "pipeline",
+        [
+            [{"$match": {"$where": "sleep(10000)"}}],
+            [{"$addFields": {"x": {"$function": {"body": "...", "args": []}}}}],
+        ],
+    )
+    async def test_rejects_javascript(
+        self, tools: AskTools, pipeline: list[dict[str, Any]]
+    ) -> None:
+        with pytest.raises(ToolError, match="JavaScript"):
+            await tools.mongo_aggregate(
+                MongoAggregateInput(collection="node_operators", pipeline=pipeline)
+            )
+        with pytest.raises(ToolError, match="JavaScript"):
+            await tools.mongo_find(
+                MongoFindInput(collection="node_operators", filter=pipeline[0])
+            )
+
 
 @pytest.mark.integration_db
 class TestMongo:
@@ -1180,3 +1212,74 @@ class TestMongo:
     async def test_unknown_collection(self, db_tools: AskTools) -> None:
         with pytest.raises(ToolError, match="Unknown collection"):
             await db_tools.mongo_find(MongoFindInput(collection="nope"))
+
+
+@pytest.mark.integration_db
+class TestPrivateCollections:
+    @pytest.fixture
+    async def public_tools(self, mongo_db: AsyncDatabase[dict[str, Any]]) -> AskTools:
+        await mongo_db.node_operators.insert_one({"address": "0x1"})
+        await mongo_db.scam_reports.insert_one({"user_id": 42, "content": "hi"})
+        return AskTools(mongo_db, collections={"node_operators"})
+
+    async def test_hidden_from_the_list(self, public_tools: AskTools) -> None:
+        listed = json.loads(await public_tools.mongo_list_collections(NoInput()))
+        assert listed == {"node_operators": 1}
+
+    async def test_cant_be_read(self, public_tools: AskTools) -> None:
+        with pytest.raises(ToolError, match="Unknown collection"):
+            await public_tools.mongo_find(MongoFindInput(collection="scam_reports"))
+        with pytest.raises(ToolError, match="Unknown collection"):
+            await public_tools.mongo_describe_collection(
+                CollectionInput(collection="scam_reports")
+            )
+
+    @pytest.mark.parametrize(
+        "stage",
+        [
+            {"$lookup": {"from": "scam_reports", "pipeline": [], "as": "r"}},
+            {"$unionWith": "scam_reports"},
+            {"$unionWith": {"coll": "scam_reports", "pipeline": []}},
+            {
+                "$facet": {
+                    "a": [
+                        {
+                            "$graphLookup": {
+                                "from": "scam_reports",
+                                "startWith": "$x",
+                                "connectFromField": "x",
+                                "connectToField": "y",
+                                "as": "r",
+                            }
+                        }
+                    ]
+                }
+            },
+        ],
+    )
+    async def test_cant_be_joined_in(
+        self, public_tools: AskTools, stage: dict[str, Any]
+    ) -> None:
+        with pytest.raises(ToolError, match="Unknown collection"):
+            await public_tools.mongo_aggregate(
+                MongoAggregateInput(collection="node_operators", pipeline=[stage])
+            )
+
+    async def test_public_joins_still_work(self, public_tools: AskTools) -> None:
+        joined = json.loads(
+            await public_tools.mongo_aggregate(
+                MongoAggregateInput(
+                    collection="node_operators",
+                    pipeline=[
+                        {"$unionWith": "node_operators"},
+                        {"$project": {"_id": 0}},
+                    ],
+                )
+            )
+        )
+        assert joined == [{"address": "0x1"}, {"address": "0x1"}]
+
+
+def test_public_collections_hold_no_discord_data() -> None:
+    private = {"scam_reports", "command_metrics", "support_bot", "karma"}
+    assert not private & PUBLIC_COLLECTIONS

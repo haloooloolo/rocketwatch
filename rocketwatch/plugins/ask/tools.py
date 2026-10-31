@@ -1,7 +1,7 @@
 import asyncio
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -24,6 +24,7 @@ from rocketwatch.plugins.ask.messages import (
     MediaBudget,
     MessageContent,
     read_message,
+    readable_channel,
 )
 from rocketwatch.plugins.collateral.collateral import get_node_collateral_data
 from rocketwatch.plugins.signaling.signaling import Proposal, Signaling
@@ -118,6 +119,30 @@ _DEFILLAMA_PATH = re.compile(r"^[A-Za-z0-9_.,:/-]+$")
 SAMPLE_SIZE = 50
 
 _WRITE_STAGES = {"$out", "$merge"}
+# server-side JavaScript
+_JS_OPERATORS = {"$where", "$function", "$accumulator"}
+# collections without Discord users' data, for everyone but the owner
+PUBLIC_COLLECTIONS = frozenset(
+    {
+        "address_labels",
+        "cow_orders",
+        "event_queue",
+        "finality_checkpoints",
+        "latest_proposals",
+        "megapool_validators",
+        "milestones",
+        "minipools",
+        "node_operators",
+        "proposals",
+        "reth_apr",
+        "rocksolid",
+        "signaling_proposals",
+        "signaling_votes",
+        "sync_committee_latest",
+        "sync_committee_next",
+        "sync_committee_stats",
+    }
+)
 _RPC_PREFIXES = ("eth_", "net_", "web3_", "debug_trace", "trace_", "txpool_")
 _RPC_BLOCKED = ("eth_send", "eth_sign", "eth_submit")
 _BLOCK_TAGS = {"latest", "safe", "finalized", "pending"}
@@ -172,10 +197,30 @@ def _check_read_only(value: Any) -> None:
         for key, inner in value.items():
             if key in _WRITE_STAGES:
                 raise ToolError(f"{key} writes to the database and is not allowed")
+            if key in _JS_OPERATORS:
+                raise ToolError(f"{key} runs JavaScript and is not allowed")
             _check_read_only(inner)
     elif isinstance(value, list):
         for inner in value:
             _check_read_only(inner)
+
+
+def _joined_collections(value: Any) -> set[str]:
+    """Collections a pipeline reads besides its own, at any depth."""
+    names: set[str] = set()
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            if key in ("$lookup", "$graphLookup") and isinstance(inner, dict):
+                names.add(str(inner.get("from", "")))
+            elif key == "$unionWith" and isinstance(inner, str):
+                names.add(inner)
+            elif key == "$unionWith" and isinstance(inner, dict):
+                names.add(str(inner.get("coll", "")))
+            names |= _joined_collections(inner)
+    elif isinstance(value, list):
+        for inner in value:
+            names |= _joined_collections(inner)
+    return names - {""}
 
 
 def _bson_type(value: Any) -> str:
@@ -310,7 +355,8 @@ class MongoFindInput(BaseModel):
 class MongoAggregateInput(BaseModel):
     collection: str
     pipeline: list[dict[str, Any]] = Field(
-        description="Aggregation pipeline (Extended JSON); $out and $merge are rejected"
+        description="Aggregation pipeline (Extended JSON); $out, $merge and "
+        "JavaScript operators are rejected"
     )
 
 
@@ -541,10 +587,17 @@ class AskTools:
         db: AsyncDatabase[dict[str, Any]],
         github_token: str = "",
         discord_client: discord.Client | None = None,
+        reader: discord.abc.User | None = None,
+        collections: Collection[str] | None = None,
     ) -> None:
+        """reader is who asked: discord_messages only opens channels they can
+        read, and is offered only with one. collections limits MongoDB access;
+        None allows all."""
         self.db = db
         self.github_token = github_token
         self.discord_client = discord_client
+        self.reader = reader
+        self.collections = collections
         self.files: dict[str, bytes] = {}
 
     def definitions(self) -> list[AgentTool]:
@@ -705,7 +758,7 @@ class AskTools:
                 self.signaling_votes,
             ),
         ]
-        if self.discord_client is not None:
+        if self.discord_client is not None and self.reader is not None:
             tools.append(
                 AgentTool(
                     "discord_messages",
@@ -716,7 +769,7 @@ class AskTools:
                     f"{MAX_DISCORD_DOCUMENTS} PDF shown. Each message comes with its "
                     "own link and the link of the message it replies to, so reply "
                     "chains and links found in messages can be followed with further "
-                    "calls. Only works for channels the bot can read.",
+                    "calls. Only works for channels the asker can read.",
                     DiscordMessagesInput,
                     self.discord_messages,
                 )
@@ -858,17 +911,14 @@ class AskTools:
         )
 
     async def discord_messages(self, args: DiscordMessagesInput) -> ToolOutput:
-        assert self.discord_client is not None
+        assert self.discord_client is not None and self.reader is not None
         if (match := MESSAGE_LINK.fullmatch(args.link.strip())) is None:
             raise ToolError("Not a Discord message link")
         channel_id, message_id = int(match[1]), int(match[2])
-        client = self.discord_client
+        channel = await readable_channel(self.discord_client, self.reader, channel_id)
+        if channel is None:
+            raise ToolError("The asker can't read that channel")
         try:
-            channel = client.get_channel(channel_id) or await client.fetch_channel(
-                channel_id
-            )
-            if not isinstance(channel, discord.abc.Messageable):
-                raise ToolError("That channel has no messages")
             target = await channel.fetch_message(message_id)
             earlier = (
                 [m async for m in channel.history(limit=args.before, before=target)]
@@ -957,13 +1007,20 @@ class AskTools:
             }
         )
 
+    async def _collection_names(self) -> list[str]:
+        names = await self.db.list_collection_names()
+        return sorted(n for n in names if self._allowed(n))
+
+    def _allowed(self, name: str) -> bool:
+        return self.collections is None or name in self.collections
+
     async def _collection(self, name: str) -> AsyncCollection[dict[str, Any]]:
-        if name not in await self.db.list_collection_names():
+        if name not in await self._collection_names():
             raise ToolError(f"Unknown collection {name!r}")
         return self.db[name]
 
     async def mongo_list_collections(self, _: NoInput) -> str:
-        names = sorted(await self.db.list_collection_names())
+        names = await self._collection_names()
         return _dump(
             {name: await self.db[name].estimated_document_count() for name in names}
         )
@@ -990,6 +1047,7 @@ class AskTools:
         )
 
     async def mongo_find(self, args: MongoFindInput) -> str:
+        _check_read_only(args.filter)
         collection = await self._collection(args.collection)
         cursor = collection.find(
             _from_ejson(args.filter),
@@ -1003,6 +1061,9 @@ class AskTools:
 
     async def mongo_aggregate(self, args: MongoAggregateInput) -> str:
         _check_read_only(args.pipeline)
+        for name in _joined_collections(args.pipeline):
+            if not self._allowed(name):
+                raise ToolError(f"Unknown collection {name!r}")
         collection = await self._collection(args.collection)
         pipeline = [*_from_ejson(args.pipeline), {"$limit": MAX_DOCS + 1}]
         cursor = await collection.aggregate(pipeline, maxTimeMS=MAX_TIME_MS)

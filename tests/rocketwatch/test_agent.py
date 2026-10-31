@@ -232,8 +232,12 @@ def test_haiku_charges_more_for_long_prompts() -> None:
     assert long == pytest.approx((5_000 + 5_000 + 2_500) / 1e6)
 
 
-def test_request_cost_unknown_model() -> None:
-    assert request_cost("some-other-model", 10, 0, 0, 0) is None
+def test_unknown_model_is_priced_like_the_dearest() -> None:
+    # so a cost limit can't be dodged by a model missing from the table
+    dearest = max(
+        request_cost(model, 1_000, 1_000, 1_000, 1_000) for model in agent.PRICES
+    )
+    assert request_cost("some-other-model", 1_000, 1_000, 1_000, 1_000) == dearest
 
 
 async def test_cost_adds_up_per_request(
@@ -249,12 +253,20 @@ async def test_cost_adds_up_per_request(
     assert result.usage.cost == pytest.approx(2 * (10 * 4 + 5 * 20) / 1e6)
 
 
-async def test_cost_unknown_for_unpriced_model(
+async def test_answers_once_the_cost_limit_is_reached(
     provider: AnthropicProvider, create: AsyncMock
 ) -> None:
-    create.return_value = _answer("done")
-    result = await run_agent(provider, "sys", [Turn("user", "q")], [], Reply)
-    assert result.usage.cost is None
+    first = _tool_use(("t1", "echo", {"value": 1}))
+    first.model = "claude-opus-5-5"
+    first.usage.output_tokens = 50_000  # $1 at $20 per million
+    create.side_effect = [first, _answer("partial")]
+
+    result = await run_agent(
+        provider, "sys", [Turn("user", "q")], [_echo_tool()], Reply, max_cost=0.5
+    )
+
+    assert result.output.answer == "partial"
+    assert create.call_args.kwargs["tool_choice"] == {"type": "none"}
 
 
 async def test_request_uses_model_system_and_turns(

@@ -38,6 +38,35 @@ class MessageContent:
     documents: list[DocumentInput] = field(default_factory=list)
 
 
+async def readable_channel(
+    client: discord.Client, reader: discord.abc.User, channel_id: int
+) -> discord.abc.Messageable | None:
+    """The channel, if reader can read its history; None otherwise, or if the
+    bot can't open it either."""
+    try:
+        channel = client.get_channel(channel_id) or await client.fetch_channel(
+            channel_id
+        )
+    except discord.HTTPException:
+        return None
+    if isinstance(channel, discord.DMChannel):
+        recipient = channel.recipient
+        return channel if recipient is not None and recipient.id == reader.id else None
+    if not isinstance(channel, discord.abc.GuildChannel | discord.Thread):
+        return None
+    guild = channel.guild
+    member = guild.get_member(reader.id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(reader.id)
+        except discord.HTTPException:
+            return None
+    perms = channel.permissions_for(member)
+    if not (perms.view_channel and perms.read_message_history):
+        return None
+    return channel if isinstance(channel, discord.abc.Messageable) else None
+
+
 def component_texts(components: list[Any]) -> list[str]:
     texts: list[str] = []
     for component in components:

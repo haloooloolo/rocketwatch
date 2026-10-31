@@ -12,7 +12,7 @@ A Discord bot that monitors and reports on [Rocket Pool](https://rocketpool.net)
 - **Beacon chain integration**: tracks validator proposals, sync committees, and consensus layer activity
 - **Governance monitoring**: follows on-chain DAO votes (pDAO, oDAO, Security Council) and RocketDash signaling proposals
 - **Data visualization**: generates APR charts, collateral distributions, fee breakdowns, and TVL calculations using matplotlib
-- **Ask the bot**: the owner can mention the bot, DM it, or reply to any of its messages with a question about Rocket Pool, and can link Discord messages to ask about them. A Claude agent answers it from read-only tools covering the MongoDB data, contract calls and events, the beacon node, RocketDash, RPIPs, the docs and GitHub, and replies with text, charts and files
+- **Ask the bot**: anyone in the Rocket Pool server can mention the bot with a question about Rocket Pool, or reply to any of its messages (it checks first whether a reply was meant for it), and can link Discord messages they can read to ask about them. Questions share a daily budget. A Claude agent answers it from read-only tools covering the MongoDB data, contract calls and events, the beacon node, RocketDash, RPIPs, the docs and GitHub, and replies with text, charts and files
 - **ENS resolution**: resolves and caches ENS names for readable address display
 - **Multi-channel support**: split event tracking and status messages across multiple channels
 - **Deduplication**: prevents duplicate messages caused by chain reorgs or bot restarts
@@ -74,7 +74,7 @@ Key configuration sections:
 | `rocketpool` | Chain, contract addresses, DAO multisigs, support settings |
 | `modules` | Plugin include/exclude lists |
 | `events` | Event tracking setup |
-| `ask.llm` | Anthropic API key and model for answering the owner's questions |
+| `ask` | `daily_budget_cents` for all questions per UTC day; `ask.llm` holds the Anthropic API key and model |
 | `secrets` | Optional API keys; `github` enables GitHub code search for the ask plugin |
 
 ### Docker (recommended)

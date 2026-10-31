@@ -87,6 +87,9 @@ provider = ""  # "anthropic", "openai", or "google"
 api_key = ""
 model = ""
 
+[ask]
+daily_budget_cents = 250  # across all questions per UTC day
+
 [ask.llm]
 provider = ""  # only "anthropic" supports tool use
 api_key = ""
