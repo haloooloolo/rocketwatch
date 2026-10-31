@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -38,6 +37,13 @@ async def test_running_questions_cant_overspend_together(
     assert await budget.hold("d") is None
 
 
+async def test_can_start_without_holding(budget: DailyBudget) -> None:
+    assert await budget.can_start()
+    await budget.hold("a")
+    await budget.settle("a", 2.3)
+    assert not await budget.can_start()
+
+
 async def test_refuses_below_the_minimum(budget: DailyBudget) -> None:
     await budget.hold("a")
     await budget.settle("a", 2.3)
@@ -49,11 +55,3 @@ async def test_settling_releases_the_hold(budget: DailyBudget) -> None:
         await budget.hold(key)
     await budget.settle("a", 0.1)
     assert await budget.hold("d") == pytest.approx(0.9)
-
-
-async def test_resets_at_the_next_utc_midnight() -> None:
-    reset = DailyBudget.resets_at()
-    now = datetime.now(UTC)
-    assert reset > now
-    assert (reset.hour, reset.minute, reset.second) == (0, 0, 0)
-    assert (reset - now).total_seconds() <= 24 * 3600

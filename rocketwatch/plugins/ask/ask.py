@@ -51,6 +51,8 @@ ANSWER_TIME_LIMIT = 10 * 60
 ANSWER_TIMEOUT = 12 * 60
 SHRUG = "\N{SHRUG}"
 BUSY = "\N{HOURGLASS WITH FLOWING SAND}"
+# out of budget; an emoji of the Rocket Pool server
+BROKE = "<:pepepoor:1146668400169472063>"
 MAX_LINKS = 3
 MAX_RUN_COST = 1.0
 MIN_RUN_COST = 0.25
@@ -228,33 +230,36 @@ class Ask(commands.Cog):
         if message.author.bot or not self._pings_bot(message):
             return
         if not self._in_server(message):
-            with contextlib.suppress(discord.HTTPException):
-                await message.add_reaction(SHRUG)
+            await self._react(message, SHRUG)
             return
         if self._names_bot(message):
             await self._answer(message)
+            return
+        # no point asking about a reply that couldn't be answered anyway
+        if message.author.id in self.running:
+            await self._react(message, BUSY)
+            return
+        if not await self.budget.can_start():
+            await self._react(message, BROKE)
             return
         view = ConfirmView(message.author.id, lambda: self._answer(message))
         view.message = await message.reply(
             "Do you want me to respond?", view=view, mention_author=False
         )
 
+    @staticmethod
+    async def _react(message: Message, emoji: str) -> None:
+        with contextlib.suppress(discord.HTTPException):
+            await message.add_reaction(emoji)
+
     async def _answer(self, message: Message) -> None:
         if message.author.id in self.running:
-            with contextlib.suppress(discord.HTTPException):
-                await message.add_reaction(BUSY)
+            await self._react(message, BUSY)
             return
         key = object()
         max_cost = await self.budget.hold(key)
         if max_cost is None:
-            spent = Embed(
-                title="Out of budget for today",
-                description="Today's budget for questions is used up, or held by "
-                "questions still running. It resets "
-                f"<t:{int(self.budget.resets_at().timestamp())}:R>.",
-                color=CustomColors.RED,
-            )
-            await message.reply(embed=spent, mention_author=False)
+            await self._react(message, BROKE)
             return
 
         self.running.add(message.author.id)

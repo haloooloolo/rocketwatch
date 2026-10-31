@@ -699,8 +699,30 @@ class TestOnMessage:
         await cog.on_message(message)
 
         run_agent.assert_not_awaited()
-        embed = message.reply.call_args.kwargs["embed"]
-        assert embed.title == "Out of budget for today"
+        message.reply.assert_not_awaited()
+        message.add_reaction.assert_awaited_once_with(ask_module.BROKE)
+
+    async def test_no_prompt_once_the_budget_is_spent(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        cog.budget.collection.find_one.return_value = {"spent": 2.4}
+        message = _reply_to(_answer_message(50), "and megapools?")
+
+        await cog.on_message(message)
+
+        message.reply.assert_not_awaited()
+        message.add_reaction.assert_awaited_once_with(ask_module.BROKE)
+
+    async def test_no_prompt_while_the_replier_has_a_question_running(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        cog.running.add(OWNER_ID)
+        message = _reply_to(_answer_message(50), "and megapools?")
+
+        await cog.on_message(message)
+
+        message.reply.assert_not_awaited()
+        message.add_reaction.assert_awaited_once_with(ask_module.BUSY)
 
     async def test_one_question_at_a_time_per_person(
         self, cog: Ask, run_agent: AsyncMock

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 from pymongo.asynchronous.collection import AsyncCollection
@@ -28,21 +28,22 @@ class DailyBudget:
     def _today() -> str:
         return datetime.now(UTC).date().isoformat()
 
-    @staticmethod
-    def resets_at() -> datetime:
-        tomorrow = datetime.now(UTC).date() + timedelta(days=1)
-        return datetime.combine(tomorrow, time(), UTC)
-
     async def spent(self) -> float:
         doc = await self.collection.find_one({"_id": self._today()})
         return float(doc["spent"]) if doc else 0.0
+
+    async def _left(self) -> float:
+        return self.limit - await self.spent() - sum(self._held.values())
+
+    async def can_start(self) -> bool:
+        """Whether a question could get a hold right now."""
+        return await self._left() >= self.min_run
 
     async def hold(self, key: object) -> float | None:
         """Hold up to per_run for a question and return the amount, or None if
         less than min_run is left."""
         async with self._lock:
-            left = self.limit - await self.spent() - sum(self._held.values())
-            amount = min(self.per_run, left)
+            amount = min(self.per_run, await self._left())
             if amount < self.min_run:
                 return None
             self._held[key] = amount
