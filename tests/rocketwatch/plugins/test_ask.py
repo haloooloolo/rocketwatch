@@ -21,12 +21,13 @@ from rocketwatch.plugins.ask.ask import (
     setup,
     usage_footer,
 )
+from rocketwatch.plugins.ask.budget import Spending
 from rocketwatch.plugins.ask.tools import PUBLIC_COLLECTIONS, FileInput
 from rocketwatch.utils.agent import AgentResult, AgentTool, ToolCall, Turn, Usage
 from rocketwatch.utils.config import LLMConfig, cfg
 from rocketwatch.utils.embeds import CustomColors
 from rocketwatch.utils.llm import AnthropicProvider
-from tests.lib.discord_harness import make_bot
+from tests.lib.discord_harness import make_bot, make_interaction, run_command
 
 BOT_ID = 999
 OWNER_ID = 1  # make_cfg's owner
@@ -776,11 +777,12 @@ class TestOnMessage:
         run_agent.side_effect = costly
         await cog.on_message(_message(f"<@{BOT_ID}> list nodes"))
 
-        assert run_agent.call_args.kwargs["max_cost"] == ask_module.MAX_RUN_COST
+        limit = cfg.ask.question_limit_cents / 100
+        assert run_agent.call_args.kwargs["max_cost"] == limit
         [(_, update)] = [
             c.args for c in cog.budget.collection.update_one.call_args_list
         ]
-        assert update == {"$inc": {"spent": 0.4}}
+        assert update["$inc"]["spent"] == 0.4
 
     async def test_refuses_once_the_budget_is_spent(
         self, cog: Ask, run_agent: AsyncMock
@@ -889,6 +891,52 @@ class TestOnMessage:
 
         cog.bot.report_error.assert_awaited_once()
         assert message.reply.call_args.kwargs["embed"].title == "Couldn't answer that"
+
+
+class TestQuestionLimit:
+    async def test_comes_from_the_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(cfg._instance.ask, "question_limit_cents", 40)
+        bot = make_bot()
+        cog = Ask(bot, AnthropicProvider(api_key="k", model="m"))
+        cog.budget.collection = MagicMock()
+        cog.budget.collection.find_one = AsyncMock(return_value=None)
+        assert await cog.budget.hold("a") == pytest.approx(0.4)
+
+    async def test_low_limit_still_lets_questions_start(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(cfg._instance.ask, "question_limit_cents", 10)
+        cog = Ask(make_bot(), AnthropicProvider(api_key="k", model="m"))
+        cog.budget.collection = MagicMock()
+        cog.budget.collection.find_one = AsyncMock(return_value=None)
+        assert await cog.budget.hold("a") == pytest.approx(0.1)
+
+
+class TestAgentInfo:
+    async def test_shows_model_and_spending(self, cog: Ask) -> None:
+        cog.budget.today = AsyncMock(return_value=Spending(0.87, 2))
+        cog.budget.this_week = AsyncMock(return_value=Spending(3.2, 1))
+        cog.budget.this_month = AsyncMock(return_value=Spending(12.5, 30))
+
+        embed = await run_command(cog, "agent_info", make_interaction())
+
+        fields = {f.name: f.value for f in embed.fields}
+        # two even rows of three
+        assert list(fields) == [
+            "Model",
+            "Limit Per Question",
+            "Budget Resets",
+            "Today",
+            "This Week",
+            "This Month",
+        ]
+        assert fields["Model"] == "`m`"
+        assert fields["Budget Resets"].startswith("<t:")
+        assert fields["Today"] == "$0.87 of $2.50\n2 questions"
+        assert fields["This Week"] == "$3.20\n1 question"
+        assert fields["This Month"] == "$12.50\n30 questions"
+        limit = cfg.ask.question_limit_cents / 100
+        assert fields["Limit Per Question"] == f"${limit:.2f}"
 
 
 class TestSetup:

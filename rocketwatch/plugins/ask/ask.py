@@ -8,7 +8,8 @@ from io import BytesIO
 from pathlib import Path
 
 import discord
-from discord import File, Message, ui
+from discord import File, Interaction, Message, ui
+from discord.app_commands import command
 from discord.ext import commands
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
@@ -34,6 +35,7 @@ from rocketwatch.utils.agent import PRICES, Turn, Usage, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
 from rocketwatch.utils.llm import AnthropicProvider, create_provider
+from rocketwatch.utils.visibility import is_hidden
 
 log = logging.getLogger("rocketwatch.ask")
 
@@ -56,7 +58,6 @@ BUSY = "\N{HOURGLASS WITH FLOWING SAND}"
 # out of budget; an emoji of the Rocket Pool server
 BROKE = "<:pepepoor:1146668400169472063>"
 MAX_LINKS = 3
-MAX_RUN_COST = 1.0
 MIN_RUN_COST = 0.25
 CONFIRM_TIMEOUT = 10 * 60
 
@@ -80,6 +81,10 @@ class Answer(BaseModel):
 
 def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _questions(count: int) -> str:
+    return f"{count} question{'' if count == 1 else 's'}"
 
 
 def usage_footer(usage: Usage) -> str:
@@ -195,14 +200,45 @@ class Ask(commands.Cog):
         self.llm = llm
         self.system_prompt = build_system_prompt()
         self.container_files = [(CHART_STYLE.name, CHART_STYLE.read_bytes())]
+        per_run = cfg.ask.question_limit_cents / 100
         self.budget = DailyBudget(
             bot.db["ask_budget"],
             cfg.ask.daily_budget_cents / 100,
-            per_run=MAX_RUN_COST,
-            min_run=MIN_RUN_COST,
+            per_run=per_run,
+            # a limit below the minimum must not stop every question
+            min_run=min(MIN_RUN_COST, per_run),
         )
         self.traces = AnswerTraces(bot.db["ask_traces"])
         self.running: set[int] = set()
+
+    @command()
+    async def agent_info(self, interaction: Interaction) -> None:
+        """Show the agent's model and what it has spent"""
+        await interaction.response.defer(ephemeral=is_hidden(interaction))
+        today = await self.budget.today()
+        week = await self.budget.this_week()
+        month = await self.budget.this_month()
+        e = Embed(title="Agent")
+        e.add_field(name="Model", value=f"`{self.llm.model}`")
+        e.add_field(name="Limit Per Question", value=f"${self.budget.per_run:.2f}")
+        e.add_field(
+            name="Budget Resets",
+            value=f"<t:{int(self.budget.resets_at().timestamp())}:R>",
+        )
+        e.add_field(
+            name="Today",
+            value=f"${today.spent:.2f} of ${self.budget.limit:.2f}\n"
+            f"{_questions(today.questions)}",
+        )
+        e.add_field(
+            name="This Week",
+            value=f"${week.spent:.2f}\n{_questions(week.questions)}",
+        )
+        e.add_field(
+            name="This Month",
+            value=f"${month.spent:.2f}\n{_questions(month.questions)}",
+        )
+        await interaction.followup.send(embed=e)
 
     def _is_answer(self, message: Message) -> bool:
         # recognized by the usage line under it, so this survives restarts

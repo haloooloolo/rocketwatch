@@ -89,6 +89,8 @@ class AskConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     # across all questions per UTC day
     daily_budget_cents: int = 250
+    # the most one question may spend
+    question_limit_cents: int = 50
 
 
 class SentinelConfig(BaseModel):

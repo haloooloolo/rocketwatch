@@ -89,6 +89,7 @@ model = ""
 
 [ask]
 daily_budget_cents = 250  # across all questions per UTC day
+question_limit_cents = 50  # the most one question may spend
 
 [ask.llm]
 provider = ""  # only "anthropic" supports tool use
