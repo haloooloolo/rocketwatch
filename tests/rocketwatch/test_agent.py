@@ -22,7 +22,7 @@ from anthropic.types.beta import (
     BetaToolUseBlock,
     BetaWebFetchToolResultBlock,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from rocketwatch.utils import agent
 from rocketwatch.utils.agent import (
@@ -267,6 +267,33 @@ async def test_answers_once_the_cost_limit_is_reached(
 
     assert result.output.answer == "partial"
     assert create.call_args.kwargs["tool_choice"] == {"type": "none"}
+
+
+async def test_tool_schemas_have_no_generated_titles(
+    provider: AnthropicProvider, create: AsyncMock
+) -> None:
+    class Inner(BaseModel):
+        title: str = Field(description="A field that is called title")
+
+    class Input(BaseModel):
+        name: str = Field(description="kept")
+        inner: Inner
+        format: dict[str, str] = Field(default={"title": "a default value"})
+
+    tool = AgentTool("t", "d", Input, AsyncMock(return_value="ok"))
+    create.return_value = _answer("done")
+
+    await run_agent(provider, "sys", [Turn("user", "q")], [tool], Reply)
+
+    [param] = create.call_args.kwargs["tools"]
+    schema = param["input_schema"]
+    assert "title" not in schema
+    assert schema["properties"]["name"] == {"description": "kept", "type": "string"}
+    assert schema["properties"]["format"]["default"] == {"title": "a default value"}
+    inner = schema["$defs"]["Inner"]
+    assert "title" not in inner
+    assert inner["properties"]["title"]["description"] == "A field that is called title"
+    assert inner["required"] == ["title"]
 
 
 async def test_request_uses_model_system_and_turns(

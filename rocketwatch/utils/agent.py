@@ -185,13 +185,32 @@ OUT_OF_TOOLS = (
 )
 
 
+def _without_titles(schema: Any) -> Any:
+    """A JSON schema without the titles pydantic derives from field names, which
+    only cost tokens."""
+    if isinstance(schema, list):
+        return [_without_titles(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    stripped: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key in ("properties", "$defs"):
+            # these map names to schemas, and a field can be called title
+            stripped[key] = {n: _without_titles(v) for n, v in value.items()}
+        elif key in ("default", "const", "enum", "examples"):
+            stripped[key] = value
+        elif key != "title":
+            stripped[key] = _without_titles(value)
+    return stripped
+
+
 def _tool_param(tool: AgentTool, from_code: bool) -> BetaToolParam:
     # plain pydantic schema: the strict transform would forbid free-form
     # objects like Mongo filters
     param: BetaToolParam = {
         "name": tool.name,
         "description": tool.description,
-        "input_schema": tool.input_model.model_json_schema(),
+        "input_schema": _without_titles(tool.input_model.model_json_schema()),
     }
     if from_code:
         param["allowed_callers"] = ["direct", CODE_EXECUTION]
