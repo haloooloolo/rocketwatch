@@ -81,11 +81,19 @@ class Usage:
 
 
 @dataclass(frozen=True)
+class ToolCall:
+    name: str
+    input: Any
+    from_code: bool = False
+
+
+@dataclass(frozen=True)
 class AgentResult[R: BaseModel]:
     output: R
     usage: Usage
     # files scripts saved to $OUTPUT_DIR, by name
     files: dict[str, bytes] = field(default_factory=dict)
+    calls: list[ToolCall] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -405,6 +413,7 @@ async def run_agent[T: BaseModel](
     if usage is None:
         usage = Usage()
     model_turns = 0
+    made: list[ToolCall] = []
     container: str | None = None
     script_waiting = False
     # the model's turn is still running (a paused turn, a script waiting on tool
@@ -488,9 +497,13 @@ async def run_agent[T: BaseModel](
                 searches,
             )
             exports += _exported_files(response.content)
-            usage.tool_calls += sum(
-                b.type in ("tool_use", "server_tool_use") for b in response.content
-            )
+            calls_made = [
+                ToolCall(b.name, b.input, _from_code(b))
+                for b in response.content
+                if b.type == "tool_use" or b.type == "server_tool_use"
+            ]
+            made += calls_made
+            usage.tool_calls += len(calls_made)
             if response.container is not None:
                 container = response.container.id
             # responses that only carry a running script's tool calls aren't model turns
@@ -525,7 +538,7 @@ async def run_agent[T: BaseModel](
                     text = "".join(b.text for b in response.content if b.type == "text")
                     output = schema.model_validate_json(text)
                     files = await _download_files(provider, exports)
-                    return AgentResult(output, usage, files)
+                    return AgentResult(output, usage, files, made)
                 case _:
                     raise AgentError(f"Model stopped early ({response.stop_reason})")
 

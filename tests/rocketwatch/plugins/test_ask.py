@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 from discord import ui
+from pymongo.errors import PyMongoError
 
 from rocketwatch.plugins.ask import ask as ask_module
 from rocketwatch.plugins.ask.ask import (
@@ -21,7 +22,7 @@ from rocketwatch.plugins.ask.ask import (
     usage_footer,
 )
 from rocketwatch.plugins.ask.tools import PUBLIC_COLLECTIONS, FileInput
-from rocketwatch.utils.agent import AgentResult, AgentTool, Turn, Usage
+from rocketwatch.utils.agent import AgentResult, AgentTool, ToolCall, Turn, Usage
 from rocketwatch.utils.config import LLMConfig, cfg
 from rocketwatch.utils.embeds import CustomColors
 from rocketwatch.utils.llm import AnthropicProvider
@@ -66,6 +67,9 @@ def cog() -> Ask:
     cog.budget.collection = MagicMock()
     cog.budget.collection.find_one = AsyncMock(return_value=None)
     cog.budget.collection.update_one = AsyncMock()
+    cog.traces.collection = MagicMock()
+    cog.traces.collection.find_one = AsyncMock(return_value=None)
+    cog.traces.collection.insert_one = AsyncMock()
     return cog
 
 
@@ -80,11 +84,13 @@ def _message(
     parent: MagicMock | None = None,
     attachments: list[MagicMock] | None = None,
     embeds: list[discord.Embed] | None = None,
+    clean_content: str | None = None,
+    mentions: list[MagicMock] | None = None,
 ) -> MagicMock:
     message = MagicMock(spec=discord.Message)
     message.id = message_id
     message.content = content
-    message.clean_content = content
+    message.clean_content = content if clean_content is None else clean_content
     message.poll = None
     message.reactions = []
     message.stickers = []
@@ -93,7 +99,13 @@ def _message(
     message.author.display_name = author_name
     message.author.bot = is_bot
     message.raw_mentions = [BOT_ID] if f"<@{BOT_ID}>" in content else []
-    message.mentions = [MagicMock(id=BOT_ID)] if message.raw_mentions else []
+    message.mentions = (
+        mentions
+        if mentions is not None
+        else [_user(BOT_ID, "Rocket Watch")]
+        if message.raw_mentions
+        else []
+    )
     message.guild = MagicMock(id=SERVER_ID) if in_guild else None
     message.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     message.attachments = attachments or []
@@ -112,6 +124,12 @@ def _message(
         message.reference.resolved = None
         message.channel.fetch_message = AsyncMock(return_value=parent)
     return message
+
+
+def _user(user_id: int, name: str) -> MagicMock:
+    user = MagicMock(id=user_id)
+    user.display_name = name
+    return user
 
 
 def _attachment(content_type: str, data: bytes, filename: str = "f") -> MagicMock:
@@ -220,10 +238,59 @@ class TestBuildTurns:
 
         turns = await _turns(cog, follow_up)
 
-        assert [t.role for t in turns] == ["user", "assistant", "user"]
+        assert [t.role for t in turns] == ["user", "assistant", "user", "user"]
         # without the usage line, which the model would otherwise copy
         assert turns[1].text == "4,000 nodes"
-        assert turns[2].text.endswith("and last year?")
+        assert f"sent at <t:{int(answer.created_at.timestamp())}>" in turns[2].text
+        assert turns[3].text.endswith("and last year?")
+
+    async def test_every_message_says_who_wrote_it(self, cog: Ask) -> None:
+        first = _message(
+            f"<@{BOT_ID}> how many nodes?",
+            message_id=10,
+            author_id=STRANGER_ID,
+            author_name="alice",
+        )
+        answer = _answer_message(11, parent=first)
+        second = _message(
+            f"<@{BOT_ID}> and mine?", message_id=12, author_name="bob", parent=answer
+        )
+        answer2 = _answer_message(13, "3", parent=second)
+        last = _message(
+            f"<@{BOT_ID}> and mine?",
+            message_id=14,
+            author_id=STRANGER_ID,
+            author_name="alice",
+            parent=answer2,
+        )
+
+        turns = await _turns(cog, last)
+
+        assert turns[0].text.startswith("[Earlier message from alice at <t:")
+        assert turns[0].text.endswith("how many nodes?")
+        assert turns[3].text.startswith("[Earlier message from bob at <t:")
+        assert "[Question from alice]\nand mine?" in turns[-1].text
+
+    async def test_mentions_of_others_are_names(self, cog: Ask) -> None:
+        question = _message(
+            f"<@{BOT_ID}> what did <@42> mean?",
+            clean_content="@Rocket Watch what did @carol mean?",
+            mentions=[_user(BOT_ID, "Rocket Watch"), _user(42, "carol")],
+        )
+        [turn] = await _turns(cog, question)
+        assert turn.text.endswith("[Question from owner]\nwhat did @carol mean?")
+
+    async def test_a_cut_off_conversation_still_opens_with_a_user_turn(
+        self, cog: Ask, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(ask_module, "MAX_CHAIN", 2)
+        question = _message(message_id=10)
+        answer = _answer_message(11, parent=question)
+        turns = await _turns(cog, _message("more", message_id=12, parent=answer))
+
+        assert [t.role for t in turns] == ["user", "assistant", "user", "user"]
+        assert turns[0].text == "[Earlier messages here are no longer available]"
+        assert turns[1].text == "4,000 nodes"
 
     async def test_previous_answer_brings_its_files(self, cog: Ask) -> None:
         first = _message(f"<@{BOT_ID}> top nodes?", message_id=10)
@@ -239,7 +306,7 @@ class TestBuildTurns:
         )
         follow_up = _message("sort by stake", message_id=12, parent=answer)
 
-        (_, previous, charts, _), files = await cog._build_turns(follow_up)
+        (_, previous, _, charts, _), files = await cog._build_turns(follow_up)
 
         # the full text replaces the clipped one
         assert previous.text == (
@@ -541,6 +608,31 @@ class TestOnMessage:
         # the earlier chart goes to the sandbox next to the style file
         names = [n for n, _ in run_agent.call_args.kwargs["container_files"]]
         assert names == [ask_module.CHART_STYLE.name, "pie.png"]
+
+    async def test_records_the_tool_calls_of_an_answer(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        calls = [ToolCall("mongo_find", {"collection": "minipools"})]
+        run_agent.side_effect = None
+        run_agent.return_value = AgentResult(_answer(), Usage(), calls=calls)
+        message = _message(f"<@{BOT_ID}> list nodes")
+
+        await cog.on_message(message)
+
+        [saved] = [c.args[0] for c in cog.traces.collection.insert_one.call_args_list]
+        assert saved["_id"] == message.reply.return_value.id
+        assert saved["calls"][0]["tool"] == "mongo_find"
+
+    async def test_failing_to_record_doesnt_fail_the_answer(
+        self, cog: Ask, run_agent: AsyncMock
+    ) -> None:
+        cog.traces.collection.insert_one.side_effect = PyMongoError("down")
+        message = _message(f"<@{BOT_ID}> list nodes")
+
+        await cog.on_message(message)
+
+        message.reply.assert_awaited_once()
+        cog.bot.report_error.assert_not_awaited()
 
     async def test_anyone_in_the_server_can_ask(
         self, cog: Ask, run_agent: AsyncMock

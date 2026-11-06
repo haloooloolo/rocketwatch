@@ -11,6 +11,7 @@ import discord
 from discord import File, Message, ui
 from discord.ext import commands
 from pydantic import BaseModel, Field
+from pymongo.errors import PyMongoError
 
 from rocketwatch.bot import RocketWatch
 from rocketwatch.plugins.ask.budget import DailyBudget
@@ -28,6 +29,7 @@ from rocketwatch.plugins.ask.messages import (
 )
 from rocketwatch.plugins.ask.prompt import build_system_prompt
 from rocketwatch.plugins.ask.tools import PUBLIC_COLLECTIONS, WEB_TOOLS, AskTools
+from rocketwatch.plugins.ask.trace import AnswerTraces
 from rocketwatch.utils.agent import PRICES, Turn, Usage, run_agent
 from rocketwatch.utils.config import cfg
 from rocketwatch.utils.embeds import CustomColors, Embed
@@ -199,6 +201,7 @@ class Ask(commands.Cog):
             per_run=MAX_RUN_COST,
             min_run=MIN_RUN_COST,
         )
+        self.traces = AnswerTraces(bot.db["ask_traces"])
         self.running: set[int] = set()
 
     def _is_answer(self, message: Message) -> bool:
@@ -302,12 +305,16 @@ class Ask(commands.Cog):
                     usage_footer(result.usage),
                 )
                 # the model writes what others ask for, so it mustn't ping anyone
-                await message.reply(
+                sent = await message.reply(
                     view=view,
                     files=files,
                     mention_author=False,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
+                try:
+                    await self.traces.save(sent.id, message.author.id, result.calls)
+                except PyMongoError:
+                    log.exception("Failed to save the tool calls of an answer")
             except TimeoutError:
                 log.warning("Gave up on a question after %ds", ANSWER_TIMEOUT)
                 timeout = Embed(
@@ -360,10 +367,14 @@ class Ask(commands.Cog):
 
         # built newest first, so the question's own media gets the budget first
         budget = MediaBudget(MAX_IMAGES, MAX_DOCUMENTS)
-        asker = message.author.id
-        question = await self._read_message(message, budget, asker=asker)
+        question = await read_message(
+            message, budget, text=self._without_bot_mention(message)
+        )
         now = datetime.now(UTC)
-        question.text = f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n{question.text}"
+        question.text = (
+            f"Current time: {now:%Y-%m-%d %H:%M} UTC (unix {int(now.timestamp())})\n\n"
+            f"[Question from {message.author.display_name}]\n{question.text}"
+        )
         turns = [user_turn(question)]
 
         for link, linked in reversed(await self._linked_messages(message)):
@@ -372,23 +383,26 @@ class Ask(commands.Cog):
                     Turn("user", f"[Linked message {link} couldn't be opened]")
                 )
                 continue
-            linked_content = await self._read_message(
-                linked, budget, asker=asker, link=link
-            )
-            turns.append(user_turn(linked_content))
+            turns.append(user_turn(await self._read_message(linked, budget, link=link)))
 
         files: dict[str, bytes] = {}
         for m in chain[1:]:
-            # the conversation has to open with a user turn
-            if m is not chain[-1] and self._is_answer(m):
+            if self._is_answer(m):
                 text, images, attached = await self._read_answer(m, budget)
                 # a newer answer's file wins a shared name
                 files = attached | files
                 if images.images:
                     turns.append(user_turn(images))
+                note = await self.traces.note(m.id, m.created_at, message.author.id)
+                turns.append(Turn("user", note))
                 turns.append(Turn("assistant", text))
                 continue
-            turns.append(user_turn(await self._read_message(m, budget, asker=asker)))
+            turns.append(user_turn(await self._read_message(m, budget)))
+        # the conversation has to open with a user turn
+        if turns[-1].role == "assistant":
+            turns.append(
+                Turn("user", "[Earlier messages here are no longer available]")
+            )
         turns.reverse()
         return turns, files
 
@@ -408,24 +422,31 @@ class Ask(commands.Cog):
             linked.append((link, found))
         return linked
 
-    async def _read_message(
-        self,
-        message: Message,
-        budget: MediaBudget,
-        *,
-        asker: int,
-        link: str | None = None,
-    ) -> MessageContent:
+    def _without_bot_mention(self, message: Message) -> str:
         assert self.bot.user is not None
-        if message.author.id == asker and link is None:
-            text = re.sub(rf"<@!?{self.bot.user.id}>", "", message.content).strip()
-            return await read_message(message, budget, text=text)
-        content = await read_message(message, budget)
-        ts = int(message.created_at.timestamp())
-        source = f"Linked message {link}" if link else "Quoted message"
-        quoted = USAGE_LINE.sub("", content.text).strip()
+        text = message.clean_content
+        for user in message.mentions:
+            if user.id == self.bot.user.id:
+                text = text.replace(f"@{user.display_name}", "")
+        return re.sub(rf"<@!?{self.bot.user.id}>", "", text).strip()
+
+    async def _read_message(
+        self, message: Message, budget: MediaBudget, *, link: str | None = None
+    ) -> MessageContent:
+        """A message for context, labeled with who wrote it and when."""
+        assert self.bot.user is not None
+        content = await read_message(
+            message, budget, text=self._without_bot_mention(message)
+        )
+        at = f"at <t:{int(message.created_at.timestamp())}>"
         name = message.author.display_name
-        content.text = f"[{source} from {name} at <t:{ts}>]\n{quoted}"
+        if link:
+            label = f"Linked message {link} from {name} {at}"
+        elif message.author.id == self.bot.user.id:
+            label = f"Your own automated post {at}, not an answer to a question"
+        else:
+            label = f"Earlier message from {name} {at}"
+        content.text = f"[{label}]\n{USAGE_LINE.sub('', content.text).strip()}"
         return content
 
     @staticmethod
