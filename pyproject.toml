@@ -30,7 +30,7 @@ dependencies = [
     # 18 rejects the list that web3's ENS normalizer passes to NFC
     "pyunormalize<18",
     "pytz==2026.5",
-    "regex==2026.9.29",
+    "regex==2026.11.9",
     "retry-async==0.1.4",
     "soundfile>=0.13.1",
     "tabulate==0.10.0",
