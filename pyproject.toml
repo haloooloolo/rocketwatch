@@ -19,7 +19,7 @@ dependencies = [
     "eth-typing==6.0.0",
     "eth-utils==6.0.0",
     "hexbytes==2.0.0",
-    "humanize==4.16.0",
+    "humanize==4.17.0",
     "lameenc>=1.8.2",
     "matplotlib==3.11.2",
     "numpy==2.5.4",
