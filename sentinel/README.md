@@ -7,14 +7,13 @@ A lightweight moderation companion bot that acts as a privilege escalation servi
 ### 1. Create a Discord bot
 
 1. Create a new application at https://discord.com/developers/applications
-2. Under **Bot**, enable the **Server Members** privileged intent
-3. Under **Installation > Install Link**, configure the default permissions:
+2. Under **Installation > Install Link**, configure the default permissions:
    - Manage Messages
    - Manage Threads
    - Moderate Members
    - Kick Members
    - Ban Members
-4. Invite the bot to your server
+3. Invite the bot to your server
 
 ### 2. Configure
 
